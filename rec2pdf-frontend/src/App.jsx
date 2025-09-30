@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
 import { Mic, Square, Settings, Folder, FileText, Cpu, Download, Timer as TimerIcon, Waves, CheckCircle2, AlertCircle, Link as LinkIcon, Upload, RefreshCw, Bug, XCircle, Info, Maximize, Sparkles } from "lucide-react";
+
 import logo from './assets/logo.svg';
 import SetupAssistant from "./components/SetupAssistant";
 import { useMicrophoneAccess } from "./hooks/useMicrophoneAccess";
