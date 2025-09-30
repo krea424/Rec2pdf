@@ -1,5 +1,9 @@
 import React from "react";
+
 import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Info, XCircle } from "./icons";
+
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Info, XCircle } from "lucide-react";
+
 import { classNames } from "../utils/classNames";
 
 const statusStyles = {
