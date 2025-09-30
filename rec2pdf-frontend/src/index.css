@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes progress-animation {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.progress-bar-animated {
+  animation: progress-animation 2s linear infinite;
+  background-image: linear-gradient(to right, #4f46e5 0%, #818cf8 50%, #4f46e5 100%);
+  background-size: 200% 100%;
+}
