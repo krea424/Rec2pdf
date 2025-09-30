@@ -1,8 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
 import { Mic, Square, Settings, Folder, FileText, Cpu, Download, TimerIcon, Waves, CheckCircle2, AlertCircle, LinkIcon, Upload, RefreshCw, Bug, XCircle, Info, Maximize, Sparkles } from "./components/icons";
-
-
 import logo from './assets/logo.svg';
 import SetupAssistant from "./components/SetupAssistant";
 import { useMicrophoneAccess } from "./hooks/useMicrophoneAccess";
