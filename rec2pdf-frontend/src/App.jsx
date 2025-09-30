@@ -1,12 +1,14 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Mic, Square, Settings, Folder, FileText, Cpu, Download, Timer as TimerIcon, Waves, CheckCircle2, AlertCircle, Link as LinkIcon, Upload, RefreshCw, Bug, XCircle, Info, Maximize } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Mic, Square, Settings, Folder, FileText, Cpu, Download, Timer as TimerIcon, Waves, CheckCircle2, AlertCircle, Link as LinkIcon, Upload, RefreshCw, Bug, XCircle, Info, Maximize, Sparkles } from "lucide-react";
 import logo from './assets/logo.svg';
+import SetupAssistant from "./components/SetupAssistant";
+import { useMicrophoneAccess } from "./hooks/useMicrophoneAccess";
+import { useBackendDiagnostics } from "./hooks/useBackendDiagnostics";
+import { classNames } from "./utils/classNames";
+import { pickBestMime } from "./utils/media";
 
-function classNames(...xs) { return xs.filter(Boolean).join(" "); }
 const fmtBytes = (bytes) => { if (!bytes && bytes !== 0) return "—"; const u=["B","KB","MB","GB"]; let i=0,v=bytes; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(v<10&&i>0?1:0)} ${u[i]}`; };
 const fmtTime = (s) => { const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const sec=Math.floor(s%60); return [h,m,sec].map(n=>String(n).padStart(2,'0')).join(":"); };
-const isLikelySecure = () => { if (typeof window!=="undefined" && window.isSecureContext) return true; const h=typeof window!=="undefined"?window.location.hostname:""; return h==='localhost'||h==='127.0.0.1'||h.endsWith('.localhost'); };
-const pickBestMime = () => { const c=["audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus","audio/ogg","audio/mp4"]; for (const m of c) if (typeof MediaRecorder!=="undefined"&&MediaRecorder.isTypeSupported?.(m)) return m; return undefined; };
 
 const themes = {
   zinc: {
@@ -39,14 +41,6 @@ export default function Rec2PdfApp(){
   const [recording,setRecording]=useState(false);
   const [elapsed,setElapsed]=useState(0);
   const [level,setLevel]=useState(0);
-  const [secureOK,setSecureOK]=useState(isLikelySecure());
-  const [mediaSupported]=useState(!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia));
-  const [recorderSupported]=useState(typeof MediaRecorder!=='undefined');
-  const [permission,setPermission]=useState('unknown');
-  const [permissionMessage,setPermissionMessage]=useState("");
-  const [lastMicError,setLastMicError]=useState(null);
-  const [devices,setDevices]=useState([]);
-  const [selectedDeviceId,setSelectedDeviceId]=useState("");
   const [audioBlob,setAudioBlob]=useState(null);
   const [audioUrl,setAudioUrl]=useState("");
   const [mime,setMime]=useState("");
@@ -54,7 +48,6 @@ export default function Rec2PdfApp(){
   const [slug,setSlug]=useState("meeting");
   const [secondsCap,setSecondsCap]=useState(0);
   const [backendUrl,setBackendUrl]=useState("http://localhost:7788");
-  const [backendUp,setBackendUp]=useState(null);
   const [busy,setBusy]=useState(false);
   const [logs,setLogs]=useState([]);
   const [pdfPath,setPdfPath]=useState("");
@@ -64,6 +57,34 @@ export default function Rec2PdfApp(){
   const [showSettings, setShowSettings] = useState(false);
   const [customLogo, setCustomLogo] = useState(null);
   const [customPdfLogo, setCustomPdfLogo] = useState(null);
+  const {
+    secureOK,
+    mediaSupported,
+    recorderSupported,
+    permission,
+    setPermission,
+    permissionMessage,
+    setPermissionMessage,
+    lastMicError,
+    setLastMicError,
+    devices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+    refreshDevices,
+    requestPermission,
+  } = useMicrophoneAccess();
+  const {
+    backendUp,
+    setBackendUp,
+    checkHealth,
+    checkingHealth,
+    diagnostics,
+    runDiagnostics: runBackendDiagnostics,
+    fetchBody,
+  } = useBackendDiagnostics(backendUrl);
+  const [onboardingComplete, setOnboardingComplete] = useState(() => localStorage.getItem('onboardingComplete') === 'true');
+  const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem('onboardingComplete'));
+  const [onboardingStep, setOnboardingStep] = useState(0);
 
   const mediaRecorderRef=useRef(null);
   const chunksRef=useRef([]);
@@ -94,40 +115,19 @@ export default function Rec2PdfApp(){
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  useEffect(()=>{ let alive=true; (async()=>{ try{ const r=await fetch(`${backendUrl}/api/health`,{cache:'no-store'}); if(!alive)return; setBackendUp(r.ok);}catch{ if(!alive)return; setBackendUp(false);} })(); return()=>{alive=false}; },[backendUrl,busy]);
-  useEffect(()=>{ setSecureOK(isLikelySecure()); },[]);
-  useEffect(()=>{ let cancelled=false; (async()=>{ if(!navigator.permissions||!mediaSupported){ setPermission('unknown'); return;}
- try{ const p=await navigator.permissions.query({name:'microphone'}); if(cancelled)return; setPermission(p.state||'unknown'); p.onchange=()=>setPermission(p.state||'unknown'); }catch{ setPermission('unknown'); } })(); return()=>{cancelled=true}; },[mediaSupported]);
+  useEffect(()=>{ checkHealth(); },[backendUrl,busy,checkHealth]);
   useEffect(()=>{ if(!recording) return; const id=setInterval(()=>setElapsed(Math.floor((Date.now()-startAtRef.current)/1000)),333); return()=>clearInterval(id); },[recording]);
 
   const startAnalyser=async(stream)=>{ if(audioCtxRef.current) return; const C=window.AudioContext||window.webkitAudioContext; if(!C) return; const ctx=new C(); const src=ctx.createMediaStreamSource(stream); const analyser=ctx.createAnalyser(); analyser.fftSize=2048; src.connect(analyser); const data=new Uint8Array(analyser.frequencyBinCount); const loop=()=>{ analyser.getByteTimeDomainData(data); let sum=0; for(let i=0;i<data.length;i++){ const v=(data[i]-128)/128; sum+=v*v; } const rms=Math.sqrt(sum/data.length); setLevel(rms); rafRef.current=requestAnimationFrame(loop); }; loop(); analyserRef.current=analyser; audioCtxRef.current=ctx; sourceRef.current=src; };
   const stopAnalyser=()=>{ if(rafRef.current) cancelAnimationFrame(rafRef.current); try{ sourceRef.current&&sourceRef.current.disconnect(); }catch{} try{ analyserRef.current&&analyserRef.current.disconnect(); }catch{} try{ audioCtxRef.current&&audioCtxRef.current.close(); }catch{} rafRef.current=null; analyserRef.current=null; audioCtxRef.current=null; sourceRef.current=null; setLevel(0); };
 
-  const refreshDevices=async()=>{ try{ const list=await navigator.mediaDevices?.enumerateDevices?.(); const mics=(list||[]).filter(d=>d.kind==='audioinput'); setDevices(mics.map(d=>({deviceId:d.deviceId,label:d.label||'Microfono'}))); if(!selectedDeviceId&&mics[0]) setSelectedDeviceId(mics[0].deviceId); }catch{} };
-
-  const requestMic=async()=>{ setPermissionMessage(""); setLastMicError(null); if(!secureOK){ setPermissionMessage("Il microfono richiede HTTPS oppure localhost."); return false;} if(!mediaSupported){ setPermissionMessage("Browser senza getUserMedia."); return false;} try{ const stream=await navigator.mediaDevices.getUserMedia({audio:true}); stream.getTracks().forEach(t=>t.stop()); setPermission('granted'); setPermissionMessage("Permesso microfono concesso."); await refreshDevices(); return true; }catch(e){ const name=e?.name||""; const msg=e?.message||String(e); setLastMicError({name,message:msg}); if(name==='NotAllowedError'||name==='SecurityError'){ setPermission('denied'); setPermissionMessage("Accesso al microfono negato. Abilitalo dalle impostazioni del sito (icona lucchetto) e riprova."); } else if(name==='NotFoundError'||name==='OverconstrainedError'){ setPermission('denied'); setPermissionMessage("Nessun microfono rilevato o vincoli non soddisfatti."); } else if(name==='NotReadableError'){ setPermission('denied'); setPermissionMessage("Il microfono è occupato da un'altra app (Zoom/Teams/OBS). Chiudila e riprova."); } else if(name==='AbortError'){ setPermission('prompt'); setPermissionMessage("Richiesta annullata. Riprova e accetta il prompt del browser."); } else { setPermission('unknown'); setPermissionMessage(`Impossibile accedere al microfono: ${msg}`);} return false; } };
-
-  const startRecording=async()=>{ setLogs([]); setPdfPath(""); setAudioBlob(null); setAudioUrl(""); setPermissionMessage(""); setErrorBanner(null); if(!recorderSupported){ setPermissionMessage("MediaRecorder non supportato. Usa il caricamento file."); return;} if(permission!=='granted'){ const ok=await requestMic(); if(!ok) return;} try{ const constraints=selectedDeviceId?{deviceId:{exact:selectedDeviceId}}:true; const stream=await navigator.mediaDevices.getUserMedia({audio:constraints}); streamRef.current=stream; const mimeType=pickBestMime(); const rec=new MediaRecorder(stream,mimeType?{mimeType}:{}); chunksRef.current=[]; rec.ondataavailable=(e)=>{ if(e.data&&e.data.size) chunksRef.current.push(e.data); }; rec.onstop=()=>{ const blob=new Blob(chunksRef.current,{type:rec.mimeType||mimeType||'audio/webm'}); const url=URL.createObjectURL(blob); setAudioBlob(blob); setAudioUrl(url); setMime(rec.mimeType||mimeType||'audio/webm'); stopAnalyser(); stream.getTracks().forEach(t=>t.stop()); streamRef.current=null; }; mediaRecorderRef.current=rec; await startAnalyser(stream); rec.start(250); startAtRef.current=Date.now(); setElapsed(0); setRecording(true); }catch(e){ const name=e?.name||""; const msg=e?.message||String(e); setLastMicError({name,message:msg}); if(name==='NotAllowedError'){ setPermission('denied'); setPermissionMessage("Permesso negato. Abilita il microfono dalle impostazioni del sito e riprova."); } else if(name==='NotFoundError'||name==='OverconstrainedError'){ setPermission('denied'); setPermissionMessage("Nessun microfono disponibile o vincoli non validi."); } else if(name==='NotReadableError'){ setPermission('denied'); setPermissionMessage("Il microfono è occupato da un'altra app. Chiudi Zoom/Teams/OBS e riprova."); } else if(!secureOK){ setPermission('denied'); setPermissionMessage("Serve HTTPS o localhost per usare il microfono."); } else { setPermission('unknown'); setPermissionMessage(`Errore: ${msg}`);} } };
+  const startRecording=async()=>{ setLogs([]); setPdfPath(""); setAudioBlob(null); setAudioUrl(""); setPermissionMessage(""); setErrorBanner(null); if(!recorderSupported){ setPermissionMessage("MediaRecorder non supportato. Usa il caricamento file."); return;} if(permission!=='granted'){ const ok=await requestPermission(); if(!ok) return;} try{ const constraints=selectedDeviceId?{deviceId:{exact:selectedDeviceId}}:true; const stream=await navigator.mediaDevices.getUserMedia({audio:constraints}); streamRef.current=stream; const mimeType=pickBestMime(); const rec=new MediaRecorder(stream,mimeType?{mimeType}:{}); chunksRef.current=[]; rec.ondataavailable=(e)=>{ if(e.data&&e.data.size) chunksRef.current.push(e.data); }; rec.onstop=()=>{ const blob=new Blob(chunksRef.current,{type:rec.mimeType||mimeType||'audio/webm'}); const url=URL.createObjectURL(blob); setAudioBlob(blob); setAudioUrl(url); setMime(rec.mimeType||mimeType||'audio/webm'); stopAnalyser(); stream.getTracks().forEach(t=>t.stop()); streamRef.current=null; }; mediaRecorderRef.current=rec; await startAnalyser(stream); rec.start(250); startAtRef.current=Date.now(); setElapsed(0); setRecording(true); }catch(e){ const name=e?.name||""; const msg=e?.message||String(e); setLastMicError({name,message:msg}); if(name==='NotAllowedError'){ setPermission('denied'); setPermissionMessage("Permesso negato. Abilita il microfono dalle impostazioni del sito e riprova."); } else if(name==='NotFoundError'||name==='OverconstrainedError'){ setPermission('denied'); setPermissionMessage("Nessun microfono disponibile o vincoli non validi."); } else if(name==='NotReadableError'){ setPermission('denied'); setPermissionMessage("Il microfono è occupato da un'altra app. Chiudi Zoom/Teams/OBS e riprova."); } else if(!secureOK){ setPermission('denied'); setPermissionMessage("Serve HTTPS o localhost per usare il microfono."); } else { setPermission('unknown'); setPermissionMessage(`Errore: ${msg}`);} } };
 
   const stopRecording=()=>{ const rec=mediaRecorderRef.current; if(rec&&rec.state!=="inactive") rec.stop(); setRecording(false); };
   useEffect(()=>{ if(recording&&secondsCap&&elapsed>=secondsCap) stopRecording(); },[recording,secondsCap,elapsed]);
   const resetAll=()=>{ setAudioBlob(null); setAudioUrl(""); setMime(""); setElapsed(0); setLogs([]); setPdfPath(""); setPermissionMessage(""); setErrorBanner(null); };
 
-  const fetchBody=async(url,opts)=>{
-    try{
-      const r=await fetch(url,opts);
-      const ct=r.headers.get('content-type')||"";
-      const raw=await r.text();
-      let data=null;
-      if(ct.includes('application/json')){
-        try{ data=raw?JSON.parse(raw):null; }catch{}
-      }
-      return {ok:r.ok,status:r.status,data,raw,contentType:ct};
-    }catch(e){
-      return {ok:false,status:0,data:null,raw:"",contentType:"",error:e};
-    }
-  };
-  const pushLogs=(arr)=>setLogs(ls=>ls.concat((arr||[]).filter(Boolean)));
+  const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
 
   const processViaBackend=async(customBlob)=>{
     const blob=customBlob||audioBlob;
@@ -174,7 +174,206 @@ export default function Rec2PdfApp(){
     }
   };
 
-  const runDiagnostics=async()=>{ setBusy(true); setLogs([]); setErrorBanner(null); try{ const {ok,status,data,raw}=await fetchBody(`${backendUrl}/api/diag`,{method:'GET'}); if(data?.logs?.length) pushLogs(data.logs); if(!ok){ pushLogs([`❌ Diagnostica fallita (HTTP ${status||'0'})`]); if(!data&&raw) pushLogs([raw.slice(0,400)]); setErrorBanner({title:`Diagnostica fallita (HTTP ${status||'0'})`,details:data?.message||raw||'Errore rete/CORS'}); } else { pushLogs([data?.ok?'✅ Ambiente OK':'❌ Ambiente con problemi']); } } finally{ setBusy(false); } };
+  const runDiagnostics=useCallback(async()=>{ setBusy(true); setLogs([]); setErrorBanner(null); try{ const {ok,status,data,raw}=await runBackendDiagnostics(); if(data?.logs?.length) pushLogs(data.logs); if(!ok){ pushLogs([`❌ Diagnostica fallita (HTTP ${status||'0'})`]); if(!data&&raw) pushLogs([raw.slice(0,400)]); setErrorBanner({title:`Diagnostica fallita (HTTP ${status||'0'})`,details:data?.message||raw||'Errore rete/CORS'}); setBackendUp(false); } else { pushLogs([data?.ok?'✅ Ambiente OK':'❌ Ambiente con problemi']); } } finally{ setBusy(false); } },[pushLogs, runBackendDiagnostics, setBackendUp]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (onboardingComplete) {
+      localStorage.setItem('onboardingComplete', 'true');
+    } else {
+      localStorage.removeItem('onboardingComplete');
+    }
+  }, [onboardingComplete]);
+
+  const backendUrlValid = useMemo(() => {
+    if (!backendUrl) return false;
+    try {
+      const parsed = new URL(backendUrl);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }, [backendUrl]);
+
+  const diagUrl = useMemo(() => {
+    if (!backendUrlValid || !backendUrl) return '';
+    const trimmed = backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl;
+    return `${trimmed}/api/diag`;
+  }, [backendUrl, backendUrlValid]);
+
+  const openMicSettings = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const ua = window.navigator?.userAgent || '';
+    if (ua.includes('Firefox')) {
+      window.open('about:preferences#privacy', '_blank');
+    } else if (ua.includes('Edg/')) {
+      window.open('edge://settings/content/microphone', '_blank');
+    } else if (ua.includes('OPR/') || ua.includes('Opera')) {
+      window.open('opera://settings/content/microphone', '_blank');
+    } else {
+      window.open('chrome://settings/content/microphone', '_blank');
+    }
+  }, []);
+
+  const handleBackendDefault = useCallback(() => {
+    setBackendUrl('http://localhost:7788');
+  }, [setBackendUrl]);
+
+  const handleBackendSettings = useCallback(() => {
+    setShowSettings(true);
+  }, [setShowSettings]);
+
+  const onboardingSteps = useMemo(() => {
+    const micStatus = permission==='granted'?'success':permission==='denied'?'error':'pending';
+    const micMessage = permissionMessage || (micStatus==='success'?'Il permesso microfono è attivo.':'Concedi il permesso microfono per registrare direttamente dall\'app.');
+    const micActions = [
+      { label:'Richiedi accesso microfono', onClick:requestPermission, disabled:permission==='granted' },
+      { label:'Aggiorna dispositivi', onClick:refreshDevices, variant:'secondary' },
+    ];
+    if(permission==='denied'){
+      micActions.push({ label:'Apri impostazioni browser', onClick:openMicSettings, variant:'subtle' });
+    }
+
+    const urlStatus = !backendUrl ? 'pending' : backendUrlValid ? 'success' : 'error';
+    const urlMessage = !backendUrl
+      ? 'Inserisci l\'URL del backend (es. http://localhost:7788).'
+      : backendUrlValid
+        ? 'URL valido: il frontend può contattare il backend.'
+        : 'Controlla che l\'URL includa protocollo (http/https) e porta corretti.';
+    const urlActions = [
+      { label:'Imposta localhost', onClick:handleBackendDefault, variant:'secondary' },
+      { label:'Apri impostazioni backend', onClick:handleBackendSettings, variant:'subtle' },
+    ];
+
+    const healthStatus = backendUp===null?'pending':backendUp?'success':'error';
+    const healthMessage = backendUp===null
+      ? 'Esegui una verifica per assicurarti che il backend risponda a /api/health.'
+      : backendUp
+        ? 'Il backend risponde correttamente all\'endpoint /api/health.'
+        : 'Backend non raggiungibile. Avvia il servizio e riprova.';
+    const healthActions = [
+      { label:checkingHealth?'Verifica in corso…':'Verifica connessione', onClick:checkHealth, disabled:checkingHealth, variant:'primary' },
+    ];
+    if(backendUrlValid){
+      healthActions.push({ label:'Apri backend', href:backendUrl, variant:'subtle' });
+    }
+
+    const diagStatusKey = diagnostics.status;
+    const diagStatus = diagStatusKey==='success'?'success':diagStatusKey==='error'?'error':'pending';
+    const diagMessage = diagStatusKey==='success'
+      ? 'La diagnostica ha confermato che l\'ambiente è pronto.'
+      : diagStatusKey==='error'
+        ? (diagnostics.message || 'La diagnostica ha rilevato problemi nella toolchain.')
+        : 'Esegui /api/diag per verificare ffmpeg, template e permessi filesystem.';
+    const diagActions = [
+      { label:busy?'Diagnostica in corso…':'Esegui diagnostica', onClick:runDiagnostics, disabled:busy, variant:'primary' },
+    ];
+    if(diagUrl){
+      diagActions.push({ label:'Apri /api/diag', href:diagUrl, variant:'subtle' });
+    }
+
+    const diagLogsPreview = diagnostics.logs?.slice(-3) || [];
+
+    return [
+      {
+        key:'microphone',
+        title:'Permessi microfono',
+        subtitle:'Browser & hardware',
+        icon:Mic,
+        status:micStatus,
+        statusLabel:micStatus==='success'?'OK':micStatus==='error'?'Bloccato':'In attesa',
+        headline:micStatus==='success'?'Microfono pronto alla registrazione':'Consenti l\'accesso al microfono',
+        body:(
+          <>
+            <p>{micMessage}</p>
+            <ul className="mt-3 space-y-1 text-xs text-zinc-200">
+              <li>Permesso attuale: <code className="text-zinc-100">{permission}</code></li>
+              <li>HTTPS / localhost: {secureOK?'✅':'⚠️ richiesto'}</li>
+              <li>getUserMedia: {mediaSupported?'✅ supportato':'⚠️ non disponibile'}</li>
+              <li>MediaRecorder: {recorderSupported?'✅ supportato':'⚠️ non disponibile (usa il caricamento file)'}</li>
+            </ul>
+          </>
+        ),
+        extra:lastMicError?(<div className="text-xs text-rose-200">Ultimo errore: {lastMicError.name}{lastMicError.message?` – ${lastMicError.message}`:''}</div>):null,
+        actions:micActions,
+      },
+      {
+        key:'backend-url',
+        title:'URL backend',
+        subtitle:'Connessione',
+        icon:LinkIcon,
+        status:urlStatus,
+        statusLabel:urlStatus==='success'?'OK':urlStatus==='error'?'Correggi':'In attesa',
+        headline:urlStatus==='success'?'Endpoint configurato':'Configura l\'URL del backend',
+        body:(
+          <>
+            <p>{urlMessage}</p>
+            <div className="mt-3 rounded-lg border border-zinc-700/60 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-300">{backendUrl || '—'}</div>
+          </>
+        ),
+        actions:urlActions,
+      },
+      {
+        key:'health',
+        title:'/api/health',
+        subtitle:'Stato servizio',
+        icon:CheckCircle2,
+        status:healthStatus,
+        statusLabel:healthStatus==='success'?'Online':healthStatus==='error'?'Offline':'In attesa',
+        headline:healthStatus==='success'?'Backend raggiungibile':'Verifica salute del backend',
+        body:(
+          <>
+            <p>{healthMessage}</p>
+            <p className="text-xs text-zinc-300">Ultimo risultato: {backendUp===null?'—':backendUp?'✅ OK':'❌ Offline'}</p>
+          </>
+        ),
+        actions:healthActions,
+      },
+      {
+        key:'diagnostics',
+        title:'/api/diag',
+        subtitle:'Toolchain',
+        icon:Bug,
+        status:diagStatus,
+        statusLabel:diagStatusKey==='running'?'In corso':diagStatus==='success'?'OK':diagStatus==='error'?'Problemi':'In attesa',
+        headline:diagStatus==='success'?'Ambiente validato':'Esegui la diagnostica del backend',
+        body:(
+          <>
+            <p>{diagMessage}</p>
+          </>
+        ),
+        extra:diagLogsPreview.length?(<div className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 p-3 text-xs text-zinc-300 space-y-1">{diagLogsPreview.map((log,index)=>(<div key={index} className="font-mono">{log}</div>))}</div>):null,
+        actions:diagActions,
+      },
+    ];
+  }, [permission, permissionMessage, secureOK, mediaSupported, recorderSupported, lastMicError, requestPermission, refreshDevices, openMicSettings, backendUrl, backendUrlValid, handleBackendDefault, handleBackendSettings, backendUp, checkingHealth, checkHealth, diagnostics.status, diagnostics.message, diagnostics.logs, busy, runDiagnostics, diagUrl]);
+
+  useEffect(() => {
+    if (!onboardingSteps.length) return;
+    if (onboardingSteps.every(step => step.status === 'success')) {
+      setOnboardingComplete(true);
+    }
+  }, [onboardingSteps]);
+
+  useEffect(() => {
+    if (!showOnboarding || !onboardingSteps.length) return;
+    const firstIncomplete = onboardingSteps.findIndex(step => step.status !== 'success');
+    const targetIndex = firstIncomplete === -1 ? onboardingSteps.length - 1 : firstIncomplete;
+    if (targetIndex !== onboardingStep) {
+      setOnboardingStep(targetIndex);
+    }
+  }, [showOnboarding, onboardingSteps, onboardingStep]);
+
+  const openSetupAssistant = useCallback(() => {
+    const firstIncomplete = onboardingSteps.findIndex(step => step.status !== 'success');
+    setOnboardingStep(firstIncomplete === -1 ? onboardingSteps.length - 1 : firstIncomplete);
+    setShowOnboarding(true);
+  }, [onboardingSteps, setOnboardingStep]);
+
+  const handleOnboardingFinish = useCallback(() => {
+    setOnboardingComplete(true);
+    setShowOnboarding(false);
+  }, [setOnboardingComplete, setShowOnboarding]);
 
   const onPickFile=(e)=>{ const f=e.target.files?.[0]; if(!f) return; setAudioBlob(f); setAudioUrl(URL.createObjectURL(f)); setMime(f.type||""); setErrorBanner(null); };
 
@@ -329,6 +528,9 @@ export default function Rec2PdfApp(){
             </span>
             <div className={classNames("flex items-center gap-2 rounded-xl px-3 py-2 border", themes[theme].input)}><LinkIcon className="w-4 h-4 text-zinc-400"/><input value={backendUrl} onChange={e=>setBackendUrl(e.target.value)} placeholder="http://localhost:7788" className="bg-transparent outline-none text-sm w-[220px]"/></div>
             <button onClick={runDiagnostics} className={classNames("px-3 py-2 rounded-xl text-sm flex items-center gap-2 border", themes[theme].input, themes[theme].input_hover)}><Bug className="w-4 h-4"/> Diagnostica</button>
+            <button onClick={openSetupAssistant} className={classNames("px-3 py-2 rounded-xl text-sm flex items-center gap-2 border shadow-sm", themes[theme].button)}>
+              <Sparkles className="w-4 h-4"/> Setup assistant
+            </button>
             <button onClick={() => setShowSettings(!showSettings)} className={classNames("p-2 rounded-xl text-sm border", themes[theme].input, themes[theme].input_hover)}>
               <Settings className="w-4 h-4"/>
             </button>
@@ -344,7 +546,7 @@ export default function Rec2PdfApp(){
           <div className={classNames("md:col-span-2 rounded-2xl p-6 shadow-lg border", themes[theme].card)}>
             <div className="flex items-center justify-between"><h2 className="text-xl font-medium flex items-center gap-2"><Mic className="w-5 h-5"/> Registrazione</h2><div className="text-sm text-zinc-400 flex items-center gap-2"><TimerIcon className="w-4 h-4"/> {fmtTime(elapsed)}</div></div>
             <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-              <button onClick={requestMic} className={classNames("px-4 py-2 rounded-xl text-sm border", themes[theme].button)}>Concedi microfono</button>
+              <button onClick={requestPermission} className={classNames("px-4 py-2 rounded-xl text-sm border", themes[theme].button)}>Concedi microfono</button>
               <div className="text-sm text-zinc-400">Permesso: <span className="font-mono">{permission}</span></div>
               <button onClick={refreshDevices} className={classNames("px-3 py-2 rounded-xl text-sm flex items-center gap-2 border", themes[theme].button)}><RefreshCw className="w-4 h-4"/> Dispositivi</button>
             </div>
@@ -389,8 +591,20 @@ export default function Rec2PdfApp(){
             <div className={classNames("rounded-2xl p-5 shadow-lg border", themes[theme].card)}><h3 className="text-lg font-medium flex items-center gap-2"><Cpu className="w-4 h-4"/> Log</h3><div className={classNames("mt-3 h-56 overflow-auto rounded-lg p-3 font-mono text-xs text-zinc-300 border", themes[theme].log)}>{logs?.length?logs.map((ln,i)=>(<div key={i} className="whitespace-pre-wrap leading-relaxed">{ln}</div>)):<div className="text-zinc-500">Nessun log ancora.</div>}</div></div>
           </div>
         </div>
-        <div className="mt-10 text-xs text-zinc-500"><p>Assicurati che il backend sia attivo su http://localhost:7788 e che ffmpeg e la toolchain siano configurati nella shell di esecuzione.</p></div>
+        {!onboardingComplete && (
+          <div className="mt-10 text-xs text-zinc-500">
+            <p>Assicurati che il backend sia attivo su http://localhost:7788 e che ffmpeg e la toolchain siano configurati nella shell di esecuzione.</p>
+          </div>
+        )}
       </div>
+      <SetupAssistant
+        isOpen={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
+        steps={onboardingSteps}
+        currentStep={onboardingStep}
+        onStepChange={setOnboardingStep}
+        onFinish={handleOnboardingFinish}
+      />
     </div>
   );
 }
