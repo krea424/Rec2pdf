@@ -1,9 +1,12 @@
 import React from "react";
-
-import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Info, XCircle } from "./icons";
-
-import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Info, XCircle } from "lucide-react";
-
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  XCircle,
+} from "lucide-react";
 import { classNames } from "../utils/classNames";
 
 const statusStyles = {
@@ -13,9 +16,9 @@ const statusStyles = {
 };
 
 const statusIcons = {
-  success: <CheckCircle2 className="w-4 h-4" />, 
-  error: <AlertCircle className="w-4 h-4" />, 
-  pending: <Info className="w-4 h-4" />, 
+  success: <CheckCircle2 className="w-4 h-4" />,
+  error: <AlertCircle className="w-4 h-4" />,
+  pending: <Info className="w-4 h-4" />,
 };
 
 function StatusBadge({ status, label }) {
@@ -53,7 +56,7 @@ function ActionButton({ action }) {
     );
   }
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className={classNames(className, disabled && "opacity-50 cursor-not-allowed")}> 
+    <button type="button" onClick={onClick} disabled={disabled} className={classNames(className, disabled && "opacity-50 cursor-not-allowed")}>
       {label}
     </button>
   );
