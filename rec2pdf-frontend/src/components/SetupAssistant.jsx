@@ -1,12 +1,12 @@
 import React from "react";
 import {
-  AlertCircle as AlertIcon,
-  CheckCircle2 as CheckIcon,
+  AlertCircle,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Info as InfoIcon,
-  XCircle as CloseIcon,
-} from "./icons";
+  Info,
+  XCircle,
+} from "lucide-react";
 import { classNames } from "../utils/classNames";
 
 const statusStyles = {
@@ -16,9 +16,9 @@ const statusStyles = {
 };
 
 const statusIcons = {
-  success: <CheckIcon className="w-4 h-4" />,
-  error: <AlertIcon className="w-4 h-4" />,
-  pending: <InfoIcon className="w-4 h-4" />,
+  success: <CheckCircle2 className="w-4 h-4" />,
+  error: <AlertCircle className="w-4 h-4" />,
+  pending: <Info className="w-4 h-4" />,
 };
 
 function StatusBadge({ status, label }) {
@@ -56,7 +56,7 @@ function ActionButton({ action }) {
     );
   }
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className={classNames(className, disabled && "opacity-50 cursor-not-allowed")}> 
+    <button type="button" onClick={onClick} disabled={disabled} className={classNames(className, disabled && "opacity-50 cursor-not-allowed")}>
       {label}
     </button>
   );
@@ -74,7 +74,7 @@ export default function SetupAssistant({
     return null;
   }
   const step = steps[currentStep] ?? steps[0];
-  const StepIcon = step.icon ?? InfoIcon;
+  const StepIcon = step.icon ?? Info;
   const isLastStep = currentStep === steps.length - 1;
   const canContinue = step.status === "success";
 
@@ -95,14 +95,14 @@ export default function SetupAssistant({
             className="rounded-full p-2 text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-100"
             aria-label="Chiudi assistente"
           >
-            <CloseIcon className="h-5 w-5" />
+            <XCircle className="h-5 w-5" />
           </button>
         </div>
         <div className="flex flex-col md:flex-row">
           <div className="border-b border-zinc-800 md:w-64 md:border-b-0 md:border-r">
             <nav className="flex flex-col">
               {steps.map((item, index) => {
-                const Icon = item.icon ?? InfoIcon;
+                const Icon = item.icon ?? Info;
                 const active = index === currentStep;
                 return (
                   <button
