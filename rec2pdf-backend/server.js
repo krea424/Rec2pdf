@@ -24,8 +24,13 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 1024*1024*1024 } });
 
 const run = (cmd, args = [], opts = {}) => new Promise((resolve) => {
-  const child = execFile(cmd, args, { maxBuffer: 10*1024*1024, ...opts }, (error, stdout, stderr) => {
-    resolve({ code: error ? (error.code ?? 1) : 0, stdout: stdout?.toString?.() || '', stderr: stderr?.toString?.() || '' });
+  execFile(cmd, args, { maxBuffer: 10 * 1024 * 1024, ...opts }, (error, stdout, stderr) => {
+    resolve({
+      code: error ? (error.code ?? 1) : 0,
+      stdout: stdout?.toString?.() || '',
+      stderr: stderr?.toString?.() || '',
+      error,
+    });
   });
 });
 
@@ -43,14 +48,36 @@ const yyyymmddHHMMSS = (d = new Date()) => {
 
 const ensureDir = async (dir) => { await fsp.mkdir(dir, { recursive: true }); return dir; };
 
+const ensureWritableDirectory = async (dir) => {
+  try {
+    await ensureDir(dir);
+    const probeName = `.rec2pdf_write_probe_${process.pid}_${Date.now()}`;
+    const probePath = path.join(dir, probeName);
+    await fsp.writeFile(probePath, 'ok');
+    await fsp.unlink(probePath);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error };
+  }
+};
+
+const commandVersion = async (cmd) => {
+  const check = await run(cmd, ['--version']);
+  if (check.code === 0) {
+    const firstLine = check.stdout.split('\n')[0] || cmd;
+    return { ok: true, detail: firstLine };
+  }
+  return { ok: false, detail: check.stderr || check.stdout || '' };
+};
+
 app.get('/api/health', (req, res) => { res.json({ ok: true, ts: Date.now() }); });
 
 app.get('/api/diag', async (req, res) => {
   const logs = [];
   const out = (s) => { logs.push(s); };
   try {
-    const ff = await run('ffmpeg', ['-version']);
-    out(ff.code === 0 ? `✅ ffmpeg: ${ff.stdout.split('\n')[0]}` : `❌ ffmpeg non trovato`);
+    const ff = await commandVersion('ffmpeg');
+    out(ff.ok ? `✅ ffmpeg: ${ff.detail}` : '❌ ffmpeg non trovato');
   } catch { out('❌ ffmpeg non eseguibile'); }
 
   try {
@@ -70,8 +97,19 @@ app.get('/api/diag', async (req, res) => {
 
   try {
     const ppub = await zsh('command -v ppubr >/dev/null || command -v PPUBR >/dev/null && echo OK || echo NO');
-    out(ppub.stdout.includes('OK') ? '✅ ppubr/PPUBR: disponibile' : '❌ ppubr/PPUBR non trovato');
+    out(ppub.stdout.includes('OK') ? `✅ ppubr/PPUBR: disponibile` : '❌ ppubr/PPUBR non trovato');
   } catch { out('❌ ppubr non disponibile'); }
+
+  try {
+    const pandoc = await zsh('command -v pandocPDF >/dev/null && echo pandocPDF || command -v pandoc >/dev/null && echo pandoc || echo NO');
+    out(/pandoc/i.test(pandoc.stdout) ? `✅ pandoc: ${pandoc.stdout.trim()}` : '⚠️ pandoc non trovato');
+  } catch { out('⚠️ pandoc non disponibile'); }
+
+  try {
+    const defaultDest = path.join(os.homedir(), 'Recordings');
+    const writable = await ensureWritableDirectory(defaultDest);
+    out(writable.ok ? `✅ Permessi scrittura OK su ${defaultDest}` : `❌ Permessi scrittura insufficienti su ${defaultDest}`);
+  } catch { out('⚠️ Impossibile verificare permessi di scrittura'); }
 
   const ok = logs.some(l=>l.startsWith('✅ ffmpeg')) && logs.some(l=>/whisper: trovato/.test(l));
   res.json({ ok, logs });
@@ -116,6 +154,13 @@ app.post('/api/rec2pdf', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 
     let dest = (req.body.dest || '').trim();
     if (!dest || /tuo_utente/.test(dest)) { dest = path.join(userHome, 'Recordings'); }
     await ensureDir(dest);
+    const destWritable = await ensureWritableDirectory(dest);
+    if (!destWritable.ok) {
+      const reason = destWritable.error?.message || 'Permessi insufficienti';
+      out(`❌ Cartella non scrivibile: ${reason}`, 'upload', 'failed');
+      logStageEvent('upload', 'failed', `Cartella non scrivibile: ${reason}`);
+      return res.status(400).json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`, logs, stageEvents });
+    }
 
     const inPath = req.files.audio[0].path;
     const baseName = `${ts}_${slug}`;
@@ -165,7 +210,10 @@ app.post('/api/rec2pdf', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 
     }
     const zshOpts = customLogoPath ? { env: { ...process.env, CUSTOM_PDF_LOGO: customLogoPath } } : {};
     const pb = await zsh(`cd ${JSON.stringify(dest)}; (command -v PPUBR && PPUBR ${JSON.stringify(mdFile)}) || (command -v ppubr && ppubr ${JSON.stringify(mdFile)})`, zshOpts);
-    if (pb.code !== 0) { out(pb.stderr || pb.stdout || 'PPUBR failed', 'publish', 'info'); /* non interrompiamo: proviamo pandoc */ }
+    if (pb.code !== 0) {
+      out(pb.stderr || pb.stdout || 'PPUBR failed', 'publish', 'warning');
+      out('Tentativo fallback pandoc…', 'publish', 'info');
+    }
 
     const pdfPath = path.join(dest, `documento_${baseName}.pdf`);
     if (!fs.existsSync(pdfPath)) {
@@ -174,6 +222,7 @@ app.post('/api/rec2pdf', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 
         out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
         throw new Error('Generazione PDF fallita');
       }
+      out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
     }
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
@@ -299,6 +348,13 @@ app.post('/api/ppubr-upload', upload.fields([{ name: 'markdown', maxCount: 1 }, 
     let dest = String(req.body?.dest || '').trim();
     if (!dest || /tuo_utente/.test(dest)) { dest = path.join(os.homedir(), 'Recordings'); }
     await ensureDir(dest);
+    const destWritable = await ensureWritableDirectory(dest);
+    if (!destWritable.ok) {
+      const reason = destWritable.error?.message || 'Cartella non scrivibile';
+      out(`❌ Cartella non scrivibile: ${reason}`, 'upload', 'failed');
+      logStageEvent('upload', 'failed', reason);
+      return res.status(400).json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`.trim(), logs, stageEvents });
+    }
 
     const baseName = `${ts}_${slug}`;
     const mdPath = path.join(dest, `${baseName}.md`);
@@ -322,7 +378,8 @@ app.post('/api/ppubr-upload', upload.fields([{ name: 'markdown', maxCount: 1 }, 
       zshOpts
     );
     if (pb.code !== 0) {
-      out(pb.stderr || pb.stdout || 'PPUBR failed', 'publish', 'info');
+      out(pb.stderr || pb.stdout || 'PPUBR failed', 'publish', 'warning');
+      out('Tentativo fallback pandoc…', 'publish', 'info');
     }
 
     const pdfPath = path.join(dest, `${baseName}.pdf`);
@@ -337,6 +394,7 @@ app.post('/api/ppubr-upload', upload.fields([{ name: 'markdown', maxCount: 1 }, 
         out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
         throw new Error('Generazione PDF fallita');
       }
+      out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
     }
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
@@ -428,6 +486,13 @@ app.get('/api/file', async (req, res) => {
   if (!fs.existsSync(abs)) return res.status(404).json({ ok: false, message: 'File non trovato' });
   res.setHeader('Content-Disposition', 'inline');
   return res.sendFile(abs);
+});
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ ok: false, message: `Endpoint ${req.method} ${req.path} non disponibile sul backend.` });
+  }
+  return next();
 });
 
 app.listen(PORT, () => {

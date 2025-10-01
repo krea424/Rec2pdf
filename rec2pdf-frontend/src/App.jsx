@@ -569,20 +569,28 @@ export default function Rec2PdfApp(){
       if(slugValue){
         fd.append('slug',slugValue);
       }
-      const {ok,status,data,raw}=await fetchBody(`${backendUrl}/api/ppubr-upload`,{method:'POST',body:fd});
+      const {ok,status,data,raw,contentType}=await fetchBody(`${backendUrl}/api/ppubr-upload`,{method:'POST',body:fd});
       const stageEventsPayload=Array.isArray(data?.stageEvents)?data.stageEvents:[];
       if(!ok){
         if(stageEventsPayload.length){
           handlePipelineEvents(stageEventsPayload,{animate:false});
         }else{
-          const fallbackMessage=data?.message||(raw?raw.slice(0,200):status===0?'Connessione fallita/CORS':'Errore backend');
+          let fallbackMessage=data?.message||(raw?raw.slice(0,200):status===0?'Connessione fallita/CORS':'Errore backend');
+          if(status===404&&(raw.includes('Endpoint')||raw.includes('Cannot POST'))){
+            fallbackMessage='Endpoint /api/ppubr-upload non disponibile sul backend. Riavvia o aggiorna il server.';
+          }
           handlePipelineEvents([
             {stage:'publish',status:'failed',message:fallbackMessage},
             {stage:'complete',status:'failed',message:'Pipeline interrotta'},
           ],{animate:false});
         }
         if(data?.logs?.length) appendLogs(data.logs);
-        const message=data?.message||(raw?raw.slice(0,200):status===0?'Connessione fallita/CORS':'Errore backend');
+        let message=data?.message||(raw?raw.slice(0,200):status===0?'Connessione fallita/CORS':'Errore backend');
+        if(status===404&&(raw.includes('Endpoint')||raw.includes('Cannot POST'))){
+          message='Endpoint /api/ppubr-upload non disponibile sul backend. Riavvia o aggiorna il server.';
+        } else if(status===404&&!contentType?.includes('application/json')){
+          message='Risposta non valida dal backend (HTML/404). Controlla la versione del server.';
+        }
         appendLogs([`❌ ${message}`]);
         setErrorBanner({title:'Impaginazione fallita',details:message});
         return;
@@ -1692,6 +1700,9 @@ export default function Rec2PdfApp(){
         busy={busy}
         themeStyles={themes[theme]}
       />
+    </div>
+  );
+}
     </div>
   );
 }
