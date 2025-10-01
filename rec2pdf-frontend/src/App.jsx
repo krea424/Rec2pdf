@@ -231,6 +231,7 @@ export default function Rec2PdfApp(){
   const [showSettings, setShowSettings] = useState(false);
   const [customLogo, setCustomLogo] = useState(null);
   const [customPdfLogo, setCustomPdfLogo] = useState(null);
+  const [lastMarkdownUpload,setLastMarkdownUpload]=useState(null);
   const [history, setHistory] = useState(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -288,6 +289,7 @@ export default function Rec2PdfApp(){
   const sourceRef=useRef(null);
   const streamRef=useRef(null);
   const fileInputRef=useRef(null);
+  const markdownInputRef=useRef(null);
   const stageAnimationTimeoutsRef = useRef([]);
 
   useEffect(()=>{
@@ -421,7 +423,7 @@ export default function Rec2PdfApp(){
 
   const stopRecording=()=>{ const rec=mediaRecorderRef.current; if(rec&&rec.state!=="inactive") rec.stop(); setRecording(false); };
   useEffect(()=>{ if(recording&&secondsCap&&elapsed>=secondsCap) stopRecording(); },[recording,secondsCap,elapsed]);
-  const resetAll=()=>{ setAudioBlob(null); setAudioUrl(""); setMime(""); setElapsed(0); setLogs([]); setPdfPath(""); setMdPath(""); setPermissionMessage(""); setErrorBanner(null); resetPipelineProgress(false); setShowRawLogs(false); };
+  const resetAll=()=>{ setAudioBlob(null); setAudioUrl(""); setMime(""); setElapsed(0); setLogs([]); setPdfPath(""); setMdPath(""); setPermissionMessage(""); setErrorBanner(null); resetPipelineProgress(false); setShowRawLogs(false); setLastMarkdownUpload(null); };
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
 
@@ -527,6 +529,148 @@ export default function Rec2PdfApp(){
     } finally{
       setBusy(false);
     }
+  };
+
+  const processMarkdownUpload=async(file)=>{
+    if(!file) return;
+    if(!backendUrl){
+      setErrorBanner({title:'Backend URL mancante',details:'Imposta http://localhost:7788 o il tuo endpoint.'});
+      return;
+    }
+    resetPipelineProgress(true);
+    setShowRawLogs(false);
+    setBusy(true);
+    setLogs([]);
+    setPdfPath("");
+    setMdPath("");
+    setErrorBanner(null);
+    const sessionLogs=[];
+    const appendLogs=(entries)=>{
+      const sanitized=(entries||[]).filter(Boolean);
+      if(!sanitized.length) return;
+      sessionLogs.push(...sanitized);
+      setLogs(ls=>ls.concat(sanitized));
+    };
+    const isPlaceholder=!destDir.trim()||destDir.includes('tuo_utente');
+    if(isPlaceholder){
+      appendLogs(["ℹ️ Cartella destinazione non specificata o segnaposto: il backend userà la sua cartella predefinita."]); 
+    }
+    appendLogs([`🚀 Avvio impaginazione da Markdown: ${file.name}`]);
+    try{
+      const fd=new FormData();
+      fd.append('markdown',file,file.name);
+      if(customPdfLogo){
+        fd.append('pdfLogo',customPdfLogo);
+      }
+      if(!isPlaceholder){
+        fd.append('dest',destDir);
+      }
+      const slugValue=(slug||file.name.replace(/\.[^.]+$/i,'')||'documento').trim();
+      if(slugValue){
+        fd.append('slug',slugValue);
+      }
+      const {ok,status,data,raw,contentType}=await fetchBody(`${backendUrl}/api/ppubr-upload`,{method:'POST',body:fd});
+      const stageEventsPayload=Array.isArray(data?.stageEvents)?data.stageEvents:[];
+      if(!ok){
+        if(stageEventsPayload.length){
+          handlePipelineEvents(stageEventsPayload,{animate:false});
+        }else{
+          let fallbackMessage=data?.message||(raw?raw.slice(0,200):status===0?'Connessione fallita/CORS':'Errore backend');
+          if(status===404&&(raw.includes('Endpoint')||raw.includes('Cannot POST'))){
+            fallbackMessage='Endpoint /api/ppubr-upload non disponibile sul backend. Riavvia o aggiorna il server.';
+          }
+          handlePipelineEvents([
+            {stage:'publish',status:'failed',message:fallbackMessage},
+            {stage:'complete',status:'failed',message:'Pipeline interrotta'},
+          ],{animate:false});
+        }
+        if(data?.logs?.length) appendLogs(data.logs);
+        let message=data?.message||(raw?raw.slice(0,200):status===0?'Connessione fallita/CORS':'Errore backend');
+        if(status===404&&(raw.includes('Endpoint')||raw.includes('Cannot POST'))){
+          message='Endpoint /api/ppubr-upload non disponibile sul backend. Riavvia o aggiorna il server.';
+        } else if(status===404&&!contentType?.includes('application/json')){
+          message='Risposta non valida dal backend (HTML/404). Controlla la versione del server.';
+        }
+        appendLogs([`❌ ${message}`]);
+        setErrorBanner({title:'Impaginazione fallita',details:message});
+        return;
+      }
+      const successEvents=stageEventsPayload.length?stageEventsPayload:[
+        {stage:'upload',status:'completed',message:'Markdown caricato manualmente.'},
+        {stage:'transcode',status:'completed',message:'Step non necessario.'},
+        {stage:'transcribe',status:'completed',message:'Trascrizione non richiesta.'},
+        {stage:'markdown',status:'completed',message:'Markdown fornito.'},
+        {stage:'publish',status:'completed',message:'PPUBR completato.'},
+        {stage:'complete',status:'completed',message:'Pipeline conclusa.'},
+      ];
+      handlePipelineEvents(successEvents,{animate:true});
+      if(data?.logs?.length) appendLogs(data.logs);
+      if(data?.pdfPath){
+        setPdfPath(data.pdfPath);
+        setMdPath(data?.mdPath||"");
+        appendLogs([`✅ PDF generato: ${data.pdfPath}`]);
+        const normalizedBackend=normalizeBackendUrlValue(backendUrl||'');
+        const pdfUrl=buildFileUrl(normalizedBackend,data.pdfPath);
+        const mdUrl=buildFileUrl(normalizedBackend,data?.mdPath||'');
+        const logosUsed={
+          frontend:customLogo?'custom':'default',
+          pdf:customPdfLogo?(customPdfLogo.name||'custom'):'default',
+        };
+        const historyEntry=hydrateHistoryEntry({
+          id:Date.now(),
+          timestamp:new Date().toISOString(),
+          slug:slugValue||'documento',
+          title:slugValue||file.name,
+          duration:null,
+          pdfPath:data.pdfPath,
+          pdfUrl,
+          mdPath:data?.mdPath||'',
+          mdUrl,
+          backendUrl:normalizedBackend,
+          logos:logosUsed,
+          tags:[],
+          logs:sessionLogs,
+          stageEvents:successEvents,
+          source:'markdown-upload',
+          bytes:file.size||null,
+        });
+        setHistory(prev=>{
+          const next=[historyEntry,...prev];
+          return next.slice(0,HISTORY_LIMIT);
+        });
+        setActivePanel('doc');
+        appendLogs([`💾 Sessione Markdown salvata nella Libreria (${historyEntry.title}).`]);
+      }else{
+        appendLogs(['⚠️ Risposta backend senza percorso PDF.']);
+      }
+    }catch(err){
+      const message=err?.message||String(err);
+      appendLogs([`❌ ${message}`]);
+      handlePipelineEvents([
+        {stage:'publish',status:'failed',message},
+        {stage:'complete',status:'failed',message:'Pipeline interrotta'},
+      ],{animate:false});
+      setErrorBanner({title:'Impaginazione fallita',details:message});
+    }finally{
+      setBusy(false);
+      if(markdownInputRef.current){
+        markdownInputRef.current.value='';
+      }
+    }
+  };
+
+  const handleMarkdownFilePicked=(event)=>{
+    const file=event.target?.files?.[0];
+    if(!file) return;
+    if(!/\.md$/i.test(file.name)){
+      setErrorBanner({title:'Formato non supportato',details:'Seleziona un file con estensione .md'});
+      if(markdownInputRef.current){
+        markdownInputRef.current.value='';
+      }
+      return;
+    }
+    setLastMarkdownUpload({name:file.name,size:file.size,ts:Date.now()});
+    processMarkdownUpload(file);
   };
 
   const runDiagnostics=useCallback(async()=>{ setBusy(true); setLogs([]); setErrorBanner(null); try{ const {ok,status,data,raw}=await runBackendDiagnostics(); if(data?.logs?.length) pushLogs(data.logs); if(!ok){ pushLogs([`❌ Diagnostica fallita (HTTP ${status||'0'})`]); if(!data&&raw) pushLogs([raw.slice(0,400)]); setErrorBanner({title:`Diagnostica fallita (HTTP ${status||'0'})`,details:data?.message||raw||'Errore rete/CORS'}); setBackendUp(false); } else { pushLogs([data?.ok?'✅ Ambiente OK':'❌ Ambiente con problemi']); } } finally{ setBusy(false); } },[pushLogs, runBackendDiagnostics, setBackendUp]);
@@ -1294,6 +1438,24 @@ export default function Rec2PdfApp(){
               <div className="flex items-center gap-2 text-sm text-zinc-400"><Upload className="w-4 h-4"/> Carica un file audio (fallback)</div>
               <div className="mt-2 flex items-center gap-2"><input ref={fileInputRef} type="file" accept="audio/*" onChange={onPickFile} className="text-sm"/><button onClick={()=>processViaBackend(audioBlob)} disabled={!audioBlob||busy||backendUp===false} className={classNames("px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm",(!audioBlob||busy||backendUp===false)&&"opacity-60 cursor-not-allowed")}>Invia</button></div>
               <div className="text-xs text-zinc-500 mt-1">Supporta formati comuni (webm/ogg/m4a/wav). Verrà convertito in WAV lato server.</div>
+            </div>
+            <div className={classNames("rounded-xl p-4 border", themes[theme].input)}>
+              <div className="flex items-center gap-2 text-sm text-zinc-400"><FileText className="w-4 h-4"/> Carica un Markdown pronto</div>
+              <p className="text-xs text-zinc-500 mt-1">Se hai già un documento .md verrà impaginato subito con PPUBR.</p>
+              <div className="mt-3 flex items-center gap-2 flex-wrap">
+                <input ref={markdownInputRef} type="file" accept=".md,text/markdown" onChange={handleMarkdownFilePicked} className="hidden" disabled={busy}/>
+                <button onClick={()=>markdownInputRef.current?.click()} className={classNames("px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2", themes[theme].button, busy&&"opacity-60 cursor-not-allowed")} disabled={busy}>
+                  <Upload className="w-4 h-4"/>
+                  Seleziona Markdown
+                </button>
+                {lastMarkdownUpload&&(
+                  <div className="text-xs text-zinc-500 flex items-center gap-2">
+                    <span className="truncate max-w-[180px]" title={lastMarkdownUpload.name}>{lastMarkdownUpload.name}</span>
+                    <span>· {fmtBytes(lastMarkdownUpload.size)}</span>
+                  </div>
+                )}
+              </div>
+              <div className="text-xs text-zinc-500 mt-2">Supporta solo file .md. L'impaginazione usa PPUBR con fallback Pandoc.</div>
             </div>
           </div>
           <div className="md:col-span-1 flex flex-col gap-6">
