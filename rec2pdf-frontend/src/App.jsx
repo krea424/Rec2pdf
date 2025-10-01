@@ -6,9 +6,12 @@ import { useMicrophoneAccess } from "./hooks/useMicrophoneAccess";
 import { useBackendDiagnostics } from "./hooks/useBackendDiagnostics";
 import { classNames } from "./utils/classNames";
 import { pickBestMime } from "./utils/media";
+import LibraryPanel from "./components/LibraryPanel";
 
 const fmtBytes = (bytes) => { if (!bytes && bytes !== 0) return "—"; const u=["B","KB","MB","GB"]; let i=0,v=bytes; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(v<10&&i>0?1:0)} ${u[i]}`; };
 const fmtTime = (s) => { const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const sec=Math.floor(s%60); return [h,m,sec].map(n=>String(n).padStart(2,'0')).join(":"); };
+const HISTORY_STORAGE_KEY = 'rec2pdfHistory';
+const HISTORY_LIMIT = 100;
 
 const themes = {
   zinc: {
@@ -51,12 +54,33 @@ export default function Rec2PdfApp(){
   const [busy,setBusy]=useState(false);
   const [logs,setLogs]=useState([]);
   const [pdfPath,setPdfPath]=useState("");
+  const [mdPath, setMdPath] = useState("");
   const [errorBanner,setErrorBanner]=useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'zinc');
   const [showDestDetails,setShowDestDetails]=useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [customLogo, setCustomLogo] = useState(null);
   const [customPdfLogo, setCustomPdfLogo] = useState(null);
+  const [history, setHistory] = useState(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((entry) => ({
+        ...entry,
+        tags: Array.isArray(entry?.tags) ? entry.tags : [],
+        logs: Array.isArray(entry?.logs) ? entry.logs : [],
+        mdPath: entry?.mdPath || "",
+        mdUrl: entry?.mdUrl || "",
+      }));
+    } catch {
+      return [];
+    }
+  });
+  const [historyFilter, setHistoryFilter] = useState('');
+  const [activePanel, setActivePanel] = useState('doc');
   const {
     secureOK,
     mediaSupported,
@@ -115,6 +139,15 @@ export default function Rec2PdfApp(){
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+    } catch {
+      // ignore persistence errors (quota, privacy modes, ...)
+    }
+  }, [history]);
+
   useEffect(()=>{ checkHealth(); },[backendUrl,busy,checkHealth]);
   useEffect(()=>{ if(!recording) return; const id=setInterval(()=>setElapsed(Math.floor((Date.now()-startAtRef.current)/1000)),333); return()=>clearInterval(id); },[recording]);
 
@@ -125,7 +158,7 @@ export default function Rec2PdfApp(){
 
   const stopRecording=()=>{ const rec=mediaRecorderRef.current; if(rec&&rec.state!=="inactive") rec.stop(); setRecording(false); };
   useEffect(()=>{ if(recording&&secondsCap&&elapsed>=secondsCap) stopRecording(); },[recording,secondsCap,elapsed]);
-  const resetAll=()=>{ setAudioBlob(null); setAudioUrl(""); setMime(""); setElapsed(0); setLogs([]); setPdfPath(""); setPermissionMessage(""); setErrorBanner(null); };
+  const resetAll=()=>{ setAudioBlob(null); setAudioUrl(""); setMime(""); setElapsed(0); setLogs([]); setPdfPath(""); setMdPath(""); setPermissionMessage(""); setErrorBanner(null); };
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
 
@@ -139,7 +172,17 @@ export default function Rec2PdfApp(){
     setBusy(true);
     setLogs([]);
     setPdfPath("");
+    setMdPath("");
     setErrorBanner(null);
+    const runStartedAt=new Date();
+    const durationSeconds=Number.isFinite(elapsed)?elapsed:null;
+    const sessionLogs=[];
+    const appendLogs=(entries)=>{
+      const sanitized=(entries||[]).filter(Boolean);
+      if(!sanitized.length) return;
+      sessionLogs.push(...sanitized);
+      setLogs(ls=>ls.concat(sanitized));
+    };
     try{
       const fd=new FormData();
       const m=(mime||blob.type||"").toLowerCase();
@@ -148,27 +191,60 @@ export default function Rec2PdfApp(){
       if (customPdfLogo) {
         fd.append('pdfLogo', customPdfLogo);
       }
-      const isPlaceholder = !destDir.trim() || destDir.includes('tuo_utente');
+      const isPlaceholder=!destDir.trim()||destDir.includes('tuo_utente');
       if (!isPlaceholder) {
         fd.append('dest',destDir);
       } else {
-        pushLogs(["ℹ️ Cartella destinazione non specificata o segnaposto: il backend userà la sua cartella predefinita."]);
+        appendLogs(["ℹ️ Cartella destinazione non specificata o segnaposto: il backend userà la sua cartella predefinita."]);
       }
       fd.append('slug',slug||'meeting');
       const cap=Number(secondsCap||0);
       if(cap>0) fd.append('seconds',String(cap));
       const {ok,status,data,raw}=await fetchBody(`${backendUrl}/api/rec2pdf`,{method:'POST',body:fd});
       if(!ok){
-        if(data?.logs?.length) pushLogs(data.logs);
-        if(data?.message) pushLogs([`❌ ${data.message}`]);
-        if(!data&&raw) pushLogs([`❌ Risposta server: ${raw.slice(0,400)}${raw.length>400?'…':''}`]);
-        pushLogs([`Errore backend: HTTP ${status||'0 (rete)'}`]);
+        if(data?.logs?.length) appendLogs(data.logs);
+        if(data?.message) appendLogs([`❌ ${data.message}`]);
+        if(!data&&raw) appendLogs([`❌ Risposta server: ${raw.slice(0,400)}${raw.length>400?'…':''}`]);
+        appendLogs([`Errore backend: HTTP ${status||'0 (rete)'}`]);
         setErrorBanner({title:`Errore backend (HTTP ${status||'0'})`,details:data?.message||(raw?raw.slice(0,400):(status===0?'Connessione fallita/CORS':'Errore sconosciuto'))});
         return;
       }
-      if(data?.logs) pushLogs(data.logs);
-      if(data?.pdfPath) setPdfPath(data.pdfPath);
-      else pushLogs(["⚠️ Risposta senza pdfPath."]);
+      if(data?.logs) appendLogs(data.logs);
+      if(data?.pdfPath){
+        setPdfPath(data.pdfPath);
+        setMdPath(data.mdPath || "");
+        const normalizedBackend=(backendUrl||'').endsWith('/')?(backendUrl||'').slice(0,-1):(backendUrl||'');
+        const pdfUrl=normalizedBackend?`${normalizedBackend}/api/file?path=${encodeURIComponent(data.pdfPath)}`:'';
+        const mdUrl=data?.mdPath&&normalizedBackend?`${normalizedBackend}/api/file?path=${encodeURIComponent(data.mdPath)}`:'';
+        const logosUsed={
+          frontend: customLogo?'custom':'default',
+          pdf: customPdfLogo?(customPdfLogo.name||'custom'):'default',
+        };
+        const historyEntry={
+          id:Date.now(),
+          timestamp:runStartedAt.toISOString(),
+          slug:slug||'meeting',
+          title:slug||'Sessione',
+          duration:durationSeconds,
+          pdfPath:data.pdfPath,
+          pdfUrl,
+          mdPath:data?.mdPath||'',
+          mdUrl,
+          backendUrl:normalizedBackend,
+          logos:logosUsed,
+          tags:[],
+          logs:sessionLogs,
+          source:customBlob?'upload':'recording',
+          bytes:blob.size||null,
+        };
+        setHistory(prev=>{
+          const next=[historyEntry,...prev];
+          return next.slice(0,HISTORY_LIMIT);
+        });
+        appendLogs([`💾 Sessione salvata nella Libreria (${historyEntry.title}).`]);
+      } else {
+        appendLogs(["⚠️ Risposta senza pdfPath."]);
+      }
     } finally{
       setBusy(false);
     }
@@ -394,6 +470,147 @@ export default function Rec2PdfApp(){
     }
   };
 
+  const normalizedBackendUrl = useMemo(() => {
+    if (!backendUrl) return '';
+    return backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl;
+  }, [backendUrl]);
+
+  const pdfDownloadUrl = useMemo(() => {
+    if (!pdfPath || !normalizedBackendUrl) return '';
+    return `${normalizedBackendUrl}/api/file?path=${encodeURIComponent(pdfPath)}`;
+  }, [pdfPath, normalizedBackendUrl]);
+
+  const mdDownloadUrl = useMemo(() => {
+    if (!mdPath || !normalizedBackendUrl) return '';
+    return `${normalizedBackendUrl}/api/file?path=${encodeURIComponent(mdPath)}`;
+  }, [mdPath, normalizedBackendUrl]);
+
+  const handleOpenHistoryPdf = useCallback((entry) => {
+    if (!entry?.pdfPath) return;
+    if (typeof window === 'undefined') return;
+    const directUrl = entry.pdfUrl && entry.pdfUrl.startsWith('http') ? entry.pdfUrl : '';
+    const fallbackBackend = entry.backendUrl || normalizedBackendUrl;
+    const target = directUrl || (fallbackBackend ? `${fallbackBackend.endsWith('/') ? fallbackBackend.slice(0, -1) : fallbackBackend}/api/file?path=${encodeURIComponent(entry.pdfPath)}` : '');
+    if (!target) return;
+    window.open(target, '_blank', 'noopener,noreferrer');
+  }, [normalizedBackendUrl]);
+
+  const handleOpenHistoryMd = useCallback((entry) => {
+    if (!entry?.mdPath) return;
+    if (typeof window === 'undefined') return;
+    const directUrl = entry.mdUrl && entry.mdUrl.startsWith('http') ? entry.mdUrl : '';
+    const fallbackBackend = entry.backendUrl || normalizedBackendUrl;
+    const target = directUrl || (fallbackBackend ? `${fallbackBackend.endsWith('/') ? fallbackBackend.slice(0, -1) : fallbackBackend}/api/file?path=${encodeURIComponent(entry.mdPath)}` : '');
+    if (!target) return;
+    window.open(target, '_blank', 'noopener,noreferrer');
+  }, [normalizedBackendUrl]);
+
+  const handleRepublishFromMd = useCallback(async (entry) => {
+    if (!entry?.mdPath) return;
+    if (busy) {
+      pushLogs(['⚠️ Attendere il termine della pipeline corrente prima di rigenerare il PDF.']);
+      return;
+    }
+
+    const backendTarget = entry.backendUrl || normalizedBackendUrl;
+    if (!backendTarget) {
+      const message = 'Configura un backend valido per rigenerare il PDF dal Markdown.';
+      pushLogs([`❌ ${message}`]);
+      setErrorBanner({ title: 'Backend non configurato', details: message });
+      return;
+    }
+
+    const targetBase = backendTarget.endsWith('/') ? backendTarget.slice(0, -1) : backendTarget;
+    setBusy(true);
+    setErrorBanner(null);
+    pushLogs([`♻️ Rigenerazione PDF da Markdown (${entry.title || entry.slug || entry.mdPath})`]);
+
+    try {
+      const response = await fetch(`${targetBase}/api/ppubr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mdPath: entry.mdPath }),
+      });
+
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch {
+        payload = {};
+      }
+
+      if (Array.isArray(payload.logs) && payload.logs.length) {
+        pushLogs(payload.logs);
+      }
+
+      if (!response.ok || !payload?.pdfPath) {
+        const message = payload?.message || `Rigenerazione fallita (HTTP ${response.status || 0})`;
+        pushLogs([`❌ ${message}`]);
+        setErrorBanner({ title: 'Rigenerazione PDF fallita', details: message });
+        return;
+      }
+
+      const backendUsed = targetBase;
+      const pdfUrl = backendUsed ? `${backendUsed}/api/file?path=${encodeURIComponent(payload.pdfPath)}` : '';
+      const mdUrl = backendUsed ? `${backendUsed}/api/file?path=${encodeURIComponent(entry.mdPath)}` : entry.mdUrl;
+
+      setPdfPath(payload.pdfPath);
+      setMdPath(entry.mdPath);
+      setHistory(prev => prev.map(item => item.id === entry.id ? {
+        ...item,
+        pdfPath: payload.pdfPath,
+        pdfUrl,
+        mdUrl,
+        backendUrl: backendUsed || item.backendUrl,
+        logs: Array.isArray(item.logs) ? item.logs.concat(payload.logs || []) : (payload.logs || []),
+      } : item));
+
+      pushLogs([`✅ PDF rigenerato: ${payload.pdfPath}`]);
+      setActivePanel('doc');
+    } catch (err) {
+      const message = err?.message || String(err);
+      pushLogs([`❌ ${message}`]);
+      setErrorBanner({ title: 'Rigenerazione PDF fallita', details: message });
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, normalizedBackendUrl, pushLogs, setErrorBanner, setBusy, setPdfPath, setMdPath, setHistory, setActivePanel]);
+
+  const handleShowHistoryLogs = useCallback((entry) => {
+    if (!entry) return;
+    setLogs(() => {
+      const baseLogs = Array.isArray(entry.logs) ? entry.logs : [];
+      const extras = [];
+      if (entry.backendUrl && entry.backendUrl !== normalizedBackendUrl) {
+        extras.push(`ℹ️ PDF creato con backend ${entry.backendUrl}.`);
+      }
+      extras.push('ℹ️ Log caricati dalla Libreria.');
+      return baseLogs.concat(extras);
+    });
+    if (entry.pdfPath) {
+      setPdfPath(entry.pdfPath);
+    }
+    setMdPath(entry.mdPath || '');
+    setActivePanel('doc');
+    setErrorBanner(null);
+  }, [normalizedBackendUrl]);
+
+  const handleRenameHistoryEntry = useCallback((id, title) => {
+    setHistory(prev => prev.map(entry => entry.id === id ? { ...entry, title } : entry));
+  }, []);
+
+  const handleUpdateHistoryTags = useCallback((id, tags) => {
+    setHistory(prev => prev.map(entry => entry.id === id ? { ...entry, tags } : entry));
+  }, []);
+
+  const handleDeleteHistoryEntry = useCallback((id) => {
+    setHistory(prev => prev.filter(entry => entry.id !== id));
+  }, []);
+
+  const handleClearHistory = useCallback(() => {
+    setHistory([]);
+  }, []);
+
   const PermissionBanner=()=>{
     const ua=navigator.userAgent||"";
     const isChromium = ua.includes('Chrome/') && !ua.includes('Edg/') && !ua.includes('OPR/');
@@ -514,7 +731,6 @@ export default function Rec2PdfApp(){
   const defaultDest="/Users/tuo_utente/Recordings";
   const destIsPlaceholder=!destDir.trim()||destDir===defaultDest||destDir.includes('tuo_utente');
 
-  const pdfDownloadUrl = pdfPath ? `${backendUrl}/api/file?path=${encodeURIComponent(pdfPath)}` : '';
 
   return (
     <div className={classNames("min-h-screen w-full","bg-gradient-to-b", themes[theme].bg,"text-zinc-100")}>
@@ -587,7 +803,103 @@ export default function Rec2PdfApp(){
           </div>
           <div className="md:col-span-1 flex flex-col gap-6">
             <div className={classNames("rounded-2xl p-5 shadow-lg border", themes[theme].card)}><div className="flex items-center justify-between"><h3 className="text-lg font-medium flex items-center gap-2"><Settings className="w-4 h-4"/> Stato</h3></div><div className="mt-4 text-sm text-zinc-300 space-y-1"><div className="flex items-center gap-2"><span className={classNames("w-2 h-2 rounded-full",secureOK?"bg-emerald-500":"bg-rose-500")}/> HTTPS/localhost: {secureOK?"OK":"Richiesto"}</div><div className="flex items-center gap-2"><span className={classNames("w-2 h-2 rounded-full",mediaSupported?"bg-emerald-500":"bg-rose-500")}/> getUserMedia: {mediaSupported?"Supportato":"No"}</div><div className="flex items-center gap-2"><span className={classNames("w-2 h-2 rounded-full",recorderSupported?"bg-emerald-500":"bg-rose-500")}/> MediaRecorder: {recorderSupported?"Supportato":"No"}</div><div className="flex items-center gap-2"><span className={classNames("w-2 h-2 rounded-full",backendUp?"bg-emerald-500":"bg-rose-500")}/> Backend: {backendUp===null?"—":backendUp?"Online":"Offline"}</div><div className="flex items-center gap-2"><span className={classNames("w-2 h-2 rounded-full",busy?"bg-yellow-400":"bg-zinc-600")}/> Pipeline: {busy?"In esecuzione…":"Pronta"}</div></div></div>
-            <div className={classNames("rounded-2xl p-5 shadow-lg border", themes[theme].card)}><h3 className="text-lg font-medium flex items-center gap-2"><FileText className="w-4 h-4"/> DOC</h3><div className="mt-3 text-sm">{busy && (<div><div className="text-zinc-400">Creazione PDF in corso...</div><div className="w-full bg-zinc-700 rounded-full h-2.5 mt-2 overflow-hidden"><div className="h-2.5 rounded-full progress-bar-animated"></div></div></div>)}{pdfPath?(<div className={classNames("rounded-lg p-3 break-all border", themes[theme].input)}><div className="text-zinc-400">PDF creato:</div><div className="text-emerald-300 font-mono text-xs mt-1">{pdfPath}</div><div className="mt-2 flex items-center gap-2"><a href={pdfDownloadUrl} className={classNames("px-3 py-2 rounded-lg text-xs", themes[theme].button)} target="_blank" rel="noreferrer">Apri/Scarica PDF</a></div></div>):(!busy && <div className="text-zinc-500">Nessun file ancora creato.</div>)}</div></div>
+            <div className={classNames("rounded-2xl p-5 shadow-lg border", themes[theme].card)}>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  {activePanel==='doc'?<FileText className="w-4 h-4"/>:<Folder className="w-4 h-4"/>}
+                  <h3 className="text-lg font-medium">{activePanel==='doc'?'DOC':'Library'}</h3>
+                </div>
+                <div className="flex items-center gap-1 rounded-xl border border-zinc-700/60 bg-black/20 p-1">
+                  <button
+                    onClick={()=>setActivePanel('doc')}
+                    className={classNames(
+                      "px-3 py-1.5 rounded-lg text-xs font-medium transition",
+                      activePanel==='doc'?"bg-indigo-600 text-white shadow":"text-zinc-300 hover:text-white"
+                    )}
+                  >
+                    DOC
+                  </button>
+                  <button
+                    onClick={()=>setActivePanel('library')}
+                    className={classNames(
+                      "px-3 py-1.5 rounded-lg text-xs font-medium transition",
+                      activePanel==='library'?"bg-indigo-600 text-white shadow":"text-zinc-300 hover:text-white"
+                    )}
+                  >
+                    Library
+                  </button>
+                </div>
+              </div>
+              <div className="mt-3 text-sm">
+                {activePanel==='doc' ? (
+                  <div className="space-y-3">
+                    {busy && (
+                      <div>
+                        <div className="text-zinc-400">Creazione PDF in corso...</div>
+                        <div className="w-full bg-zinc-700 rounded-full h-2.5 mt-2 overflow-hidden">
+                          <div className="h-2.5 rounded-full progress-bar-animated"></div>
+                        </div>
+                      </div>
+                    )}
+                    {mdPath && (
+                      <div className={classNames("rounded-lg p-3 break-all border", themes[theme].input)}>
+                        <div className="text-zinc-400">Markdown sorgente:</div>
+                        <div className="text-sky-300 font-mono text-xs mt-1">{mdPath}</div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <a
+                            href={mdDownloadUrl || '#'}
+                            className={classNames(
+                              "px-3 py-2 rounded-lg text-xs",
+                              themes[theme].button,
+                              !mdDownloadUrl && "pointer-events-none opacity-60"
+                            )}
+                            target={mdDownloadUrl ? '_blank' : undefined}
+                            rel={mdDownloadUrl ? 'noreferrer' : undefined}
+                          >
+                            Apri/Scarica MD
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                    {pdfPath ? (
+                      <div className={classNames("rounded-lg p-3 break-all border", themes[theme].input)}>
+                        <div className="text-zinc-400">PDF creato:</div>
+                        <div className="text-emerald-300 font-mono text-xs mt-1">{pdfPath}</div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <a href={pdfDownloadUrl} className={classNames("px-3 py-2 rounded-lg text-xs", themes[theme].button)} target="_blank" rel="noreferrer">
+                            Apri/Scarica PDF
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      !busy && <div className="text-zinc-500">Nessun file ancora creato.</div>
+                    )}
+                    {history.length>0 && (
+                      <div className="text-xs text-zinc-500">
+                        Cronologia disponibile nella Libreria: {history.length} sessione{history.length===1?'':'i'} salvate.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <LibraryPanel
+                    entries={history}
+                    filter={historyFilter}
+                    onFilterChange={setHistoryFilter}
+                    onOpenPdf={handleOpenHistoryPdf}
+                    onOpenMd={handleOpenHistoryMd}
+                    onShowLogs={handleShowHistoryLogs}
+                    onRename={handleRenameHistoryEntry}
+                    onUpdateTags={handleUpdateHistoryTags}
+                    onDeleteEntry={handleDeleteHistoryEntry}
+                    onClearAll={handleClearHistory}
+                    themeStyles={themes[theme]}
+                    activePdfPath={pdfPath}
+                    onRepublish={handleRepublishFromMd}
+                    busy={busy}
+                  />
+                )}
+              </div>
+            </div>
             <div className={classNames("rounded-2xl p-5 shadow-lg border", themes[theme].card)}><h3 className="text-lg font-medium flex items-center gap-2"><Cpu className="w-4 h-4"/> Log</h3><div className={classNames("mt-3 h-56 overflow-auto rounded-lg p-3 font-mono text-xs text-zinc-300 border", themes[theme].log)}>{logs?.length?logs.map((ln,i)=>(<div key={i} className="whitespace-pre-wrap leading-relaxed">{ln}</div>)):<div className="text-zinc-500">Nessun log ancora.</div>}</div></div>
           </div>
         </div>
