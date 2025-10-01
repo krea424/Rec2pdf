@@ -139,7 +139,7 @@ app.post('/api/rec2pdf', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 
     }
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`);
-    return res.json({ ok: true, pdfPath, logs });
+    return res.json({ ok: true, pdfPath, mdPath: mdFile, logs });
   } catch (err) {
     out('❌ Errore durante la pipeline');
     out(String(err && err.message ? err.message : err));
@@ -147,6 +147,117 @@ app.post('/api/rec2pdf', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 
   } finally {
     try { if (req.files && req.files.audio) await fsp.unlink(req.files.audio[0].path); } catch {}
     try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch {}
+  }
+});
+
+app.post('/api/ppubr', async (req, res) => {
+  const logs = [];
+  const out = (s) => { logs.push(s); };
+
+  try {
+    const mdPathRaw = String(req.body?.mdPath || '').trim();
+    if (!mdPathRaw) {
+      return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante', logs });
+    }
+
+    const mdPath = path.resolve(mdPathRaw);
+    if (!fs.existsSync(mdPath)) {
+      throw new Error(`Markdown non trovato: ${mdPath}`);
+    }
+
+    if (!mdPath.toLowerCase().endsWith('.md')) {
+      throw new Error('Il file deve essere un Markdown (.md)');
+    }
+
+    const dest = path.dirname(mdPath);
+    out(`♻️ Rigenerazione PDF con PPUBR da ${mdPath}`);
+
+    const pb = await zsh(
+      `cd ${JSON.stringify(dest)}; (command -v PPUBR && PPUBR ${JSON.stringify(mdPath)}) || (command -v ppubr && ppubr ${JSON.stringify(mdPath)})`
+    );
+    if (pb.code !== 0) {
+      out(pb.stderr || pb.stdout || 'PPUBR failed');
+    }
+
+    const baseName = path.basename(mdPath, path.extname(mdPath));
+    const pdfPath = path.join(dest, `${baseName}.pdf`);
+
+    if (!fs.existsSync(pdfPath)) {
+      out('PPUBR non ha generato un PDF, fallback su pandoc…');
+      const pandoc = await zsh(
+        `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`
+      );
+      if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
+        out(pandoc.stderr || pandoc.stdout || 'pandoc failed');
+        throw new Error('Rigenerazione PDF fallita');
+      }
+    }
+
+    out(`✅ Fatto! PDF creato: ${pdfPath}`);
+    return res.json({ ok: true, pdfPath, mdPath, logs });
+  } catch (err) {
+    out('❌ Errore durante la rigenerazione');
+    out(String(err && err.message ? err.message : err));
+    return res.status(500).json({ ok: false, message: String(err && err.message ? err.message : err), logs });
+  }
+});
+
+app.get('/api/markdown', async (req, res) => {
+  try {
+    const rawPath = String(req.query?.path || '').trim();
+    if (!rawPath) {
+      return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante' });
+    }
+
+    const absPath = path.resolve(rawPath);
+    if (!absPath.toLowerCase().endsWith('.md')) {
+      return res.status(400).json({ ok: false, message: 'Il file deve avere estensione .md' });
+    }
+
+    await fsp.access(absPath, fs.constants.R_OK);
+    const content = await fsp.readFile(absPath, 'utf8');
+    return res.json({ ok: true, path: absPath, content });
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    const code = err && err.code === 'ENOENT' ? 404 : 500;
+    return res.status(code).json({ ok: false, message });
+  }
+});
+
+app.put('/api/markdown', async (req, res) => {
+  try {
+    const rawPath = String(req.body?.path || '').trim();
+    if (!rawPath) {
+      return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante' });
+    }
+
+    const content = req.body?.content;
+    if (typeof content !== 'string') {
+      return res.status(400).json({ ok: false, message: 'Contenuto Markdown non valido' });
+    }
+
+    const absPath = path.resolve(rawPath);
+    if (!absPath.toLowerCase().endsWith('.md')) {
+      return res.status(400).json({ ok: false, message: 'Il file deve avere estensione .md' });
+    }
+
+    await fsp.access(absPath, fs.constants.W_OK);
+
+    try {
+      const backupName = `${path.basename(absPath)}.${yyyymmddHHMMSS()}.bak`;
+      const backupPath = path.join(path.dirname(absPath), backupName);
+      await fsp.copyFile(absPath, backupPath);
+    } catch (backupError) {
+      // Ignore backup errors (e.g. permissions); continue with save.
+    }
+
+    await fsp.writeFile(absPath, content, 'utf8');
+    const stats = await fsp.stat(absPath);
+    return res.json({ ok: true, path: absPath, bytes: stats.size, mtime: stats.mtimeMs });
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    const code = err && err.code === 'ENOENT' ? 404 : 500;
+    return res.status(code).json({ ok: false, message });
   }
 });
 
