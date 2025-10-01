@@ -7,11 +7,24 @@ import { useBackendDiagnostics } from "./hooks/useBackendDiagnostics";
 import { classNames } from "./utils/classNames";
 import { pickBestMime } from "./utils/media";
 import LibraryPanel from "./components/LibraryPanel";
+import MarkdownEditorModal from "./components/MarkdownEditorModal";
 
 const fmtBytes = (bytes) => { if (!bytes && bytes !== 0) return "—"; const u=["B","KB","MB","GB"]; let i=0,v=bytes; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(v<10&&i>0?1:0)} ${u[i]}`; };
 const fmtTime = (s) => { const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const sec=Math.floor(s%60); return [h,m,sec].map(n=>String(n).padStart(2,'0')).join(":"); };
 const HISTORY_STORAGE_KEY = 'rec2pdfHistory';
 const HISTORY_LIMIT = 100;
+const EMPTY_EDITOR_STATE = {
+  open: false,
+  entry: null,
+  path: '',
+  backendUrl: '',
+  content: '',
+  originalContent: '',
+  loading: false,
+  saving: false,
+  error: '',
+  success: '',
+};
 
 const normalizeBackendUrlValue = (url) => {
   if (!url) return '';
@@ -118,6 +131,7 @@ export default function Rec2PdfApp(){
   });
   const [historyFilter, setHistoryFilter] = useState('');
   const [activePanel, setActivePanel] = useState('doc');
+  const [mdEditor, setMdEditor] = useState(() => ({ ...EMPTY_EDITOR_STATE }));
   const {
     secureOK,
     mediaSupported,
@@ -519,6 +533,13 @@ export default function Rec2PdfApp(){
     return `${normalizedBackendUrl}/api/file?path=${encodeURIComponent(mdPath)}`;
   }, [mdPath, normalizedBackendUrl]);
 
+  const mdEditorDownloadUrl = useMemo(() => {
+    if (!mdEditor?.path || !mdEditor?.backendUrl) return '';
+    return `${mdEditor.backendUrl}/api/file?path=${encodeURIComponent(mdEditor.path)}`;
+  }, [mdEditor?.path, mdEditor?.backendUrl]);
+
+  const mdEditorDirty = useMemo(() => mdEditor.content !== mdEditor.originalContent, [mdEditor.content, mdEditor.originalContent]);
+
   const handleOpenHistoryPdf = useCallback((entry) => {
     if (!entry?.pdfPath) return;
     if (typeof window === 'undefined') return;
@@ -529,23 +550,83 @@ export default function Rec2PdfApp(){
     window.open(target, '_blank', 'noopener,noreferrer');
   }, [normalizedBackendUrl]);
 
-  const handleOpenHistoryMd = useCallback((entry, overrideMdPath) => {
+  const handleOpenHistoryMd = useCallback(async (entry, overrideMdPath) => {
     const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
     if (!mdPathResolved) {
       const label = entry?.title || entry?.slug || 'sessione';
       pushLogs([`❌ Percorso Markdown non disponibile per ${label}.`]);
       return;
     }
-    if (typeof window === 'undefined') return;
-    const directUrl = entry?.mdUrl && entry.mdUrl.startsWith('http') ? entry.mdUrl : '';
-    const fallbackBackend = entry?.backendUrl || normalizedBackendUrl;
-    const target = directUrl || buildFileUrl(fallbackBackend, mdPathResolved);
-    if (!target) {
-      pushLogs([`❌ Impossibile determinare l'URL del Markdown per ${entry?.title || entry?.slug || mdPathResolved}.`]);
+
+    const backendTarget = entry?.backendUrl || normalizedBackendUrl;
+    const normalizedBackend = normalizeBackendUrlValue(backendTarget);
+    if (!normalizedBackend) {
+      const message = 'Configura un backend valido per modificare il Markdown.';
+      pushLogs([`❌ ${message}`]);
+      setErrorBanner({ title: 'Backend non configurato', details: message });
       return;
     }
-    window.open(target, '_blank', 'noopener,noreferrer');
-  }, [normalizedBackendUrl, pushLogs]);
+
+    setMdEditor({
+      ...EMPTY_EDITOR_STATE,
+      open: true,
+      entry,
+      path: mdPathResolved,
+      backendUrl: normalizedBackend,
+      loading: true,
+    });
+    pushLogs([`✏️ Apertura editor Markdown (${mdPathResolved})`]);
+
+    try {
+      const response = await fetch(`${normalizedBackend}/api/markdown?path=${encodeURIComponent(mdPathResolved)}`);
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch {
+        payload = {};
+      }
+
+      if (!response.ok) {
+        const message = payload?.message || `Impossibile caricare il Markdown (HTTP ${response.status})`;
+        throw new Error(message);
+      }
+
+      const content = typeof payload?.content === 'string' ? payload.content : '';
+      setMdEditor((prev) => {
+        if (prev.path !== mdPathResolved) {
+          return prev;
+        }
+        return {
+          ...prev,
+          loading: false,
+          content,
+          originalContent: content,
+          error: '',
+          success: '',
+        };
+      });
+      setHistory((prev) =>
+        prev.map((item) =>
+          item.id === entry.id
+            ? {
+                ...item,
+                mdPath: mdPathResolved,
+                backendUrl: normalizedBackend,
+              }
+            : item
+        )
+      );
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      pushLogs([`❌ ${message}`]);
+      setMdEditor((prev) => {
+        if (prev.path !== mdPathResolved) {
+          return prev;
+        }
+        return { ...prev, loading: false, error: message };
+      });
+    }
+  }, [normalizedBackendUrl, pushLogs, setHistory, setErrorBanner]);
 
   const handleRepublishFromMd = useCallback(async (entry, overrideMdPath) => {
     const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
@@ -628,6 +709,92 @@ export default function Rec2PdfApp(){
       setBusy(false);
     }
   }, [busy, normalizedBackendUrl, pushLogs, setErrorBanner, setBusy, setPdfPath, setMdPath, setHistory, setActivePanel]);
+
+  const handleMdEditorChange = useCallback((nextValue) => {
+    setMdEditor((prev) => ({
+      ...prev,
+      content: nextValue,
+      error: '',
+      success: '',
+    }));
+  }, []);
+
+  const handleMdEditorClose = useCallback(() => {
+    setMdEditor(() => ({ ...EMPTY_EDITOR_STATE }));
+  }, []);
+
+  const handleMdEditorSave = useCallback(async (nextContent) => {
+    const targetPath = mdEditor?.path;
+    const backendTarget = mdEditor?.backendUrl;
+    const entryId = mdEditor?.entry?.id;
+
+    if (!targetPath || !backendTarget) {
+      pushLogs(['❌ Nessun backend configurato per salvare il Markdown.']);
+      return;
+    }
+
+    setMdEditor((prev) => ({ ...prev, saving: true, error: '', success: '' }));
+    try {
+      const response = await fetch(`${backendTarget}/api/markdown`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: targetPath, content: nextContent }),
+      });
+
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch {
+        payload = {};
+      }
+
+      if (!response.ok) {
+        const message = payload?.message || `Salvataggio Markdown fallito (HTTP ${response.status})`;
+        throw new Error(message);
+      }
+
+      setMdEditor((prev) => {
+        if (prev.path !== targetPath) {
+          return prev;
+        }
+        return {
+          ...prev,
+          saving: false,
+          content: nextContent,
+          originalContent: nextContent,
+          success: 'Markdown salvato con successo',
+          error: '',
+        };
+      });
+      setHistory((prev) =>
+        prev.map((item) =>
+          item.id === entryId
+            ? {
+                ...item,
+                mdPath: targetPath,
+                backendUrl: backendTarget,
+                lastEditedAt: new Date().toISOString(),
+              }
+            : item
+        )
+      );
+      pushLogs([`💾 Markdown salvato (${targetPath})`]);
+    } catch (err) => {
+      const message = err && err.message ? err.message : String(err);
+      pushLogs([`❌ ${message}`]);
+      setMdEditor((prev) => {
+        if (prev.path !== targetPath) {
+          return prev;
+        }
+        return { ...prev, saving: false, error: message, success: '' };
+      });
+    }
+  }, [mdEditor, pushLogs, setHistory]);
+
+  const handleRepublishFromEditor = useCallback(() => {
+    if (!mdEditor?.entry) return;
+    handleRepublishFromMd(mdEditor.entry, mdEditor.path);
+  }, [mdEditor, handleRepublishFromMd]);
 
   const handleShowHistoryLogs = useCallback((entry) => {
     if (!entry) return;
@@ -969,6 +1136,28 @@ export default function Rec2PdfApp(){
         currentStep={onboardingStep}
         onStepChange={setOnboardingStep}
         onFinish={handleOnboardingFinish}
+      />
+      <MarkdownEditorModal
+        open={mdEditor.open}
+        title={mdEditor?.entry?.title || mdEditor?.entry?.slug || ''}
+        path={mdEditor.path}
+        value={mdEditor.content}
+        onChange={handleMdEditorChange}
+        onClose={handleMdEditorClose}
+        onSave={handleMdEditorSave}
+        onRepublish={handleRepublishFromEditor}
+        loading={mdEditor.loading}
+        saving={mdEditor.saving}
+        error={mdEditor.error}
+        success={mdEditor.success}
+        hasUnsavedChanges={mdEditorDirty}
+        downloadUrl={mdEditorDownloadUrl}
+        busy={busy}
+        themeStyles={themes[theme]}
+      />
+    </div>
+  );
+}theme]}
       />
     </div>
   );

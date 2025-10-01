@@ -202,6 +202,65 @@ app.post('/api/ppubr', async (req, res) => {
   }
 });
 
+app.get('/api/markdown', async (req, res) => {
+  try {
+    const rawPath = String(req.query?.path || '').trim();
+    if (!rawPath) {
+      return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante' });
+    }
+
+    const absPath = path.resolve(rawPath);
+    if (!absPath.toLowerCase().endsWith('.md')) {
+      return res.status(400).json({ ok: false, message: 'Il file deve avere estensione .md' });
+    }
+
+    await fsp.access(absPath, fs.constants.R_OK);
+    const content = await fsp.readFile(absPath, 'utf8');
+    return res.json({ ok: true, path: absPath, content });
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    const code = err && err.code === 'ENOENT' ? 404 : 500;
+    return res.status(code).json({ ok: false, message });
+  }
+});
+
+app.put('/api/markdown', async (req, res) => {
+  try {
+    const rawPath = String(req.body?.path || '').trim();
+    if (!rawPath) {
+      return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante' });
+    }
+
+    const content = req.body?.content;
+    if (typeof content !== 'string') {
+      return res.status(400).json({ ok: false, message: 'Contenuto Markdown non valido' });
+    }
+
+    const absPath = path.resolve(rawPath);
+    if (!absPath.toLowerCase().endsWith('.md')) {
+      return res.status(400).json({ ok: false, message: 'Il file deve avere estensione .md' });
+    }
+
+    await fsp.access(absPath, fs.constants.W_OK);
+
+    try {
+      const backupName = `${path.basename(absPath)}.${yyyymmddHHMMSS()}.bak`;
+      const backupPath = path.join(path.dirname(absPath), backupName);
+      await fsp.copyFile(absPath, backupPath);
+    } catch (backupError) {
+      // Ignore backup errors (e.g. permissions); continue with save.
+    }
+
+    await fsp.writeFile(absPath, content, 'utf8');
+    const stats = await fsp.stat(absPath);
+    return res.json({ ok: true, path: absPath, bytes: stats.size, mtime: stats.mtimeMs });
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    const code = err && err.code === 'ENOENT' ? 404 : 500;
+    return res.status(code).json({ ok: false, message });
+  }
+});
+
 app.get('/api/file', async (req, res) => {
   const p = req.query.path;
   if (!p) return res.status(400).json({ ok: false, message: 'Param path mancante' });

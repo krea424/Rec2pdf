@@ -268,7 +268,7 @@ export default function LibraryPanel({
                         )}
                         disabled={!canOpenMd}
                       >
-                        <FileCode className="w-3.5 h-3.5" /> Apri MD
+                        <FileCode className="w-3.5 h-3.5" /> Modifica MD
                       </button>
                       <button
                         onClick={() => onRepublish?.(entry, resolvedMdPath)}
