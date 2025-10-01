@@ -250,6 +250,118 @@ app.post('/api/ppubr', async (req, res) => {
   }
 });
 
+app.post('/api/ppubr-upload', upload.fields([{ name: 'markdown', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
+  const logs = [];
+  const stageEvents = [];
+  let lastStageKey = null;
+
+  const logStageEvent = (stage, status = 'info', message = '') => {
+    if (!stage) return;
+    const normalizedStatus = String(status || 'info').toLowerCase();
+    stageEvents.push({ stage, status: normalizedStatus, message, ts: Date.now() });
+    if (normalizedStatus === 'running') {
+      lastStageKey = stage;
+    } else if (['completed', 'done', 'success'].includes(normalizedStatus)) {
+      if (lastStageKey === stage) lastStageKey = null;
+    } else if (['failed', 'error'].includes(normalizedStatus)) {
+      lastStageKey = stage;
+    }
+  };
+
+  const out = (s, stage, status) => {
+    logs.push(s);
+    if (stage) {
+      logStageEvent(stage, status || 'info', s);
+    }
+  };
+
+  try {
+    if (!req.files || !req.files.markdown) {
+      logStageEvent('upload', 'failed', 'Nessun file Markdown');
+      return res.status(400).json({ ok: false, message: 'Nessun file Markdown', logs, stageEvents });
+    }
+
+    const mdUpload = req.files.markdown[0];
+    const originalName = mdUpload.originalname || 'documento.md';
+    const lowerName = originalName.toLowerCase();
+
+    logStageEvent('upload', 'running', 'Caricamento Markdown in corso…');
+
+    if (!lowerName.endsWith('.md')) {
+      logStageEvent('upload', 'failed', 'Il file non è un Markdown (.md)');
+      return res.status(400).json({ ok: false, message: 'Il file deve essere un Markdown (.md)', logs, stageEvents });
+    }
+
+    const slugRaw = String(req.body?.slug || '').trim();
+    const slug = (slugRaw || path.basename(originalName, path.extname(originalName)) || 'documento').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const ts = yyyymmddHHMMSS(new Date());
+
+    let dest = String(req.body?.dest || '').trim();
+    if (!dest || /tuo_utente/.test(dest)) { dest = path.join(os.homedir(), 'Recordings'); }
+    await ensureDir(dest);
+
+    const baseName = `${ts}_${slug}`;
+    const mdPath = path.join(dest, `${baseName}.md`);
+
+    await fsp.copyFile(mdUpload.path, mdPath);
+    out(`📄 Markdown ricevuto: ${originalName}`, 'upload', 'completed');
+
+    logStageEvent('transcode', 'completed', 'Step transcode non necessario per Markdown.');
+    logStageEvent('transcribe', 'completed', 'Trascrizione non necessaria: Markdown fornito.');
+    logStageEvent('markdown', 'completed', 'Markdown fornito manualmente.');
+
+    out('📄 Pubblicazione PDF con PPUBR…', 'publish', 'running');
+
+    const customLogoPath = req.files.pdfLogo ? req.files.pdfLogo[0].path : null;
+    if (customLogoPath) {
+      out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
+    }
+    const zshOpts = customLogoPath ? { env: { ...process.env, CUSTOM_PDF_LOGO: customLogoPath } } : {};
+    const pb = await zsh(
+      `cd ${JSON.stringify(dest)}; (command -v PPUBR && PPUBR ${JSON.stringify(mdPath)}) || (command -v ppubr && ppubr ${JSON.stringify(mdPath)})`,
+      zshOpts
+    );
+    if (pb.code !== 0) {
+      out(pb.stderr || pb.stdout || 'PPUBR failed', 'publish', 'info');
+    }
+
+    const pdfPath = path.join(dest, `${baseName}.pdf`);
+
+    if (!fs.existsSync(pdfPath)) {
+      out('PPUBR non ha generato un PDF, fallback su pandoc…', 'publish', 'info');
+      const pandoc = await zsh(
+        `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
+        zshOpts
+      );
+      if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
+        out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
+        throw new Error('Generazione PDF fallita');
+      }
+    }
+
+    out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
+    out('🎉 Pipeline completata', 'complete', 'completed');
+
+    return res.json({ ok: true, pdfPath, mdPath, logs, stageEvents });
+  } catch (err) {
+    const message = String(err && err.message ? err.message : err);
+    const failureStage = lastStageKey || 'publish';
+    const hasFailureEvent = stageEvents.some(evt => evt.stage === failureStage && evt.status === 'failed');
+    if (!hasFailureEvent) {
+      logStageEvent(failureStage, 'failed', message);
+    }
+    if (!stageEvents.some(evt => evt.stage === 'complete')) {
+      logStageEvent('complete', 'failed', 'Pipeline interrotta');
+    }
+    out('❌ Errore durante la pipeline');
+    out(message);
+    return res.status(500).json({ ok: false, message, logs, stageEvents });
+  } finally {
+    try { if (req.files && req.files.markdown) await fsp.unlink(req.files.markdown[0].path); } catch {}
+    try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch {}
+  }
+});
+
 app.get('/api/markdown', async (req, res) => {
   try {
     const rawPath = String(req.query?.path || '').trim();
