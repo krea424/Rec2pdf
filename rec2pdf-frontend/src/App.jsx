@@ -1703,3 +1703,6 @@ export default function Rec2PdfApp(){
     </div>
   );
 }
+    </div>
+  );
+}

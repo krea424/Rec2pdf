@@ -97,7 +97,7 @@ app.get('/api/diag', async (req, res) => {
 
   try {
     const ppub = await zsh('command -v ppubr >/dev/null || command -v PPUBR >/dev/null && echo OK || echo NO');
-    out(ppub.stdout.includes('OK') ? '✅ ppubr/PPUBR: disponibile' : '❌ ppubr/PPUBR non trovato');
+    out(ppub.stdout.includes('OK') ? `✅ ppubr/PPUBR: disponibile` : '❌ ppubr/PPUBR non trovato');
   } catch { out('❌ ppubr non disponibile'); }
 
   try {
