@@ -54,6 +54,15 @@ export const FileText = (props) => (
   </IconBase>
 );
 
+export const FileCode = (props) => (
+  <IconBase {...props}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z" />
+    <path d="M14 3v6h6" />
+    <path d="m10 15-2-2 2-2" />
+    <path d="m14 11 2 2-2 2" />
+  </IconBase>
+);
+
 export const Cpu = (props) => (
   <IconBase {...props}>
     <rect x="5" y="5" width="14" height="14" rx="2" />
@@ -228,6 +237,7 @@ export default {
   Settings,
   Folder,
   FileText,
+  FileCode,
   Cpu,
   Download,
   Timer,
