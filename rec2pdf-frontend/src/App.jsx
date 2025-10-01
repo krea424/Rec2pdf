@@ -66,7 +66,121 @@ const hydrateHistoryEntry = (entry) => {
     mdUrl,
     tags: Array.isArray(entry?.tags) ? entry.tags : [],
     logs: Array.isArray(entry?.logs) ? entry.logs : [],
+    stageEvents: Array.isArray(entry?.stageEvents) ? entry.stageEvents : [],
   };
+};
+
+const PIPELINE_STAGES = [
+  {
+    key: 'upload',
+    label: 'Upload audio',
+    description: 'Caricamento e validazione del file di input.',
+    help: 'Verifica che il file audio sia selezionato e che il browser abbia i permessi per l\'upload.',
+    icon: Upload,
+  },
+  {
+    key: 'transcode',
+    label: 'Transcodifica WAV',
+    description: 'Conversione in WAV 16k mono tramite ffmpeg.',
+    help: 'Assicurati che ffmpeg sia installato e accessibile nel PATH del backend.',
+    icon: Cpu,
+  },
+  {
+    key: 'transcribe',
+    label: 'Trascrizione Whisper',
+    description: 'Generazione testo con Whisper small in italiano.',
+    help: 'Controlla modello Whisper e risorse GPU/CPU sul backend.',
+    icon: Waves,
+  },
+  {
+    key: 'markdown',
+    label: 'Sintesi Markdown',
+    description: 'Creazione note tramite genMD.',
+    help: 'Verifica che la funzione genMD sia definita nello shell del backend.',
+    icon: FileText,
+  },
+  {
+    key: 'publish',
+    label: 'Impaginazione PDF',
+    description: 'Impaginazione con PPUBR/pandoc e applicazione logo.',
+    help: 'Controlla PPUBR/pandoc e i permessi di scrittura sulla cartella di destinazione.',
+    icon: Sparkles,
+  },
+  {
+    key: 'complete',
+    label: 'Pipeline conclusa',
+    description: 'Conferma finale della pipeline.',
+    help: '',
+    icon: CheckCircle2,
+  },
+];
+
+const buildInitialPipelineStatus = (initial = 'idle') => {
+  return PIPELINE_STAGES.reduce((acc, stage) => {
+    acc[stage.key] = initial;
+    return acc;
+  }, {});
+};
+
+const normalizeStageStatus = (status) => {
+  const value = String(status || '').toLowerCase();
+  if (['completed', 'done', 'success'].includes(value)) return 'done';
+  if (['running', 'in_progress', 'started'].includes(value)) return 'running';
+  if (['failed', 'error', 'ko', 'failure'].includes(value)) return 'failed';
+  if (['pending', 'queued', 'waiting'].includes(value)) return 'pending';
+  if (!value) return 'info';
+  return value;
+};
+
+const updateStatusWithEvent = (prevStatus, event) => {
+  if (!event?.stage || !Object.prototype.hasOwnProperty.call(prevStatus, event.stage)) {
+    return prevStatus;
+  }
+  const next = { ...prevStatus };
+  const normalized = normalizeStageStatus(event.status);
+  if (normalized === 'done') {
+    next[event.stage] = 'done';
+  } else if (normalized === 'running') {
+    next[event.stage] = 'running';
+  } else if (normalized === 'failed') {
+    next[event.stage] = 'failed';
+  } else if (normalized === 'pending') {
+    next[event.stage] = 'pending';
+  } else if (normalized !== 'info') {
+    next[event.stage] = normalized;
+  }
+
+  if (normalized === 'running' || normalized === 'done') {
+    const stageIndex = PIPELINE_STAGES.findIndex((stage) => stage.key === event.stage);
+    if (stageIndex > 0) {
+      for (let i = 0; i < stageIndex; i += 1) {
+        const prevKey = PIPELINE_STAGES[i].key;
+        if (next[prevKey] === 'pending' || next[prevKey] === 'idle' || next[prevKey] === 'running') {
+          next[prevKey] = 'done';
+        }
+      }
+    }
+  }
+
+  return next;
+};
+
+const STAGE_STATUS_LABELS = {
+  idle: 'In attesa',
+  pending: 'In coda',
+  running: 'In corso',
+  done: 'Completato',
+  failed: 'Errore',
+  info: 'Info',
+};
+
+const STAGE_STATUS_STYLES = {
+  idle: 'border-zinc-800 bg-zinc-950 text-zinc-500',
+  pending: 'border-zinc-700 bg-zinc-900 text-zinc-300',
+  running: 'border-indigo-500/60 bg-indigo-500/15 text-indigo-100',
+  done: 'border-emerald-500/60 bg-emerald-500/15 text-emerald-200',
+  failed: 'border-rose-500/60 bg-rose-500/10 text-rose-200',
+  info: 'border-zinc-700 bg-zinc-900 text-zinc-400',
 };
 
 const themes = {
@@ -129,6 +243,10 @@ export default function Rec2PdfApp(){
       return [];
     }
   });
+  const [pipelineStatus, setPipelineStatus] = useState(() => buildInitialPipelineStatus('idle'));
+  const [activeStageKey, setActiveStageKey] = useState(null);
+  const [stageMessages, setStageMessages] = useState({});
+  const [showRawLogs, setShowRawLogs] = useState(false);
   const [historyFilter, setHistoryFilter] = useState('');
   const [activePanel, setActivePanel] = useState('doc');
   const [mdEditor, setMdEditor] = useState(() => ({ ...EMPTY_EDITOR_STATE }));
@@ -170,6 +288,7 @@ export default function Rec2PdfApp(){
   const sourceRef=useRef(null);
   const streamRef=useRef(null);
   const fileInputRef=useRef(null);
+  const stageAnimationTimeoutsRef = useRef([]);
 
   useEffect(()=>{
     const savedLogo = localStorage.getItem('customLogo');
@@ -199,6 +318,99 @@ export default function Rec2PdfApp(){
     }
   }, [history]);
 
+  const clearStageAnimationTimers = useCallback(() => {
+    stageAnimationTimeoutsRef.current.forEach(clearTimeout);
+    stageAnimationTimeoutsRef.current = [];
+  }, []);
+
+  const resetPipelineProgress = useCallback((isRunning = false) => {
+    clearStageAnimationTimers();
+    setStageMessages({});
+    if (isRunning) {
+      const base = buildInitialPipelineStatus('pending');
+      const firstStageKey = PIPELINE_STAGES[0]?.key;
+      if (firstStageKey) {
+        base[firstStageKey] = 'running';
+      }
+      setPipelineStatus(base);
+      setActiveStageKey(PIPELINE_STAGES[0]?.key ?? null);
+    } else {
+      setPipelineStatus(buildInitialPipelineStatus('idle'));
+      setActiveStageKey(null);
+    }
+  }, [clearStageAnimationTimers]);
+
+  const runEventUpdate = useCallback((event) => {
+    if (!event || !event.stage) return;
+    const normalizedStatus = normalizeStageStatus(event.status);
+    const normalizedEvent = { ...event, status: normalizedStatus };
+    setPipelineStatus((prev) => updateStatusWithEvent(prev, normalizedEvent));
+    if (event.message) {
+      setStageMessages((prev) => ({ ...prev, [event.stage]: event.message }));
+    }
+    setActiveStageKey((prev) => {
+      if (normalizedStatus === 'running') return event.stage;
+      if (normalizedStatus === 'failed') return event.stage;
+      if (normalizedStatus === 'done') {
+        const currentIndex = PIPELINE_STAGES.findIndex((stage) => stage.key === event.stage);
+        const nextStage = PIPELINE_STAGES[currentIndex + 1];
+        return nextStage ? nextStage.key : null;
+      }
+      return prev;
+    });
+  }, []);
+
+  const handlePipelineEvents = useCallback((events = [], options = {}) => {
+    const eventArray = Array.isArray(events) ? events : [];
+    clearStageAnimationTimers();
+    setStageMessages({});
+
+    const initialStatus = options?.initialStatus ?? (eventArray.length ? 'pending' : 'idle');
+    const baseStatus = buildInitialPipelineStatus(initialStatus);
+    if (eventArray.length && initialStatus !== 'idle') {
+      const firstKey = PIPELINE_STAGES[0]?.key;
+      if (firstKey) {
+        baseStatus[firstKey] = 'running';
+      }
+    }
+    setPipelineStatus(baseStatus);
+    setActiveStageKey(eventArray.length ? PIPELINE_STAGES[0]?.key ?? null : null);
+
+    if (!eventArray.length) {
+      if (!eventArray.length && initialStatus === 'idle') {
+        setActiveStageKey(null);
+      }
+      return;
+    }
+
+    if (options?.autoRevealOnFailure !== false) {
+      const hasFailure = eventArray.some((evt) => normalizeStageStatus(evt.status) === 'failed');
+      if (hasFailure) {
+        setShowRawLogs(true);
+      }
+    }
+
+    let delay = 0;
+    const stepDelay = options?.stepDelayMs ?? 500;
+    eventArray.forEach((event) => {
+      const normalizedEvent = { ...event, status: normalizeStageStatus(event.status) };
+      const runner = () => runEventUpdate(normalizedEvent);
+      if (options?.animate === false) {
+        runner();
+      } else {
+        const timeoutId = setTimeout(runner, delay);
+        stageAnimationTimeoutsRef.current.push(timeoutId);
+        delay += stepDelay;
+      }
+    });
+  }, [clearStageAnimationTimers, runEventUpdate]);
+
+  useEffect(() => {
+    return () => {
+      clearStageAnimationTimers();
+    };
+  }, [clearStageAnimationTimers]);
+
   useEffect(()=>{ checkHealth(); },[backendUrl,busy,checkHealth]);
   useEffect(()=>{ if(!recording) return; const id=setInterval(()=>setElapsed(Math.floor((Date.now()-startAtRef.current)/1000)),333); return()=>clearInterval(id); },[recording]);
 
@@ -209,7 +421,7 @@ export default function Rec2PdfApp(){
 
   const stopRecording=()=>{ const rec=mediaRecorderRef.current; if(rec&&rec.state!=="inactive") rec.stop(); setRecording(false); };
   useEffect(()=>{ if(recording&&secondsCap&&elapsed>=secondsCap) stopRecording(); },[recording,secondsCap,elapsed]);
-  const resetAll=()=>{ setAudioBlob(null); setAudioUrl(""); setMime(""); setElapsed(0); setLogs([]); setPdfPath(""); setMdPath(""); setPermissionMessage(""); setErrorBanner(null); };
+  const resetAll=()=>{ setAudioBlob(null); setAudioUrl(""); setMime(""); setElapsed(0); setLogs([]); setPdfPath(""); setMdPath(""); setPermissionMessage(""); setErrorBanner(null); resetPipelineProgress(false); setShowRawLogs(false); };
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
 
@@ -220,6 +432,8 @@ export default function Rec2PdfApp(){
       setErrorBanner({title:'Backend URL mancante',details:'Imposta http://localhost:7788 o il tuo endpoint.'});
       return;
     }
+    resetPipelineProgress(true);
+    setShowRawLogs(false);
     setBusy(true);
     setLogs([]);
     setPdfPath("");
@@ -252,7 +466,16 @@ export default function Rec2PdfApp(){
       const cap=Number(secondsCap||0);
       if(cap>0) fd.append('seconds',String(cap));
       const {ok,status,data,raw}=await fetchBody(`${backendUrl}/api/rec2pdf`,{method:'POST',body:fd});
+      const stageEventsPayload = Array.isArray(data?.stageEvents) ? data.stageEvents : [];
       if(!ok){
+        if (stageEventsPayload.length) {
+          handlePipelineEvents(stageEventsPayload, { animate: false });
+        } else {
+          const fallbackMessage = data?.message || (raw ? raw.slice(0, 120) : status === 0 ? 'Connessione fallita/CORS' : 'Errore backend');
+          handlePipelineEvents([
+            { stage: 'complete', status: 'failed', message: fallbackMessage },
+          ], { animate: false });
+        }
         if(data?.logs?.length) appendLogs(data.logs);
         if(data?.message) appendLogs([`❌ ${data.message}`]);
         if(!data&&raw) appendLogs([`❌ Risposta server: ${raw.slice(0,400)}${raw.length>400?'…':''}`]);
@@ -260,6 +483,10 @@ export default function Rec2PdfApp(){
         setErrorBanner({title:`Errore backend (HTTP ${status||'0'})`,details:data?.message||(raw?raw.slice(0,400):(status===0?'Connessione fallita/CORS':'Errore sconosciuto'))});
         return;
       }
+      const successEvents = stageEventsPayload.length
+        ? stageEventsPayload
+        : [{ stage: 'complete', status: 'done', message: 'Pipeline completata' }];
+      handlePipelineEvents(successEvents, { animate: true });
       if(data?.logs) appendLogs(data.logs);
       if(data?.pdfPath){
         setPdfPath(data.pdfPath);
@@ -285,6 +512,7 @@ export default function Rec2PdfApp(){
           logos:logosUsed,
           tags:[],
           logs:sessionLogs,
+          stageEvents: successEvents,
           source:customBlob?'upload':'recording',
           bytes:blob.size||null,
         });
@@ -548,7 +776,7 @@ export default function Rec2PdfApp(){
     const target = directUrl || buildFileUrl(fallbackBackend, entry.pdfPath);
     if (!target) return;
     window.open(target, '_blank', 'noopener,noreferrer');
-  }, [normalizedBackendUrl]);
+  }, [normalizedBackendUrl, handlePipelineEvents]);
 
   const handleOpenHistoryMd = useCallback(async (entry, overrideMdPath) => {
     const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
@@ -779,7 +1007,7 @@ export default function Rec2PdfApp(){
         )
       );
       pushLogs([`💾 Markdown salvato (${targetPath})`]);
-    } catch (err) => {
+    } catch (err) {
       const message = err && err.message ? err.message : String(err);
       pushLogs([`❌ ${message}`]);
       setMdEditor((prev) => {
@@ -798,6 +1026,8 @@ export default function Rec2PdfApp(){
 
   const handleShowHistoryLogs = useCallback((entry) => {
     if (!entry) return;
+    const stageEventsFromHistory = Array.isArray(entry.stageEvents) ? entry.stageEvents : [];
+    handlePipelineEvents(stageEventsFromHistory, { animate: false, autoRevealOnFailure: false });
     setLogs(() => {
       const baseLogs = Array.isArray(entry.logs) ? entry.logs : [];
       const extras = [];
@@ -813,7 +1043,8 @@ export default function Rec2PdfApp(){
     setMdPath(deriveMarkdownPath(entry.mdPath, entry.pdfPath));
     setActivePanel('doc');
     setErrorBanner(null);
-  }, [normalizedBackendUrl]);
+    setShowRawLogs(true);
+  }, [normalizedBackendUrl, handlePipelineEvents]);
 
   const handleRenameHistoryEntry = useCallback((id, title) => {
     setHistory(prev => prev.map(entry => entry.id === id ? { ...entry, title } : entry));
@@ -950,6 +1181,50 @@ export default function Rec2PdfApp(){
 
   const defaultDest="/Users/tuo_utente/Recordings";
   const destIsPlaceholder=!destDir.trim()||destDir===defaultDest||destDir.includes('tuo_utente');
+
+  const totalStages = PIPELINE_STAGES.length;
+  const completedStagesCount = useMemo(() => PIPELINE_STAGES.reduce((acc, stage) => acc + (pipelineStatus[stage.key] === 'done' ? 1 : 0), 0), [pipelineStatus]);
+  const progressPercent = totalStages ? Math.min(100, Math.max(0, Math.round((completedStagesCount / totalStages) * 100))) : 0;
+  const failedStage = useMemo(() => PIPELINE_STAGES.find((stage) => pipelineStatus[stage.key] === 'failed'), [pipelineStatus]);
+  const pipelineComplete = useMemo(() => totalStages > 0 && PIPELINE_STAGES.every((stage) => pipelineStatus[stage.key] === 'done'), [pipelineStatus, totalStages]);
+  const activeStageDefinition = useMemo(() => PIPELINE_STAGES.find((stage) => stage.key === activeStageKey), [activeStageKey]);
+
+  const headerStatus = useMemo(() => {
+    if (failedStage) {
+      return {
+        text: `${failedStage.label}: errore`,
+        className: 'border border-rose-500/40 bg-rose-500/10 text-rose-200',
+        icon: AlertCircle,
+      };
+    }
+    if (pipelineComplete) {
+      return {
+        text: 'Pipeline completata',
+        className: 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-200',
+        icon: CheckCircle2,
+      };
+    }
+    if (activeStageDefinition) {
+      return {
+        text: `${activeStageDefinition.label}: in corso`,
+        className: 'border border-indigo-500/40 bg-indigo-500/10 text-indigo-100',
+        icon: activeStageDefinition.icon,
+      };
+    }
+    if (busy) {
+      return {
+        text: 'Pipeline in esecuzione…',
+        className: 'border border-indigo-500/40 bg-indigo-500/10 text-indigo-100',
+        icon: Cpu,
+      };
+    }
+    return {
+      text: 'In attesa di avvio',
+      className: 'border border-zinc-700 bg-zinc-900 text-zinc-300',
+      icon: Cpu,
+    };
+  }, [failedStage, pipelineComplete, activeStageDefinition, busy]);
+  const HeaderIcon = headerStatus.icon || Cpu;
 
 
   return (
@@ -1120,7 +1395,115 @@ export default function Rec2PdfApp(){
                 )}
               </div>
             </div>
-            <div className={classNames("rounded-2xl p-5 shadow-lg border", themes[theme].card)}><h3 className="text-lg font-medium flex items-center gap-2"><Cpu className="w-4 h-4"/> Log</h3><div className={classNames("mt-3 h-56 overflow-auto rounded-lg p-3 font-mono text-xs text-zinc-300 border", themes[theme].log)}>{logs?.length?logs.map((ln,i)=>(<div key={i} className="whitespace-pre-wrap leading-relaxed">{ln}</div>)):<div className="text-zinc-500">Nessun log ancora.</div>}</div></div>
+            <div className={classNames("rounded-2xl p-5 shadow-lg border space-y-4", themes[theme].card)}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="text-lg font-medium flex items-center gap-2"><Cpu className="w-4 h-4"/> Pipeline</h3>
+                <div className="flex items-center gap-2">
+                  <span className={classNames("inline-flex items-center gap-2 rounded-lg px-2.5 py-1 text-xs font-medium transition", headerStatus.className)}>
+                    <HeaderIcon className="h-4 w-4"/>
+                    {headerStatus.text}
+                  </span>
+                  <button
+                    onClick={() => setShowRawLogs(prev => !prev)}
+                    className={classNames(
+                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition",
+                      themes[theme].input,
+                      themes[theme].input_hover
+                    )}
+                  >
+                    <Bug className="h-3.5 w-3.5"/>
+                    {showRawLogs ? 'Nascondi log grezzi' : 'Mostra log grezzi'}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-indigo-400 via-indigo-300 to-emerald-300 transition-all duration-500"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-xs text-zinc-400">
+                  <span>{completedStagesCount}/{totalStages} step completati</span>
+                  <span>{progressPercent}%</span>
+                </div>
+              </div>
+              <div className="space-y-4">
+                {PIPELINE_STAGES.map((stage, index) => {
+                  const status = pipelineStatus[stage.key] || 'idle';
+                  const Icon = stage.icon || Cpu;
+                  const prevStatus = index > 0 ? (pipelineStatus[PIPELINE_STAGES[index - 1].key] || 'idle') : null;
+                  const connectorClass = prevStatus === 'done' ? 'bg-emerald-500/40' : prevStatus === 'failed' ? 'bg-rose-500/40' : 'bg-zinc-700/60';
+                  const stageStyle = STAGE_STATUS_STYLES[status] || STAGE_STATUS_STYLES.idle;
+                  const isActive = failedStage ? failedStage.key === stage.key : activeStageKey === stage.key;
+                  const stageMessage = stageMessages[stage.key];
+                  return (
+                    <div key={stage.key} className="relative pl-10">
+                      {index !== 0 && (
+                        <div className={classNames('absolute left-3 top-0 h-full w-px transition-colors', connectorClass)} />
+                      )}
+                      <div className={classNames(
+                        'absolute left-0 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-xs transition-all',
+                        stageStyle,
+                        isActive && 'ring-2 ring-indigo-400/60'
+                      )}>
+                        <Icon className="h-3.5 w-3.5"/>
+                      </div>
+                      <div className={classNames(
+                        'rounded-lg border px-3 py-2 transition-all',
+                        stageStyle,
+                        isActive && 'shadow-lg shadow-indigo-500/10'
+                      )}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-medium text-zinc-100">{stage.label}</div>
+                          <span className={classNames(
+                            'rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide',
+                            stageStyle,
+                            status === 'running' && 'animate-pulse'
+                          )}>
+                            {STAGE_STATUS_LABELS[status] || status}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-zinc-300">{stage.description}</p>
+                        {stageMessage && (
+                          <div
+                            className={classNames(
+                              'mt-2 rounded-md border px-3 py-2 text-xs font-mono leading-relaxed whitespace-pre-wrap',
+                              status === 'failed' ? 'border-rose-500/40 bg-rose-500/10 text-rose-200' : 'border-zinc-700/60 bg-black/20 text-zinc-200'
+                            )}
+                          >
+                            {stageMessage}
+                          </div>
+                        )}
+                        {status === 'failed' && stage.help && (
+                          <div className="mt-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                            {stage.help}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {!showRawLogs && logs?.length > 0 && (
+                <div className="text-xs text-zinc-500">
+                  {logs.length} righe di log disponibili. Apri i log grezzi per i dettagli completi.
+                </div>
+              )}
+              {showRawLogs && (
+                <div className={classNames('mt-2 max-h-56 overflow-auto rounded-xl border p-3 font-mono text-xs leading-relaxed', themes[theme].log)}>
+                  {logs?.length ? (
+                    logs.map((ln, i) => (
+                      <div key={i} className="whitespace-pre-wrap">
+                        {ln}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-zinc-500">Nessun log ancora.</div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
         {!onboardingComplete && (
@@ -1154,10 +1537,6 @@ export default function Rec2PdfApp(){
         downloadUrl={mdEditorDownloadUrl}
         busy={busy}
         themeStyles={themes[theme]}
-      />
-    </div>
-  );
-}theme]}
       />
     </div>
   );

@@ -77,12 +77,37 @@ app.get('/api/diag', async (req, res) => {
   res.json({ ok, logs });
 });
 
-app.post('/api/rec2pdf', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
+app.post('/api/rec2pdf', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) =>
+{
   const logs = [];
-  const out = (s) => { logs.push(s); };
+  const stageEvents = [];
+  let lastStageKey = null;
+
+  const logStageEvent = (stage, status = 'info', message = '') => {
+    if (!stage) return;
+    const normalizedStatus = String(status || 'info').toLowerCase();
+    stageEvents.push({ stage, status: normalizedStatus, message, ts: Date.now() });
+    if (normalizedStatus === 'running') {
+      lastStageKey = stage;
+    } else if (['completed', 'done', 'success'].includes(normalizedStatus)) {
+      if (lastStageKey === stage) lastStageKey = null;
+    } else if (['failed', 'error'].includes(normalizedStatus)) {
+      lastStageKey = stage;
+    }
+  };
+
+  const out = (s, stage, status) => {
+    logs.push(s);
+    if (stage) {
+      logStageEvent(stage, status || 'info', s);
+    }
+  };
 
   try {
-    if (!req.files || !req.files.audio) { return res.status(400).json({ ok: false, message: 'Nessun file audio', logs }); }
+    if (!req.files || !req.files.audio) {
+      logStageEvent('upload', 'failed', 'Nessun file audio');
+      return res.status(400).json({ ok: false, message: 'Nessun file audio', logs, stageEvents });
+    }
 
     const slug = (req.body.slug || 'meeting').replace(/[^a-zA-Z0-9._-]/g, '_');
     const ts = yyyymmddHHMMSS(new Date());
@@ -95,55 +120,78 @@ app.post('/api/rec2pdf', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 
     const inPath = req.files.audio[0].path;
     const baseName = `${ts}_${slug}`;
     const wavPath = path.join(dest, `${baseName}.wav`);
-    out(`📦 Upload ricevuto: ${path.basename(req.files.audio[0].originalname || 'audio')}`);
+    out('🚀 Preparazione upload…', 'upload', 'running');
+    out(`📦 Upload ricevuto: ${path.basename(req.files.audio[0].originalname || 'audio')}`, 'upload', 'completed');
 
-    out('🎛️ Transcodifica in WAV…');
+    out('🎛️ Transcodifica in WAV…', 'transcode', 'running');
     const ff = await run('ffmpeg', ['-y', '-i', inPath, '-ac', '1', '-ar', '16000', wavPath]);
-    if (ff.code !== 0) { out(ff.stderr || 'ffmpeg failed'); throw new Error('Transcodifica fallita'); }
+    if (ff.code !== 0) {
+      out(ff.stderr || 'ffmpeg failed', 'transcode', 'failed');
+      throw new Error('Transcodifica fallita');
+    }
+    out('✅ Transcodifica completata', 'transcode', 'completed');
 
     out(`🧩 Esecuzione pipeline: m4a2pdf "${wavPath}" "${dest}"`);
 
     let txtPath = '';
-    out('🎧 Trascrizione con Whisper…');
+    out('🎧 Trascrizione con Whisper…', 'transcribe', 'running');
     const w = await run('bash', ['-lc', `whisper ${JSON.stringify(wavPath)} --language it --model small --output_format txt --output_dir ${JSON.stringify(dest)} --verbose False`]);
-    if (w.code !== 0) { out(w.stderr || w.stdout || 'whisper failed'); throw new Error('Trascrizione fallita'); }
+    if (w.code !== 0) {
+      out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
+      throw new Error('Trascrizione fallita');
+    }
 
     const prefix = path.join(dest, `${baseName}`);
     const candidates = (await fsp.readdir(dest)).filter(f => f.startsWith(baseName) && f.endsWith('.txt'));
     if (!candidates.length) { throw new Error('Trascrizione .txt non trovata'); }
     txtPath = path.join(dest, candidates[0]);
+    out(`✅ Trascrizione completata: ${path.basename(txtPath)}`, 'transcribe', 'completed');
 
-    out('📝 Generazione Markdown con genMD…');
+    out('📝 Generazione Markdown con genMD…', 'markdown', 'running');
     const gm = await zsh(`cd ${JSON.stringify(dest)}; genMD ${JSON.stringify(txtPath)}`);
-    if (gm.code !== 0) { out(gm.stderr || gm.stdout || 'genMD failed'); throw new Error('genMD fallito'); }
+    if (gm.code !== 0) {
+      out(gm.stderr || gm.stdout || 'genMD failed', 'markdown', 'failed');
+      throw new Error('genMD fallito');
+    }
 
     const mdFile = path.join(dest, `documento_${baseName}.md`);
     if (!fs.existsSync(mdFile)) { throw new Error(`Markdown non trovato: ${mdFile}`); }
+    out(`✅ Markdown generato: ${path.basename(mdFile)}`, 'markdown', 'completed');
 
-    out('📄 Pubblicazione PDF con PPUBR…');
+    out('📄 Pubblicazione PDF con PPUBR…', 'publish', 'running');
     const customLogoPath = req.files.pdfLogo ? req.files.pdfLogo[0].path : null;
     if (customLogoPath) {
-      out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`);
+      out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
     }
     const zshOpts = customLogoPath ? { env: { ...process.env, CUSTOM_PDF_LOGO: customLogoPath } } : {};
     const pb = await zsh(`cd ${JSON.stringify(dest)}; (command -v PPUBR && PPUBR ${JSON.stringify(mdFile)}) || (command -v ppubr && ppubr ${JSON.stringify(mdFile)})`, zshOpts);
-    if (pb.code !== 0) { out(pb.stderr || pb.stdout || 'PPUBR failed'); /* non interrompiamo: proviamo pandoc */ }
+    if (pb.code !== 0) { out(pb.stderr || pb.stdout || 'PPUBR failed', 'publish', 'info'); /* non interrompiamo: proviamo pandoc */ }
 
     const pdfPath = path.join(dest, `documento_${baseName}.pdf`);
     if (!fs.existsSync(pdfPath)) {
       const pandoc = await zsh(`cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdFile)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdFile)}`);
       if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
-        out(pandoc.stderr || pandoc.stdout || 'pandoc failed');
+        out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
         throw new Error('Generazione PDF fallita');
       }
     }
 
-    out(`✅ Fatto! PDF creato: ${pdfPath}`);
-    return res.json({ ok: true, pdfPath, mdPath: mdFile, logs });
+    out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
+    out('🎉 Pipeline completata', 'complete', 'completed');
+    return res.json({ ok: true, pdfPath, mdPath: mdFile, logs, stageEvents });
   } catch (err) {
+    const message = String(err && err.message ? err.message : err);
+    const failureStage = lastStageKey || 'complete';
+    const hasFailureEvent = stageEvents.some(evt => evt.stage === failureStage && evt.status === 'failed');
+    if (!hasFailureEvent) {
+      logStageEvent(failureStage, 'failed', message);
+    }
+    if (!stageEvents.some(evt => evt.stage === 'complete')) {
+      logStageEvent('complete', 'failed', 'Pipeline interrotta');
+    }
     out('❌ Errore durante la pipeline');
-    out(String(err && err.message ? err.message : err));
-    return res.status(500).json({ ok: false, message: String(err && err.message ? err.message : err), logs });
+    out(message);
+    return res.status(500).json({ ok: false, message, logs, stageEvents });
   } finally {
     try { if (req.files && req.files.audio) await fsp.unlink(req.files.audio[0].path); } catch {}
     try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch {}
