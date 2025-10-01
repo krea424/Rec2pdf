@@ -779,7 +779,7 @@ export default function Rec2PdfApp(){
         )
       );
       pushLogs([`💾 Markdown salvato (${targetPath})`]);
-    } catch (err) {
+    } catch (err) => {
       const message = err && err.message ? err.message : String(err);
       pushLogs([`❌ ${message}`]);
       setMdEditor((prev) => {
@@ -1154,6 +1154,10 @@ export default function Rec2PdfApp(){
         downloadUrl={mdEditorDownloadUrl}
         busy={busy}
         themeStyles={themes[theme]}
+      />
+    </div>
+  );
+}theme]}
       />
     </div>
   );
