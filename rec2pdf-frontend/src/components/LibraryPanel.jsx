@@ -185,6 +185,9 @@ export default function LibraryPanel({
             const titleValue = titleDrafts[entryId] ?? entry?.title ?? entry?.slug ?? "Sessione";
             const tagsDraft = tagDrafts[entryId] ?? (Array.isArray(entry?.tags) ? entry.tags.join(", ") : "");
             const isActive = activePdfPath && entry?.pdfPath && activePdfPath === entry.pdfPath;
+            const resolvedMdPath = entry?.mdPath?.trim?.() || (entry?.pdfPath && /\.pdf$/i.test(entry.pdfPath) ? entry.pdfPath.replace(/\.pdf$/i, '.md') : '');
+            const canOpenMd = Boolean(resolvedMdPath);
+            const canRepublish = canOpenMd && !busy;
             const frontendLogo = entry?.logos?.frontend === 'custom' ? 'Frontend personalizzato' : 'Frontend default';
             const pdfLogo = entry?.logos?.pdf && entry.logos.pdf !== 'default' ? `PDF: ${entry.logos.pdf}` : 'PDF default';
             return (
@@ -258,24 +261,24 @@ export default function LibraryPanel({
                         <ExternalLink className="w-3.5 h-3.5" /> Apri PDF
                       </button>
                       <button
-                        onClick={() => onOpenMd?.(entry)}
+                        onClick={() => onOpenMd?.(entry, resolvedMdPath)}
                         className={classNames(
                           "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs transition",
-                          entry?.mdPath ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-zinc-800/60 text-zinc-500 cursor-not-allowed"
+                          canOpenMd ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-zinc-800/60 text-zinc-500 cursor-not-allowed"
                         )}
-                        disabled={!entry?.mdPath}
+                        disabled={!canOpenMd}
                       >
                         <FileCode className="w-3.5 h-3.5" /> Apri MD
                       </button>
                       <button
-                        onClick={() => onRepublish?.(entry)}
+                        onClick={() => onRepublish?.(entry, resolvedMdPath)}
                         className={classNames(
                           "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs transition",
-                          entry?.mdPath && !busy
+                          canRepublish
                             ? "bg-emerald-600 text-white hover:bg-emerald-500"
                             : "bg-zinc-800/60 text-zinc-500 cursor-not-allowed"
                         )}
-                        disabled={!entry?.mdPath || busy}
+                        disabled={!canRepublish}
                       >
                         <RefreshCw className="w-3.5 h-3.5" /> {busy ? 'Attendi…' : 'Rigenera PDF'}
                       </button>
