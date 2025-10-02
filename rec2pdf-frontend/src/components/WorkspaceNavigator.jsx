@@ -49,9 +49,6 @@ const buildSearchHaystack = (entry) => {
   if (Array.isArray(entry?.structure?.missingSections)) {
     parts.push(entry.structure.missingSections.join(" "));
   }
-  if (entry?.prompt?.title) parts.push(entry.prompt.title);
-  if (entry?.prompt?.persona) parts.push(entry.prompt.persona);
-  if (Array.isArray(entry?.prompt?.tags)) parts.push(entry.prompt.tags.join(" "));
   return parts
     .filter(Boolean)
     .join(" ")
@@ -852,12 +849,6 @@ export default function WorkspaceNavigator({
                               {entry.workspace.status}
                             </span>
                           )}
-                          {entry?.prompt?.title && (
-                            <span className="flex items-center gap-1 rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-200">
-                              <Sparkles className="h-3 w-3" />
-                              {entry.prompt.title}
-                            </span>
-                          )}
                         </div>
                       </div>
                       <div className="text-right text-xs text-zinc-400">
@@ -874,11 +865,6 @@ export default function WorkspaceNavigator({
                     {Array.isArray(entry?.structure?.missingSections) && entry.structure.missingSections.length > 0 && (
                       <div className="mt-2 text-xs text-amber-300">
                         Manca: {entry.structure.missingSections.join(", ")}
-                      </div>
-                    )}
-                    {entry?.structure?.promptChecklist?.missing?.length > 0 && (
-                      <div className="mt-1 text-xs text-amber-300">
-                        Gap template: {entry.structure.promptChecklist.missing.join(", ")}
                       </div>
                     )}
                   </button>
@@ -905,50 +891,6 @@ export default function WorkspaceNavigator({
                     </span>
                   )}
                 </div>
-                {selectedEntry.prompt?.title && (
-                  <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-indigo-100 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span className="text-sm font-semibold text-indigo-100">{selectedEntry.prompt.title}</span>
-                    </div>
-                    {selectedEntry.prompt.persona && (
-                      <div className="text-[11px] text-indigo-200/80">Persona: {selectedEntry.prompt.persona}</div>
-                    )}
-                    {Array.isArray(selectedEntry.prompt.tags) && selectedEntry.prompt.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {selectedEntry.prompt.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="rounded-lg bg-black/30 px-2 py-0.5 text-[10px] uppercase tracking-wide text-indigo-200/80"
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {Number.isFinite(selectedEntry.structure?.promptChecklist?.score) && (
-                      <div className="text-[11px] text-indigo-200/80">
-                        Copertura template: {Math.round(selectedEntry.structure.promptChecklist.score)}%
-                      </div>
-                    )}
-                    {selectedEntry.structure?.promptChecklist?.missing?.length > 0 && (
-                      <div className="text-[11px] text-amber-200">
-                        Gap: {selectedEntry.structure.promptChecklist.missing.join(', ')}
-                      </div>
-                    )}
-                    {selectedEntry.prompt?.focus && (
-                      <div className="text-[11px] text-indigo-200/80">Focus: {selectedEntry.prompt.focus}</div>
-                    )}
-                    {selectedEntry.prompt?.notes && (
-                      <div className="text-[11px] text-indigo-200/70">Note: {selectedEntry.prompt.notes}</div>
-                    )}
-                    {Array.isArray(selectedEntry.prompt?.completedCues) && selectedEntry.prompt.completedCues.length > 0 && (
-                      <div className="text-[11px] text-indigo-200/70">
-                        Cue completate: {selectedEntry.prompt.completedCues.join(', ')}
-                      </div>
-                    )}
-                  </div>
-                )}
                 <div className="max-h-48 overflow-auto rounded-lg border border-zinc-800/60 bg-black/20 p-3 text-sm text-zinc-200">
                   {previewState.loading ? (
                     <div className="text-xs text-zinc-500">Caricamento anteprima…</div>

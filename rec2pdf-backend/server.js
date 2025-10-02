@@ -563,7 +563,7 @@ const buildWorkspaceBaseName = async (workspace, destDir, slug) => {
   if (naming === 'incremental') {
     try {
       const entries = await fsp.readdir(destDir);
-      const regex = new RegExp(`^${joined}_v(\\d+)$`);
+      const regex = new RegExp(`^${joined}_v(\\d+)`);
       const lastVersion = entries.reduce((max, entry) => {
         const match = entry.match(regex);
         if (match) {
@@ -580,62 +580,6 @@ const buildWorkspaceBaseName = async (workspace, destDir, slug) => {
   }
 
   return `${yyyymmddHHMMSS()}_${joined}`;
-};
-
-const UP_BASE = path.join(os.tmpdir(), 'rec2pdf_uploads');
-if (!fs.existsSync(UP_BASE)) fs.mkdirSync(UP_BASE, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UP_BASE),
-  filename: (req, file, cb) => cb(null, `upload_${Date.now()}_${(file.originalname||'file').replace(/[^a-zA-Z0-9._-]/g,'_')}`)
-});
-const upload = multer({ storage, limits: { fileSize: 1024*1024*1024 } });
-
-const run = (cmd, args = [], opts = {}) => new Promise((resolve) => {
-  execFile(cmd, args, { maxBuffer: 10 * 1024 * 1024, ...opts }, (error, stdout, stderr) => {
-    resolve({
-      code: error ? (error.code ?? 1) : 0,
-      stdout: stdout?.toString?.() || '',
-      stderr: stderr?.toString?.() || '',
-      error,
-    });
-  });
-});
-
-const zsh = (snippet, opts = {}) => new Promise((resolve) => {
-  const shellCmd = `source ~/.zshrc 2>/dev/null; ${snippet}`;
-  exec(`/bin/zsh -lc ${JSON.stringify(shellCmd)}`, { maxBuffer: 20*1024*1024, ...opts }, (error, stdout, stderr) => {
-    resolve({ code: error ? (error.code ?? 1) : 0, stdout: stdout?.toString?.() || '', stderr: stderr?.toString?.() || '' });
-  });
-});
-
-const yyyymmddHHMMSS = (d = new Date()) => {
-  const p = (n) => String(n).padStart(2,'0');
-  return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
-};
-
-const ensureDir = async (dir) => { await fsp.mkdir(dir, { recursive: true }); return dir; };
-
-const ensureWritableDirectory = async (dir) => {
-  try {
-    await ensureDir(dir);
-    const probeName = `.rec2pdf_write_probe_${process.pid}_${Date.now()}`;
-    const probePath = path.join(dir, probeName);
-    await fsp.writeFile(probePath, 'ok');
-    await fsp.unlink(probePath);
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error };
-  }
-};
-
-const commandVersion = async (cmd) => {
-  const check = await run(cmd, ['--version']);
-  if (check.code === 0) {
-    const firstLine = check.stdout.split('\n')[0] || cmd;
-    return { ok: true, detail: firstLine };
-  }
-  return { ok: false, detail: check.stderr || check.stdout || '' };
 };
 
 const mergeWorkspaceUpdate = (workspace, patch) => {
@@ -936,12 +880,6 @@ app.post('/api/rec2pdf', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 
   let promptFocus = '';
   let promptNotes = '';
   let promptCuesCompleted = [];
-  let selectedPrompt = null;
-  let promptRulePayload = null;
-  let promptEnv = null;
-  let promptFocus = '';
-  let promptNotes = '';
-  let promptCuesCompleted = [];
 
   const logStageEvent = (stage, status = 'info', message = '') => {
     if (!stage) return;
@@ -1072,7 +1010,7 @@ app.post('/api/rec2pdf', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 
 
     let txtPath = '';
     out('🎧 Trascrizione con Whisper…', 'transcribe', 'running');
-    const w = await run('bash', ['-lc', `whisper ${JSON.stringify(wavPath)} --language it --model small --output_format txt --output_dir ${JSON.stringify(dest)} --verbose False`]);
+    const w = await run('bash', ['-lc', `whisper ${JSON.stringify(wavPath)} --language it --model medium --output_format txt --output_dir ${JSON.stringify(dest)} --verbose False`]);
     if (w.code !== 0) {
       out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
       throw new Error('Trascrizione fallita');
@@ -1223,6 +1161,12 @@ app.post('/api/ppubr-upload', upload.fields([{ name: 'markdown', maxCount: 1 }, 
   const logs = [];
   const stageEvents = [];
   let lastStageKey = null;
+  let selectedPrompt = null;
+  let promptRulePayload = null;
+  let promptEnv = null;
+  let promptFocus = '';
+  let promptNotes = '';
+  let promptCuesCompleted = [];
 
   const logStageEvent = (stage, status = 'info', message = '') => {
     if (!stage) return;
@@ -1506,4 +1450,5 @@ app.use((req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`rec2pdf backend in ascolto su http://localhost:${PORT}`);
+});`rec2pdf backend in ascolto su http://localhost:${PORT}`);
 });
