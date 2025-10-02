@@ -551,7 +551,7 @@ app.post('/api/rec2pdf', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 
 
     let txtPath = '';
     out('🎧 Trascrizione con Whisper…', 'transcribe', 'running');
-    const w = await run('bash', ['-lc', `whisper ${JSON.stringify(wavPath)} --language it --model small --output_format txt --output_dir ${JSON.stringify(dest)} --verbose False`]);
+    const w = await run('bash', ['-lc', `whisper ${JSON.stringify(wavPath)} --language it --model medium --output_format txt --output_dir ${JSON.stringify(dest)} --verbose False`]);
     if (w.code !== 0) {
       out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
       throw new Error('Trascrizione fallita');
