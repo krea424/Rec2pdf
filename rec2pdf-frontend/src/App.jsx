@@ -2066,6 +2066,16 @@ export default function Rec2PdfApp(){
   const failedStage = useMemo(() => PIPELINE_STAGES.find((stage) => pipelineStatus[stage.key] === 'failed'), [pipelineStatus]);
   const pipelineComplete = useMemo(() => totalStages > 0 && PIPELINE_STAGES.every((stage) => pipelineStatus[stage.key] === 'done'), [pipelineStatus, totalStages]);
   const activeStageDefinition = useMemo(() => PIPELINE_STAGES.find((stage) => stage.key === activeStageKey), [activeStageKey]);
+  const promptCompletedCues = useMemo(() => {
+    if (!promptSelection?.cueProgress) return [];
+    return Object.entries(promptSelection.cueProgress)
+      .filter(([, value]) => Boolean(value))
+      .map(([key]) => key);
+  }, [promptSelection.cueProgress]);
+  const activePrompt = useMemo(
+    () => prompts.find((prompt) => prompt.id === promptSelection.promptId) || null,
+    [prompts, promptSelection.promptId]
+  );
 
   const headerStatus = useMemo(() => {
     if (failedStage) {
