@@ -169,31 +169,6 @@ export const Bookmark = (props) => (
   </IconBase>
 );
 
-export const Lightbulb = (props) => (
-  <IconBase {...props}>
-    <path d="M9 18h6" />
-    <path d="M10 22h4" />
-    <path d="M12 2a7 7 0 0 0-4 12.9c.6.43 1 1.13 1 1.88V17h6v-.22c0-.75.4-1.45 1-1.88A7 7 0 0 0 12 2Z" />
-  </IconBase>
-);
-
-export const Target = (props) => (
-  <IconBase {...props}>
-    <circle cx="12" cy="12" r="8" />
-    <circle cx="12" cy="12" r="5" />
-    <circle cx="12" cy="12" r="2" />
-  </IconBase>
-);
-
-export const ClipboardList = (props) => (
-  <IconBase {...props}>
-    <path d="M9 5h6" />
-    <path d="M9 3h6a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1V5a2 2 0 0 1 2-2Z" />
-    <path d="M9 12h6" />
-    <path d="M9 16h6" />
-  </IconBase>
-);
-
 export const Palette = (props) => (
   <IconBase {...props}>
     <path d="M12 22c-4.97 0-9-3.58-9-8s4.03-8 9-8 9 3.58 9 8a4 4 0 0 1-4 4h-1a2 2 0 0 0-2 2v1a1 1 0 0 1-1 1Z" />
@@ -324,9 +299,6 @@ export default {
   Users,
   FilterIcon,
   Bookmark,
-  Lightbulb,
-  Target,
-  ClipboardList,
   Palette,
   Save,
   Bug,
