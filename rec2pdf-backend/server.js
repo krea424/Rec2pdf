@@ -835,6 +835,248 @@ app.delete('/api/prompts/:id', async (req, res) => {
   }
 });
 
+const mergeWorkspaceUpdate = (workspace, patch) => {
+  const updated = { ...workspace };
+  if (patch.name) updated.name = String(patch.name).trim();
+  if (patch.client) updated.client = String(patch.client).trim();
+  if (patch.color) updated.color = normalizeColor(patch.color);
+  if (patch.slug) updated.slug = String(patch.slug).trim().replace(/[^a-zA-Z0-9._-]/g, '_');
+  if (patch.versioningPolicy && typeof patch.versioningPolicy === 'object') {
+    updated.versioningPolicy = {
+      retentionLimit: Number.isFinite(patch.versioningPolicy.retentionLimit)
+        ? Math.max(1, Number(patch.versioningPolicy.retentionLimit))
+        : (workspace.versioningPolicy?.retentionLimit || 10),
+      freezeOnPublish: Boolean(
+        patch.versioningPolicy.freezeOnPublish ?? workspace.versioningPolicy?.freezeOnPublish
+      ),
+      namingConvention:
+        patch.versioningPolicy.namingConvention || workspace.versioningPolicy?.namingConvention || 'timestamped',
+    };
+  }
+
+  if (Array.isArray(patch.projects)) {
+    updated.projects = patch.projects.map((project) => ({
+      id: project.id || generateId('proj'),
+      name: String(project.name || 'Project').trim(),
+      color: normalizeColor(project.color || updated.color || '#6366f1'),
+      statuses: Array.isArray(project.statuses) && project.statuses.length
+        ? project.statuses.map((status) => String(status).trim()).filter(Boolean)
+        : [...DEFAULT_STATUSES],
+      createdAt: project.createdAt || Date.now(),
+      updatedAt: Date.now(),
+    }));
+  }
+
+  if (Array.isArray(patch.defaultStatuses) && patch.defaultStatuses.length) {
+    updated.defaultStatuses = patch.defaultStatuses
+      .map((status) => String(status).trim())
+      .filter(Boolean);
+  }
+
+  updated.updatedAt = Date.now();
+  return updated;
+};
+
+app.get('/api/workspaces', async (req, res) => {
+  try {
+    const workspaces = await readWorkspaces();
+    res.json({ ok: true, workspaces });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.post('/api/workspaces', async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    if (!name) {
+      return res.status(400).json({ ok: false, message: 'Nome workspace obbligatorio' });
+    }
+
+    const workspaces = await readWorkspaces();
+    const workspace = {
+      id: generateId('ws'),
+      name,
+      client: String(req.body?.client || name).trim(),
+      color: normalizeColor(req.body?.color || '#6366f1'),
+      slug: String(req.body?.slug || name.toLowerCase().replace(/\s+/g, '-')).replace(/[^a-zA-Z0-9._-]/g, '_'),
+      versioningPolicy: {
+        retentionLimit: Number.isFinite(req.body?.versioningPolicy?.retentionLimit)
+          ? Math.max(1, Number(req.body.versioningPolicy.retentionLimit))
+          : 10,
+        freezeOnPublish: Boolean(req.body?.versioningPolicy?.freezeOnPublish),
+        namingConvention: req.body?.versioningPolicy?.namingConvention || 'timestamped',
+      },
+      defaultStatuses: Array.isArray(req.body?.defaultStatuses) && req.body.defaultStatuses.length
+        ? req.body.defaultStatuses.map((status) => String(status).trim()).filter(Boolean)
+        : [...DEFAULT_STATUSES],
+      projects: Array.isArray(req.body?.projects)
+        ? req.body.projects.map((project) => ({
+            id: project.id || generateId('proj'),
+            name: String(project.name || 'Project').trim(),
+            color: normalizeColor(project.color || req.body?.color || '#6366f1'),
+            statuses: Array.isArray(project.statuses) && project.statuses.length
+              ? project.statuses.map((status) => String(status).trim()).filter(Boolean)
+              : [...DEFAULT_STATUSES],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }))
+        : [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    workspaces.push(workspace);
+    await writeWorkspaces(workspaces);
+    res.status(201).json({ ok: true, workspace });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.put('/api/workspaces/:id', async (req, res) => {
+  try {
+    const workspaces = await readWorkspaces();
+    const index = workspaces.findIndex((workspace) => workspace.id === req.params.id);
+    if (index === -1) {
+      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
+    }
+
+    const merged = mergeWorkspaceUpdate(workspaces[index], req.body || {});
+    workspaces[index] = merged;
+    await writeWorkspaces(workspaces);
+    res.json({ ok: true, workspace: merged });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.delete('/api/workspaces/:id', async (req, res) => {
+  try {
+    const workspaces = await readWorkspaces();
+    const next = workspaces.filter((workspace) => workspace.id !== req.params.id);
+    if (next.length === workspaces.length) {
+      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
+    }
+    await writeWorkspaces(next);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.get('/api/prompts', async (req, res) => {
+  try {
+    const prompts = await readPrompts();
+    res.json({ ok: true, prompts });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.post('/api/prompts', async (req, res) => {
+  try {
+    const title = String(req.body?.title || '').trim();
+    if (!title) {
+      return res.status(400).json({ ok: false, message: 'Titolo prompt obbligatorio' });
+    }
+
+    const prompts = await readPrompts();
+    const slug = sanitizeSlug(req.body?.slug || title, title);
+    const tags = Array.isArray(req.body?.tags)
+      ? req.body.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
+      : typeof req.body?.tags === 'string'
+      ? req.body.tags
+          .split(/,|\r?\n/)
+          .map((tag) => String(tag || '').trim())
+          .filter(Boolean)
+      : [];
+    const cueCards = normalizeCueCards(req.body?.cueCards);
+    const checklistSections = normalizeChecklistSections(
+      req.body?.checklist?.sections || req.body?.checklistSections || req.body?.checklist
+    );
+    const markdownRules = normalizePromptRules(req.body?.markdownRules || {});
+    const pdfRules = normalizePdfRules(req.body?.pdfRules || {});
+    const focusPrompts = Array.isArray(req.body?.focusPrompts)
+      ? req.body.focusPrompts.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+
+    const now = Date.now();
+    const prompt = {
+      id: generateId('prompt'),
+      slug,
+      title,
+      description: String(req.body?.description || '').trim(),
+      persona: String(req.body?.persona || '').trim(),
+      color: normalizeColor(req.body?.color || '#6366f1'),
+      tags,
+      cueCards,
+      checklist: { sections: checklistSections },
+      markdownRules: markdownRules || null,
+      pdfRules: pdfRules || null,
+      focusPrompts,
+      builtIn: Boolean(req.body?.builtIn && req.body.builtIn === true ? true : false),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    prompts.push(prompt);
+    await writePrompts(prompts);
+    res.status(201).json({ ok: true, prompt });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.put('/api/prompts/:id', async (req, res) => {
+  try {
+    const prompts = await readPrompts();
+    const index = prompts.findIndex((prompt) => prompt.id === req.params.id);
+    if (index === -1) {
+      return res.status(404).json({ ok: false, message: 'Prompt non trovato' });
+    }
+
+    const merged = mergePromptUpdate(prompts[index], req.body || {});
+    prompts[index] = merged;
+    await writePrompts(prompts);
+    res.json({ ok: true, prompt: merged });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.delete('/api/prompts/:id', async (req, res) => {
+  try {
+    const prompts = await readPrompts();
+    const prompt = findPromptById(prompts, req.params.id);
+    if (!prompt) {
+      return res.status(404).json({ ok: false, message: 'Prompt non trovato' });
+    }
+    const force = String(req.query?.force || '')
+      .toLowerCase()
+      .trim();
+    const isForceEnabled = force && ['1', 'true', 'yes', 'on'].includes(force);
+    if (prompt.builtIn && !isForceEnabled) {
+      return res
+        .status(400)
+        .json({ ok: false, message: 'I template predefiniti non possono essere eliminati' });
+    }
+    const next = prompts.filter((item) => item.id !== prompt.id);
+    await writePrompts(next);
+    res.json({ ok: true });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
 app.get('/api/health', (req, res) => { res.json({ ok: true, ts: Date.now() }); });
 
 app.get('/api/diag', async (req, res) => {
@@ -880,7 +1122,7 @@ app.get('/api/diag', async (req, res) => {
   res.json({ ok, logs });
 });
 
-app.post('/api/rec2pdf', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) =>
+app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) =>
 {
   const logs = [];
   const stageEvents = [];
@@ -1168,7 +1410,7 @@ app.post('/api/ppubr', async (req, res) => {
   }
 });
 
-app.post('/api/ppubr-upload', upload.fields([{ name: 'markdown', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
+app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
   const logs = [];
   const stageEvents = [];
   let lastStageKey = null;
