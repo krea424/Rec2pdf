@@ -20,171 +20,13 @@ const WORKSPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
 const PROMPTS_FILE = path.join(DATA_DIR, 'prompts.json');
 const DEFAULT_STATUSES = ['Bozza', 'In lavorazione', 'Da revisionare', 'Completato'];
 
-const DEFAULT_PROMPTS = [
-  {
-    id: 'prompt_brief_creativo',
-    slug: 'brief_creativo',
-    title: 'Brief creativo',
-    description:
-      'Trasforma un brainstorming di concept in un brief chiaro per team creativi, con obiettivi, insight di audience e deliverable.',
-    persona: 'Creative strategist',
-    color: '#f472b6',
-    tags: ['marketing', 'concept', 'campagna'],
-    cueCards: [
-      { key: 'hook', title: 'Hook narrativo', hint: 'Qual è l\'idea centrale che vuoi esplorare?' },
-      { key: 'audience', title: 'Audience', hint: 'Descrivi il target ideale e il loro bisogno principale.' },
-      { key: 'promise', title: 'Promessa', hint: 'Che trasformazione o beneficio vuoi comunicare?' },
-      { key: 'proof', title: 'Proof point', hint: 'Cita esempi, dati o insight a supporto.' },
-    ],
-    markdownRules: {
-      tone: 'Ispirazionale ma concreto, con verbi d\'azione e payoff sintetici.',
-      voice: 'Seconda persona plurale, orientata al team.',
-      bulletStyle: 'Elenchi brevi con keyword evidenziate in **grassetto**.',
-      includeCallouts: true,
-      summaryStyle: 'Executive summary iniziale con tre bullet',
-    },
-    pdfRules: {
-      accentColor: '#f472b6',
-      layout: 'bold',
-      includeCover: true,
-      includeToc: false,
-    },
-    checklist: {
-      sections: [
-        'Executive summary',
-        'Obiettivi della campagna',
-        'Insight audience',
-        'Tone of voice',
-        'Deliverable e call-to-action',
-      ],
-    },
-    builtIn: true,
-  },
-  {
-    id: 'prompt_business_case',
-    slug: 'business_case',
-    title: 'Business case',
-    description:
-      'Guida il ragionamento verso un business case strutturato: contesto, opportunità, analisi economica e piano d\'azione.',
-    persona: 'Business analyst',
-    color: '#38bdf8',
-    tags: ['strategy', 'analisi', 'finance'],
-    cueCards: [
-      { key: 'scenario', title: 'Scenario', hint: 'Qual è il contesto competitivo e qual è la tensione principale?' },
-      { key: 'value', title: 'Valore', hint: 'Quantifica benefici, risparmi o opportunità.' },
-      { key: 'risks', title: 'Rischi', hint: 'Evidenzia rischi, mitigazioni e assunzioni critiche.' },
-      { key: 'roadmap', title: 'Roadmap', hint: 'Descrivi le fasi operative e i responsabili.' },
-    ],
-    markdownRules: {
-      tone: 'Professionale, sintetico e orientato ai numeri.',
-      voice: 'Prima persona plurale per coinvolgere stakeholder.',
-      bulletStyle: 'Liste puntate con metriche e KPI.',
-      includeCallouts: true,
-      summaryStyle: 'Sintesi in apertura con raccomandazione chiave.',
-    },
-    pdfRules: {
-      accentColor: '#38bdf8',
-      layout: 'consulting',
-      includeCover: true,
-      includeToc: true,
-    },
-    checklist: {
-      sections: [
-        'Executive summary',
-        'Analisi del problema',
-        'Opzioni valutate',
-        'Impatto economico',
-        'Piano di implementazione',
-      ],
-    },
-    builtIn: true,
-  },
-  {
-    id: 'prompt_post_mortem',
-    slug: 'post_mortem',
-    title: 'Post-mortem & retrospettiva',
-    description:
-      'Racconta lezioni apprese, metriche e azioni correttive dopo un progetto o sprint, con tono costruttivo.',
-    persona: 'Project manager',
-    color: '#facc15',
-    tags: ['retrospettiva', 'continuous improvement'],
-    cueCards: [
-      { key: 'success', title: 'Successi', hint: 'Quali risultati hanno funzionato particolarmente bene?' },
-      { key: 'metrics', title: 'Metriche', hint: 'Condividi indicatori e outcome misurabili.' },
-      { key: 'lessons', title: 'Lezioni', hint: 'Quali pattern negativi hai osservato e come evitarli?' },
-      { key: 'actions', title: 'Azioni', hint: 'Proponi next step, owner e tempistiche.' },
-    ],
-    markdownRules: {
-      tone: 'Onesto ma orientato al miglioramento continuo.',
-      voice: 'Prima persona plurale, tono collaborativo.',
-      bulletStyle: 'Liste con emoji/simboli per evidenziare + e −.',
-      includeCallouts: false,
-      summaryStyle: 'Tabella iniziale con KPI e stato',
-    },
-    pdfRules: {
-      accentColor: '#facc15',
-      layout: 'workshop',
-      includeCover: false,
-      includeToc: false,
-    },
-    checklist: {
-      sections: [
-        'Contesto e obiettivi',
-        'Metriche principali',
-        'Cosa è andato bene',
-        'Cosa migliorare',
-        'Piano di azione',
-      ],
-    },
-    builtIn: true,
-  },
-];
 
-const bootstrapDefaultPrompts = () => {
-  const now = Date.now();
-  return DEFAULT_PROMPTS.map((prompt, index) => ({
-    ...prompt,
-    createdAt: prompt.createdAt || now + index,
-    updatedAt: prompt.updatedAt || now + index,
-  }));
-};
 
-const ensureDataStore = async () => {
-  await fsp.mkdir(DATA_DIR, { recursive: true });
-  try {
-    await fsp.access(WORKSPACES_FILE, fs.constants.F_OK);
-  } catch {
-    await fsp.writeFile(
-      WORKSPACES_FILE,
-      JSON.stringify({ workspaces: [], updatedAt: Date.now() }, null, 2)
-    );
-  }
-  try {
-    await fsp.access(PROMPTS_FILE, fs.constants.F_OK);
-  } catch {
-    const prompts = bootstrapDefaultPrompts();
-    await fsp.writeFile(
-      PROMPTS_FILE,
-      JSON.stringify({ prompts, updatedAt: Date.now() }, null, 2)
-    );
-  }
-};
 
-const readPrompts = async () => {
-  await ensureDataStore();
-  try {
-    const raw = await fsp.readFile(PROMPTS_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (parsed && Array.isArray(parsed.prompts)) {
-      return parsed.prompts;
-    }
-  } catch (error) {
-    console.warn('Impossibile leggere prompts.json:', error.message || error);
-  }
-  const prompts = bootstrapDefaultPrompts();
-  await writePrompts(prompts);
-  return prompts;
-};
+
+
+
+
 
 const writePrompts = async (prompts = []) => {
   await ensureDataStore();
@@ -563,7 +405,7 @@ const buildWorkspaceBaseName = async (workspace, destDir, slug) => {
   if (naming === 'incremental') {
     try {
       const entries = await fsp.readdir(destDir);
-      const regex = new RegExp(`^${joined}_v(\\d+)`);
+      const regex = new RegExp(`^${joined}_v(\\d+)$`);
       const lastVersion = entries.reduce((max, entry) => {
         const match = entry.match(regex);
         if (match) {
@@ -580,6 +422,175 @@ const buildWorkspaceBaseName = async (workspace, destDir, slug) => {
   }
 
   return `${yyyymmddHHMMSS()}_${joined}`;
+};
+
+const UP_BASE = path.join(os.tmpdir(), 'rec2pdf_uploads');
+if (!fs.existsSync(UP_BASE)) fs.mkdirSync(UP_BASE, { recursive: true });
+
+const DEFAULT_PROMPTS = [
+  {
+    id: 'prompt_brief_creativo',
+    slug: 'brief_creativo',
+    title: 'Brief creativo',
+    description:
+      'Trasforma un brainstorming di concept in un brief chiaro per team creativi, con obiettivi, insight di audience e deliverable.',
+    persona: 'Creative strategist',
+    color: '#f472b6',
+    tags: ['marketing', 'concept', 'campagna'],
+    cueCards: [
+      { key: 'hook', title: 'Hook narrativo', hint: 'Qual è l\'idea centrale che vuoi esplorare?' },
+      { key: 'audience', title: 'Audience', hint: 'Descrivi il target ideale e il loro bisogno principale.' },
+      { key: 'promise', title: 'Promessa', hint: 'Che trasformazione o beneficio vuoi comunicare?' },
+      { key: 'proof', title: 'Proof point', hint: 'Cita esempi, dati o insight a supporto.' },
+    ],
+    markdownRules: {
+      tone: 'Ispirazionale ma concreto, con verbi d\'azione e payoff sintetici.',
+      voice: 'Seconda persona plurale, orientata al team.',
+      bulletStyle: 'Elenchi brevi con keyword evidenziate in **grassetto**.',
+      includeCallouts: true,
+      summaryStyle: 'Executive summary iniziale con tre bullet',
+    },
+    pdfRules: {
+      accentColor: '#f472b6',
+      layout: 'bold',
+      includeCover: true,
+      includeToc: false,
+    },
+    checklist: {
+      sections: [
+        'Executive summary',
+        'Obiettivi della campagna',
+        'Insight audience',
+        'Tone of voice',
+        'Deliverable e call-to-action',
+      ],
+    },
+    builtIn: true,
+  },
+  {
+    id: 'prompt_business_case',
+    slug: 'business_case',
+    title: 'Business case',
+    description:
+      'Guida il ragionamento verso un business case strutturato: contesto, opportunità, analisi economica e piano d\'azione.',
+    persona: 'Business analyst',
+    color: '#38bdf8',
+    tags: ['strategy', 'analisi', 'finance'],
+    cueCards: [
+      { key: 'scenario', title: 'Scenario', hint: 'Qual è il contesto competitivo e qual è la tensione principale?' },
+      { key: 'value', title: 'Valore', hint: 'Quantifica benefici, risparmi o opportunità.' },
+      { key: 'risks', title: 'Rischi', hint: 'Evidenzia rischi, mitigazioni e assunzioni critiche.' },
+      { key: 'roadmap', title: 'Roadmap', hint: 'Descrivi le fasi operative e i responsabili.' },
+    ],
+    markdownRules: {
+      tone: 'Professionale, sintetico e orientato ai numeri.',
+      voice: 'Prima persona plurale per coinvolgere stakeholder.',
+      bulletStyle: 'Liste puntate con metriche e KPI.',
+      includeCallouts: true,
+      summaryStyle: 'Sintesi in apertura con raccomandazione chiave.',
+    },
+    pdfRules: {
+      accentColor: '#38bdf8',
+      layout: 'consulting',
+      includeCover: true,
+      includeToc: true,
+    },
+    checklist: {
+      sections: [
+        'Executive summary',
+        'Analisi del problema',
+        'Opzioni valutate',
+        'Impatto economico',
+        'Piano di implementazione',
+      ],
+    },
+    builtIn: true,
+  },
+  {
+    id: 'prompt_post_mortem',
+    slug: 'post_mortem',
+    title: 'Post-mortem & retrospettiva',
+    description:
+      'Racconta lezioni apprese, metriche e azioni correttive dopo un progetto o sprint, con tono costruttivo.',
+    persona: 'Project manager',
+    color: '#facc15',
+    tags: ['retrospettiva', 'continuous improvement'],
+    cueCards: [
+      { key: 'success', title: 'Successi', hint: 'Quali risultati hanno funzionato particolarmente bene?' },
+      { key: 'metrics', title: 'Metriche', hint: 'Condividi indicatori e outcome misurabili.' },
+      { key: 'lessons', title: 'Lezioni', hint: 'Quali pattern negativi hai osservato e come evitarli?' },
+      { key: 'actions', title: 'Azioni', hint: 'Proponi next step, owner e tempistiche.' },
+    ],
+    markdownRules: {
+      tone: 'Onesto ma orientato al miglioramento continuo.',
+      voice: 'Prima persona plurale, tono collaborativo.',
+      bulletStyle: 'Liste con emoji/simboli per evidenziare + e −.',
+      includeCallouts: false,
+      summaryStyle: 'Tabella iniziale con KPI e stato',
+    },
+    pdfRules: {
+      accentColor: '#facc15',
+      layout: 'workshop',
+      includeCover: false,
+      includeToc: false,
+    },
+    checklist: {
+      sections: [
+        'Contesto e obiettivi',
+        'Metriche principali',
+        'Cosa è andato bene',
+        'Cosa migliorare',
+        'Piano di azione',
+      ],
+    },
+    builtIn: true,
+  },
+];
+
+const bootstrapDefaultPrompts = () => {
+  const now = Date.now();
+  return DEFAULT_PROMPTS.map((prompt, index) => ({
+    ...prompt,
+    createdAt: prompt.createdAt || now + index,
+    updatedAt: prompt.updatedAt || now + index,
+  }));
+};
+
+const ensureDataStore = async () => {
+  await fsp.mkdir(DATA_DIR, { recursive: true });
+  try {
+    await fsp.access(WORKSPACES_FILE, fs.constants.F_OK);
+  } catch {
+    await fsp.writeFile(
+      WORKSPACES_FILE,
+      JSON.stringify({ workspaces: [], updatedAt: Date.now() }, null, 2)
+    );
+  }
+  try {
+    await fsp.access(PROMPTS_FILE, fs.constants.F_OK);
+  } catch {
+    const prompts = bootstrapDefaultPrompts();
+    await fsp.writeFile(
+      PROMPTS_FILE,
+      JSON.stringify({ prompts, updatedAt: Date.now() }, null, 2)
+    );
+  }
+};
+
+const readPrompts = async () => {
+  await ensureDataStore();
+  try {
+    const raw = await fsp.readFile(PROMPTS_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && Array.isArray(parsed.prompts)) {
+      return parsed.prompts;
+    }
+  } catch (error) {
+    console.warn('Impossibile leggere prompts.json:', error.message || error);
+  }
+  const prompts = bootstrapDefaultPrompts();
+  await writePrompts(prompts);
+  return prompts;
 };
 
 const mergeWorkspaceUpdate = (workspace, patch) => {
@@ -1450,5 +1461,5 @@ app.use((req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`rec2pdf backend in ascolto su http://localhost:${PORT}`);
-});`rec2pdf backend in ascolto su http://localhost:${PORT}`);
 });
+;

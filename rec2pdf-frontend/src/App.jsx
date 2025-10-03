@@ -7,6 +7,7 @@ import { useBackendDiagnostics } from "./hooks/useBackendDiagnostics";
 import { classNames } from "./utils/classNames";
 import { pickBestMime } from "./utils/media";
 import WorkspaceNavigator from "./components/WorkspaceNavigator";
+import PromptLibrary from "./components/PromptLibrary";
 import MarkdownEditorModal from "./components/MarkdownEditorModal";
 
 const fmtBytes = (bytes) => { if (!bytes && bytes !== 0) return "—"; const u=["B","KB","MB","GB"]; let i=0,v=bytes; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(v<10&&i>0?1:0)} ${u[i]}`; };
@@ -15,6 +16,8 @@ const HISTORY_STORAGE_KEY = 'rec2pdfHistory';
 const HISTORY_LIMIT = 100;
 const WORKSPACE_SELECTION_KEY = 'rec2pdfWorkspaceSelection';
 const WORKSPACE_FILTERS_KEY = 'rec2pdfWorkspaceFilters';
+const PROMPT_SELECTION_KEY = 'rec2pdfPromptSelection';
+const PROMPT_FAVORITES_KEY = 'rec2pdfPromptFavorites';
 const DEFAULT_WORKSPACE_STATUSES = ['Bozza', 'In lavorazione', 'Da revisionare', 'Completato'];
 const EMPTY_EDITOR_STATE = {
   open: false,
@@ -89,6 +92,71 @@ const normalizeStructureMeta = (structure) => {
     hasCallouts: Boolean(structure.hasCallouts),
     wordCount: Number.isFinite(structure.wordCount) ? Number(structure.wordCount) : null,
     error: structure.error || '',
+    promptChecklist: structure.promptChecklist
+      ? {
+          sections: Array.isArray(structure.promptChecklist.sections)
+            ? structure.promptChecklist.sections
+            : [],
+          missing: Array.isArray(structure.promptChecklist.missing)
+            ? structure.promptChecklist.missing
+            : [],
+          score: Number.isFinite(structure.promptChecklist.score)
+            ? Math.min(100, Math.max(0, Number(structure.promptChecklist.score)))
+            : null,
+          completed: Number.isFinite(structure.promptChecklist.completed)
+            ? Number(structure.promptChecklist.completed)
+            : null,
+          total: Number.isFinite(structure.promptChecklist.total)
+            ? Number(structure.promptChecklist.total)
+            : null,
+        }
+      : null,
+  };
+};
+
+const normalizePromptEntry = (prompt) => {
+  if (!prompt || typeof prompt !== 'object') {
+    return null;
+  }
+  const cueCards = Array.isArray(prompt.cueCards)
+    ? prompt.cueCards
+        .map((card, index) => {
+          if (!card || typeof card !== 'object') return null;
+          const title = String(card.title || card.label || '').trim();
+          if (!title) return null;
+          return {
+            key: card.key || card.id || `cue_${index}`,
+            title,
+            hint: String(card.hint || card.description || '').trim(),
+          };
+        })
+        .filter(Boolean)
+    : [];
+  const checklistSections = Array.isArray(prompt?.checklist?.sections)
+    ? prompt.checklist.sections.map((section) => String(section || '').trim()).filter(Boolean)
+    : Array.isArray(prompt?.checklist)
+    ? prompt.checklist.map((section) => String(section || '').trim()).filter(Boolean)
+    : [];
+  const completedCues = Array.isArray(prompt.completedCues)
+    ? prompt.completedCues.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+
+  return {
+    id: prompt.id || '',
+    slug: prompt.slug || '',
+    title: prompt.title || '',
+    description: prompt.description || '',
+    persona: prompt.persona || '',
+    color: prompt.color || '#6366f1',
+    tags: Array.isArray(prompt.tags) ? prompt.tags.filter(Boolean) : [],
+    cueCards,
+    checklist: { sections: checklistSections },
+    markdownRules: prompt.markdownRules || null,
+    pdfRules: prompt.pdfRules || null,
+    focus: prompt.focus || '',
+    notes: prompt.notes || '',
+    completedCues,
+    builtIn: Boolean(prompt.builtIn),
   };
 };
 
@@ -101,6 +169,7 @@ const hydrateHistoryEntry = (entry) => {
   const mdUrl = entry.mdUrl || buildFileUrl(backendUrl, mdPath);
   const workspace = normalizeWorkspaceEntry(entry.workspace);
   const structure = normalizeStructureMeta(entry.structure);
+  const prompt = normalizePromptEntry(entry.prompt);
 
   return {
     ...entry,
@@ -116,6 +185,7 @@ const hydrateHistoryEntry = (entry) => {
     workspace,
     structure,
     completenessScore: structure?.score ?? null,
+    prompt,
   };
 };
 
@@ -293,6 +363,46 @@ export default function Rec2PdfApp(){
       return [];
     }
   });
+  const [prompts, setPrompts] = useState([]);
+  const [promptLoading, setPromptLoading] = useState(false);
+  const [promptState, setPromptState] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { promptId: '', focus: '', notes: '', cueProgress: {} };
+    }
+    try {
+      const raw = localStorage.getItem(PROMPT_SELECTION_KEY);
+      if (!raw) {
+        return { promptId: '', focus: '', notes: '', cueProgress: {} };
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') {
+        return { promptId: '', focus: '', notes: '', cueProgress: {} };
+      }
+      return {
+        promptId: parsed.promptId || '',
+        focus: parsed.focus || '',
+        notes: parsed.notes || '',
+        cueProgress:
+          parsed.cueProgress && typeof parsed.cueProgress === 'object'
+            ? parsed.cueProgress
+            : {},
+      };
+    } catch {
+      return { promptId: '', focus: '', notes: '', cueProgress: {} };
+    }
+  });
+  const [promptFavorites, setPromptFavorites] = useState(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(PROMPT_FAVORITES_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(Boolean);
+    } catch {
+      return [];
+    }
+  });
   const [workspaces, setWorkspaces] = useState([]);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceSelection, setWorkspaceSelection] = useState(() => {
@@ -451,6 +561,24 @@ export default function Rec2PdfApp(){
   }, [savedWorkspaceFilters]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(PROMPT_SELECTION_KEY, JSON.stringify(promptState));
+    } catch {
+      // ignore persistence errors
+    }
+  }, [promptState]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(PROMPT_FAVORITES_KEY, JSON.stringify(promptFavorites));
+    } catch {
+      // ignore persistence errors
+    }
+  }, [promptFavorites]);
+
+  useEffect(() => {
     if (!workspaceSelection.workspaceId) return;
     const exists = workspaces.some((workspace) => workspace.id === workspaceSelection.workspaceId);
     if (!exists) {
@@ -465,6 +593,14 @@ export default function Rec2PdfApp(){
       setNavigatorSelection((prev) => ({ ...prev, workspaceId: '', projectId: '', projectName: '', status: '' }));
     }
   }, [workspaces, navigatorSelection.workspaceId]);
+
+  useEffect(() => {
+    if (!promptState.promptId) return;
+    const exists = prompts.some((prompt) => prompt.id === promptState.promptId);
+    if (!exists) {
+      setPromptState({ promptId: '', focus: '', notes: '', cueProgress: {} });
+    }
+  }, [prompts, promptState.promptId]);
 
   useEffect(() => {
     setNavigatorSelection((prev) => {
@@ -586,6 +722,49 @@ export default function Rec2PdfApp(){
   const resetAll=()=>{ setAudioBlob(null); setAudioUrl(""); setMime(""); setElapsed(0); setLogs([]); setPdfPath(""); setMdPath(""); setPermissionMessage(""); setErrorBanner(null); resetPipelineProgress(false); setShowRawLogs(false); setLastMarkdownUpload(null); };
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
+
+  const fetchPrompts = useCallback(
+    async (options = {}) => {
+      const normalized = normalizeBackendUrlValue(options.backendUrlOverride || backendUrl);
+      if (!normalized) {
+        if (!options?.silent) {
+          setPrompts([]);
+        }
+        return { ok: false, status: 0, message: 'Backend non configurato', skipped: true };
+      }
+      if (!options?.silent) {
+        setPromptLoading(true);
+      }
+      try {
+        const result = await fetchBody(`${normalized}/api/prompts`, { method: 'GET' });
+        if (result.ok && Array.isArray(result.data?.prompts)) {
+          setPrompts(result.data.prompts);
+        } else if (!result.ok && !options?.silent) {
+          const message = result.data?.message || result.raw || 'Impossibile caricare i prompt.';
+          pushLogs([`⚠️ API prompt: ${message}`]);
+        }
+        return result;
+      } catch (error) {
+        if (!options?.silent) {
+          pushLogs([`⚠️ Errore prompt: ${error?.message || String(error)}`]);
+        }
+        return { ok: false, status: 0, error };
+      } finally {
+        if (!options?.silent) {
+          setPromptLoading(false);
+        }
+      }
+    },
+    [backendUrl, fetchBody, pushLogs]
+  );
+
+  useEffect(() => {
+    if (!backendUrl) {
+      setPrompts([]);
+      return;
+    }
+    fetchPrompts({ silent: true });
+  }, [backendUrl, fetchPrompts]);
 
   const fetchWorkspaces = useCallback(
     async (options = {}) => {
@@ -888,6 +1067,104 @@ export default function Rec2PdfApp(){
     fetchWorkspaces({ silent: false });
   }, [fetchWorkspaces]);
 
+  const handleSelectPromptTemplate = useCallback((prompt) => {
+    if (!prompt || !prompt.id) {
+      setPromptState({ promptId: '', focus: '', notes: '', cueProgress: {} });
+      return;
+    }
+    setPromptState((prev) => {
+      if (prev.promptId === prompt.id) {
+        return prev;
+      }
+      return { promptId: prompt.id, focus: '', notes: '', cueProgress: {} };
+    });
+  }, []);
+
+  const handleClearPromptSelection = useCallback(() => {
+    setPromptState({ promptId: '', focus: '', notes: '', cueProgress: {} });
+  }, []);
+
+  const handlePromptFocusChange = useCallback((value) => {
+    setPromptState((prev) => ({ ...prev, focus: value }));
+  }, []);
+
+  const handlePromptNotesChange = useCallback((value) => {
+    setPromptState((prev) => ({ ...prev, notes: value }));
+  }, []);
+
+  const handleTogglePromptCue = useCallback((cueKey) => {
+    setPromptState((prev) => {
+      const next = {
+        ...prev,
+        cueProgress: { ...(prev.cueProgress || {}) },
+      };
+      next.cueProgress[cueKey] = !next.cueProgress[cueKey];
+      return next;
+    });
+  }, []);
+
+  const handleTogglePromptFavorite = useCallback((promptId) => {
+    setPromptFavorites((prev) => {
+      const set = new Set(prev);
+      if (set.has(promptId)) {
+        set.delete(promptId);
+      } else {
+        set.add(promptId);
+      }
+      return Array.from(set);
+    });
+  }, []);
+
+  const handleRefreshPrompts = useCallback(() => {
+    fetchPrompts({ silent: false });
+  }, [fetchPrompts]);
+
+  const handleCreatePrompt = useCallback(
+    async (payload) => {
+      const normalized = normalizeBackendUrlValue(backendUrl);
+      if (!normalized) {
+        return { ok: false, message: 'Configura un backend valido prima di creare prompt.' };
+      }
+      const result = await fetchBody(`${normalized}/api/prompts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (result.ok && result.data?.prompt) {
+        setPrompts((prev) => {
+          const next = prev.filter((item) => item.id !== result.data.prompt.id);
+          next.unshift(result.data.prompt);
+          return next;
+        });
+        return { ok: true, prompt: result.data.prompt };
+      }
+      const message = result.data?.message || result.raw || 'Impossibile creare il prompt.';
+      return { ok: false, message };
+    },
+    [backendUrl, fetchBody]
+  );
+
+  const handleDeletePrompt = useCallback(
+    async (promptId) => {
+      const normalized = normalizeBackendUrlValue(backendUrl);
+      if (!normalized) {
+        return { ok: false, message: 'Backend non configurato' };
+      }
+      const result = await fetchBody(`${normalized}/api/prompts/${encodeURIComponent(promptId)}`, {
+        method: 'DELETE',
+      });
+      if (result.ok) {
+        setPrompts((prev) => prev.filter((prompt) => prompt.id !== promptId));
+        setPromptFavorites((prev) => prev.filter((id) => id !== promptId));
+        setPromptState((prev) =>
+          prev.promptId === promptId ? { promptId: '', focus: '', notes: '', cueProgress: {} } : prev
+        );
+      }
+      return result;
+    },
+    [backendUrl, fetchBody]
+  );
+
   const handleAdoptNavigatorSelection = useCallback(() => {
     if (!navigatorSelection.workspaceId || navigatorSelection.workspaceId === '__unassigned__') {
       setWorkspaceSelection({ workspaceId: '', projectId: '', projectName: '', status: '' });
@@ -1147,6 +1424,18 @@ export default function Rec2PdfApp(){
           fd.append('workspaceStatus', workspaceSelection.status);
         }
       }
+      if (promptState.promptId) {
+        fd.append('promptId', promptState.promptId);
+        if (promptState.focus && promptState.focus.trim()) {
+          fd.append('promptFocus', promptState.focus.trim());
+        }
+        if (promptState.notes && promptState.notes.trim()) {
+          fd.append('promptNotes', promptState.notes.trim());
+        }
+        if (promptCompletedCues.length) {
+          fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
+        }
+      }
       const cap=Number(secondsCap||0);
       if(cap>0) fd.append('seconds',String(cap));
       const {ok,status,data,raw}=await fetchBody(`${backendUrl}/api/rec2pdf`,{method:'POST',body:fd});
@@ -1189,6 +1478,26 @@ export default function Rec2PdfApp(){
             appendLogs([`🧩 Sezioni mancanti: ${structureMeta.missingSections.join(', ')}`]);
           }
         }
+        const fallbackPrompt = promptState.promptId
+          ? {
+              id: promptState.promptId,
+              title: activePrompt?.title || '',
+              slug: activePrompt?.slug || '',
+              description: activePrompt?.description || '',
+              persona: activePrompt?.persona || '',
+              color: activePrompt?.color || '#6366f1',
+              tags: Array.isArray(activePrompt?.tags) ? activePrompt.tags : [],
+              cueCards: Array.isArray(activePrompt?.cueCards) ? activePrompt.cueCards : [],
+              checklist: activePrompt?.checklist || null,
+              markdownRules: activePrompt?.markdownRules || null,
+              pdfRules: activePrompt?.pdfRules || null,
+              focus: promptState.focus || '',
+              notes: promptState.notes || '',
+              completedCues: promptCompletedCues,
+              builtIn: Boolean(activePrompt?.builtIn),
+            }
+          : null;
+        const promptSummary = data?.prompt || fallbackPrompt;
         const historyEntry=hydrateHistoryEntry({
           id:Date.now(),
           timestamp:runStartedAt.toISOString(),
@@ -1218,6 +1527,7 @@ export default function Rec2PdfApp(){
               }
             : null),
           structure: structureMeta,
+          prompt: promptSummary,
         });
         setHistory(prev=>{
           const next=[historyEntry,...prev];
@@ -1283,6 +1593,18 @@ export default function Rec2PdfApp(){
           fd.append('workspaceStatus', workspaceSelection.status);
         }
       }
+      if (promptState.promptId) {
+        fd.append('promptId', promptState.promptId);
+        if (promptState.focus && promptState.focus.trim()) {
+          fd.append('promptFocus', promptState.focus.trim());
+        }
+        if (promptState.notes && promptState.notes.trim()) {
+          fd.append('promptNotes', promptState.notes.trim());
+        }
+        if (promptCompletedCues.length) {
+          fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
+        }
+      }
       const {ok,status,data,raw,contentType}=await fetchBody(`${backendUrl}/api/ppubr-upload`,{method:'POST',body:fd});
       const stageEventsPayload=Array.isArray(data?.stageEvents)?data.stageEvents:[];
       if(!ok){
@@ -1337,6 +1659,26 @@ export default function Rec2PdfApp(){
             appendLogs([`🧩 Sezioni mancanti: ${structureMeta.missingSections.join(', ')}`]);
           }
         }
+        const fallbackPrompt = promptState.promptId
+          ? {
+              id: promptState.promptId,
+              title: activePrompt?.title || '',
+              slug: activePrompt?.slug || '',
+              description: activePrompt?.description || '',
+              persona: activePrompt?.persona || '',
+              color: activePrompt?.color || '#6366f1',
+              tags: Array.isArray(activePrompt?.tags) ? activePrompt.tags : [],
+              cueCards: Array.isArray(activePrompt?.cueCards) ? activePrompt.cueCards : [],
+              checklist: activePrompt?.checklist || null,
+              markdownRules: activePrompt?.markdownRules || null,
+              pdfRules: activePrompt?.pdfRules || null,
+              focus: promptState.focus || '',
+              notes: promptState.notes || '',
+              completedCues: promptCompletedCues,
+              builtIn: Boolean(activePrompt?.builtIn),
+            }
+          : null;
+        const promptSummary = data?.prompt || fallbackPrompt;
         const historyEntry=hydrateHistoryEntry({
           id:Date.now(),
           timestamp:new Date().toISOString(),
@@ -1366,6 +1708,7 @@ export default function Rec2PdfApp(){
               }
             : null),
           structure: structureMeta,
+          prompt: promptSummary,
         });
         setHistory(prev=>{
           const next=[historyEntry,...prev];
@@ -2067,14 +2410,14 @@ export default function Rec2PdfApp(){
   const pipelineComplete = useMemo(() => totalStages > 0 && PIPELINE_STAGES.every((stage) => pipelineStatus[stage.key] === 'done'), [pipelineStatus, totalStages]);
   const activeStageDefinition = useMemo(() => PIPELINE_STAGES.find((stage) => stage.key === activeStageKey), [activeStageKey]);
   const promptCompletedCues = useMemo(() => {
-    if (!promptSelection?.cueProgress) return [];
-    return Object.entries(promptSelection.cueProgress)
+    if (!promptState?.cueProgress) return [];
+    return Object.entries(promptState.cueProgress)
       .filter(([, value]) => Boolean(value))
       .map(([key]) => key);
-  }, [promptSelection.cueProgress]);
+  }, [promptState.cueProgress]);
   const activePrompt = useMemo(
-    () => prompts.find((prompt) => prompt.id === promptSelection.promptId) || null,
-    [prompts, promptSelection.promptId]
+    () => prompts.find((prompt) => prompt.id === promptState.promptId) || null,
+    [prompts, promptState.promptId]
   );
 
   const headerStatus = useMemo(() => {
@@ -2379,6 +2722,26 @@ export default function Rec2PdfApp(){
                 )}
               </div>
             </div>
+            <PromptLibrary
+              prompts={prompts}
+              loading={promptLoading}
+              selection={promptState}
+              onSelectPrompt={handleSelectPromptTemplate}
+              onClearSelection={handleClearPromptSelection}
+              favorites={promptFavorites}
+              onToggleFavorite={handleTogglePromptFavorite}
+              onRefresh={handleRefreshPrompts}
+              themeStyles={themes[theme]}
+              activePrompt={activePrompt}
+              focusValue={promptState.focus}
+              onFocusChange={handlePromptFocusChange}
+              notesValue={promptState.notes}
+              onNotesChange={handlePromptNotesChange}
+              cueProgress={promptState.cueProgress || {}}
+              onCueToggle={handleTogglePromptCue}
+              onCreatePrompt={handleCreatePrompt}
+              onDeletePrompt={handleDeletePrompt}
+            />
             <div className={classNames("mt-6 rounded-xl p-4 border", themes[theme].input)}>
               <div className="flex items-center justify-between"><div className="text-sm text-zinc-400">Clip registrata / caricata</div><div className="text-xs text-zinc-500">{mime||"—"} · {fmtBytes(audioBlob?.size)}</div></div>
               <div className="mt-3">{audioUrl?<audio controls src={audioUrl} className="w-full"/>:<div className="text-zinc-500 text-sm">Nessuna clip disponibile.</div>}</div>
@@ -2584,5 +2947,4 @@ export default function Rec2PdfApp(){
       />
     </div>
   );
-};
-
+}
