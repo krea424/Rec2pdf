@@ -20,171 +20,13 @@ const WORKSPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
 const PROMPTS_FILE = path.join(DATA_DIR, 'prompts.json');
 const DEFAULT_STATUSES = ['Bozza', 'In lavorazione', 'Da revisionare', 'Completato'];
 
-const DEFAULT_PROMPTS = [
-  {
-    id: 'prompt_brief_creativo',
-    slug: 'brief_creativo',
-    title: 'Brief creativo',
-    description:
-      'Trasforma un brainstorming di concept in un brief chiaro per team creativi, con obiettivi, insight di audience e deliverable.',
-    persona: 'Creative strategist',
-    color: '#f472b6',
-    tags: ['marketing', 'concept', 'campagna'],
-    cueCards: [
-      { key: 'hook', title: 'Hook narrativo', hint: 'Qual è l\'idea centrale che vuoi esplorare?' },
-      { key: 'audience', title: 'Audience', hint: 'Descrivi il target ideale e il loro bisogno principale.' },
-      { key: 'promise', title: 'Promessa', hint: 'Che trasformazione o beneficio vuoi comunicare?' },
-      { key: 'proof', title: 'Proof point', hint: 'Cita esempi, dati o insight a supporto.' },
-    ],
-    markdownRules: {
-      tone: 'Ispirazionale ma concreto, con verbi d\'azione e payoff sintetici.',
-      voice: 'Seconda persona plurale, orientata al team.',
-      bulletStyle: 'Elenchi brevi con keyword evidenziate in **grassetto**.',
-      includeCallouts: true,
-      summaryStyle: 'Executive summary iniziale con tre bullet',
-    },
-    pdfRules: {
-      accentColor: '#f472b6',
-      layout: 'bold',
-      includeCover: true,
-      includeToc: false,
-    },
-    checklist: {
-      sections: [
-        'Executive summary',
-        'Obiettivi della campagna',
-        'Insight audience',
-        'Tone of voice',
-        'Deliverable e call-to-action',
-      ],
-    },
-    builtIn: true,
-  },
-  {
-    id: 'prompt_business_case',
-    slug: 'business_case',
-    title: 'Business case',
-    description:
-      'Guida il ragionamento verso un business case strutturato: contesto, opportunità, analisi economica e piano d\'azione.',
-    persona: 'Business analyst',
-    color: '#38bdf8',
-    tags: ['strategy', 'analisi', 'finance'],
-    cueCards: [
-      { key: 'scenario', title: 'Scenario', hint: 'Qual è il contesto competitivo e qual è la tensione principale?' },
-      { key: 'value', title: 'Valore', hint: 'Quantifica benefici, risparmi o opportunità.' },
-      { key: 'risks', title: 'Rischi', hint: 'Evidenzia rischi, mitigazioni e assunzioni critiche.' },
-      { key: 'roadmap', title: 'Roadmap', hint: 'Descrivi le fasi operative e i responsabili.' },
-    ],
-    markdownRules: {
-      tone: 'Professionale, sintetico e orientato ai numeri.',
-      voice: 'Prima persona plurale per coinvolgere stakeholder.',
-      bulletStyle: 'Liste puntate con metriche e KPI.',
-      includeCallouts: true,
-      summaryStyle: 'Sintesi in apertura con raccomandazione chiave.',
-    },
-    pdfRules: {
-      accentColor: '#38bdf8',
-      layout: 'consulting',
-      includeCover: true,
-      includeToc: true,
-    },
-    checklist: {
-      sections: [
-        'Executive summary',
-        'Analisi del problema',
-        'Opzioni valutate',
-        'Impatto economico',
-        'Piano di implementazione',
-      ],
-    },
-    builtIn: true,
-  },
-  {
-    id: 'prompt_post_mortem',
-    slug: 'post_mortem',
-    title: 'Post-mortem & retrospettiva',
-    description:
-      'Racconta lezioni apprese, metriche e azioni correttive dopo un progetto o sprint, con tono costruttivo.',
-    persona: 'Project manager',
-    color: '#facc15',
-    tags: ['retrospettiva', 'continuous improvement'],
-    cueCards: [
-      { key: 'success', title: 'Successi', hint: 'Quali risultati hanno funzionato particolarmente bene?' },
-      { key: 'metrics', title: 'Metriche', hint: 'Condividi indicatori e outcome misurabili.' },
-      { key: 'lessons', title: 'Lezioni', hint: 'Quali pattern negativi hai osservato e come evitarli?' },
-      { key: 'actions', title: 'Azioni', hint: 'Proponi next step, owner e tempistiche.' },
-    ],
-    markdownRules: {
-      tone: 'Onesto ma orientato al miglioramento continuo.',
-      voice: 'Prima persona plurale, tono collaborativo.',
-      bulletStyle: 'Liste con emoji/simboli per evidenziare + e −.',
-      includeCallouts: false,
-      summaryStyle: 'Tabella iniziale con KPI e stato',
-    },
-    pdfRules: {
-      accentColor: '#facc15',
-      layout: 'workshop',
-      includeCover: false,
-      includeToc: false,
-    },
-    checklist: {
-      sections: [
-        'Contesto e obiettivi',
-        'Metriche principali',
-        'Cosa è andato bene',
-        'Cosa migliorare',
-        'Piano di azione',
-      ],
-    },
-    builtIn: true,
-  },
-];
 
-const bootstrapDefaultPrompts = () => {
-  const now = Date.now();
-  return DEFAULT_PROMPTS.map((prompt, index) => ({
-    ...prompt,
-    createdAt: prompt.createdAt || now + index,
-    updatedAt: prompt.updatedAt || now + index,
-  }));
-};
 
-const ensureDataStore = async () => {
-  await fsp.mkdir(DATA_DIR, { recursive: true });
-  try {
-    await fsp.access(WORKSPACES_FILE, fs.constants.F_OK);
-  } catch {
-    await fsp.writeFile(
-      WORKSPACES_FILE,
-      JSON.stringify({ workspaces: [], updatedAt: Date.now() }, null, 2)
-    );
-  }
-  try {
-    await fsp.access(PROMPTS_FILE, fs.constants.F_OK);
-  } catch {
-    const prompts = bootstrapDefaultPrompts();
-    await fsp.writeFile(
-      PROMPTS_FILE,
-      JSON.stringify({ prompts, updatedAt: Date.now() }, null, 2)
-    );
-  }
-};
 
-const readPrompts = async () => {
-  await ensureDataStore();
-  try {
-    const raw = await fsp.readFile(PROMPTS_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (parsed && Array.isArray(parsed.prompts)) {
-      return parsed.prompts;
-    }
-  } catch (error) {
-    console.warn('Impossibile leggere prompts.json:', error.message || error);
-  }
-  const prompts = bootstrapDefaultPrompts();
-  await writePrompts(prompts);
-  return prompts;
-};
+
+
+
+
 
 const writePrompts = async (prompts = []) => {
   await ensureDataStore();
@@ -585,60 +427,173 @@ const buildWorkspaceBaseName = async (workspace, destDir, slug) => {
 const UP_BASE = path.join(os.tmpdir(), 'rec2pdf_uploads');
 if (!fs.existsSync(UP_BASE)) fs.mkdirSync(UP_BASE, { recursive: true });
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UP_BASE),
-  filename: (req, file, cb) => cb(null, `upload_${Date.now()}_${(file.originalname||'file').replace(/[^a-zA-Z0-9._-]/g,'_')}`)
-});
-const uploadMiddleware = multer({ storage, limits: { fileSize: 1024*1024*1024 } });
+const DEFAULT_PROMPTS = [
+  {
+    id: 'prompt_brief_creativo',
+    slug: 'brief_creativo',
+    title: 'Brief creativo',
+    description:
+      'Trasforma un brainstorming di concept in un brief chiaro per team creativi, con obiettivi, insight di audience e deliverable.',
+    persona: 'Creative strategist',
+    color: '#f472b6',
+    tags: ['marketing', 'concept', 'campagna'],
+    cueCards: [
+      { key: 'hook', title: 'Hook narrativo', hint: 'Qual è l\'idea centrale che vuoi esplorare?' },
+      { key: 'audience', title: 'Audience', hint: 'Descrivi il target ideale e il loro bisogno principale.' },
+      { key: 'promise', title: 'Promessa', hint: 'Che trasformazione o beneficio vuoi comunicare?' },
+      { key: 'proof', title: 'Proof point', hint: 'Cita esempi, dati o insight a supporto.' },
+    ],
+    markdownRules: {
+      tone: 'Ispirazionale ma concreto, con verbi d\'azione e payoff sintetici.',
+      voice: 'Seconda persona plurale, orientata al team.',
+      bulletStyle: 'Elenchi brevi con keyword evidenziate in **grassetto**.',
+      includeCallouts: true,
+      summaryStyle: 'Executive summary iniziale con tre bullet',
+    },
+    pdfRules: {
+      accentColor: '#f472b6',
+      layout: 'bold',
+      includeCover: true,
+      includeToc: false,
+    },
+    checklist: {
+      sections: [
+        'Executive summary',
+        'Obiettivi della campagna',
+        'Insight audience',
+        'Tone of voice',
+        'Deliverable e call-to-action',
+      ],
+    },
+    builtIn: true,
+  },
+  {
+    id: 'prompt_business_case',
+    slug: 'business_case',
+    title: 'Business case',
+    description:
+      'Guida il ragionamento verso un business case strutturato: contesto, opportunità, analisi economica e piano d\'azione.',
+    persona: 'Business analyst',
+    color: '#38bdf8',
+    tags: ['strategy', 'analisi', 'finance'],
+    cueCards: [
+      { key: 'scenario', title: 'Scenario', hint: 'Qual è il contesto competitivo e qual è la tensione principale?' },
+      { key: 'value', title: 'Valore', hint: 'Quantifica benefici, risparmi o opportunità.' },
+      { key: 'risks', title: 'Rischi', hint: 'Evidenzia rischi, mitigazioni e assunzioni critiche.' },
+      { key: 'roadmap', title: 'Roadmap', hint: 'Descrivi le fasi operative e i responsabili.' },
+    ],
+    markdownRules: {
+      tone: 'Professionale, sintetico e orientato ai numeri.',
+      voice: 'Prima persona plurale per coinvolgere stakeholder.',
+      bulletStyle: 'Liste puntate con metriche e KPI.',
+      includeCallouts: true,
+      summaryStyle: 'Sintesi in apertura con raccomandazione chiave.',
+    },
+    pdfRules: {
+      accentColor: '#38bdf8',
+      layout: 'consulting',
+      includeCover: true,
+      includeToc: true,
+    },
+    checklist: {
+      sections: [
+        'Executive summary',
+        'Analisi del problema',
+        'Opzioni valutate',
+        'Impatto economico',
+        'Piano di implementazione',
+      ],
+    },
+    builtIn: true,
+  },
+  {
+    id: 'prompt_post_mortem',
+    slug: 'post_mortem',
+    title: 'Post-mortem & retrospettiva',
+    description:
+      'Racconta lezioni apprese, metriche e azioni correttive dopo un progetto o sprint, con tono costruttivo.',
+    persona: 'Project manager',
+    color: '#facc15',
+    tags: ['retrospettiva', 'continuous improvement'],
+    cueCards: [
+      { key: 'success', title: 'Successi', hint: 'Quali risultati hanno funzionato particolarmente bene?' },
+      { key: 'metrics', title: 'Metriche', hint: 'Condividi indicatori e outcome misurabili.' },
+      { key: 'lessons', title: 'Lezioni', hint: 'Quali pattern negativi hai osservato e come evitarli?' },
+      { key: 'actions', title: 'Azioni', hint: 'Proponi next step, owner e tempistiche.' },
+    ],
+    markdownRules: {
+      tone: 'Onesto ma orientato al miglioramento continuo.',
+      voice: 'Prima persona plurale, tono collaborativo.',
+      bulletStyle: 'Liste con emoji/simboli per evidenziare + e −.',
+      includeCallouts: false,
+      summaryStyle: 'Tabella iniziale con KPI e stato',
+    },
+    pdfRules: {
+      accentColor: '#facc15',
+      layout: 'workshop',
+      includeCover: false,
+      includeToc: false,
+    },
+    checklist: {
+      sections: [
+        'Contesto e obiettivi',
+        'Metriche principali',
+        'Cosa è andato bene',
+        'Cosa migliorare',
+        'Piano di azione',
+      ],
+    },
+    builtIn: true,
+  },
+];
 
-const run = (cmd, args = [], opts = {}) => new Promise((resolve) => {
-  execFile(cmd, args, { maxBuffer: 10 * 1024 * 1024, ...opts }, (error, stdout, stderr) => {
-    resolve({
-      code: error ? (error.code ?? 1) : 0,
-      stdout: stdout?.toString?.() || '',
-      stderr: stderr?.toString?.() || '',
-      error,
-    });
-  });
-});
-
-const zsh = (snippet, opts = {}) => new Promise((resolve) => {
-  const shellCmd = `source ~/.zshrc 2>/dev/null; ${snippet}`;
-  exec(`/bin/zsh -lc ${JSON.stringify(shellCmd)}`, { maxBuffer: 20*1024*1024, ...opts }, (error, stdout, stderr) => {
-    resolve({ code: error ? (error.code ?? 1) : 0, stdout: stdout?.toString?.() || '', stderr: stderr?.toString?.() || '' });
-  });
-});
-
-const yyyymmddHHMMSS = (d = new Date()) => {
-  const p = (n) => String(n).padStart(2,'0');
-  return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+const bootstrapDefaultPrompts = () => {
+  const now = Date.now();
+  return DEFAULT_PROMPTS.map((prompt, index) => ({
+    ...prompt,
+    createdAt: prompt.createdAt || now + index,
+    updatedAt: prompt.updatedAt || now + index,
+  }));
 };
 
-const ensureDir = async (dir) => { await fsp.mkdir(dir, { recursive: true }); return dir; };
-
-const ensureWritableDirectory = async (dir) => {
+const ensureDataStore = async () => {
+  await fsp.mkdir(DATA_DIR, { recursive: true });
   try {
-    await ensureDir(dir);
-    const probeName = `.rec2pdf_write_probe_${process.pid}_${Date.now()}`;
-    const probePath = path.join(dir, probeName);
-    await fsp.writeFile(probePath, 'ok');
-    await fsp.unlink(probePath);
-    return { ok: true };
+    await fsp.access(WORKSPACES_FILE, fs.constants.F_OK);
+  } catch {
+    await fsp.writeFile(
+      WORKSPACES_FILE,
+      JSON.stringify({ workspaces: [], updatedAt: Date.now() }, null, 2)
+    );
+  }
+  try {
+    await fsp.access(PROMPTS_FILE, fs.constants.F_OK);
+  } catch {
+    const prompts = bootstrapDefaultPrompts();
+    await fsp.writeFile(
+      PROMPTS_FILE,
+      JSON.stringify({ prompts, updatedAt: Date.now() }, null, 2)
+    );
+  }
+};
+
+const readPrompts = async () => {
+  await ensureDataStore();
+  try {
+    const raw = await fsp.readFile(PROMPTS_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && Array.isArray(parsed.prompts)) {
+      return parsed.prompts;
+    }
   } catch (error) {
-    return { ok: false, error };
+    console.warn('Impossibile leggere prompts.json:', error.message || error);
   }
+  const prompts = bootstrapDefaultPrompts();
+  await writePrompts(prompts);
+  return prompts;
 };
 
-const commandVersion = async (cmd) => {
-  const check = await run(cmd, ['--version']);
-  if (check.code === 0) {
-    const firstLine = check.stdout.split('\n')[0] || cmd;
-    return { ok: true, detail: firstLine };
-  }
-  return { ok: false, detail: check.stderr || check.stdout || '' };
-};
-
-function patchWorkspaceDetails(workspace, patch = {}) {
+const mergeWorkspaceUpdate = (workspace, patch) => {
   const updated = { ...workspace };
   if (patch.name) updated.name = String(patch.name).trim();
   if (patch.client) updated.client = String(patch.client).trim();
@@ -678,7 +633,7 @@ function patchWorkspaceDetails(workspace, patch = {}) {
 
   updated.updatedAt = Date.now();
   return updated;
-}
+};
 
 app.get('/api/workspaces', async (req, res) => {
   try {
@@ -745,7 +700,249 @@ app.put('/api/workspaces/:id', async (req, res) => {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
 
-    const merged = patchWorkspaceDetails(workspaces[index], req.body || {});
+    const merged = mergeWorkspaceUpdate(workspaces[index], req.body || {});
+    workspaces[index] = merged;
+    await writeWorkspaces(workspaces);
+    res.json({ ok: true, workspace: merged });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.delete('/api/workspaces/:id', async (req, res) => {
+  try {
+    const workspaces = await readWorkspaces();
+    const next = workspaces.filter((workspace) => workspace.id !== req.params.id);
+    if (next.length === workspaces.length) {
+      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
+    }
+    await writeWorkspaces(next);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.get('/api/prompts', async (req, res) => {
+  try {
+    const prompts = await readPrompts();
+    res.json({ ok: true, prompts });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.post('/api/prompts', async (req, res) => {
+  try {
+    const title = String(req.body?.title || '').trim();
+    if (!title) {
+      return res.status(400).json({ ok: false, message: 'Titolo prompt obbligatorio' });
+    }
+
+    const prompts = await readPrompts();
+    const slug = sanitizeSlug(req.body?.slug || title, title);
+    const tags = Array.isArray(req.body?.tags)
+      ? req.body.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
+      : typeof req.body?.tags === 'string'
+      ? req.body.tags
+          .split(/,|\r?\n/)
+          .map((tag) => String(tag || '').trim())
+          .filter(Boolean)
+      : [];
+    const cueCards = normalizeCueCards(req.body?.cueCards);
+    const checklistSections = normalizeChecklistSections(
+      req.body?.checklist?.sections || req.body?.checklistSections || req.body?.checklist
+    );
+    const markdownRules = normalizePromptRules(req.body?.markdownRules || {});
+    const pdfRules = normalizePdfRules(req.body?.pdfRules || {});
+    const focusPrompts = Array.isArray(req.body?.focusPrompts)
+      ? req.body.focusPrompts.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+
+    const now = Date.now();
+    const prompt = {
+      id: generateId('prompt'),
+      slug,
+      title,
+      description: String(req.body?.description || '').trim(),
+      persona: String(req.body?.persona || '').trim(),
+      color: normalizeColor(req.body?.color || '#6366f1'),
+      tags,
+      cueCards,
+      checklist: { sections: checklistSections },
+      markdownRules: markdownRules || null,
+      pdfRules: pdfRules || null,
+      focusPrompts,
+      builtIn: Boolean(req.body?.builtIn && req.body.builtIn === true ? true : false),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    prompts.push(prompt);
+    await writePrompts(prompts);
+    res.status(201).json({ ok: true, prompt });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.put('/api/prompts/:id', async (req, res) => {
+  try {
+    const prompts = await readPrompts();
+    const index = prompts.findIndex((prompt) => prompt.id === req.params.id);
+    if (index === -1) {
+      return res.status(404).json({ ok: false, message: 'Prompt non trovato' });
+    }
+
+    const merged = mergePromptUpdate(prompts[index], req.body || {});
+    prompts[index] = merged;
+    await writePrompts(prompts);
+    res.json({ ok: true, prompt: merged });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.delete('/api/prompts/:id', async (req, res) => {
+  try {
+    const prompts = await readPrompts();
+    const prompt = findPromptById(prompts, req.params.id);
+    if (!prompt) {
+      return res.status(404).json({ ok: false, message: 'Prompt non trovato' });
+    }
+    const force = String(req.query?.force || '')
+      .toLowerCase()
+      .trim();
+    const isForceEnabled = force && ['1', 'true', 'yes', 'on'].includes(force);
+    if (prompt.builtIn && !isForceEnabled) {
+      return res
+        .status(400)
+        .json({ ok: false, message: 'I template predefiniti non possono essere eliminati' });
+    }
+    const next = prompts.filter((item) => item.id !== prompt.id);
+    await writePrompts(next);
+    res.json({ ok: true });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+const mergeWorkspaceUpdate = (workspace, patch) => {
+  const updated = { ...workspace };
+  if (patch.name) updated.name = String(patch.name).trim();
+  if (patch.client) updated.client = String(patch.client).trim();
+  if (patch.color) updated.color = normalizeColor(patch.color);
+  if (patch.slug) updated.slug = String(patch.slug).trim().replace(/[^a-zA-Z0-9._-]/g, '_');
+  if (patch.versioningPolicy && typeof patch.versioningPolicy === 'object') {
+    updated.versioningPolicy = {
+      retentionLimit: Number.isFinite(patch.versioningPolicy.retentionLimit)
+        ? Math.max(1, Number(patch.versioningPolicy.retentionLimit))
+        : (workspace.versioningPolicy?.retentionLimit || 10),
+      freezeOnPublish: Boolean(
+        patch.versioningPolicy.freezeOnPublish ?? workspace.versioningPolicy?.freezeOnPublish
+      ),
+      namingConvention:
+        patch.versioningPolicy.namingConvention || workspace.versioningPolicy?.namingConvention || 'timestamped',
+    };
+  }
+
+  if (Array.isArray(patch.projects)) {
+    updated.projects = patch.projects.map((project) => ({
+      id: project.id || generateId('proj'),
+      name: String(project.name || 'Project').trim(),
+      color: normalizeColor(project.color || updated.color || '#6366f1'),
+      statuses: Array.isArray(project.statuses) && project.statuses.length
+        ? project.statuses.map((status) => String(status).trim()).filter(Boolean)
+        : [...DEFAULT_STATUSES],
+      createdAt: project.createdAt || Date.now(),
+      updatedAt: Date.now(),
+    }));
+  }
+
+  if (Array.isArray(patch.defaultStatuses) && patch.defaultStatuses.length) {
+    updated.defaultStatuses = patch.defaultStatuses
+      .map((status) => String(status).trim())
+      .filter(Boolean);
+  }
+
+  updated.updatedAt = Date.now();
+  return updated;
+};
+
+app.get('/api/workspaces', async (req, res) => {
+  try {
+    const workspaces = await readWorkspaces();
+    res.json({ ok: true, workspaces });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.post('/api/workspaces', async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    if (!name) {
+      return res.status(400).json({ ok: false, message: 'Nome workspace obbligatorio' });
+    }
+
+    const workspaces = await readWorkspaces();
+    const workspace = {
+      id: generateId('ws'),
+      name,
+      client: String(req.body?.client || name).trim(),
+      color: normalizeColor(req.body?.color || '#6366f1'),
+      slug: String(req.body?.slug || name.toLowerCase().replace(/\s+/g, '-')).replace(/[^a-zA-Z0-9._-]/g, '_'),
+      versioningPolicy: {
+        retentionLimit: Number.isFinite(req.body?.versioningPolicy?.retentionLimit)
+          ? Math.max(1, Number(req.body.versioningPolicy.retentionLimit))
+          : 10,
+        freezeOnPublish: Boolean(req.body?.versioningPolicy?.freezeOnPublish),
+        namingConvention: req.body?.versioningPolicy?.namingConvention || 'timestamped',
+      },
+      defaultStatuses: Array.isArray(req.body?.defaultStatuses) && req.body.defaultStatuses.length
+        ? req.body.defaultStatuses.map((status) => String(status).trim()).filter(Boolean)
+        : [...DEFAULT_STATUSES],
+      projects: Array.isArray(req.body?.projects)
+        ? req.body.projects.map((project) => ({
+            id: project.id || generateId('proj'),
+            name: String(project.name || 'Project').trim(),
+            color: normalizeColor(project.color || req.body?.color || '#6366f1'),
+            statuses: Array.isArray(project.statuses) && project.statuses.length
+              ? project.statuses.map((status) => String(status).trim()).filter(Boolean)
+              : [...DEFAULT_STATUSES],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }))
+        : [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    workspaces.push(workspace);
+    await writeWorkspaces(workspaces);
+    res.status(201).json({ ok: true, workspace });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.put('/api/workspaces/:id', async (req, res) => {
+  try {
+    const workspaces = await readWorkspaces();
+    const index = workspaces.findIndex((workspace) => workspace.id === req.params.id);
+    if (index === -1) {
+      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
+    }
+
+    const merged = mergeWorkspaceUpdate(workspaces[index], req.body || {});
     workspaces[index] = merged;
     await writeWorkspaces(workspaces);
     res.json({ ok: true, workspace: merged });
@@ -1066,7 +1263,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
 
     let txtPath = '';
     out('🎧 Trascrizione con Whisper…', 'transcribe', 'running');
-    const w = await run('bash', ['-lc', `whisper ${JSON.stringify(wavPath)} --language it --model small --output_format txt --output_dir ${JSON.stringify(dest)} --verbose False`]);
+    const w = await run('bash', ['-lc', `whisper ${JSON.stringify(wavPath)} --language it --model medium --output_format txt --output_dir ${JSON.stringify(dest)} --verbose False`]);
     if (w.code !== 0) {
       out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
       throw new Error('Trascrizione fallita');
@@ -1217,6 +1414,12 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
   const logs = [];
   const stageEvents = [];
   let lastStageKey = null;
+  let selectedPrompt = null;
+  let promptRulePayload = null;
+  let promptEnv = null;
+  let promptFocus = '';
+  let promptNotes = '';
+  let promptCuesCompleted = [];
 
   const logStageEvent = (stage, status = 'info', message = '') => {
     if (!stage) return;
@@ -1501,3 +1704,4 @@ app.use((req, res, next) => {
 app.listen(PORT, () => {
   console.log(`rec2pdf backend in ascolto su http://localhost:${PORT}`);
 });
+;
