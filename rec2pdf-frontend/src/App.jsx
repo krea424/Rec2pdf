@@ -1,18 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, Square, Settings, Folder, FileText, Cpu, Download, TimerIcon, Waves, CheckCircle2, AlertCircle, LinkIcon, Upload, RefreshCw, Bug, XCircle, Info, Maximize, Sparkles } from "./components/icons";
+import { Mic, Square, Settings, Folder, FileText, Cpu, Download, TimerIcon, Waves, CheckCircle2, AlertCircle, LinkIcon, Upload, RefreshCw, Bug, XCircle, Info, Maximize, Sparkles, Plus, Users } from "./components/icons";
 import logo from './assets/logo.svg';
 import SetupAssistant from "./components/SetupAssistant";
 import { useMicrophoneAccess } from "./hooks/useMicrophoneAccess";
 import { useBackendDiagnostics } from "./hooks/useBackendDiagnostics";
 import { classNames } from "./utils/classNames";
 import { pickBestMime } from "./utils/media";
-import LibraryPanel from "./components/LibraryPanel";
+import WorkspaceNavigator from "./components/WorkspaceNavigator";
+import PromptLibrary from "./components/PromptLibrary";
 import MarkdownEditorModal from "./components/MarkdownEditorModal";
 
 const fmtBytes = (bytes) => { if (!bytes && bytes !== 0) return "—"; const u=["B","KB","MB","GB"]; let i=0,v=bytes; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(v<10&&i>0?1:0)} ${u[i]}`; };
 const fmtTime = (s) => { const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const sec=Math.floor(s%60); return [h,m,sec].map(n=>String(n).padStart(2,'0')).join(":"); };
 const HISTORY_STORAGE_KEY = 'rec2pdfHistory';
 const HISTORY_LIMIT = 100;
+const WORKSPACE_SELECTION_KEY = 'rec2pdfWorkspaceSelection';
+const WORKSPACE_FILTERS_KEY = 'rec2pdfWorkspaceFilters';
+const PROMPT_SELECTION_KEY = 'rec2pdfPromptSelection';
+const PROMPT_FAVORITES_KEY = 'rec2pdfPromptFavorites';
+const DEFAULT_WORKSPACE_STATUSES = ['Bozza', 'In lavorazione', 'Da revisionare', 'Completato'];
 const EMPTY_EDITOR_STATE = {
   open: false,
   entry: null,
@@ -48,6 +54,112 @@ const buildFileUrl = (backendUrl, filePath) => {
   return `${normalized}/api/file?path=${encodeURIComponent(filePath)}`;
 };
 
+const normalizeWorkspaceEntry = (workspace) => {
+  if (!workspace || typeof workspace !== 'object') {
+    return null;
+  }
+  const statusCatalog = Array.isArray(workspace.statusCatalog)
+    ? workspace.statusCatalog.filter(Boolean)
+    : [];
+  return {
+    id: workspace.id || '',
+    name: workspace.name || workspace.client || 'Workspace',
+    client: workspace.client || workspace.name || '',
+    color: workspace.color || '#6366f1',
+    projectId: workspace.projectId || '',
+    projectName: workspace.projectName || '',
+    projectColor: workspace.projectColor || workspace.color || '#6366f1',
+    status: workspace.status || '',
+    statusCatalog,
+    versioningPolicy: workspace.versioningPolicy || null,
+  };
+};
+
+const normalizeStructureMeta = (structure) => {
+  if (!structure || typeof structure !== 'object') {
+    return null;
+  }
+  const score = Number.isFinite(structure.score)
+    ? Math.min(100, Math.max(0, Number(structure.score)))
+    : null;
+  return {
+    ok: structure.ok !== false,
+    score,
+    headings: Array.isArray(structure.headings) ? structure.headings : [],
+    missingSections: Array.isArray(structure.missingSections) ? structure.missingSections : [],
+    totalRecommended: Number.isFinite(structure.totalRecommended) ? Number(structure.totalRecommended) : null,
+    bulletPoints: Number.isFinite(structure.bulletPoints) ? Number(structure.bulletPoints) : null,
+    hasCallouts: Boolean(structure.hasCallouts),
+    wordCount: Number.isFinite(structure.wordCount) ? Number(structure.wordCount) : null,
+    error: structure.error || '',
+    promptChecklist: structure.promptChecklist
+      ? {
+          sections: Array.isArray(structure.promptChecklist.sections)
+            ? structure.promptChecklist.sections
+            : [],
+          missing: Array.isArray(structure.promptChecklist.missing)
+            ? structure.promptChecklist.missing
+            : [],
+          score: Number.isFinite(structure.promptChecklist.score)
+            ? Math.min(100, Math.max(0, Number(structure.promptChecklist.score)))
+            : null,
+          completed: Number.isFinite(structure.promptChecklist.completed)
+            ? Number(structure.promptChecklist.completed)
+            : null,
+          total: Number.isFinite(structure.promptChecklist.total)
+            ? Number(structure.promptChecklist.total)
+            : null,
+        }
+      : null,
+  };
+};
+
+const normalizePromptEntry = (prompt) => {
+  if (!prompt || typeof prompt !== 'object') {
+    return null;
+  }
+  const cueCards = Array.isArray(prompt.cueCards)
+    ? prompt.cueCards
+        .map((card, index) => {
+          if (!card || typeof card !== 'object') return null;
+          const title = String(card.title || card.label || '').trim();
+          if (!title) return null;
+          return {
+            key: card.key || card.id || `cue_${index}`,
+            title,
+            hint: String(card.hint || card.description || '').trim(),
+          };
+        })
+        .filter(Boolean)
+    : [];
+  const checklistSections = Array.isArray(prompt?.checklist?.sections)
+    ? prompt.checklist.sections.map((section) => String(section || '').trim()).filter(Boolean)
+    : Array.isArray(prompt?.checklist)
+    ? prompt.checklist.map((section) => String(section || '').trim()).filter(Boolean)
+    : [];
+  const completedCues = Array.isArray(prompt.completedCues)
+    ? prompt.completedCues.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+
+  return {
+    id: prompt.id || '',
+    slug: prompt.slug || '',
+    title: prompt.title || '',
+    description: prompt.description || '',
+    persona: prompt.persona || '',
+    color: prompt.color || '#6366f1',
+    tags: Array.isArray(prompt.tags) ? prompt.tags.filter(Boolean) : [],
+    cueCards,
+    checklist: { sections: checklistSections },
+    markdownRules: prompt.markdownRules || null,
+    pdfRules: prompt.pdfRules || null,
+    focus: prompt.focus || '',
+    notes: prompt.notes || '',
+    completedCues,
+    builtIn: Boolean(prompt.builtIn),
+  };
+};
+
 const hydrateHistoryEntry = (entry) => {
   if (!entry) return null;
   const pdfPath = entry.pdfPath || '';
@@ -55,6 +167,9 @@ const hydrateHistoryEntry = (entry) => {
   const backendUrl = normalizeBackendUrlValue(entry.backendUrl || '');
   const pdfUrl = entry.pdfUrl || buildFileUrl(backendUrl, pdfPath);
   const mdUrl = entry.mdUrl || buildFileUrl(backendUrl, mdPath);
+  const workspace = normalizeWorkspaceEntry(entry.workspace);
+  const structure = normalizeStructureMeta(entry.structure);
+  const prompt = normalizePromptEntry(entry.prompt);
 
   return {
     ...entry,
@@ -67,6 +182,10 @@ const hydrateHistoryEntry = (entry) => {
     tags: Array.isArray(entry?.tags) ? entry.tags : [],
     logs: Array.isArray(entry?.logs) ? entry.logs : [],
     stageEvents: Array.isArray(entry?.stageEvents) ? entry.stageEvents : [],
+    workspace,
+    structure,
+    completenessScore: structure?.score ?? null,
+    prompt,
   };
 };
 
@@ -244,6 +363,109 @@ export default function Rec2PdfApp(){
       return [];
     }
   });
+  const [prompts, setPrompts] = useState([]);
+  const [promptLoading, setPromptLoading] = useState(false);
+  const [promptState, setPromptState] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { promptId: '', focus: '', notes: '', cueProgress: {} };
+    }
+    try {
+      const raw = localStorage.getItem(PROMPT_SELECTION_KEY);
+      if (!raw) {
+        return { promptId: '', focus: '', notes: '', cueProgress: {} };
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') {
+        return { promptId: '', focus: '', notes: '', cueProgress: {} };
+      }
+      return {
+        promptId: parsed.promptId || '',
+        focus: parsed.focus || '',
+        notes: parsed.notes || '',
+        cueProgress:
+          parsed.cueProgress && typeof parsed.cueProgress === 'object'
+            ? parsed.cueProgress
+            : {},
+      };
+    } catch {
+      return { promptId: '', focus: '', notes: '', cueProgress: {} };
+    }
+  });
+  const [promptFavorites, setPromptFavorites] = useState(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(PROMPT_FAVORITES_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(Boolean);
+    } catch {
+      return [];
+    }
+  });
+  const [workspaces, setWorkspaces] = useState([]);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [workspaceSelection, setWorkspaceSelection] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { workspaceId: '', projectId: '', projectName: '', status: '' };
+    }
+    try {
+      const raw = localStorage.getItem(WORKSPACE_SELECTION_KEY);
+      if (!raw) {
+        return { workspaceId: '', projectId: '', projectName: '', status: '' };
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') {
+        return { workspaceId: '', projectId: '', projectName: '', status: '' };
+      }
+      return {
+        workspaceId: parsed.workspaceId || '',
+        projectId: parsed.projectId || '',
+        projectName: parsed.projectName || '',
+        status: parsed.status || '',
+      };
+    } catch {
+      return { workspaceId: '', projectId: '', projectName: '', status: '' };
+    }
+  });
+  const [savedWorkspaceFilters, setSavedWorkspaceFilters] = useState(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(WORKSPACE_FILTERS_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      const now = Date.now();
+      return parsed.map((item, index) => ({
+        id: item?.id || now + index,
+        name: item?.name || `Filtro ${index + 1}`,
+        workspaceId: item?.workspaceId || '',
+        projectId: item?.projectId || '',
+        projectName: item?.projectName || '',
+        status: item?.status || '',
+        search: item?.search || '',
+      }));
+    } catch {
+      return [];
+    }
+  });
+  const [navigatorSelection, setNavigatorSelection] = useState(() => ({
+    workspaceId: '',
+    projectId: '',
+    projectName: '',
+    status: '',
+  }));
+  const [workspaceBuilderOpen, setWorkspaceBuilderOpen] = useState(false);
+  const [workspaceBuilder, setWorkspaceBuilder] = useState({
+    name: '',
+    client: '',
+    color: '#6366f1',
+    statuses: DEFAULT_WORKSPACE_STATUSES.join(', '),
+  });
+  const [projectDraft, setProjectDraft] = useState('');
+  const [statusDraft, setStatusDraft] = useState('');
+  const [projectCreationMode, setProjectCreationMode] = useState(false);
+  const [statusCreationMode, setStatusCreationMode] = useState(false);
   const [pipelineStatus, setPipelineStatus] = useState(() => buildInitialPipelineStatus('idle'));
   const [activeStageKey, setActiveStageKey] = useState(null);
   const [stageMessages, setStageMessages] = useState({});
@@ -319,6 +541,80 @@ export default function Rec2PdfApp(){
       // ignore persistence errors (quota, privacy modes, ...)
     }
   }, [history]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(WORKSPACE_SELECTION_KEY, JSON.stringify(workspaceSelection));
+    } catch {
+      // Ignore persistence errors
+    }
+  }, [workspaceSelection]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(WORKSPACE_FILTERS_KEY, JSON.stringify(savedWorkspaceFilters));
+    } catch {
+      // Ignore persistence errors
+    }
+  }, [savedWorkspaceFilters]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(PROMPT_SELECTION_KEY, JSON.stringify(promptState));
+    } catch {
+      // ignore persistence errors
+    }
+  }, [promptState]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(PROMPT_FAVORITES_KEY, JSON.stringify(promptFavorites));
+    } catch {
+      // ignore persistence errors
+    }
+  }, [promptFavorites]);
+
+  useEffect(() => {
+    if (!workspaceSelection.workspaceId) return;
+    const exists = workspaces.some((workspace) => workspace.id === workspaceSelection.workspaceId);
+    if (!exists) {
+      setWorkspaceSelection({ workspaceId: '', projectId: '', projectName: '', status: '' });
+    }
+  }, [workspaces, workspaceSelection.workspaceId]);
+
+  useEffect(() => {
+    if (!navigatorSelection.workspaceId || navigatorSelection.workspaceId === '__unassigned__') return;
+    const exists = workspaces.some((workspace) => workspace.id === navigatorSelection.workspaceId);
+    if (!exists) {
+      setNavigatorSelection((prev) => ({ ...prev, workspaceId: '', projectId: '', projectName: '', status: '' }));
+    }
+  }, [workspaces, navigatorSelection.workspaceId]);
+
+  useEffect(() => {
+    if (!promptState.promptId) return;
+    const exists = prompts.some((prompt) => prompt.id === promptState.promptId);
+    if (!exists) {
+      setPromptState({ promptId: '', focus: '', notes: '', cueProgress: {} });
+    }
+  }, [prompts, promptState.promptId]);
+
+  useEffect(() => {
+    setNavigatorSelection((prev) => {
+      if (prev.workspaceId || !workspaceSelection.workspaceId) {
+        return prev;
+      }
+      return {
+        workspaceId: workspaceSelection.workspaceId,
+        projectId: workspaceSelection.projectId || '',
+        projectName: workspaceSelection.projectName || '',
+        status: workspaceSelection.status || '',
+      };
+    });
+  }, [workspaceSelection.workspaceId, workspaceSelection.projectId, workspaceSelection.status]);
 
   const clearStageAnimationTimers = useCallback(() => {
     stageAnimationTimeoutsRef.current.forEach(clearTimeout);
@@ -427,6 +723,657 @@ export default function Rec2PdfApp(){
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
 
+  const fetchPrompts = useCallback(
+    async (options = {}) => {
+      const normalized = normalizeBackendUrlValue(options.backendUrlOverride || backendUrl);
+      if (!normalized) {
+        if (!options?.silent) {
+          setPrompts([]);
+        }
+        return { ok: false, status: 0, message: 'Backend non configurato', skipped: true };
+      }
+      if (!options?.silent) {
+        setPromptLoading(true);
+      }
+      try {
+        const result = await fetchBody(`${normalized}/api/prompts`, { method: 'GET' });
+        if (result.ok && Array.isArray(result.data?.prompts)) {
+          setPrompts(result.data.prompts);
+        } else if (!result.ok && !options?.silent) {
+          const message = result.data?.message || result.raw || 'Impossibile caricare i prompt.';
+          pushLogs([`⚠️ API prompt: ${message}`]);
+        }
+        return result;
+      } catch (error) {
+        if (!options?.silent) {
+          pushLogs([`⚠️ Errore prompt: ${error?.message || String(error)}`]);
+        }
+        return { ok: false, status: 0, error };
+      } finally {
+        if (!options?.silent) {
+          setPromptLoading(false);
+        }
+      }
+    },
+    [backendUrl, fetchBody, pushLogs]
+  );
+
+  useEffect(() => {
+    if (!backendUrl) {
+      setPrompts([]);
+      return;
+    }
+    fetchPrompts({ silent: true });
+  }, [backendUrl, fetchPrompts]);
+
+  const fetchWorkspaces = useCallback(
+    async (options = {}) => {
+      const normalized = normalizeBackendUrlValue(options.backendUrlOverride || backendUrl);
+      if (!normalized) {
+        if (!options?.silent) {
+          setWorkspaces([]);
+        }
+        return { ok: false, status: 0, message: 'Backend non configurato', skipped: true };
+      }
+      setWorkspaceLoading(true);
+      try {
+        const result = await fetchBody(`${normalized}/api/workspaces`, { method: 'GET' });
+        if (result.ok && Array.isArray(result.data?.workspaces)) {
+          setWorkspaces(result.data.workspaces);
+        } else if (!result.ok && !options?.silent) {
+          const message = result.data?.message || result.raw || 'Impossibile caricare i workspace.';
+          pushLogs([`⚠️ API workspace: ${message}`]);
+        }
+        return result;
+      } catch (error) {
+        if (!options?.silent) {
+          pushLogs([`⚠️ Errore workspace: ${error?.message || String(error)}`]);
+        }
+        return { ok: false, status: 0, error };
+      } finally {
+        setWorkspaceLoading(false);
+      }
+    },
+    [backendUrl, fetchBody, pushLogs]
+  );
+
+  useEffect(() => {
+    fetchWorkspaces({ silent: true });
+  }, [fetchWorkspaces]);
+
+  const handleCreateWorkspace = useCallback(
+    async ({ name, client, color, statuses }) => {
+      const normalized = normalizeBackendUrlValue(backendUrl);
+      if (!normalized) {
+        const message = 'Configura un backend valido per creare workspace.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const sanitizedName = String(name || '').trim();
+      if (!sanitizedName) {
+        const message = 'Il nome del workspace è obbligatorio.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const statusArray = Array.isArray(statuses)
+        ? statuses.filter(Boolean)
+        : typeof statuses === 'string'
+        ? statuses
+            .split(',')
+            .map((chunk) => chunk.trim())
+            .filter(Boolean)
+        : [];
+      try {
+        const response = await fetch(`${normalized}/api/workspaces`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: sanitizedName,
+            client: String(client || sanitizedName).trim(),
+            color: color || '#6366f1',
+            defaultStatuses: statusArray.length ? statusArray : undefined,
+          }),
+        });
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch {
+          payload = {};
+        }
+        if (!response.ok) {
+          const message = payload?.message || `Creazione workspace fallita (HTTP ${response.status})`;
+          pushLogs([`❌ ${message}`]);
+          return { ok: false, message };
+        }
+        if (payload?.workspace) {
+          setWorkspaces((prev) => [...prev, payload.workspace]);
+          pushLogs([`✅ Workspace creato: ${payload.workspace.name}`]);
+          if (!workspaceSelection.workspaceId) {
+            setWorkspaceSelection({ workspaceId: payload.workspace.id, projectId: '', projectName: '', status: '' });
+          }
+        }
+        return { ok: true, workspace: payload.workspace };
+      } catch (error) {
+        const message = error?.message || 'Errore creazione workspace';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+    },
+    [backendUrl, pushLogs, workspaceSelection.workspaceId]
+  );
+
+  const handleEnsureWorkspaceProject = useCallback(
+    async (workspaceId, { projectId, projectName, status } = {}) => {
+      if (!workspaceId) {
+        return { ok: false, message: 'Workspace mancante' };
+      }
+      const normalized = normalizeBackendUrlValue(backendUrl);
+      if (!normalized) {
+        const message = 'Configura un backend valido per aggiornare i workspace.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+
+      const ensureWorkspaceAvailable = async () => {
+        let target = workspaces.find((ws) => ws.id === workspaceId);
+        if (!target) {
+          const refreshed = await fetchWorkspaces({ silent: true });
+          if (Array.isArray(refreshed?.data?.workspaces)) {
+            target = refreshed.data.workspaces.find((ws) => ws.id === workspaceId) || null;
+          }
+        }
+        return target;
+      };
+
+      const targetWorkspace = await ensureWorkspaceAvailable();
+      if (!targetWorkspace) {
+        const message = 'Workspace non trovato sul backend.';
+        pushLogs([`⚠️ ${message}`]);
+        return { ok: false, message };
+      }
+
+      const projectNameTrimmed = String(projectName || '').trim();
+      const projectIdTrimmed = String(projectId || '').trim();
+      const statusTrimmed = String(status || '').trim();
+
+      if (!projectNameTrimmed && !projectIdTrimmed && !statusTrimmed) {
+        return { ok: true, workspace: targetWorkspace, updated: false };
+      }
+
+      const projects = Array.isArray(targetWorkspace.projects)
+        ? targetWorkspace.projects.map((proj) => ({
+            ...proj,
+            statuses: Array.isArray(proj.statuses) ? [...proj.statuses] : [],
+          }))
+        : [];
+
+      let existingProject = null;
+      if (projectIdTrimmed) {
+        existingProject = projects.find((proj) => proj.id === projectIdTrimmed) || null;
+      }
+      if (!existingProject && projectNameTrimmed) {
+        existingProject = projects.find(
+          (proj) => proj.name && proj.name.toLowerCase() === projectNameTrimmed.toLowerCase()
+        ) || null;
+      }
+
+      let changed = false;
+
+      if (!existingProject && projectNameTrimmed) {
+        const defaultStatuses = Array.isArray(targetWorkspace.defaultStatuses) && targetWorkspace.defaultStatuses.length
+          ? targetWorkspace.defaultStatuses
+          : DEFAULT_WORKSPACE_STATUSES;
+        existingProject = {
+          id: projectIdTrimmed || `proj_${Date.now()}`,
+          name: projectNameTrimmed,
+          color: targetWorkspace.color || '#6366f1',
+          statuses: statusTrimmed ? [statusTrimmed] : [...defaultStatuses],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        projects.push(existingProject);
+        changed = true;
+      } else if (existingProject && statusTrimmed && !existingProject.statuses.includes(statusTrimmed)) {
+        existingProject.statuses = [...existingProject.statuses, statusTrimmed];
+        existingProject.updatedAt = Date.now();
+        changed = true;
+      }
+
+      if (!changed) {
+        return { ok: true, workspace: targetWorkspace, updated: false };
+      }
+
+      try {
+        const response = await fetch(`${normalized}/api/workspaces/${workspaceId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projects }),
+        });
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch {
+          payload = {};
+        }
+        if (!response.ok) {
+          const message = payload?.message || `Aggiornamento workspace fallito (HTTP ${response.status})`;
+          pushLogs([`❌ ${message}`]);
+          return { ok: false, message };
+        }
+        if (payload?.workspace) {
+          setWorkspaces((prev) => prev.map((ws) => (ws.id === workspaceId ? payload.workspace : ws)));
+        }
+        return { ok: true, workspace: payload.workspace || targetWorkspace, updated: true };
+      } catch (error) {
+        const message = error?.message || 'Errore aggiornamento workspace';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+    },
+    [backendUrl, workspaces, fetchWorkspaces, pushLogs]
+  );
+
+  const handleAssignEntryWorkspace = useCallback(
+    async (entry, assignment, options = {}) => {
+      if (!entry) return;
+      setHistory((prev) =>
+        prev.map((item) => (item.id === entry.id ? hydrateHistoryEntry({ ...item, workspace: assignment }) : item))
+      );
+      if (options.ensureMetadata && assignment?.id) {
+        await handleEnsureWorkspaceProject(assignment.id, {
+          projectId: assignment.projectId,
+          projectName: assignment.projectName,
+          status: assignment.status,
+        });
+        fetchWorkspaces({ silent: true });
+      }
+    },
+    [handleEnsureWorkspaceProject, fetchWorkspaces]
+  );
+
+  const fetchEntryPreview = useCallback(
+    async (entry) => {
+      if (!entry) {
+        return { ok: false, message: 'Nessun documento selezionato.' };
+      }
+      const mdPathResolved = deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
+      if (!mdPathResolved) {
+        return { ok: false, message: 'Markdown non disponibile per questa sessione.' };
+      }
+      const backendTarget = normalizeBackendUrlValue(entry?.backendUrl || backendUrl);
+      if (!backendTarget) {
+        return { ok: false, message: 'Backend non configurato per il documento selezionato.' };
+      }
+      try {
+        const response = await fetch(`${backendTarget}/api/markdown?path=${encodeURIComponent(mdPathResolved)}`);
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch {
+          payload = {};
+        }
+        if (!response.ok) {
+          const message = payload?.message || `Anteprima Markdown non disponibile (HTTP ${response.status})`;
+          return { ok: false, message };
+        }
+        const markdown = typeof payload?.content === 'string' ? payload.content : '';
+        return {
+          ok: true,
+          markdown,
+          pdfUrl: buildFileUrl(backendTarget, entry.pdfPath),
+          mdUrl: buildFileUrl(backendTarget, mdPathResolved),
+        };
+      } catch (error) {
+        return { ok: false, message: error?.message || 'Errore durante il recupero dell\'anteprima.' };
+      }
+    },
+    [backendUrl]
+  );
+
+  const handleSaveWorkspaceFilter = useCallback(
+    (filter) => {
+      const name = filter?.name?.trim() || `Filtro ${savedWorkspaceFilters.length + 1}`;
+      const entry = {
+        id: Date.now(),
+        name,
+        workspaceId: filter?.workspaceId || '',
+        projectId: filter?.projectId || '',
+        projectName: filter?.projectName || '',
+        status: filter?.status || '',
+        search: filter?.search || '',
+      };
+      setSavedWorkspaceFilters((prev) => [...prev, entry]);
+      pushLogs([`✅ Filtro salvato: ${name}`]);
+    },
+    [savedWorkspaceFilters.length, pushLogs]
+  );
+
+  const handleDeleteWorkspaceFilter = useCallback((id) => {
+    setSavedWorkspaceFilters((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const handleApplyWorkspaceFilter = useCallback((filter) => {
+    if (!filter) return;
+    setNavigatorSelection({
+      workspaceId: filter.workspaceId || '',
+      projectId: filter.projectId || '',
+      projectName: filter.projectName || '',
+      status: filter.status || '',
+    });
+    setHistoryFilter(filter.search || '');
+  }, []);
+
+  const handleRefreshWorkspaces = useCallback(() => {
+    fetchWorkspaces({ silent: false });
+  }, [fetchWorkspaces]);
+
+  const handleSelectPromptTemplate = useCallback((prompt) => {
+    if (!prompt || !prompt.id) {
+      setPromptState({ promptId: '', focus: '', notes: '', cueProgress: {} });
+      return;
+    }
+    setPromptState((prev) => {
+      if (prev.promptId === prompt.id) {
+        return prev;
+      }
+      return { promptId: prompt.id, focus: '', notes: '', cueProgress: {} };
+    });
+  }, []);
+
+  const handleClearPromptSelection = useCallback(() => {
+    setPromptState({ promptId: '', focus: '', notes: '', cueProgress: {} });
+  }, []);
+
+  const handlePromptFocusChange = useCallback((value) => {
+    setPromptState((prev) => ({ ...prev, focus: value }));
+  }, []);
+
+  const handlePromptNotesChange = useCallback((value) => {
+    setPromptState((prev) => ({ ...prev, notes: value }));
+  }, []);
+
+  const handleTogglePromptCue = useCallback((cueKey) => {
+    setPromptState((prev) => {
+      const next = {
+        ...prev,
+        cueProgress: { ...(prev.cueProgress || {}) },
+      };
+      next.cueProgress[cueKey] = !next.cueProgress[cueKey];
+      return next;
+    });
+  }, []);
+
+  const handleTogglePromptFavorite = useCallback((promptId) => {
+    setPromptFavorites((prev) => {
+      const set = new Set(prev);
+      if (set.has(promptId)) {
+        set.delete(promptId);
+      } else {
+        set.add(promptId);
+      }
+      return Array.from(set);
+    });
+  }, []);
+
+  const handleRefreshPrompts = useCallback(() => {
+    fetchPrompts({ silent: false });
+  }, [fetchPrompts]);
+
+  const handleCreatePrompt = useCallback(
+    async (payload) => {
+      const normalized = normalizeBackendUrlValue(backendUrl);
+      if (!normalized) {
+        return { ok: false, message: 'Configura un backend valido prima di creare prompt.' };
+      }
+      const result = await fetchBody(`${normalized}/api/prompts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (result.ok && result.data?.prompt) {
+        setPrompts((prev) => {
+          const next = prev.filter((item) => item.id !== result.data.prompt.id);
+          next.unshift(result.data.prompt);
+          return next;
+        });
+        return { ok: true, prompt: result.data.prompt };
+      }
+      const message = result.data?.message || result.raw || 'Impossibile creare il prompt.';
+      return { ok: false, message };
+    },
+    [backendUrl, fetchBody]
+  );
+
+  const handleDeletePrompt = useCallback(
+    async (promptId) => {
+      const normalized = normalizeBackendUrlValue(backendUrl);
+      if (!normalized) {
+        return { ok: false, message: 'Backend non configurato' };
+      }
+      const result = await fetchBody(`${normalized}/api/prompts/${encodeURIComponent(promptId)}`, {
+        method: 'DELETE',
+      });
+      if (result.ok) {
+        setPrompts((prev) => prev.filter((prompt) => prompt.id !== promptId));
+        setPromptFavorites((prev) => prev.filter((id) => id !== promptId));
+        setPromptState((prev) =>
+          prev.promptId === promptId ? { promptId: '', focus: '', notes: '', cueProgress: {} } : prev
+        );
+      }
+      return result;
+    },
+    [backendUrl, fetchBody]
+  );
+
+  const handleAdoptNavigatorSelection = useCallback(() => {
+    if (!navigatorSelection.workspaceId || navigatorSelection.workspaceId === '__unassigned__') {
+      setWorkspaceSelection({ workspaceId: '', projectId: '', projectName: '', status: '' });
+      setProjectCreationMode(false);
+      setStatusCreationMode(false);
+      setProjectDraft('');
+      setStatusDraft('');
+      return;
+    }
+    const workspace = workspaces.find((ws) => ws.id === navigatorSelection.workspaceId);
+    if (!workspace) {
+      setWorkspaceSelection({ workspaceId: '', projectId: '', projectName: '', status: '' });
+      return;
+    }
+    const workspaceProjectsArray = Array.isArray(workspace.projects) ? workspace.projects : [];
+    let matchedProject = null;
+    if (navigatorSelection.projectId) {
+      matchedProject = workspaceProjectsArray.find((proj) => proj.id === navigatorSelection.projectId) || null;
+      if (!matchedProject && navigatorSelection.projectName) {
+        const targetName = navigatorSelection.projectName.toLowerCase();
+        matchedProject =
+          workspaceProjectsArray.find((proj) => (proj.name || '').toLowerCase() === targetName) || null;
+      }
+    }
+    const candidateStatuses = matchedProject && Array.isArray(matchedProject.statuses) && matchedProject.statuses.length
+      ? matchedProject.statuses
+      : Array.isArray(workspace.defaultStatuses) && workspace.defaultStatuses.length
+      ? workspace.defaultStatuses
+      : DEFAULT_WORKSPACE_STATUSES;
+    const normalizedStatus =
+      navigatorSelection.status && candidateStatuses.includes(navigatorSelection.status)
+        ? navigatorSelection.status
+        : candidateStatuses[0] || '';
+    setWorkspaceSelection({
+      workspaceId: workspace.id,
+      projectId: matchedProject?.id || '',
+      projectName: matchedProject ? '' : navigatorSelection.projectName || '',
+      status: normalizedStatus,
+    });
+    setProjectCreationMode(false);
+    setStatusCreationMode(false);
+    setProjectDraft('');
+    setStatusDraft('');
+  }, [navigatorSelection, workspaces]);
+
+  const activeWorkspace = useMemo(
+    () => workspaces.find((workspace) => workspace.id === workspaceSelection.workspaceId) || null,
+    [workspaces, workspaceSelection.workspaceId]
+  );
+
+  const workspaceProjects = useMemo(
+    () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []),
+    [activeWorkspace]
+  );
+
+  const activeProject = useMemo(
+    () => workspaceProjects.find((project) => project.id === workspaceSelection.projectId) || null,
+    [workspaceProjects, workspaceSelection.projectId]
+  );
+
+  const availableStatuses = useMemo(() => {
+    const candidate = (activeProject && Array.isArray(activeProject.statuses) && activeProject.statuses.length
+      ? activeProject.statuses
+      : Array.isArray(activeWorkspace?.defaultStatuses) && activeWorkspace.defaultStatuses.length
+      ? activeWorkspace.defaultStatuses
+      : DEFAULT_WORKSPACE_STATUSES);
+    return Array.isArray(candidate) && candidate.length ? candidate : DEFAULT_WORKSPACE_STATUSES;
+  }, [activeProject, activeWorkspace]);
+
+  const handleSelectWorkspaceForPipeline = useCallback(
+    (value) => {
+      const workspaceId = value || '';
+      if (!workspaceId) {
+        setWorkspaceSelection({ workspaceId: '', projectId: '', projectName: '', status: '' });
+        setProjectCreationMode(false);
+        setStatusCreationMode(false);
+        setProjectDraft('');
+        setStatusDraft('');
+        return;
+      }
+      const workspace = workspaces.find((ws) => ws.id === workspaceId);
+      const firstProject = workspace?.projects?.[0] || null;
+      const statuses = firstProject?.statuses && firstProject.statuses.length
+        ? firstProject.statuses
+        : workspace?.defaultStatuses && workspace.defaultStatuses.length
+        ? workspace.defaultStatuses
+        : DEFAULT_WORKSPACE_STATUSES;
+      setWorkspaceSelection({
+        workspaceId,
+        projectId: firstProject?.id || '',
+        projectName: '',
+        status: statuses[0] || '',
+      });
+      setProjectCreationMode(false);
+      setStatusCreationMode(false);
+      setProjectDraft('');
+      setStatusDraft('');
+    },
+    [workspaces]
+  );
+
+  const handleSelectProjectForPipeline = useCallback(
+    (value) => {
+      if (value === '__new__') {
+        setProjectCreationMode(true);
+        setWorkspaceSelection((prev) => ({ ...prev, projectId: '', projectName: '' }));
+        setProjectDraft('');
+        return;
+      }
+      setProjectCreationMode(false);
+      const project = workspaceProjects.find((proj) => proj.id === value) || null;
+      const statuses = project?.statuses && project.statuses.length
+        ? project.statuses
+        : activeWorkspace?.defaultStatuses && activeWorkspace.defaultStatuses.length
+        ? activeWorkspace.defaultStatuses
+        : DEFAULT_WORKSPACE_STATUSES;
+      setWorkspaceSelection((prev) => ({
+        ...prev,
+        projectId: value || '',
+        projectName: '',
+        status: prev.status && statuses.includes(prev.status) ? prev.status : (statuses[0] || ''),
+      }));
+      setStatusCreationMode(false);
+      setStatusDraft('');
+    },
+    [workspaceProjects, activeWorkspace]
+  );
+
+  const handleSelectStatusForPipeline = useCallback((value) => {
+    if (value === '__new__') {
+      setStatusCreationMode(true);
+      setWorkspaceSelection((prev) => ({ ...prev, status: '' }));
+      setStatusDraft('');
+      return;
+    }
+    setStatusCreationMode(false);
+    setWorkspaceSelection((prev) => ({ ...prev, status: value || '' }));
+  }, []);
+
+  const handleCreateProjectFromDraft = useCallback(async () => {
+    const name = projectDraft.trim();
+    if (!workspaceSelection.workspaceId || !name) {
+      return;
+    }
+    const result = await handleEnsureWorkspaceProject(workspaceSelection.workspaceId, {
+      projectName: name,
+      status: statusDraft.trim() || workspaceSelection.status,
+    });
+    if (result.ok && result.workspace) {
+      const created = (result.workspace.projects || []).find(
+        (proj) => proj.name && proj.name.toLowerCase() === name.toLowerCase()
+      );
+      const statuses = created?.statuses && created.statuses.length
+        ? created.statuses
+        : result.workspace.defaultStatuses && result.workspace.defaultStatuses.length
+        ? result.workspace.defaultStatuses
+        : DEFAULT_WORKSPACE_STATUSES;
+      setWorkspaceSelection({
+        workspaceId: result.workspace.id,
+        projectId: created?.id || '',
+        projectName: '',
+        status: statusDraft.trim() || statuses[0] || '',
+      });
+      setProjectCreationMode(false);
+      setStatusCreationMode(false);
+      setProjectDraft('');
+      setStatusDraft('');
+      fetchWorkspaces({ silent: true });
+    }
+  }, [projectDraft, statusDraft, workspaceSelection.workspaceId, workspaceSelection.status, handleEnsureWorkspaceProject, fetchWorkspaces]);
+
+  const handleCreateStatusFromDraft = useCallback(async () => {
+    const newStatus = statusDraft.trim();
+    if (!newStatus || !workspaceSelection.workspaceId) {
+      return;
+    }
+    await handleEnsureWorkspaceProject(workspaceSelection.workspaceId, {
+      projectId: workspaceSelection.projectId,
+      projectName: workspaceSelection.projectName,
+      status: newStatus,
+    });
+    setWorkspaceSelection((prev) => ({ ...prev, status: newStatus }));
+    setStatusDraft('');
+    setStatusCreationMode(false);
+    fetchWorkspaces({ silent: true });
+  }, [statusDraft, workspaceSelection.workspaceId, workspaceSelection.projectId, workspaceSelection.projectName, handleEnsureWorkspaceProject, fetchWorkspaces]);
+
+  const handleWorkspaceBuilderSubmit = useCallback(async () => {
+    const result = await handleCreateWorkspace({
+      name: workspaceBuilder.name,
+      client: workspaceBuilder.client,
+      color: workspaceBuilder.color,
+      statuses: workspaceBuilder.statuses
+        .split(',')
+        .map((chunk) => chunk.trim())
+        .filter(Boolean),
+    });
+    if (result.ok) {
+      setWorkspaceBuilder({
+        name: '',
+        client: '',
+        color: '#6366f1',
+        statuses: DEFAULT_WORKSPACE_STATUSES.join(', '),
+      });
+      setWorkspaceBuilderOpen(false);
+      fetchWorkspaces({ silent: true });
+    }
+  }, [handleCreateWorkspace, workspaceBuilder, fetchWorkspaces]);
+
   const processViaBackend=async(customBlob)=>{
     const blob=customBlob||audioBlob;
     if(!blob) return;
@@ -465,6 +1412,30 @@ export default function Rec2PdfApp(){
         appendLogs(["ℹ️ Cartella destinazione non specificata o segnaposto: il backend userà la sua cartella predefinita."]);
       }
       fd.append('slug',slug||'meeting');
+      if (workspaceSelection.workspaceId) {
+        fd.append('workspaceId', workspaceSelection.workspaceId);
+        if (workspaceSelection.projectId) {
+          fd.append('workspaceProjectId', workspaceSelection.projectId);
+        }
+        if (workspaceSelection.projectName) {
+          fd.append('workspaceProjectName', workspaceSelection.projectName);
+        }
+        if (workspaceSelection.status) {
+          fd.append('workspaceStatus', workspaceSelection.status);
+        }
+      }
+      if (promptState.promptId) {
+        fd.append('promptId', promptState.promptId);
+        if (promptState.focus && promptState.focus.trim()) {
+          fd.append('promptFocus', promptState.focus.trim());
+        }
+        if (promptState.notes && promptState.notes.trim()) {
+          fd.append('promptNotes', promptState.notes.trim());
+        }
+        if (promptCompletedCues.length) {
+          fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
+        }
+      }
       const cap=Number(secondsCap||0);
       if(cap>0) fd.append('seconds',String(cap));
       const {ok,status,data,raw}=await fetchBody(`${backendUrl}/api/rec2pdf`,{method:'POST',body:fd});
@@ -500,6 +1471,33 @@ export default function Rec2PdfApp(){
           frontend: customLogo?'custom':'default',
           pdf: customPdfLogo?(customPdfLogo.name||'custom'):'default',
         };
+        const structureMeta = data?.structure || null;
+        if (structureMeta && Number.isFinite(structureMeta.score)) {
+          appendLogs([`📊 Completezza stimata: ${structureMeta.score}%`]);
+          if (Array.isArray(structureMeta.missingSections) && structureMeta.missingSections.length) {
+            appendLogs([`🧩 Sezioni mancanti: ${structureMeta.missingSections.join(', ')}`]);
+          }
+        }
+        const fallbackPrompt = promptState.promptId
+          ? {
+              id: promptState.promptId,
+              title: activePrompt?.title || '',
+              slug: activePrompt?.slug || '',
+              description: activePrompt?.description || '',
+              persona: activePrompt?.persona || '',
+              color: activePrompt?.color || '#6366f1',
+              tags: Array.isArray(activePrompt?.tags) ? activePrompt.tags : [],
+              cueCards: Array.isArray(activePrompt?.cueCards) ? activePrompt.cueCards : [],
+              checklist: activePrompt?.checklist || null,
+              markdownRules: activePrompt?.markdownRules || null,
+              pdfRules: activePrompt?.pdfRules || null,
+              focus: promptState.focus || '',
+              notes: promptState.notes || '',
+              completedCues: promptCompletedCues,
+              builtIn: Boolean(activePrompt?.builtIn),
+            }
+          : null;
+        const promptSummary = data?.prompt || fallbackPrompt;
         const historyEntry=hydrateHistoryEntry({
           id:Date.now(),
           timestamp:runStartedAt.toISOString(),
@@ -517,11 +1515,25 @@ export default function Rec2PdfApp(){
           stageEvents: successEvents,
           source:customBlob?'upload':'recording',
           bytes:blob.size||null,
+          workspace: data?.workspace || (workspaceSelection.workspaceId
+            ? {
+                id: workspaceSelection.workspaceId,
+                name: '',
+                client: '',
+                color: '#6366f1',
+                projectId: workspaceSelection.projectId || '',
+                projectName: workspaceSelection.projectName || '',
+                status: workspaceSelection.status || '',
+              }
+            : null),
+          structure: structureMeta,
+          prompt: promptSummary,
         });
         setHistory(prev=>{
           const next=[historyEntry,...prev];
           return next.slice(0,HISTORY_LIMIT);
         });
+        fetchWorkspaces({ silent: true });
         appendLogs([`💾 Sessione salvata nella Libreria (${historyEntry.title}).`]);
       } else {
         appendLogs(["⚠️ Risposta senza pdfPath."]);
@@ -568,6 +1580,30 @@ export default function Rec2PdfApp(){
       const slugValue=(slug||file.name.replace(/\.[^.]+$/i,'')||'documento').trim();
       if(slugValue){
         fd.append('slug',slugValue);
+      }
+      if (workspaceSelection.workspaceId) {
+        fd.append('workspaceId', workspaceSelection.workspaceId);
+        if (workspaceSelection.projectId) {
+          fd.append('workspaceProjectId', workspaceSelection.projectId);
+        }
+        if (workspaceSelection.projectName) {
+          fd.append('workspaceProjectName', workspaceSelection.projectName);
+        }
+        if (workspaceSelection.status) {
+          fd.append('workspaceStatus', workspaceSelection.status);
+        }
+      }
+      if (promptState.promptId) {
+        fd.append('promptId', promptState.promptId);
+        if (promptState.focus && promptState.focus.trim()) {
+          fd.append('promptFocus', promptState.focus.trim());
+        }
+        if (promptState.notes && promptState.notes.trim()) {
+          fd.append('promptNotes', promptState.notes.trim());
+        }
+        if (promptCompletedCues.length) {
+          fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
+        }
       }
       const {ok,status,data,raw,contentType}=await fetchBody(`${backendUrl}/api/ppubr-upload`,{method:'POST',body:fd});
       const stageEventsPayload=Array.isArray(data?.stageEvents)?data.stageEvents:[];
@@ -616,6 +1652,33 @@ export default function Rec2PdfApp(){
           frontend:customLogo?'custom':'default',
           pdf:customPdfLogo?(customPdfLogo.name||'custom'):'default',
         };
+        const structureMeta = data?.structure || null;
+        if (structureMeta && Number.isFinite(structureMeta.score)) {
+          appendLogs([`📊 Completezza stimata: ${structureMeta.score}%`]);
+          if (Array.isArray(structureMeta.missingSections) && structureMeta.missingSections.length) {
+            appendLogs([`🧩 Sezioni mancanti: ${structureMeta.missingSections.join(', ')}`]);
+          }
+        }
+        const fallbackPrompt = promptState.promptId
+          ? {
+              id: promptState.promptId,
+              title: activePrompt?.title || '',
+              slug: activePrompt?.slug || '',
+              description: activePrompt?.description || '',
+              persona: activePrompt?.persona || '',
+              color: activePrompt?.color || '#6366f1',
+              tags: Array.isArray(activePrompt?.tags) ? activePrompt.tags : [],
+              cueCards: Array.isArray(activePrompt?.cueCards) ? activePrompt.cueCards : [],
+              checklist: activePrompt?.checklist || null,
+              markdownRules: activePrompt?.markdownRules || null,
+              pdfRules: activePrompt?.pdfRules || null,
+              focus: promptState.focus || '',
+              notes: promptState.notes || '',
+              completedCues: promptCompletedCues,
+              builtIn: Boolean(activePrompt?.builtIn),
+            }
+          : null;
+        const promptSummary = data?.prompt || fallbackPrompt;
         const historyEntry=hydrateHistoryEntry({
           id:Date.now(),
           timestamp:new Date().toISOString(),
@@ -633,6 +1696,19 @@ export default function Rec2PdfApp(){
           stageEvents:successEvents,
           source:'markdown-upload',
           bytes:file.size||null,
+          workspace: data?.workspace || (workspaceSelection.workspaceId
+            ? {
+                id: workspaceSelection.workspaceId,
+                name: '',
+                client: '',
+                color: '#6366f1',
+                projectId: workspaceSelection.projectId || '',
+                projectName: workspaceSelection.projectName || '',
+                status: workspaceSelection.status || '',
+              }
+            : null),
+          structure: structureMeta,
+          prompt: promptSummary,
         });
         setHistory(prev=>{
           const next=[historyEntry,...prev];
@@ -640,6 +1716,7 @@ export default function Rec2PdfApp(){
         });
         setActivePanel('doc');
         appendLogs([`💾 Sessione Markdown salvata nella Libreria (${historyEntry.title}).`]);
+        fetchWorkspaces({ silent: true });
       }else{
         appendLogs(['⚠️ Risposta backend senza percorso PDF.']);
       }
@@ -1332,6 +2409,16 @@ export default function Rec2PdfApp(){
   const failedStage = useMemo(() => PIPELINE_STAGES.find((stage) => pipelineStatus[stage.key] === 'failed'), [pipelineStatus]);
   const pipelineComplete = useMemo(() => totalStages > 0 && PIPELINE_STAGES.every((stage) => pipelineStatus[stage.key] === 'done'), [pipelineStatus, totalStages]);
   const activeStageDefinition = useMemo(() => PIPELINE_STAGES.find((stage) => stage.key === activeStageKey), [activeStageKey]);
+  const promptCompletedCues = useMemo(() => {
+    if (!promptState?.cueProgress) return [];
+    return Object.entries(promptState.cueProgress)
+      .filter(([, value]) => Boolean(value))
+      .map(([key]) => key);
+  }, [promptState.cueProgress]);
+  const activePrompt = useMemo(
+    () => prompts.find((prompt) => prompt.id === promptState.promptId) || null,
+    [prompts, promptState.promptId]
+  );
 
   const headerStatus = useMemo(() => {
     if (failedStage) {
@@ -1425,6 +2512,236 @@ export default function Rec2PdfApp(){
               <div className={classNames("rounded-xl p-4 border", themes[theme].input)}><label className="text-sm text-zinc-400 flex items-center gap-2"><FileText className="w-4 h-4"/> Slug</label><input className="w-full mt-2 bg-transparent border-zinc-800 rounded-lg px-3 py-2 outline-none" value={slug} onChange={e=>setSlug(e.target.value)} placeholder="meeting"/></div>
               <div className={classNames("rounded-xl p-4 border", themes[theme].input)}><label className="text-sm text-zinc-400 flex items-center gap-2"><TimerIcon className="w-4 h-4"/> Durata massima (s)</label><input type="number" min={0} className="w-full mt-2 bg-transparent border-zinc-800 rounded-lg px-3 py-2 outline-none" value={secondsCap} onChange={e=>setSecondsCap(Math.max(0, parseInt(e.target.value||"0",10) || 0))}/><div className="text-xs text-zinc-500 mt-2">0 = senza limite</div></div>
             </div>
+            <div className={classNames("mt-4 rounded-xl p-4 border", themes[theme].input)}>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm text-zinc-400">
+                    <Users className="w-4 h-4" />
+                    <span>Workspace &amp; progetto</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleRefreshWorkspaces}
+                      className={classNames(
+                        "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs border",
+                        themes[theme].input,
+                        themes[theme].input_hover,
+                        workspaceLoading && "opacity-60 cursor-not-allowed"
+                      )}
+                      disabled={workspaceLoading}
+                    >
+                      <RefreshCw className={classNames("w-3.5 h-3.5", workspaceLoading ? "animate-spin" : "")} />
+                      Aggiorna
+                    </button>
+                    <button
+                      onClick={() => setWorkspaceBuilderOpen((prev) => !prev)}
+                      className={classNames(
+                        "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs border",
+                        themes[theme].input,
+                        themes[theme].input_hover
+                      )}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      {workspaceBuilderOpen ? 'Chiudi builder' : 'Nuovo workspace'}
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-zinc-500">Workspace</label>
+                    <select
+                      value={workspaceSelection.workspaceId}
+                      onChange={(event) => handleSelectWorkspaceForPipeline(event.target.value)}
+                      className={classNames("mt-2 w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
+                    >
+                      <option value="">Nessun workspace</option>
+                      {workspaces.map((workspace) => (
+                        <option key={workspace.id} value={workspace.id} className="bg-zinc-900">
+                          {workspace.name} · {workspace.client || '—'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {workspaceSelection.workspaceId && (
+                    <div>
+                      <label className="text-xs text-zinc-500">Policy di versioning</label>
+                      <div className="mt-2 text-xs text-zinc-400">
+                        {activeWorkspace?.versioningPolicy
+                          ? `${activeWorkspace.versioningPolicy.namingConvention || 'timestamped'} · retention ${activeWorkspace.versioningPolicy.retentionLimit || 10}`
+                          : 'Timestamp standard'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {workspaceBuilderOpen && (
+                  <div className="rounded-lg border border-dashed border-zinc-700 p-3 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-zinc-500">Nome</label>
+                        <input
+                          value={workspaceBuilder.name}
+                          onChange={(event) => setWorkspaceBuilder((prev) => ({ ...prev, name: event.target.value }))}
+                          className={classNames("mt-2 w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
+                          placeholder="Es. Portfolio Clienti"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-zinc-500">Cliente</label>
+                        <input
+                          value={workspaceBuilder.client}
+                          onChange={(event) => setWorkspaceBuilder((prev) => ({ ...prev, client: event.target.value }))}
+                          className={classNames("mt-2 w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
+                          placeholder="Es. Acme Corp"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-zinc-500">Colore</label>
+                        <div className="mt-2 flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={workspaceBuilder.color}
+                            onChange={(event) => setWorkspaceBuilder((prev) => ({ ...prev, color: event.target.value }))}
+                            className="h-9 w-12 rounded border border-zinc-700 bg-transparent"
+                          />
+                          <span className="text-xs text-zinc-400 font-mono">{workspaceBuilder.color}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-zinc-500">Stati suggeriti (comma-separated)</label>
+                        <input
+                          value={workspaceBuilder.statuses}
+                          onChange={(event) => setWorkspaceBuilder((prev) => ({ ...prev, statuses: event.target.value }))}
+                          className={classNames("mt-2 w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
+                          placeholder="Bozza, In lavorazione, In review"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={handleWorkspaceBuilderSubmit}
+                        className={classNames(
+                          "flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
+                          themes[theme].button,
+                          !workspaceBuilder.name.trim() && "opacity-60 cursor-not-allowed"
+                        )}
+                        disabled={!workspaceBuilder.name.trim()}
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Crea workspace
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {workspaceSelection.workspaceId && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-zinc-500">Progetto</label>
+                      <select
+                        value={projectCreationMode ? '__new__' : workspaceSelection.projectId}
+                        onChange={(event) => handleSelectProjectForPipeline(event.target.value)}
+                        className={classNames("mt-2 w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
+                      >
+                        <option value="">Nessun progetto</option>
+                        {workspaceProjects.map((project) => (
+                          <option key={project.id} value={project.id} className="bg-zinc-900">
+                            {project.name}
+                          </option>
+                        ))}
+                        <option value="__new__">+ Nuovo progetto…</option>
+                      </select>
+                      {projectCreationMode && (
+                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <input
+                            value={projectDraft}
+                            onChange={(event) => setProjectDraft(event.target.value)}
+                            placeholder="Nome progetto"
+                            className={classNames("rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
+                          />
+                          <div className="flex gap-2">
+                            <input
+                              value={statusDraft}
+                              onChange={(event) => setStatusDraft(event.target.value)}
+                              placeholder="Stato iniziale"
+                              className={classNames("w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
+                            />
+                            <button
+                              onClick={handleCreateProjectFromDraft}
+                              className={classNames(
+                                "flex items-center gap-1 rounded-lg px-3 py-2 text-xs",
+                                themes[theme].button,
+                                !projectDraft.trim() && "opacity-60 cursor-not-allowed"
+                              )}
+                              disabled={!projectDraft.trim()}
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              Crea
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-xs text-zinc-500">Stato</label>
+                      <select
+                        value={statusCreationMode ? '__new__' : (workspaceSelection.status || '')}
+                        onChange={(event) => handleSelectStatusForPipeline(event.target.value)}
+                        className={classNames("mt-2 w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
+                      >
+                        <option value="">Nessun stato</option>
+                        {availableStatuses.map((statusValue) => (
+                          <option key={statusValue} value={statusValue} className="bg-zinc-900">
+                            {statusValue}
+                          </option>
+                        ))}
+                        <option value="__new__">+ Nuovo stato…</option>
+                      </select>
+                      {statusCreationMode && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <input
+                            value={statusDraft}
+                            onChange={(event) => setStatusDraft(event.target.value)}
+                            placeholder="Es. In revisione"
+                            className={classNames("w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
+                          />
+                          <button
+                            onClick={handleCreateStatusFromDraft}
+                            className={classNames(
+                              "flex items-center gap-1 rounded-lg px-3 py-2 text-xs",
+                              themes[theme].button,
+                              !statusDraft.trim() && "opacity-60 cursor-not-allowed"
+                            )}
+                            disabled={!statusDraft.trim()}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Aggiungi
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <PromptLibrary
+              prompts={prompts}
+              loading={promptLoading}
+              selection={promptState}
+              onSelectPrompt={handleSelectPromptTemplate}
+              onClearSelection={handleClearPromptSelection}
+              favorites={promptFavorites}
+              onToggleFavorite={handleTogglePromptFavorite}
+              onRefresh={handleRefreshPrompts}
+              themeStyles={themes[theme]}
+              activePrompt={activePrompt}
+              focusValue={promptState.focus}
+              onFocusChange={handlePromptFocusChange}
+              notesValue={promptState.notes}
+              onNotesChange={handlePromptNotesChange}
+              cueProgress={promptState.cueProgress || {}}
+              onCueToggle={handleTogglePromptCue}
+              onCreatePrompt={handleCreatePrompt}
+              onDeletePrompt={handleDeletePrompt}
+            />
             <div className={classNames("mt-6 rounded-xl p-4 border", themes[theme].input)}>
               <div className="flex items-center justify-between"><div className="text-sm text-zinc-400">Clip registrata / caricata</div><div className="text-xs text-zinc-500">{mime||"—"} · {fmtBytes(audioBlob?.size)}</div></div>
               <div className="mt-3">{audioUrl?<audio controls src={audioUrl} className="w-full"/>:<div className="text-zinc-500 text-sm">Nessuna clip disponibile.</div>}</div>
@@ -1668,6 +2985,31 @@ export default function Rec2PdfApp(){
             </div>
           </div>
         </div>
+        <div className="mt-8">
+          <WorkspaceNavigator
+            entries={history}
+            workspaces={workspaces}
+            selection={navigatorSelection}
+            onSelectionChange={setNavigatorSelection}
+            savedFilters={savedWorkspaceFilters}
+            onSaveFilter={handleSaveWorkspaceFilter}
+            onDeleteFilter={handleDeleteWorkspaceFilter}
+            onApplyFilter={handleApplyWorkspaceFilter}
+            searchTerm={historyFilter}
+            onSearchChange={setHistoryFilter}
+            fetchPreview={fetchEntryPreview}
+            onOpenPdf={handleOpenHistoryPdf}
+            onOpenMd={handleOpenHistoryMd}
+            onRepublish={handleRepublishFromMd}
+            onShowLogs={handleShowHistoryLogs}
+            onAssignWorkspace={handleAssignEntryWorkspace}
+            themeStyles={themes[theme]}
+            loading={workspaceLoading}
+            onRefresh={handleRefreshWorkspaces}
+            pipelineSelection={workspaceSelection}
+            onAdoptSelection={handleAdoptNavigatorSelection}
+          />
+        </div>
         {!onboardingComplete && (
           <div className="mt-10 text-xs text-zinc-500">
             <p>Assicurati che il backend sia attivo su http://localhost:7788 e che ffmpeg e la toolchain siano configurati nella shell di esecuzione.</p>
@@ -1700,9 +3042,6 @@ export default function Rec2PdfApp(){
         busy={busy}
         themeStyles={themes[theme]}
       />
-    </div>
-  );
-}
     </div>
   );
 }

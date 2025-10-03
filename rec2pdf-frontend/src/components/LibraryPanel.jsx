@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { classNames } from "../utils/classNames";
-import { FileText, FileCode, Cpu, Trash2, Search, ExternalLink, TagIcon, TimerIcon, Folder, RefreshCw } from "./icons";
+import { FileText, FileCode, Cpu, Trash2, Search, ExternalLink, TagIcon, TimerIcon, Folder, RefreshCw, Sparkles } from "./icons";
 
 const formatTimestamp = (iso) => {
   if (!iso) return "—";
@@ -88,6 +88,9 @@ export default function LibraryPanel({
         Array.isArray(entry?.tags) ? entry.tags.join(" ") : "",
         entry?.logos?.frontend,
         entry?.logos?.pdf,
+        entry?.prompt?.title,
+        entry?.prompt?.persona,
+        Array.isArray(entry?.prompt?.tags) ? entry.prompt.tags.join(" ") : "",
       ]
         .filter(Boolean)
         .join(" ")
@@ -316,6 +319,22 @@ export default function LibraryPanel({
                       />
                     </div>
                     {renderTagBadges(entry)}
+                    {entry?.prompt?.title && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-indigo-200">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>{entry.prompt.title}</span>
+                        {Number.isFinite(entry?.structure?.promptChecklist?.score) && (
+                          <span className="rounded-full border border-indigo-400/40 bg-indigo-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                            Template {Math.round(entry.structure.promptChecklist.score)}%
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {entry?.structure?.promptChecklist?.missing?.length > 0 && (
+                      <div className="mt-1 text-xs text-amber-300">
+                        Gap template: {entry.structure.promptChecklist.missing.join(", ")}
+                      </div>
+                    )}
                   </div>
                 </div>
               </article>

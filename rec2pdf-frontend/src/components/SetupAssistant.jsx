@@ -6,7 +6,7 @@ import {
   ChevronRight,
   Info,
   XCircle,
-} from "lucide-react";
+} from "./icons";
 import { classNames } from "../utils/classNames";
 
 const statusStyles = {
