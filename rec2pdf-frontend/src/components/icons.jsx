@@ -169,6 +169,7 @@ export const Bookmark = (props) => (
   </IconBase>
 );
 
+<<<<<<< HEAD
 export const Lightbulb = (props) => (
   <IconBase {...props}>
     <path d="M9 18h6" />
@@ -194,6 +195,8 @@ export const ClipboardList = (props) => (
   </IconBase>
 );
 
+=======
+>>>>>>> main
 export const Palette = (props) => (
   <IconBase {...props}>
     <path d="M12 22c-4.97 0-9-3.58-9-8s4.03-8 9-8 9 3.58 9 8a4 4 0 0 1-4 4h-1a2 2 0 0 0-2 2v1a1 1 0 0 1-1 1Z" />
@@ -324,9 +327,12 @@ export default {
   Users,
   FilterIcon,
   Bookmark,
+<<<<<<< HEAD
   Lightbulb,
   Target,
   ClipboardList,
+=======
+>>>>>>> main
   Palette,
   Save,
   Bug,
