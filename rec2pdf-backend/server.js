@@ -284,9 +284,12 @@ const callPublishScript = async (mdPath, env = {}) => {
   }
 
   // Costruisci l'ambiente
+  const envOptions = env && typeof env === 'object' && env.env && typeof env.env === 'object'
+    ? env.env
+    : env;
   const publishEnv = {
     ...process.env,
-    ...env,
+    ...envOptions,
     TOOL_ROOT: PROJECT_ROOT,
     TEMPLATE_DIR: TEMPLATES_DIR,
     ASSETS_DIR: ASSETS_DIR,
