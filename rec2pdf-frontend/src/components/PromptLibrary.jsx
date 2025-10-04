@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { classNames } from "../utils/classNames";
 import {
   Sparkles,
@@ -94,12 +94,29 @@ export default function PromptLibrary({
   onCreatePrompt,
   onDeletePrompt,
 }) {
+  const hasActivePrompt = Boolean(activePrompt && selection?.promptId);
+  const [expandedSections, setExpandedSections] = useState(() => ({
+    library: false,
+    active: hasActivePrompt,
+    builder: false,
+  }));
   const [searchTerm, setSearchTerm] = useState("");
   const [onlyFavorites, setOnlyFavorites] = useState(false);
-  const [builderOpen, setBuilderOpen] = useState(false);
   const [builderState, setBuilderState] = useState({ ...DEFAULT_BUILDER_STATE });
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
+
+  const builderOpen = expandedSections.builder;
+
+  useEffect(() => {
+    if (hasActivePrompt) {
+      setExpandedSections((prev) => ({ ...prev, active: true }));
+    }
+  }, [hasActivePrompt]);
+
+  const toggleSection = (key) => {
+    setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const favoritesSet = useMemo(() => new Set(favorites || []), [favorites]);
 
@@ -183,7 +200,7 @@ export default function PromptLibrary({
       if (result?.ok) {
         setFeedback({ type: "success", message: "Template creato con successo." });
         setBuilderState({ ...DEFAULT_BUILDER_STATE });
-        setBuilderOpen(false);
+        setExpandedSections((prev) => ({ ...prev, builder: false }));
         if (result.prompt) {
           onSelectPrompt?.(result.prompt);
         }
@@ -440,97 +457,145 @@ export default function PromptLibrary({
   };
 
   return (
-    <div className={classNames("mt-6 space-y-4 rounded-xl border p-4", themeStyles?.input)}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm text-zinc-400">
-          <Sparkles className="h-4 w-4" />
-          <span>Prompt Library modulare</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setBuilderOpen((prev) => !prev)}
-            className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/60 px-3 py-1.5 text-xs text-zinc-200 hover:border-indigo-400/40"
-          >
-            <Plus className="h-3.5 w-3.5" /> {builderOpen ? "Chiudi builder" : "Nuovo template"}
-          </button>
-          <button
-            type="button"
-            onClick={() => onRefresh?.()}
-            className={classNames(
-              "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition",
-              loading
-                ? "border-zinc-700 bg-zinc-800/60 text-zinc-500 cursor-not-allowed"
-                : "border-indigo-500/40 bg-indigo-500/10 text-indigo-100 hover:border-indigo-400"
+    <div className={classNames("mt-6 overflow-hidden rounded-xl border", themeStyles?.input)}>
+      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm text-zinc-300">
+            <Sparkles className="h-4 w-4" />
+            <span>Prompt Library modulare</span>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Mantieni l'interfaccia essenziale e apri solo le aree che ti servono: filtra i template oppure consulta i dettagli del template attivo quando vuoi.
+          </p>
+          <div className="flex flex-wrap gap-2 text-[11px] text-zinc-400">
+            {hasActivePrompt ? (
+              <span className="flex items-center gap-2 rounded-full border border-indigo-500/40 bg-indigo-500/10 px-3 py-1 text-indigo-100">
+                <Target className="h-3 w-3" /> In uso: {activePrompt?.title || "Template"}
+              </span>
+            ) : (
+              <span className="rounded-full border border-dashed border-zinc-600/60 px-3 py-1 text-zinc-400">
+                Nessun template attivo
+              </span>
             )}
-            disabled={loading}
-          >
-            <RefreshCw className={classNames("h-3.5 w-3.5", loading && "animate-spin")} />
-            Aggiorna
-          </button>
+          </div>
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[220px]">
-          <FilterIcon className="absolute left-3 top-2.5 h-3.5 w-3.5 text-zinc-500" />
-          <input
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Cerca per titolo, persona, tag"
-            className="w-full rounded-lg border border-zinc-700 bg-transparent px-9 py-2 text-sm text-zinc-100 outline-none"
-          />
-          {searchTerm && (
-            <button
-              type="button"
-              onClick={() => setSearchTerm("")}
-              className="absolute right-2 top-2 rounded-lg px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200"
-            >
-              Pulisci
-            </button>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => setOnlyFavorites((prev) => !prev)}
-          className={classNames(
-            "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition",
-            onlyFavorites
-              ? "border-amber-400/60 bg-amber-500/10 text-amber-200"
-              : "border-zinc-700 bg-zinc-800/60 text-zinc-300 hover:border-amber-400/40 hover:text-amber-200"
-          )}
-        >
-          <Bookmark className="h-3.5 w-3.5" /> {onlyFavorites ? "Solo preferiti" : "Tutti i template"}
-        </button>
-        {onClearSelection && selection?.promptId && (
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
           <button
             type="button"
-            onClick={onClearSelection}
-            className="rounded-lg border border-zinc-700 bg-zinc-800/60 px-3 py-1.5 text-xs text-zinc-300 hover:border-indigo-400/40 hover:text-indigo-100"
+            onClick={() => toggleSection("library")}
+            className={classNames(
+              "flex items-center justify-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition",
+              expandedSections.library
+                ? "border-zinc-600 bg-zinc-800/70 text-zinc-100"
+                : "border-zinc-700 bg-transparent text-zinc-300 hover:border-indigo-400/50 hover:text-indigo-100"
+            )}
           >
-            Sgancia template
+            <Sparkles className="h-3.5 w-3.5" />
+            {expandedSections.library ? "Nascondi libreria" : "Esplora template"}
           </button>
-        )}
+          <button
+            type="button"
+            onClick={() => toggleSection("active")}
+            className={classNames(
+              "flex items-center justify-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition",
+              expandedSections.active
+                ? "border-indigo-500/50 bg-indigo-500/15 text-indigo-100"
+                : "border-zinc-700 bg-transparent text-zinc-300 hover:border-indigo-400/50 hover:text-indigo-100"
+            )}
+          >
+            <Target className="h-3.5 w-3.5" />
+            {expandedSections.active ? "Chiudi dettagli" : "Vedi template attivo"}
+          </button>
+        </div>
       </div>
 
-      {feedback && (
-        <div
-          className={classNames(
-            "rounded-lg border px-3 py-2 text-xs",
-            feedback.type === "success"
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"
-              : "border-rose-500/40 bg-rose-500/10 text-rose-200"
-          )}
-        >
-          {feedback.message}
-        </div>
-      )}
+      {expandedSections.library && (
+        <div className="space-y-4 border-t border-zinc-800/60 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="relative flex-1 min-w-[200px]">
+                <FilterIcon className="pointer-events-none absolute left-3 top-2.5 h-3.5 w-3.5 text-zinc-500" />
+                <input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Cerca per titolo, persona, tag"
+                  className="w-full rounded-lg border border-zinc-700 bg-transparent px-9 py-2 text-sm text-zinc-100 outline-none"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-2 top-2 rounded-lg px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200"
+                  >
+                    Pulisci
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setOnlyFavorites((prev) => !prev)}
+                className={classNames(
+                  "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition",
+                  onlyFavorites
+                    ? "border-amber-400/60 bg-amber-500/10 text-amber-200"
+                    : "border-zinc-700 bg-zinc-900/40 text-zinc-300 hover:border-amber-400/40 hover:text-amber-200"
+                )}
+              >
+                <Bookmark className="h-3.5 w-3.5" /> {onlyFavorites ? "Solo preferiti" : "Tutti i template"}
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {onClearSelection && selection?.promptId && (
+                <button
+                  type="button"
+                  onClick={onClearSelection}
+                  className="rounded-lg border border-zinc-700 bg-zinc-900/40 px-3 py-1.5 text-xs text-zinc-300 hover:border-indigo-400/50 hover:text-indigo-100"
+                >
+                  Sgancia template
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onRefresh?.()}
+                className={classNames(
+                  "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition",
+                  loading
+                    ? "border-zinc-700 bg-zinc-900/40 text-zinc-500 cursor-not-allowed"
+                    : "border-indigo-500/40 bg-indigo-500/10 text-indigo-100 hover:border-indigo-400"
+                )}
+                disabled={loading}
+              >
+                <RefreshCw className={classNames("h-3.5 w-3.5", loading && "animate-spin")} />
+                Aggiorna
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleSection("builder")}
+                className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900/40 px-3 py-1.5 text-xs text-zinc-200 hover:border-indigo-400/50"
+              >
+                <Plus className="h-3.5 w-3.5" /> {builderOpen ? "Chiudi builder" : "Nuovo template"}
+              </button>
+            </div>
+          </div>
 
-      {builderOpen && (
-        <form onSubmit={handleBuilderSubmit} className="space-y-3 rounded-lg border border-dashed border-zinc-700/60 bg-black/10 p-4">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <label className="flex flex-col text-xs text-zinc-400">
-              Titolo template
+          {feedback && (
+            <div
+              className={classNames(
+                "rounded-lg border px-3 py-2 text-xs",
+                feedback.type === "success"
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"
+                  : "border-rose-500/40 bg-rose-500/10 text-rose-200"
+              )}
+            >
+              {feedback.message}
+            </div>
+          )}
+
+          {builderOpen && (
+            <form onSubmit={handleBuilderSubmit} className="space-y-3 rounded-lg border border-dashed border-zinc-700/60 bg-black/10 p-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="flex flex-col text-xs text-zinc-400">
+                  Titolo template
               <input
                 value={builderState.title}
                 onChange={(event) => handleBuilderFieldChange("title", event.target.value)}
@@ -667,24 +732,27 @@ export default function PromptLibrary({
           </div>
         </form>
       )}
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        {filteredPrompts.length === 0 ? (
-          <div className="col-span-full rounded-lg border border-dashed border-zinc-700/60 bg-black/10 p-6 text-sm text-zinc-400">
-            Nessun template disponibile. Crea un nuovo prompt o aggiorna la libreria.
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {filteredPrompts.length === 0 ? (
+              <div className="col-span-full rounded-lg border border-dashed border-zinc-700/60 bg-black/10 p-6 text-sm text-zinc-400">
+                Nessun template disponibile. Crea un nuovo prompt o aggiorna la libreria.
+              </div>
+            ) : (
+              filteredPrompts.map(renderPromptCard)
+            )}
           </div>
-        ) : (
-          filteredPrompts.map(renderPromptCard)
-        )}
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 text-sm text-zinc-400">
-          <Target className="h-4 w-4" />
-          <span>Template attivo</span>
         </div>
-        {renderActivePrompt()}
-      </div>
+      )}
+
+      {expandedSections.active && (
+        <div className="space-y-3 border-t border-zinc-800/60 p-4">
+          <div className="flex items-center gap-2 text-sm text-zinc-300">
+            <Target className="h-4 w-4" />
+            <span>Template attivo</span>
+          </div>
+          {renderActivePrompt()}
+        </div>
+      )}
     </div>
   );
 }
