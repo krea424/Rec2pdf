@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -10,6 +11,19 @@ const { execFile, exec } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 7788;
+// ===== Configurazione Path =====
+const PROJECT_ROOT = process.env.PROJECT_ROOT || path.join(__dirname, '..');
+const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT || path.join(PROJECT_ROOT, 'Scripts', 'publish.sh');
+const TEMPLATES_DIR = process.env.TEMPLATES_DIR || path.join(PROJECT_ROOT, 'Templates');
+const ASSETS_DIR = process.env.ASSETS_DIR || path.join(PROJECT_ROOT, 'rec2pdf-frontend', 'src', 'assets');
+
+// Verifica che lo script esista all'avvio
+if (!fs.existsSync(PUBLISH_SCRIPT)) {
+  console.warn(`⚠️  ATTENZIONE: Script publish.sh non trovato in ${PUBLISH_SCRIPT}`);
+  console.warn(`   Il sistema userà il fallback pandoc generico.`);
+} else {
+  console.log(`✅ Script publish.sh trovato: ${PUBLISH_SCRIPT}`);
+}
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
@@ -247,6 +261,40 @@ const buildEnvOptions = (...sources) => {
     });
   return { env };
 };
+/**
+ * Chiama lo script publish.sh per generare il PDF
+ * @param {string} mdPath - Path del file Markdown
+ * @param {object} env - Variabili d'ambiente aggiuntive
+ * @returns {Promise<{code: number, stdout: string, stderr: string}>}
+ */
+const callPublishScript = async (mdPath, env = {}) => {
+  if (!fs.existsSync(PUBLISH_SCRIPT)) {
+    return {
+      code: 127,
+      stdout: '',
+      stderr: 'Script publish.sh non trovato. Usa il fallback pandoc.'
+    };
+  }
+
+  // Assicurati che lo script sia eseguibile
+  try {
+    await fsp.chmod(PUBLISH_SCRIPT, 0o755);
+  } catch (chmodError) {
+    console.warn('Impossibile impostare permessi esecuzione su publish.sh:', chmodError.message);
+  }
+
+  // Costruisci l'ambiente
+  const publishEnv = {
+    ...process.env,
+    ...env,
+    TOOL_ROOT: PROJECT_ROOT,
+    TEMPLATE_DIR: TEMPLATES_DIR,
+    ASSETS_DIR: ASSETS_DIR,
+  };
+
+  // Esegui lo script
+  return await run('bash', [PUBLISH_SCRIPT, mdPath], { env: publishEnv });
+};
 
 const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
   try {
@@ -300,7 +348,20 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
       return { code: result.code, stdout: result.stdout, stderr: stderr };
     }
 
-    await fsp.writeFile(mdFile, result.stdout, 'utf8');
+    // Post-processing: rimuovi wrapper markdown se presente
+let cleanedContent = result.stdout;
+
+// Rimuovi blocchi ```markdown all'inizio e ``` alla fine
+cleanedContent = cleanedContent.replace(/^```markdown\s*/i, '');
+cleanedContent = cleanedContent.replace(/\s*```\s*$/i, '');
+
+// Rimuovi anche eventuali backticks tripli interni che wrappano tutto il contenuto
+const lines = cleanedContent.split('\n');
+if (lines.length > 2 && lines[0].trim() === '```markdown' && lines[lines.length - 1].trim() === '```') {
+  cleanedContent = lines.slice(1, -1).join('\n');
+}
+
+await fsp.writeFile(mdFile, cleanedContent, 'utf8');
     return { code: 0, stdout: '', stderr: '' };
   } catch (error) {
     return { code: -1, stdout: '', stderr: error.message };
@@ -614,10 +675,10 @@ const DEFAULT_PROMPTS = [
     builtIn: true,
   },
   {
-    id: 'prompt_business_case_test',
-    slug: 'business_case_test',
-    title: 'Business case (Test)',
-    description: "Trasforma gli appunti in un documento Markdown professionale. Inserire all'inizio del file un blocco YAML senza righe vuote sopra, nella prima riga solo 3 trattini e 3 trattini alla fine del blocco YAML, con i campi nell’ordine seguente: title, author, owner, project_name, project_code, artifact_type, version, identifier, location, summary, usageterms, ssot, status, created, updated, tags, ai.generated, ai.model, ai.prompt_id. Versioni in forma SemVer con underscore (es. v1_0_0). La struttura del documento DEVE includere sezioni con i titoli esatti: 'Executive Summary', 'Punti Chiave', 'Analisi Dettagliata', 'Prossime Azioni'. Inserisci almeno una tabella con un massimo di 4 colonne e una tabella dei 3 principali rischi. NON usare backticks di codice.",
+    id: 'prompt_format_base',
+    slug: 'format_base',
+    title: 'Format base',
+    description: "Trasforma gli appunti in un documento Markdown professionale. Inserire all'inizio del file un blocco YAML senza righe vuote sopra, evita di inserire all'inizio del file markdownaltri segni,simboli o termini che non siano i 3 trattininella prima riga solo 3 trattini e 3 trattini alla fine del blocco YAML, con i campi nell’ordine seguente: title, author, owner, project_name, project_code, artifact_type, version, identifier, location, summary, usageterms, ssot, status, created, updated, tags, ai.generated, ai.model, ai.prompt_id. Versioni in forma SemVer con underscore (es. v1_0_0). La struttura del documento DEVE includere sezioni con i titoli esatti: 'Executive Summary', 'Punti Chiave', 'Analisi Dettagliata', 'Prossime Azioni'. Inserisci almeno una tabella con un massimo di 4 colonne e una tabella dei 3 principali rischi. NON usare backticks di codice.",
     persona: 'Senior consultant',
     color: '#00FF00',
     tags: ['test', 'beta'],
@@ -1175,7 +1236,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     if (!fs.existsSync(mdFile)) { throw new Error(`Markdown non trovato: ${mdFile}`); }
     out(`✅ Markdown generato: ${path.basename(mdFile)}`, 'markdown', 'completed');
 
-    out('📄 Pubblicazione PDF con PPUBR…', 'publish', 'running');
+    out('📄 Pubblicazione PDF con publish.sh…', 'publish', 'running');
     const customLogoPath = req.files.pdfLogo ? req.files.pdfLogo[0].path : null;
     if (customLogoPath) {
       out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
@@ -1184,16 +1245,17 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       promptEnv,
       customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
     );
-    const pb = await zsh(
-      `cd ${JSON.stringify(dest)}; (command -v PPUBR && PPUBR ${JSON.stringify(mdFile)}) || (command -v ppubr && ppubr ${JSON.stringify(mdFile)})`,
-      publishEnv
-    );
+
+    // Chiama publish.sh
+    const pb = await callPublishScript(mdFile, publishEnv);
+
     if (pb.code !== 0) {
-      out(pb.stderr || pb.stdout || 'PPUBR failed', 'publish', 'warning');
+      out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
       out('Tentativo fallback pandoc…', 'publish', 'info');
     }
 
     const pdfPath = path.join(dest, `documento_${baseName}.pdf`);
+
     if (!fs.existsSync(pdfPath)) {
       const pandoc = await zsh(
         `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdFile)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdFile)}`,
@@ -1264,20 +1326,18 @@ app.post('/api/ppubr', async (req, res) => {
     }
 
     const dest = path.dirname(mdPath);
-    out(`♻️ Rigenerazione PDF con PPUBR da ${mdPath}`);
+    out(`♻️ Rigenerazione PDF con publish.sh da ${mdPath}`);
 
-    const pb = await zsh(
-      `cd ${JSON.stringify(dest)}; (command -v PPUBR && PPUBR ${JSON.stringify(mdPath)}) || (command -v ppubr && ppubr ${JSON.stringify(mdPath)})`
-    );
+    const pb = await callPublishScript(mdPath);
     if (pb.code !== 0) {
-      out(pb.stderr || pb.stdout || 'PPUBR failed');
+      out(pb.stderr || pb.stdout || 'publish.sh failed');
     }
 
     const baseName = path.basename(mdPath, path.extname(mdPath));
     const pdfPath = path.join(dest, `${baseName}.pdf`);
 
     if (!fs.existsSync(pdfPath)) {
-      out('PPUBR non ha generato un PDF, fallback su pandoc…');
+      out('publish.sh non ha generato un PDF, fallback su pandoc…');
       const pandoc = await zsh(
         `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`
       );
@@ -1439,7 +1499,7 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     logStageEvent('transcribe', 'completed', 'Trascrizione non necessaria: Markdown fornito.');
     logStageEvent('markdown', 'completed', 'Markdown fornito manualmente.');
 
-    out('📄 Pubblicazione PDF con PPUBR…', 'publish', 'running');
+    out('📄 Pubblicazione PDF con publish.sh…', 'publish', 'running');
 
     const customLogoPath = req.files.pdfLogo ? req.files.pdfLogo[0].path : null;
     if (customLogoPath) {
@@ -1449,19 +1509,19 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
       promptEnv,
       customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
     );
-    const pb = await zsh(
-      `cd ${JSON.stringify(dest)}; (command -v PPUBR && PPUBR ${JSON.stringify(mdPath)}) || (command -v ppubr && ppubr ${JSON.stringify(mdPath)})`,
-      publishEnv
-    );
+
+    // Chiama publish.sh
+    const pb = await callPublishScript(mdPath, publishEnv);
+
     if (pb.code !== 0) {
-      out(pb.stderr || pb.stdout || 'PPUBR failed', 'publish', 'warning');
+      out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
       out('Tentativo fallback pandoc…', 'publish', 'info');
     }
 
     const pdfPath = path.join(dest, `${baseName}.pdf`);
 
     if (!fs.existsSync(pdfPath)) {
-      out('PPUBR non ha generato un PDF, fallback su pandoc…', 'publish', 'info');
+      out('publish.sh non ha generato un PDF, fallback su pandoc…', 'publish', 'info');
       const pandoc = await zsh(
         `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
         publishEnv

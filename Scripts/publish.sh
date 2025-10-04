@@ -50,7 +50,7 @@ if [[ -n "$CUSTOM_LOGO_PATH" && -f "$CUSTOM_LOGO_PATH" ]]; then
   LOGO="$CUSTOM_LOGO_PATH"
   echo "📌 Logo (Custom)   : $LOGO"
 else
-  LOGO="$SCRIPT_DIR/../assets/logo-thinkdoc-flow-v1.pdf"
+  LOGO="$SCRIPT_DIR/../assets/thinkDOC.pdf"
   echo "📌 Logo (Default)  : $LOGO"
 fi
 [[ -f "$LOGO" ]] || die "Logo PDF non trovato: $LOGO"
