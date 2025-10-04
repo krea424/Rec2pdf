@@ -20,7 +20,53 @@ const WORKSPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
 const PROMPTS_FILE = path.join(DATA_DIR, 'prompts.json');
 const DEFAULT_STATUSES = ['Bozza', 'In lavorazione', 'Da revisionare', 'Completato'];
 
+const run = (cmd, args, opts = {}) => new Promise((resolve) => {
+  const child = execFile(cmd, args, opts, (err, stdout, stderr) => {
+    resolve({
+      code: err?.code || 0,
+      stdout: stdout.trim(),
+      stderr: stderr.trim(),
+    });
+  });
+  child.on('error', (err) => {
+    resolve({ code: -1, stdout: '', stderr: err.message });
+  });
+});
 
+const zsh = (command, opts = {}) => run('zsh', ['-lc', command], opts);
+
+const commandVersion = async (cmd) => {
+  try {
+    const result = await run(cmd, ['-version']);
+    const detail = result.stdout.split('\n')[0].trim();
+    return { ok: !!detail, detail };
+  } catch {
+    return { ok: false, detail: 'not found' };
+  }
+};
+
+const ensureWritableDirectory = async (dir) => {
+  try {
+    await fsp.access(dir, fs.constants.W_OK);
+    return { ok: true };
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      try {
+        await fsp.mkdir(dir, { recursive: true });
+        return { ok: true };
+      } catch (mkdirError) {
+        return { ok: false, error: mkdirError };
+      }
+    }
+    return { ok: false, error };
+  }
+};
+
+const yyyymmddHHMMSS = (d = new Date()) => {
+  return d.toISOString().replace(/[-:.]/g, '').slice(0, 14);
+};
+
+const ensureDir = (dir) => fsp.mkdir(dir, { recursive: true });
 
 
 
@@ -107,9 +153,9 @@ const mergePromptUpdate = (prompt, patch = {}) => {
     const tags = Array.isArray(patch.tags)
       ? patch.tags
       : String(patch.tags)
-          .split(/,|\r?\n/)
-          .map((tag) => tag.trim())
-          .filter(Boolean);
+        .split(/,|\r?\n/)
+        .map((tag) => tag.trim())
+        .filter(Boolean);
     updated.tags = tags;
   }
   if (patch.cueCards) {
@@ -202,6 +248,65 @@ const buildEnvOptions = (...sources) => {
   return { env };
 };
 
+const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
+  try {
+    const transcript = await fsp.readFile(txtPath, 'utf8');
+
+    let promptLines = [
+      "Sei un assistente AI specializzato nell'analisi di trascrizioni di riunioni.",
+      "Il tuo compito è trasformare il testo grezzo in un documento Markdown ben strutturato, chiaro e utile.",
+      "Organizza il contenuto usando intestazioni (es. `## Argomento`), elenchi puntati (`-`) e paragrafi concisi.",
+      "L'output deve essere solo il Markdown, senza commenti o testo aggiuntivo.",
+      "La lingua del documento finale deve essere l'italiano."
+    ];
+
+    if (promptPayload) {
+      const { persona, description, markdownRules, focus, notes } = promptPayload;
+      const rules = [];
+      if (persona) rules.push(`Agisci con la persona di un: ${persona}.`);
+      if (description) rules.push(`Il tuo obiettivo specifico è: ${description}.`);
+      if (markdownRules) {
+        if (markdownRules.tone) rules.push(`Usa un tono ${markdownRules.tone}.`);
+        if (markdownRules.voice) rules.push(`Usa una voce in ${markdownRules.voice}.`);
+        if (markdownRules.bulletStyle) rules.push(`Per gli elenchi, usa lo stile: ${markdownRules.bulletStyle}.`);
+        if (markdownRules.summaryStyle) rules.push(`Includi un sommario in stile: ${markdownRules.summaryStyle}.`);
+        if (markdownRules.includeCallouts) rules.push("Includi callout/citazioni per evidenziare punti importanti.");
+        if (markdownRules.pointOfView) rules.push(`Adotta questo punto di vista: ${markdownRules.pointOfView}.`);
+      }
+      if (focus) rules.push(`Concentrati su: ${focus}.`);
+      if (notes) rules.push(`Considera queste note: ${notes}.`);
+
+      if (rules.length > 0) {
+        promptLines.push("\nRegole specifiche da seguire:");
+        promptLines.push(...rules);
+      }
+    }
+
+    promptLines.push("\nEcco la trascrizione da elaborare:\n---\n");
+    const prompt = promptLines.join('\n');
+
+    const fullPrompt = `${prompt}${transcript}`;
+
+    // Using 'gemini' CLI tool. Assuming it's in the PATH.
+    // The command is constructed to prevent shell injection issues.
+    const result = await run('gemini', [fullPrompt]);
+
+    if (result.code !== 0) {
+      const stderr = result.stderr || 'Errore sconosciuto dal comando gemini';
+      // Check if gemini command is not found
+      if (/command not found/i.test(stderr) || result.code === 127 || result.code === -1) {
+        return { code: result.code, stdout: '', stderr: "Comando 'gemini' non trovato. Assicurati che sia installato e nel PATH." };
+      }
+      return { code: result.code, stdout: result.stdout, stderr: stderr };
+    }
+
+    await fsp.writeFile(mdFile, result.stdout, 'utf8');
+    return { code: 0, stdout: '', stderr: '' };
+  } catch (error) {
+    return { code: -1, stdout: '', stderr: error.message };
+  }
+};
+
 const readWorkspaces = async () => {
   await ensureDataStore();
   try {
@@ -243,7 +348,7 @@ const sanitizeSlug = (value, fallback = 'sessione') => {
   const safe = raw || fallback;
   return safe
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-zA-Z0-9._-]+/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_+|_+$/g, '')
@@ -350,7 +455,7 @@ const analyzeMarkdownStructure = async (mdPath, options = {}) => {
     );
 
     const bulletMatches = Array.from(content.matchAll(/^\s*[-*+]\s+.+$/gm));
-    const hasCallouts = /:::(success|info|warning|note)/i.test(content);
+    const hasCallouts = /::: (success|info|warning|note)/i.test(content);
 
     const promptDefinition = options?.prompt || null;
     const promptSections = normalizeChecklistSections(
@@ -362,8 +467,8 @@ const analyzeMarkdownStructure = async (mdPath, options = {}) => {
     });
     const promptScore = promptSections.length
       ? Math.round(
-          ((promptSections.length - promptMissing.length) / (promptSections.length || 1)) * 100
-        )
+        ((promptSections.length - promptMissing.length) / (promptSections.length || 1)) * 100
+      )
       : null;
 
     return {
@@ -377,12 +482,12 @@ const analyzeMarkdownStructure = async (mdPath, options = {}) => {
       wordCount: content.split(/\s+/).filter(Boolean).length,
       promptChecklist: promptSections.length
         ? {
-            sections: promptSections,
-            missing: promptMissing,
-            score: promptScore,
-            completed: promptSections.length - promptMissing.length,
-            total: promptSections.length,
-          }
+          sections: promptSections,
+          missing: promptMissing,
+          score: promptScore,
+          completed: promptSections.length - promptMissing.length,
+          total: promptSections.length,
+        }
         : null,
     };
   } catch (error) {
@@ -405,7 +510,7 @@ const buildWorkspaceBaseName = async (workspace, destDir, slug) => {
   if (naming === 'incremental') {
     try {
       const entries = await fsp.readdir(destDir);
-      const regex = new RegExp(`^${joined}_v(\\d+)$`);
+      const regex = new RegExp(`^${joined}_v(\d+)$`);
       const lastVersion = entries.reduce((max, entry) => {
         const match = entry.match(regex);
         if (match) {
@@ -427,6 +532,8 @@ const buildWorkspaceBaseName = async (workspace, destDir, slug) => {
 const UP_BASE = path.join(os.tmpdir(), 'rec2pdf_uploads');
 if (!fs.existsSync(UP_BASE)) fs.mkdirSync(UP_BASE, { recursive: true });
 
+const uploadMiddleware = multer({ dest: UP_BASE });
+
 const DEFAULT_PROMPTS = [
   {
     id: 'prompt_brief_creativo',
@@ -438,13 +545,13 @@ const DEFAULT_PROMPTS = [
     color: '#f472b6',
     tags: ['marketing', 'concept', 'campagna'],
     cueCards: [
-      { key: 'hook', title: 'Hook narrativo', hint: 'Qual è l\'idea centrale che vuoi esplorare?' },
+      { key: 'hook', title: 'Hook narrativo', hint: "Qual è l'idea centrale che vuoi esplorare?" },
       { key: 'audience', title: 'Audience', hint: 'Descrivi il target ideale e il loro bisogno principale.' },
       { key: 'promise', title: 'Promessa', hint: 'Che trasformazione o beneficio vuoi comunicare?' },
       { key: 'proof', title: 'Proof point', hint: 'Cita esempi, dati o insight a supporto.' },
     ],
     markdownRules: {
-      tone: 'Ispirazionale ma concreto, con verbi d\'azione e payoff sintetici.',
+      tone: "Ispirazionale ma concreto, con verbi d'azione e payoff sintetici.",
       voice: 'Seconda persona plurale, orientata al team.',
       bulletStyle: 'Elenchi brevi con keyword evidenziate in **grassetto**.',
       includeCallouts: true,
@@ -472,7 +579,7 @@ const DEFAULT_PROMPTS = [
     slug: 'business_case',
     title: 'Business case',
     description:
-      'Guida il ragionamento verso un business case strutturato: contesto, opportunità, analisi economica e piano d\'azione.',
+      "Guida il ragionamento verso un business case strutturato: contesto, opportunità, analisi economica e piano d'azione.",
     persona: 'Business analyst',
     color: '#38bdf8',
     tags: ['strategy', 'analisi', 'finance'],
@@ -502,6 +609,37 @@ const DEFAULT_PROMPTS = [
         'Opzioni valutate',
         'Impatto economico',
         'Piano di implementazione',
+      ],
+    },
+    builtIn: true,
+  },
+  {
+    id: 'prompt_business_case_test',
+    slug: 'business_case_test',
+    title: 'Business case (Test)',
+    description: "Trasforma gli appunti in un documento Markdown professionale. Inserire all'inizio del file un blocco YAML senza righe vuote sopra, nella prima riga solo 3 trattini e 3 trattini alla fine del blocco YAML, con i campi nell’ordine seguente: title, author, owner, project_name, project_code, artifact_type, version, identifier, location, summary, usageterms, ssot, status, created, updated, tags, ai.generated, ai.model, ai.prompt_id. Versioni in forma SemVer con underscore (es. v1_0_0). La struttura del documento DEVE includere sezioni con i titoli esatti: 'Executive Summary', 'Punti Chiave', 'Analisi Dettagliata', 'Prossime Azioni'. Inserisci almeno una tabella con un massimo di 4 colonne e una tabella dei 3 principali rischi. NON usare backticks di codice.",
+    persona: 'Senior consultant',
+    color: '#00FF00',
+    tags: ['test', 'beta'],
+    cueCards: [
+      { key: 'scenario', title: 'Scenario', hint: 'Qual è il contesto competitivo e qual è la tensione principale?' },
+      { key: 'value', title: 'Valore', hint: 'Quantifica benefici, risparmi o opportunità.' },
+      { key: 'risks', title: 'Rischi', hint: 'Evidenzia rischi, mitigazioni e assunzioni critiche.' },
+      { key: 'roadmap', title: 'Roadmap', hint: 'Descrivi le fasi operative e i responsabili.' },
+    ],
+    markdownRules: null,
+    pdfRules: {
+      accentColor: '#38bdf8',
+      layout: 'consulting',
+      includeCover: true,
+      includeToc: true,
+    },
+    checklist: {
+      sections: [
+        'Executive Summary',
+        'Punti Chiave',
+        'Analisi Dettagliata',
+        'Prossime Azioni',
       ],
     },
     builtIn: true,
@@ -670,15 +808,15 @@ app.post('/api/workspaces', async (req, res) => {
         : [...DEFAULT_STATUSES],
       projects: Array.isArray(req.body?.projects)
         ? req.body.projects.map((project) => ({
-            id: project.id || generateId('proj'),
-            name: String(project.name || 'Project').trim(),
-            color: normalizeColor(project.color || req.body?.color || '#6366f1'),
-            statuses: Array.isArray(project.statuses) && project.statuses.length
-              ? project.statuses.map((status) => String(status).trim()).filter(Boolean)
-              : [...DEFAULT_STATUSES],
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          }))
+          id: project.id || generateId('proj'),
+          name: String(project.name || 'Project').trim(),
+          color: normalizeColor(project.color || req.body?.color || '#6366f1'),
+          statuses: Array.isArray(project.statuses) && project.statuses.length
+            ? project.statuses.map((status) => String(status).trim()).filter(Boolean)
+            : [...DEFAULT_STATUSES],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }))
         : [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -746,253 +884,11 @@ app.post('/api/prompts', async (req, res) => {
     const tags = Array.isArray(req.body?.tags)
       ? req.body.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
       : typeof req.body?.tags === 'string'
-      ? req.body.tags
+        ? req.body.tags
           .split(/,|\r?\n/)
           .map((tag) => String(tag || '').trim())
           .filter(Boolean)
-      : [];
-    const cueCards = normalizeCueCards(req.body?.cueCards);
-    const checklistSections = normalizeChecklistSections(
-      req.body?.checklist?.sections || req.body?.checklistSections || req.body?.checklist
-    );
-    const markdownRules = normalizePromptRules(req.body?.markdownRules || {});
-    const pdfRules = normalizePdfRules(req.body?.pdfRules || {});
-    const focusPrompts = Array.isArray(req.body?.focusPrompts)
-      ? req.body.focusPrompts.map((item) => String(item || '').trim()).filter(Boolean)
-      : [];
-
-    const now = Date.now();
-    const prompt = {
-      id: generateId('prompt'),
-      slug,
-      title,
-      description: String(req.body?.description || '').trim(),
-      persona: String(req.body?.persona || '').trim(),
-      color: normalizeColor(req.body?.color || '#6366f1'),
-      tags,
-      cueCards,
-      checklist: { sections: checklistSections },
-      markdownRules: markdownRules || null,
-      pdfRules: pdfRules || null,
-      focusPrompts,
-      builtIn: Boolean(req.body?.builtIn && req.body.builtIn === true ? true : false),
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    prompts.push(prompt);
-    await writePrompts(prompts);
-    res.status(201).json({ ok: true, prompt });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ ok: false, message: error && error.message ? error.message : String(error) });
-  }
-});
-
-app.put('/api/prompts/:id', async (req, res) => {
-  try {
-    const prompts = await readPrompts();
-    const index = prompts.findIndex((prompt) => prompt.id === req.params.id);
-    if (index === -1) {
-      return res.status(404).json({ ok: false, message: 'Prompt non trovato' });
-    }
-
-    const merged = mergePromptUpdate(prompts[index], req.body || {});
-    prompts[index] = merged;
-    await writePrompts(prompts);
-    res.json({ ok: true, prompt: merged });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ ok: false, message: error && error.message ? error.message : String(error) });
-  }
-});
-
-app.delete('/api/prompts/:id', async (req, res) => {
-  try {
-    const prompts = await readPrompts();
-    const prompt = findPromptById(prompts, req.params.id);
-    if (!prompt) {
-      return res.status(404).json({ ok: false, message: 'Prompt non trovato' });
-    }
-    const force = String(req.query?.force || '')
-      .toLowerCase()
-      .trim();
-    const isForceEnabled = force && ['1', 'true', 'yes', 'on'].includes(force);
-    if (prompt.builtIn && !isForceEnabled) {
-      return res
-        .status(400)
-        .json({ ok: false, message: 'I template predefiniti non possono essere eliminati' });
-    }
-    const next = prompts.filter((item) => item.id !== prompt.id);
-    await writePrompts(next);
-    res.json({ ok: true });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ ok: false, message: error && error.message ? error.message : String(error) });
-  }
-});
-
-const mergeWorkspaceUpdate = (workspace, patch) => {
-  const updated = { ...workspace };
-  if (patch.name) updated.name = String(patch.name).trim();
-  if (patch.client) updated.client = String(patch.client).trim();
-  if (patch.color) updated.color = normalizeColor(patch.color);
-  if (patch.slug) updated.slug = String(patch.slug).trim().replace(/[^a-zA-Z0-9._-]/g, '_');
-  if (patch.versioningPolicy && typeof patch.versioningPolicy === 'object') {
-    updated.versioningPolicy = {
-      retentionLimit: Number.isFinite(patch.versioningPolicy.retentionLimit)
-        ? Math.max(1, Number(patch.versioningPolicy.retentionLimit))
-        : (workspace.versioningPolicy?.retentionLimit || 10),
-      freezeOnPublish: Boolean(
-        patch.versioningPolicy.freezeOnPublish ?? workspace.versioningPolicy?.freezeOnPublish
-      ),
-      namingConvention:
-        patch.versioningPolicy.namingConvention || workspace.versioningPolicy?.namingConvention || 'timestamped',
-    };
-  }
-
-  if (Array.isArray(patch.projects)) {
-    updated.projects = patch.projects.map((project) => ({
-      id: project.id || generateId('proj'),
-      name: String(project.name || 'Project').trim(),
-      color: normalizeColor(project.color || updated.color || '#6366f1'),
-      statuses: Array.isArray(project.statuses) && project.statuses.length
-        ? project.statuses.map((status) => String(status).trim()).filter(Boolean)
-        : [...DEFAULT_STATUSES],
-      createdAt: project.createdAt || Date.now(),
-      updatedAt: Date.now(),
-    }));
-  }
-
-  if (Array.isArray(patch.defaultStatuses) && patch.defaultStatuses.length) {
-    updated.defaultStatuses = patch.defaultStatuses
-      .map((status) => String(status).trim())
-      .filter(Boolean);
-  }
-
-  updated.updatedAt = Date.now();
-  return updated;
-};
-
-app.get('/api/workspaces', async (req, res) => {
-  try {
-    const workspaces = await readWorkspaces();
-    res.json({ ok: true, workspaces });
-  } catch (error) {
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
-  }
-});
-
-app.post('/api/workspaces', async (req, res) => {
-  try {
-    const name = String(req.body?.name || '').trim();
-    if (!name) {
-      return res.status(400).json({ ok: false, message: 'Nome workspace obbligatorio' });
-    }
-
-    const workspaces = await readWorkspaces();
-    const workspace = {
-      id: generateId('ws'),
-      name,
-      client: String(req.body?.client || name).trim(),
-      color: normalizeColor(req.body?.color || '#6366f1'),
-      slug: String(req.body?.slug || name.toLowerCase().replace(/\s+/g, '-')).replace(/[^a-zA-Z0-9._-]/g, '_'),
-      versioningPolicy: {
-        retentionLimit: Number.isFinite(req.body?.versioningPolicy?.retentionLimit)
-          ? Math.max(1, Number(req.body.versioningPolicy.retentionLimit))
-          : 10,
-        freezeOnPublish: Boolean(req.body?.versioningPolicy?.freezeOnPublish),
-        namingConvention: req.body?.versioningPolicy?.namingConvention || 'timestamped',
-      },
-      defaultStatuses: Array.isArray(req.body?.defaultStatuses) && req.body.defaultStatuses.length
-        ? req.body.defaultStatuses.map((status) => String(status).trim()).filter(Boolean)
-        : [...DEFAULT_STATUSES],
-      projects: Array.isArray(req.body?.projects)
-        ? req.body.projects.map((project) => ({
-            id: project.id || generateId('proj'),
-            name: String(project.name || 'Project').trim(),
-            color: normalizeColor(project.color || req.body?.color || '#6366f1'),
-            statuses: Array.isArray(project.statuses) && project.statuses.length
-              ? project.statuses.map((status) => String(status).trim()).filter(Boolean)
-              : [...DEFAULT_STATUSES],
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          }))
-        : [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    workspaces.push(workspace);
-    await writeWorkspaces(workspaces);
-    res.status(201).json({ ok: true, workspace });
-  } catch (error) {
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
-  }
-});
-
-app.put('/api/workspaces/:id', async (req, res) => {
-  try {
-    const workspaces = await readWorkspaces();
-    const index = workspaces.findIndex((workspace) => workspace.id === req.params.id);
-    if (index === -1) {
-      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
-    }
-
-    const merged = mergeWorkspaceUpdate(workspaces[index], req.body || {});
-    workspaces[index] = merged;
-    await writeWorkspaces(workspaces);
-    res.json({ ok: true, workspace: merged });
-  } catch (error) {
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
-  }
-});
-
-app.delete('/api/workspaces/:id', async (req, res) => {
-  try {
-    const workspaces = await readWorkspaces();
-    const next = workspaces.filter((workspace) => workspace.id !== req.params.id);
-    if (next.length === workspaces.length) {
-      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
-    }
-    await writeWorkspaces(next);
-    res.json({ ok: true });
-  } catch (error) {
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
-  }
-});
-
-app.get('/api/prompts', async (req, res) => {
-  try {
-    const prompts = await readPrompts();
-    res.json({ ok: true, prompts });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ ok: false, message: error && error.message ? error.message : String(error) });
-  }
-});
-
-app.post('/api/prompts', async (req, res) => {
-  try {
-    const title = String(req.body?.title || '').trim();
-    if (!title) {
-      return res.status(400).json({ ok: false, message: 'Titolo prompt obbligatorio' });
-    }
-
-    const prompts = await readPrompts();
-    const slug = sanitizeSlug(req.body?.slug || title, title);
-    const tags = Array.isArray(req.body?.tags)
-      ? req.body.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
-      : typeof req.body?.tags === 'string'
-      ? req.body.tags
-          .split(/,|\r?\n/)
-          .map((tag) => String(tag || '').trim())
-          .filter(Boolean)
-      : [];
+        : [];
     const cueCards = normalizeCueCards(req.body?.cueCards);
     const checklistSections = normalizeChecklistSections(
       req.body?.checklist?.sections || req.body?.checklistSections || req.body?.checklist
@@ -1093,14 +989,9 @@ app.get('/api/diag', async (req, res) => {
   } catch { out('❌ whisper non eseguibile'); }
 
   try {
-    const g = await run('bash', ['-lc', 'command -v gemini || true']);
-    out(/gemini/.test(g.stdout) ? `✅ gemini: trovato` : '⚠️ gemini non trovato');
-  } catch { out('⚠️ gemini non eseguibile'); }
-
-  try {
-    const gm = await zsh('typeset -f genMD >/dev/null && echo OK || echo NO');
-    out(gm.stdout.includes('OK') ? '✅ genMD: disponibile' : '❌ genMD non definito in ~/.zshrc');
-  } catch { out('❌ genMD non disponibile'); }
+    const g = await run('bash', ['-lc', 'command -v gemini']);
+    out(g.code === 0 ? '✅ gemini: trovato' : '❌ gemini non trovato. Necessario per la generazione Markdown.');
+  } catch { out('❌ gemini non eseguibile'); }
 
   try {
     const ppub = await zsh('command -v ppubr >/dev/null || command -v PPUBR >/dev/null && echo OK || echo NO');
@@ -1118,12 +1009,11 @@ app.get('/api/diag', async (req, res) => {
     out(writable.ok ? `✅ Permessi scrittura OK su ${defaultDest}` : `❌ Permessi scrittura insufficienti su ${defaultDest}`);
   } catch { out('⚠️ Impossibile verificare permessi di scrittura'); }
 
-  const ok = logs.some(l=>l.startsWith('✅ ffmpeg')) && logs.some(l=>/whisper: trovato/.test(l));
+  const ok = logs.some(l => l.startsWith('✅ ffmpeg')) && logs.some(l => /whisper: trovato/.test(l));
   res.json({ ok, logs });
 });
 
-app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) =>
-{
+app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
   const logs = [];
   const stageEvents = [];
   let lastStageKey = null;
@@ -1263,7 +1153,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
 
     let txtPath = '';
     out('🎧 Trascrizione con Whisper…', 'transcribe', 'running');
-    const w = await run('bash', ['-lc', `whisper ${JSON.stringify(wavPath)} --language it --model medium --output_format txt --output_dir ${JSON.stringify(dest)} --verbose False`]);
+    const w = await run('bash', ['-lc', `whisper ${JSON.stringify(wavPath)} --language it --model small --output_format txt --output_dir ${JSON.stringify(dest)} --verbose False`]);
     if (w.code !== 0) {
       out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
       throw new Error('Trascrizione fallita');
@@ -1275,17 +1165,13 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     txtPath = path.join(dest, candidates[0]);
     out(`✅ Trascrizione completata: ${path.basename(txtPath)}`, 'transcribe', 'completed');
 
-    out('📝 Generazione Markdown con genMD…', 'markdown', 'running');
-    const gm = await zsh(
-      `cd ${JSON.stringify(dest)}; genMD ${JSON.stringify(txtPath)}`,
-      buildEnvOptions(promptEnv)
-    );
-    if (gm.code !== 0) {
-      out(gm.stderr || gm.stdout || 'genMD failed', 'markdown', 'failed');
-      throw new Error('genMD fallito');
-    }
-
+    out('📝 Generazione Markdown…', 'markdown', 'running');
     const mdFile = path.join(dest, `documento_${baseName}.md`);
+    const gm = await generateMarkdown(txtPath, mdFile, promptRulePayload);
+    if (gm.code !== 0) {
+      out(gm.stderr || gm.stdout || 'Generazione Markdown fallita', 'markdown', 'failed');
+      throw new Error('Generazione Markdown fallita: ' + (gm.stderr || gm.stdout));
+    }
     if (!fs.existsSync(mdFile)) { throw new Error(`Markdown non trovato: ${mdFile}`); }
     out(`✅ Markdown generato: ${path.basename(mdFile)}`, 'markdown', 'completed');
 
@@ -1353,8 +1239,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     out(message);
     return res.status(500).json({ ok: false, message, logs, stageEvents });
   } finally {
-    try { if (req.files && req.files.audio) await fsp.unlink(req.files.audio[0].path); } catch {}
-    try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch {}
+    try { if (req.files && req.files.audio) await fsp.unlink(req.files.audio[0].path); } catch { }
+    try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch { }
   }
 });
 
@@ -1621,8 +1507,8 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     out(message);
     return res.status(500).json({ ok: false, message, logs, stageEvents });
   } finally {
-    try { if (req.files && req.files.markdown) await fsp.unlink(req.files.markdown[0].path); } catch {}
-    try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch {}
+    try { if (req.files && req.files.markdown) await fsp.unlink(req.files.markdown[0].path); } catch { }
+    try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch { }
   }
 });
 

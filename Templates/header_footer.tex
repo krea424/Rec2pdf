@@ -1,0 +1,36 @@
+% header_footer.tex — BrightLedger MD_First_PDF_Publish — v0.3.0 (post-reorg)
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+
+% Altezza header (coerente con headsep in default.tex)
+\setlength{\headheight}{16pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}   % sottile linea in header
+\renewcommand{\footrulewidth}{0.4pt} % sottile linea in footer
+
+% Header: logo a sinistra, titolo a destra
+\fancyhead[L]{%
+  \ifdefined\docLogo
+    \includegraphics[height=20pt]{\docLogo}%
+  \fi
+}
+\fancyhead[R]{%
+  \ifdefined\BLDTitle
+    \textsf{\tiny \BLDTitle}%
+  \fi
+}
+
+% Footer: versione a sinistra, pagina al centro, updated a destra
+\fancyfoot[L]{%
+  \ifdefined\BLDVersion
+    \textsf{\tiny \BLDVersion}%
+  \fi
+}
+\fancyfoot[C]{\thepage}
+\fancyfoot[R]{%
+  \ifdefined\BLDUpdated
+    \textsf{\tiny Updated: \BLDUpdated}%
+  \fi
+}
