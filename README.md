@@ -4,7 +4,7 @@
   <img src="logo_thinkDOC.svg" alt="Rec2PDF" width="260" />
 </p>
 
-Rec2PDF automatizza il flusso **voce → trascrizione → documento editoriale** trasformando le registrazioni dei meeting in PDF strutturati e pronti per la distribuzione. Il repository contiene sia il backend di orchestrazione della pipeline sia l'interfaccia utente evoluta per la gestione di workspace, prompt redazionali e pubblicazione.
+Rec2PDF automatizza il flusso **voce → trascrizione → documento editoriale** trasformando i pensieri a voce alta, i brainstorming con se stessi e le registrazioni vocali in genere in PDF strutturati e pronti per la distribuzione. Il repository contiene sia il backend di orchestrazione della pipeline sia l'interfaccia utente evoluta per la gestione di workspace, prompt redazionali e pubblicazione.
 
 ## Sommario
 - [Panoramica](#panoramica)
