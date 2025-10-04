@@ -284,9 +284,12 @@ const callPublishScript = async (mdPath, env = {}) => {
   }
 
   // Costruisci l'ambiente
+  const envOptions = env && typeof env === 'object' && env.env && typeof env.env === 'object'
+    ? env.env
+    : env;
   const publishEnv = {
     ...process.env,
-    ...env,
+    ...envOptions,
     TOOL_ROOT: PROJECT_ROOT,
     TEMPLATE_DIR: TEMPLATES_DIR,
     ASSETS_DIR: ASSETS_DIR,
@@ -594,6 +597,32 @@ const UP_BASE = path.join(os.tmpdir(), 'rec2pdf_uploads');
 if (!fs.existsSync(UP_BASE)) fs.mkdirSync(UP_BASE, { recursive: true });
 
 const uploadMiddleware = multer({ dest: UP_BASE });
+
+const VALID_LOGO_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.svg']);
+
+const ensureTempFileHasExtension = async (file, allowedExtensions = VALID_LOGO_EXTENSIONS) => {
+  if (!file) return null;
+  const originalName = file.originalname || '';
+  const currentPath = file.path;
+  const ext = path.extname(originalName).toLowerCase();
+  if (!ext || (allowedExtensions && !allowedExtensions.has(ext))) {
+    return currentPath;
+  }
+  if (currentPath.endsWith(ext)) {
+    return currentPath;
+  }
+  const nextPath = `${currentPath}${ext}`;
+  try {
+    await fsp.rename(currentPath, nextPath);
+    file.path = nextPath;
+    file.destination = path.dirname(nextPath);
+    file.filename = path.basename(nextPath);
+    return nextPath;
+  } catch (error) {
+    console.warn(`⚠️  Impossibile rinominare il file temporaneo ${currentPath}: ${error.message}`);
+    return currentPath;
+  }
+};
 
 const DEFAULT_PROMPTS = [
   {
@@ -1237,7 +1266,9 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     out(`✅ Markdown generato: ${path.basename(mdFile)}`, 'markdown', 'completed');
 
     out('📄 Pubblicazione PDF con publish.sh…', 'publish', 'running');
-    const customLogoPath = req.files.pdfLogo ? req.files.pdfLogo[0].path : null;
+    const customLogoPath = req.files.pdfLogo
+      ? await ensureTempFileHasExtension(req.files.pdfLogo[0])
+      : null;
     if (customLogoPath) {
       out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
     }
@@ -1501,7 +1532,9 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
 
     out('📄 Pubblicazione PDF con publish.sh…', 'publish', 'running');
 
-    const customLogoPath = req.files.pdfLogo ? req.files.pdfLogo[0].path : null;
+    const customLogoPath = req.files.pdfLogo
+      ? await ensureTempFileHasExtension(req.files.pdfLogo[0])
+      : null;
     if (customLogoPath) {
       out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
     }
