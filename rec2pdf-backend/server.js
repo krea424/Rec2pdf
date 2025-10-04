@@ -595,6 +595,32 @@ if (!fs.existsSync(UP_BASE)) fs.mkdirSync(UP_BASE, { recursive: true });
 
 const uploadMiddleware = multer({ dest: UP_BASE });
 
+const VALID_LOGO_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.svg']);
+
+const ensureTempFileHasExtension = async (file, allowedExtensions = VALID_LOGO_EXTENSIONS) => {
+  if (!file) return null;
+  const originalName = file.originalname || '';
+  const currentPath = file.path;
+  const ext = path.extname(originalName).toLowerCase();
+  if (!ext || (allowedExtensions && !allowedExtensions.has(ext))) {
+    return currentPath;
+  }
+  if (currentPath.endsWith(ext)) {
+    return currentPath;
+  }
+  const nextPath = `${currentPath}${ext}`;
+  try {
+    await fsp.rename(currentPath, nextPath);
+    file.path = nextPath;
+    file.destination = path.dirname(nextPath);
+    file.filename = path.basename(nextPath);
+    return nextPath;
+  } catch (error) {
+    console.warn(`⚠️  Impossibile rinominare il file temporaneo ${currentPath}: ${error.message}`);
+    return currentPath;
+  }
+};
+
 const DEFAULT_PROMPTS = [
   {
     id: 'prompt_brief_creativo',
@@ -1237,7 +1263,9 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     out(`✅ Markdown generato: ${path.basename(mdFile)}`, 'markdown', 'completed');
 
     out('📄 Pubblicazione PDF con publish.sh…', 'publish', 'running');
-    const customLogoPath = req.files.pdfLogo ? req.files.pdfLogo[0].path : null;
+    const customLogoPath = req.files.pdfLogo
+      ? await ensureTempFileHasExtension(req.files.pdfLogo[0])
+      : null;
     if (customLogoPath) {
       out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
     }
@@ -1501,7 +1529,9 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
 
     out('📄 Pubblicazione PDF con publish.sh…', 'publish', 'running');
 
-    const customLogoPath = req.files.pdfLogo ? req.files.pdfLogo[0].path : null;
+    const customLogoPath = req.files.pdfLogo
+      ? await ensureTempFileHasExtension(req.files.pdfLogo[0])
+      : null;
     if (customLogoPath) {
       out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
     }
