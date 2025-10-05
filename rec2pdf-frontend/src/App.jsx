@@ -2834,17 +2834,6 @@ export default function Rec2PdfApp(){
                     <Upload className="w-4 h-4" />
                     Seleziona audio
                   </button>
-                  <button
-                    onClick={() => processViaBackend(audioBlob)}
-                    disabled={!audioBlob || busy || backendUp === false}
-                    className={classNames(
-                      "px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 transition",
-                      (!audioBlob || busy || backendUp === false) && "opacity-60 cursor-not-allowed"
-                    )}
-                    type="button"
-                  >
-                    Invia al backend
-                  </button>
                 </div>
                 {audioBlob && (
                   <div className="text-xs text-zinc-500 flex items-center gap-2">
