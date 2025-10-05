@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, Square, Settings, Folder, FileText, FileCode, Cpu, Download, TimerIcon, Waves, CheckCircle2, AlertCircle, LinkIcon, Upload, RefreshCw, Bug, XCircle, Info, Maximize, Sparkles, Plus, Users } from "./components/icons";
+import { Mic, Square, Settings, Folder, FileText, FileCode, Cpu, Download, TimerIcon, Waves, CheckCircle2, AlertCircle, LinkIcon, Upload, RefreshCw, Bug, XCircle, Info, Maximize, Sparkles, Plus, Users, ChevronRight } from "./components/icons";
 import logo from './assets/logo.svg';
 import SetupAssistant from "./components/SetupAssistant";
 import { useMicrophoneAccess } from "./hooks/useMicrophoneAccess";
@@ -342,6 +342,7 @@ export default function Rec2PdfApp(){
   const [elapsed,setElapsed]=useState(0);
   const [level,setLevel]=useState(0);
   const [audioBlob,setAudioBlob]=useState(null);
+  const [audioSectionOpen, setAudioSectionOpen] = useState(true);
   const [audioUrl,setAudioUrl]=useState("");
   const [mime,setMime]=useState("");
   const [destDir,setDestDir]=useState("/Users/tuo_utente/Recordings");
@@ -2802,13 +2803,67 @@ export default function Rec2PdfApp(){
               onDeletePrompt={handleDeletePrompt}
             />
             <div className={classNames("mt-6 rounded-xl p-4 border", themes[theme].input)}>
-              <div className="flex items-center justify-between"><div className="text-sm text-zinc-400">Clip registrata / caricata</div><div className="text-xs text-zinc-500">{mime||"—"} · {fmtBytes(audioBlob?.size)}</div></div>
-              <div className="mt-3">{audioUrl?<audio controls src={audioUrl} className="w-full"/>:<div className="text-zinc-500 text-sm">Nessuna clip disponibile.</div>}</div>
-              <div className="mt-3 flex items-center gap-2 flex-wrap">
-                <button onClick={()=>processViaBackend()} disabled={!audioBlob||busy||backendUp===false} className={classNames("px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium flex items-center gap-2",(!audioBlob||busy||backendUp===false)&&"opacity-60 cursor-not-allowed")}> <Cpu className="w-4 h-4"/> Avvia pipeline</button>
-                <a href={audioUrl} download={`recording.${((mime||"").includes("webm")?"webm":(mime||"").includes("ogg")?"ogg":(mime||"").includes("wav")?"wav":"m4a")}`} className={classNames("px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2", themes[theme].button, !audioUrl&&"pointer-events-none opacity-50")}> <Download className="w-4 h-4"/> Scarica audio</a>
-                <button onClick={resetAll} className={classNames("px-4 py-2 rounded-lg text-sm", themes[theme].button)}>Reset</button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setAudioSectionOpen((prev) => !prev)}
+                className="w-full flex items-center justify-between text-left"
+                aria-expanded={audioSectionOpen}
+              >
+                <div className="flex items-center gap-2 text-sm text-zinc-400">
+                  <ChevronRight
+                    className={classNames(
+                      "w-4 h-4 transition-transform",
+                      audioSectionOpen && "rotate-90"
+                    )}
+                  />
+                  <span>Clip registrata / caricata</span>
+                </div>
+                <div className="text-xs text-zinc-500 flex items-center gap-1">
+                  <span>{mime || "—"}</span>
+                  <span>·</span>
+                  <span>{fmtBytes(audioBlob?.size)}</span>
+                </div>
+              </button>
+              {audioSectionOpen && (
+                <>
+                  <div className="mt-3">
+                    {audioUrl ? (
+                      <audio controls src={audioUrl} className="w-full" />
+                    ) : (
+                      <div className="text-zinc-500 text-sm">Nessuna clip disponibile.</div>
+                    )}
+                  </div>
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => processViaBackend()}
+                      disabled={!audioBlob || busy || backendUp === false}
+                      className={classNames(
+                        "px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium flex items-center gap-2",
+                        (!audioBlob || busy || backendUp === false) && "opacity-60 cursor-not-allowed"
+                      )}
+                    >
+                      <Cpu className="w-4 h-4" /> Avvia pipeline
+                    </button>
+                    <a
+                      href={audioUrl}
+                      download={`recording.${((mime||"").includes("webm")?"webm":(mime||"").includes("ogg")?"ogg":(mime||"").includes("wav")?"wav":"m4a")}`}
+                      className={classNames(
+                        "px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2",
+                        themes[theme].button,
+                        !audioUrl && "pointer-events-none opacity-50"
+                      )}
+                    >
+                      <Download className="w-4 h-4" /> Scarica audio
+                    </a>
+                    <button
+                      onClick={resetAll}
+                      className={classNames("px-4 py-2 rounded-lg text-sm", themes[theme].button)}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <div className={classNames("rounded-2xl border p-5 space-y-4 transition-all", themes[theme].input)}>
