@@ -2862,6 +2862,78 @@ export default function Rec2PdfApp(){
                       Reset
                     </button>
                   </div>
+                </>
+              )}
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className={classNames("rounded-2xl border p-5 space-y-4 transition-all", themes[theme].input)}>
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-indigo-500/10 p-2 text-indigo-300">
+                    <Upload className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-zinc-100">Carica audio</h4>
+                    <p className="text-xs text-zinc-400">Usa un file audio esistente come sorgente alternativa alla registrazione.</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input ref={fileInputRef} type="file" accept="audio/*" onChange={onPickFile} className="hidden" />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className={classNames(
+                      "px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition",
+                      themes[theme].button
+                    )}
+                    type="button"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Seleziona file audio
+                  </button>
+                </div>
+                <div className="text-xs text-zinc-500 flex items-center gap-1">
+                  <span>{mime || "—"}</span>
+                  <span>·</span>
+                  <span>{fmtBytes(audioBlob?.size)}</span>
+                </div>
+              </button>
+              {audioSectionOpen && (
+                <>
+                  <div className="mt-3">
+                    {audioUrl ? (
+                      <audio controls src={audioUrl} className="w-full" />
+                    ) : (
+                      <div className="text-zinc-500 text-sm">Nessuna clip disponibile.</div>
+                    )}
+                  </div>
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => processViaBackend()}
+                      disabled={!audioBlob || busy || backendUp === false}
+                      className={classNames(
+                        "px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium flex items-center gap-2",
+                        (!audioBlob || busy || backendUp === false) && "opacity-60 cursor-not-allowed"
+                      )}
+                    >
+                      <Cpu className="w-4 h-4" /> Avvia pipeline
+                    </button>
+                    <a
+                      href={audioUrl}
+                      download={`recording.${((mime||"").includes("webm")?"webm":(mime||"").includes("ogg")?"ogg":(mime||"").includes("wav")?"wav":"m4a")}`}
+                      className={classNames(
+                        "px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2",
+                        themes[theme].button,
+                        !audioUrl && "pointer-events-none opacity-50"
+                      )}
+                    >
+                      <Download className="w-4 h-4" /> Scarica audio
+                    </a>
+                    <button
+                      onClick={resetAll}
+                      className={classNames("px-4 py-2 rounded-lg text-sm", themes[theme].button)}
+                    >
+                      Reset
+                    </button>
+                  </div>
                   <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     <div className={classNames("rounded-2xl border p-5 space-y-4 transition-all", themes[theme].input)}>
                       <div className="flex items-start gap-3">
@@ -2905,74 +2977,66 @@ export default function Rec2PdfApp(){
                       <p className="text-xs text-zinc-500">Supporta formati comuni (webm/ogg/m4a/wav). Verrà convertito in WAV lato server.</p>
                     </div>
 
-                    <div className={classNames("rounded-2xl border p-5 space-y-4 transition-all", themes[theme].input)}>
-                      <div className="flex items-start gap-3">
-                        <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-300">
-                          <FileCode className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-semibold text-zinc-100">Carica Markdown</h4>
-                          <p className="text-xs text-zinc-400">Carica un documento .md già strutturato per impaginarlo subito con PPUBR.</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input ref={markdownInputRef} type="file" accept=".md,text/markdown" onChange={handleMarkdownFilePicked} className="hidden" disabled={busy}/>
-                        <button
-                          onClick={() => markdownInputRef.current?.click()}
-                          className={classNames(
-                            "px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition",
-                            themes[theme].button,
-                            busy && "opacity-60 cursor-not-allowed"
-                          )}
-                          disabled={busy}
-                          type="button"
-                        >
-                          <Upload className="w-4 h-4" />
-                          Seleziona file Markdown
-                        </button>
-                        {lastMarkdownUpload && (
-                          <div className="text-xs text-zinc-500 flex items-center gap-2">
-                            <span className="truncate max-w-[180px]" title={lastMarkdownUpload.name}>{lastMarkdownUpload.name}</span>
-                            <span>· {fmtBytes(lastMarkdownUpload.size)}</span>
-                          </div>
-                        )}
-                      </div>
-                      <p className="text-xs text-zinc-500">Supporta solo file .md. L'impaginazione usa PPUBR con fallback Pandoc.</p>
+              <div className={classNames("rounded-2xl border p-5 space-y-4 transition-all", themes[theme].input)}>
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-300">
+                    <FileCode className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-zinc-100">Carica Markdown</h4>
+                    <p className="text-xs text-zinc-400">Carica un documento .md già strutturato per impaginarlo subito con PPUBR.</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input ref={markdownInputRef} type="file" accept=".md,text/markdown" onChange={handleMarkdownFilePicked} className="hidden" disabled={busy}/>
+                  <button
+                    onClick={() => markdownInputRef.current?.click()}
+                    className={classNames(
+                      "px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition",
+                      themes[theme].button,
+                      busy && "opacity-60 cursor-not-allowed"
+                    )}
+                    disabled={busy}
+                    type="button"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Seleziona file Markdown
+                  </button>
+                  {lastMarkdownUpload && (
+                    <div className="text-xs text-zinc-500 flex items-center gap-2">
+                      <span className="truncate max-w-[180px]" title={lastMarkdownUpload.name}>{lastMarkdownUpload.name}</span>
+                      <span>· {fmtBytes(lastMarkdownUpload.size)}</span>
                     </div>
 
-                    <div className={classNames("rounded-2xl border p-5 space-y-4 transition-all", themes[theme].input)}>
-                      <div className="flex items-start gap-3">
-                        <div className="rounded-xl bg-sky-500/10 p-2 text-sky-300">
-                          <FileText className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-semibold text-zinc-100">Carica TXT</h4>
-                          <p className="text-xs text-zinc-400">Carica un file .txt: lo convertiamo in Markdown e avviamo l&apos;impaginazione.</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input ref={textInputRef} type="file" accept=".txt,text/plain" onChange={handleTextFilePicked} className="hidden" disabled={busy}/>
-                        <button
-                          onClick={() => textInputRef.current?.click()}
-                          className={classNames(
-                            "px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition",
-                            themes[theme].button,
-                            busy && "opacity-60 cursor-not-allowed"
-                          )}
-                          disabled={busy}
-                          type="button"
-                        >
-                          <Upload className="w-4 h-4" />
-                          Seleziona file TXT
-                        </button>
-                        {lastTextUpload && (
-                          <div className="text-xs text-zinc-500 flex items-center gap-2">
-                            <span className="truncate max-w-[180px]" title={lastTextUpload.name}>{lastTextUpload.name}</span>
-                            <span>· {fmtBytes(lastTextUpload.size)}</span>
-                          </div>
-                        )}
-                      </div>
-                      <p className="text-xs text-zinc-500">Supporta file UTF-8 .txt. Il contenuto viene ripulito e salvato come Markdown prima dell&apos;upload.</p>
+              <div className={classNames("rounded-2xl border p-5 space-y-4 transition-all", themes[theme].input)}>
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-sky-500/10 p-2 text-sky-300">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-zinc-100">Carica TXT</h4>
+                    <p className="text-xs text-zinc-400">Carica un file .txt: lo convertiamo in Markdown e avviamo l&apos;impaginazione.</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input ref={textInputRef} type="file" accept=".txt,text/plain" onChange={handleTextFilePicked} className="hidden" disabled={busy}/>
+                  <button
+                    onClick={() => textInputRef.current?.click()}
+                    className={classNames(
+                      "px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition",
+                      themes[theme].button,
+                      busy && "opacity-60 cursor-not-allowed"
+                    )}
+                    disabled={busy}
+                    type="button"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Seleziona file TXT
+                  </button>
+                  {lastTextUpload && (
+                    <div className="text-xs text-zinc-500 flex items-center gap-2">
+                      <span className="truncate max-w-[180px]" title={lastTextUpload.name}>{lastTextUpload.name}</span>
+                      <span>· {fmtBytes(lastTextUpload.size)}</span>
                     </div>
                   </div>
                 </>
