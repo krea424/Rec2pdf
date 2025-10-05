@@ -1394,9 +1394,10 @@ export default function Rec2PdfApp(){
     }
   }, [handleCreateWorkspace, workspaceBuilder, fetchWorkspaces]);
 
-  const processViaBackend=async(customBlob)=>{
-    const blob=customBlob||audioBlob;
+  const processViaBackend=async()=>{
+    const blob=audioBlob;
     if(!blob) return;
+    const blobSource='name'in blob?'upload':'recording';
     if(!backendUrl){
       setErrorBanner({title:'Backend URL mancante',details:'Imposta http://localhost:7788 o il tuo endpoint.'});
       return;
@@ -1421,7 +1422,7 @@ export default function Rec2PdfApp(){
       const fd=new FormData();
       const m=(mime||blob.type||"").toLowerCase();
       const ext=m.includes('webm')?'webm':m.includes('ogg')?'ogg':m.includes('wav')?'wav':'m4a';
-      fd.append('audio',blob,`recording.${ext}`);
+      fd.append('audio',blob,`${blobSource}.${ext}`);
       if (customPdfLogo) {
         fd.append('pdfLogo', customPdfLogo);
       }
@@ -1533,7 +1534,7 @@ export default function Rec2PdfApp(){
           tags:[],
           logs:sessionLogs,
           stageEvents: successEvents,
-          source:customBlob?'upload':'recording',
+          source:blobSource,
           bytes:blob.size||null,
           workspace: data?.workspace || (workspaceSelection.workspaceId
             ? {
@@ -2836,19 +2837,24 @@ export default function Rec2PdfApp(){
                   </button>
                 </div>
                 {audioBlob && (
-                  <div className="text-xs text-zinc-500 flex items-center gap-2">
-                    <span
-                      className="truncate max-w-[180px]"
-                      title={
-                        'name' in audioBlob && audioBlob.name
-                          ? audioBlob.name
-                          : 'Registrazione pronta'
-                      }
-                    >
-                      {'name' in audioBlob && audioBlob.name ? audioBlob.name : 'Registrazione pronta'}
-                    </span>
-                    {Number.isFinite(audioBlob.size) && <span>· {fmtBytes(audioBlob.size)}</span>}
-                  </div>
+                  <>
+                    <div className="text-xs text-zinc-500 flex items-center gap-2">
+                      <span
+                        className="truncate max-w-[180px]"
+                        title={
+                          'name' in audioBlob && audioBlob.name
+                            ? audioBlob.name
+                            : 'Registrazione pronta'
+                        }
+                      >
+                        {'name' in audioBlob && audioBlob.name ? audioBlob.name : 'Registrazione pronta'}
+                      </span>
+                      {Number.isFinite(audioBlob.size) && <span>· {fmtBytes(audioBlob.size)}</span>}
+                    </div>
+                    <p className="text-xs text-zinc-500">
+                      Avvia la pipeline dalla card "Clip registrata / caricata" per elaborare questo audio.
+                    </p>
+                  </>
                 )}
                 <p className="text-xs text-zinc-500">Supporta formati comuni (webm/ogg/m4a/wav). Verrà convertito in WAV lato server.</p>
               </div>
