@@ -2887,18 +2887,7 @@ export default function Rec2PdfApp(){
                     type="button"
                   >
                     <Upload className="w-4 h-4" />
-                    Seleziona audio
-                  </button>
-                  <button
-                    onClick={() => processViaBackend(audioBlob)}
-                    disabled={!audioBlob || busy || backendUp === false}
-                    className={classNames(
-                      "px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 transition",
-                      (!audioBlob || busy || backendUp === false) && "opacity-60 cursor-not-allowed"
-                    )}
-                    type="button"
-                  >
-                    Invia al backend
+                    Seleziona file audio
                   </button>
                 </div>
                 {audioBlob && (
@@ -2925,7 +2914,7 @@ export default function Rec2PdfApp(){
                     <FileCode className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-semibold text-zinc-100">Markdown pronto</h4>
+                    <h4 className="text-sm font-semibold text-zinc-100">Carica Markdown</h4>
                     <p className="text-xs text-zinc-400">Carica un documento .md già strutturato per impaginarlo subito con PPUBR.</p>
                   </div>
                 </div>
@@ -2942,7 +2931,7 @@ export default function Rec2PdfApp(){
                     type="button"
                   >
                     <Upload className="w-4 h-4" />
-                    Seleziona Markdown
+                    Seleziona file Markdown
                   </button>
                   {lastMarkdownUpload && (
                     <div className="text-xs text-zinc-500 flex items-center gap-2">
@@ -2960,7 +2949,7 @@ export default function Rec2PdfApp(){
                     <FileText className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-semibold text-zinc-100">Testo semplice</h4>
+                    <h4 className="text-sm font-semibold text-zinc-100">Carica TXT</h4>
                     <p className="text-xs text-zinc-400">Carica un file .txt: lo convertiamo in Markdown e avviamo l&apos;impaginazione.</p>
                   </div>
                 </div>
@@ -2977,7 +2966,7 @@ export default function Rec2PdfApp(){
                     type="button"
                   >
                     <Upload className="w-4 h-4" />
-                    Seleziona testo
+                    Seleziona file TXT
                   </button>
                   {lastTextUpload && (
                     <div className="text-xs text-zinc-500 flex items-center gap-2">
