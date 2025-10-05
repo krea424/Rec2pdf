@@ -326,7 +326,15 @@ const themes = {
     input_hover: "hover:bg-white/20",
     button: "bg-slate-700 hover:bg-slate-600 border-slate-600",
     log: "bg-white/5 border-white/10",
-  }
+  },
+  executive: {
+    bg: "from-[#030712] via-[#0b1220] to-[#0f172a]",
+    card: "bg-slate-900/60 border-emerald-500/20 backdrop-blur",
+    input: "bg-slate-900/50 border-emerald-500/30 backdrop-blur",
+    input_hover: "hover:bg-slate-900/40",
+    button: "bg-emerald-500 hover:bg-emerald-400 text-slate-900 border-emerald-300 font-semibold",
+    log: "bg-slate-950/70 border-emerald-500/20",
+  },
 };
 
 export default function Rec2PdfApp(){
@@ -345,7 +353,13 @@ export default function Rec2PdfApp(){
   const [pdfPath,setPdfPath]=useState("");
   const [mdPath, setMdPath] = useState("");
   const [errorBanner,setErrorBanner]=useState(null);
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'zinc');
+  const [theme, setTheme] = useState(() => {
+    if (typeof window === 'undefined') {
+      return 'zinc';
+    }
+    const saved = localStorage.getItem('theme');
+    return saved && themes[saved] ? saved : 'zinc';
+  });
   const [showDestDetails,setShowDestDetails]=useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [customLogo, setCustomLogo] = useState(null);
@@ -532,6 +546,10 @@ export default function Rec2PdfApp(){
   }, [customLogo]);
 
   useEffect(() => {
+    if (!themes[theme]) {
+      setTheme('zinc');
+      return;
+    }
     localStorage.setItem('theme', theme);
   }, [theme]);
 
