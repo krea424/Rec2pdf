@@ -1564,12 +1564,17 @@ export default function Rec2PdfApp(){
     }
   };
 
-  const processMarkdownUpload=async(file)=>{
+  const processMarkdownUpload=async(file,options={})=>{
     if(!file) return;
     if(!backendUrl){
       setErrorBanner({title:'Backend URL mancante',details:'Imposta http://localhost:7788 o il tuo endpoint.'});
       return;
     }
+    const endpointOverride=options.endpoint;
+    const fileFieldName=options.fileFieldName||'markdown';
+    const startMessage=options.startMessage||`🚀 Avvio impaginazione da Markdown: ${file.name}`;
+    const fallbackEventsOverride=Array.isArray(options.fallbackEvents)?options.fallbackEvents:null;
+    const extraFormData=options.extraFormData||null;
     resetPipelineProgress(true);
     setShowRawLogs(false);
     setBusy(true);
@@ -1588,10 +1593,10 @@ export default function Rec2PdfApp(){
     if(isPlaceholder){
       appendLogs(["ℹ️ Cartella destinazione non specificata o segnaposto: il backend userà la sua cartella predefinita."]); 
     }
-    appendLogs([`🚀 Avvio impaginazione da Markdown: ${file.name}`]);
+    appendLogs([startMessage]);
     try{
       const fd=new FormData();
-      fd.append('markdown',file,file.name);
+      fd.append(fileFieldName,file,file.name);
       if(customPdfLogo){
         fd.append('pdfLogo',customPdfLogo);
       }
@@ -1626,7 +1631,23 @@ export default function Rec2PdfApp(){
           fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
         }
       }
-      const {ok,status,data,raw,contentType}=await fetchBody(`${backendUrl}/api/ppubr-upload`,{method:'POST',body:fd});
+      if(extraFormData&&typeof extraFormData==='object'){
+        Object.entries(extraFormData).forEach(([key,value])=>{
+          if(typeof value==='undefined'||value===null) return;
+          fd.append(key,value);
+        });
+      }
+      const targetEndpoint=endpointOverride||`${backendUrl}/api/ppubr-upload`;
+      let endpointLabel='/api/ppubr-upload';
+      try{
+        const parsed=new URL(targetEndpoint);
+        endpointLabel=parsed.pathname||endpointLabel;
+      }catch{
+        const match=targetEndpoint.match(/\/api\/[a-zA-Z0-9_-]+/);
+        if(match&&match[0]) endpointLabel=match[0];
+        else endpointLabel=targetEndpoint;
+      }
+      const {ok,status,data,raw,contentType}=await fetchBody(targetEndpoint,{method:'POST',body:fd});
       const stageEventsPayload=Array.isArray(data?.stageEvents)?data.stageEvents:[];
       if(!ok){
         if(stageEventsPayload.length){
@@ -1634,7 +1655,7 @@ export default function Rec2PdfApp(){
         }else{
           let fallbackMessage=data?.message||(raw?raw.slice(0,200):status===0?'Connessione fallita/CORS':'Errore backend');
           if(status===404&&(raw.includes('Endpoint')||raw.includes('Cannot POST'))){
-            fallbackMessage='Endpoint /api/ppubr-upload non disponibile sul backend. Riavvia o aggiorna il server.';
+            fallbackMessage=`Endpoint ${endpointLabel} non disponibile sul backend. Riavvia o aggiorna il server.`;
           }
           handlePipelineEvents([
             {stage:'publish',status:'failed',message:fallbackMessage},
@@ -1644,7 +1665,7 @@ export default function Rec2PdfApp(){
         if(data?.logs?.length) appendLogs(data.logs);
         let message=data?.message||(raw?raw.slice(0,200):status===0?'Connessione fallita/CORS':'Errore backend');
         if(status===404&&(raw.includes('Endpoint')||raw.includes('Cannot POST'))){
-          message='Endpoint /api/ppubr-upload non disponibile sul backend. Riavvia o aggiorna il server.';
+          message=`Endpoint ${endpointLabel} non disponibile sul backend. Riavvia o aggiorna il server.`;
         } else if(status===404&&!contentType?.includes('application/json')){
           message='Risposta non valida dal backend (HTML/404). Controlla la versione del server.';
         }
@@ -1652,7 +1673,7 @@ export default function Rec2PdfApp(){
         setErrorBanner({title:'Impaginazione fallita',details:message});
         return;
       }
-      const successEvents=stageEventsPayload.length?stageEventsPayload:[
+      const fallbackEvents=fallbackEventsOverride&&fallbackEventsOverride.length?fallbackEventsOverride:[
         {stage:'upload',status:'completed',message:'Markdown caricato manualmente.'},
         {stage:'transcode',status:'completed',message:'Step non necessario.'},
         {stage:'transcribe',status:'completed',message:'Trascrizione non richiesta.'},
@@ -1660,6 +1681,7 @@ export default function Rec2PdfApp(){
         {stage:'publish',status:'completed',message:'PPUBR completato.'},
         {stage:'complete',status:'completed',message:'Pipeline conclusa.'},
       ];
+      const successEvents=stageEventsPayload.length?stageEventsPayload:fallbackEvents;
       handlePipelineEvents(successEvents,{animate:true});
       if(data?.logs?.length) appendLogs(data.logs);
       if(data?.pdfPath){
@@ -1774,18 +1796,20 @@ export default function Rec2PdfApp(){
   const processTextUpload = async (file) => {
     if (!file) return;
     try {
-      const rawContent = await file.text();
-      const normalized = rawContent.replace(/\r\n/g, '\n');
-      const markdownName = (file.name?.replace(/\.[^.]+$/i, '') || 'documento') + '.md';
-      let markdownFile;
-      try {
-        markdownFile = new File([normalized], markdownName, { type: 'text/markdown' });
-      } catch {
-        const fallbackBlob = new Blob([normalized], { type: 'text/markdown' });
-        markdownFile = fallbackBlob;
-        Object.defineProperty(markdownFile, 'name', { value: markdownName, configurable: true });
-      }
-      await processMarkdownUpload(markdownFile);
+      await processMarkdownUpload(file,{
+        endpoint:`${backendUrl}/api/text-upload`,
+        fileFieldName:'transcript',
+        startMessage:`🚀 Avvio conversione da TXT: ${file.name}`,
+        fallbackEvents:[
+          {stage:'upload',status:'completed',message:'File TXT caricato.'},
+          {stage:'transcode',status:'completed',message:'Step non necessario.'},
+          {stage:'transcribe',status:'completed',message:'Trascrizione fornita come testo.'},
+          {stage:'markdown',status:'completed',message:'Markdown generato dal TXT.'},
+          {stage:'publish',status:'completed',message:'PPUBR completato.'},
+          {stage:'complete',status:'completed',message:'Pipeline conclusa.'},
+        ],
+        extraFormData:{ sourceType:'txt' },
+      });
     } catch (error) {
       const message = error?.message || String(error);
       setErrorBanner({ title: 'Conversione testo fallita', details: message });

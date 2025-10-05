@@ -1605,6 +1605,236 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
   }
 });
 
+app.post(
+  '/api/text-upload',
+  uploadMiddleware.fields([{ name: 'transcript', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]),
+  async (req, res) => {
+    const logs = [];
+    const stageEvents = [];
+    let lastStageKey = null;
+    let selectedPrompt = null;
+    let promptRulePayload = null;
+    let promptEnv = null;
+    let promptFocus = '';
+    let promptNotes = '';
+    let promptCuesCompleted = [];
+
+    const logStageEvent = (stage, status = 'info', message = '') => {
+      if (!stage) return;
+      const normalizedStatus = String(status || 'info').toLowerCase();
+      stageEvents.push({ stage, status: normalizedStatus, message, ts: Date.now() });
+      if (normalizedStatus === 'running') {
+        lastStageKey = stage;
+      } else if (['completed', 'done', 'success'].includes(normalizedStatus)) {
+        if (lastStageKey === stage) lastStageKey = null;
+      } else if (['failed', 'error'].includes(normalizedStatus)) {
+        lastStageKey = stage;
+      }
+    };
+
+    const out = (s, stage, status) => {
+      logs.push(s);
+      if (stage) {
+        logStageEvent(stage, status || 'info', s);
+      }
+    };
+
+    try {
+      if (!req.files || !req.files.transcript) {
+        logStageEvent('upload', 'failed', 'Nessun file di testo');
+        return res.status(400).json({ ok: false, message: 'Nessun file di testo', logs, stageEvents });
+      }
+
+      const txtUpload = req.files.transcript[0];
+      const originalName = txtUpload.originalname || 'trascrizione.txt';
+      const lowerName = originalName.toLowerCase();
+
+      logStageEvent('upload', 'running', 'Caricamento trascrizione in corso…');
+
+      if (!lowerName.endsWith('.txt') && !lowerName.endsWith('.text') && txtUpload.mimetype !== 'text/plain') {
+        logStageEvent('upload', 'failed', 'Il file non è un .txt');
+        return res.status(400).json({ ok: false, message: 'Il file deve essere un testo (.txt)', logs, stageEvents });
+      }
+
+      const slugRaw = String(req.body?.slug || '').trim();
+      const slug = sanitizeSlug(slugRaw || path.basename(originalName, path.extname(originalName)) || 'documento', 'documento');
+      const workspaceId = String(req.body?.workspaceId || '').trim();
+      const workspaceProjectId = String(req.body?.workspaceProjectId || '').trim();
+      const workspaceProjectName = String(
+        req.body?.workspaceProjectName || req.body?.workspaceProject || ''
+      ).trim();
+      const workspaceStatus = String(req.body?.workspaceStatus || '').trim();
+
+      promptFocus = String(req.body?.promptFocus || '').trim();
+      promptNotes = String(req.body?.promptNotes || '').trim();
+      promptCuesCompleted = [];
+      if (req.body?.promptCuesCompleted) {
+        try {
+          const parsed =
+            typeof req.body.promptCuesCompleted === 'string'
+              ? JSON.parse(req.body.promptCuesCompleted)
+              : req.body.promptCuesCompleted;
+          if (Array.isArray(parsed)) {
+            promptCuesCompleted = parsed.map((item) => String(item || '').trim()).filter(Boolean);
+          }
+        } catch {
+          promptCuesCompleted = [];
+        }
+      }
+
+      const promptId = String(req.body?.promptId || '').trim();
+      if (promptId) {
+        const prompts = await readPrompts();
+        selectedPrompt = findPromptById(prompts, promptId);
+        if (!selectedPrompt) {
+          out(`⚠️ Prompt ${promptId} non trovato`, 'upload', 'info');
+        } else {
+          promptRulePayload = buildPromptRulePayload(selectedPrompt, {
+            focus: promptFocus,
+            notes: promptNotes,
+            completedCues: promptCuesCompleted,
+          });
+          if (promptRulePayload) {
+            promptEnv = { REC2PDF_PROMPT_RULES: promptRulePayload };
+            out(`🎯 Prompt attivo: ${selectedPrompt.title}`, 'upload', 'info');
+          }
+        }
+      }
+
+      let dest = String(req.body?.dest || '').trim();
+      if (!dest || /tuo_utente/.test(dest)) { dest = path.join(os.homedir(), 'Recordings'); }
+      await ensureDir(dest);
+      const destWritable = await ensureWritableDirectory(dest);
+      if (!destWritable.ok) {
+        const reason = destWritable.error?.message || 'Cartella non scrivibile';
+        out(`❌ Cartella non scrivibile: ${reason}`, 'upload', 'failed');
+        logStageEvent('upload', 'failed', reason);
+        return res.status(400).json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`.trim(), logs, stageEvents });
+      }
+
+      let workspaceMeta = null;
+      let workspaceProject = null;
+      if (workspaceId) {
+        const workspaces = await readWorkspaces();
+        const foundWorkspace = findWorkspaceById(workspaces, workspaceId);
+        if (!foundWorkspace) {
+          out(`⚠️ Workspace ${workspaceId} non trovato`, 'upload', 'info');
+        } else {
+          const { workspace: updatedWorkspace, changed, project } = upsertProjectInWorkspace(foundWorkspace, {
+            projectId: workspaceProjectId,
+            projectName: workspaceProjectName,
+            status: workspaceStatus,
+          });
+          workspaceMeta = updatedWorkspace;
+          workspaceProject = project;
+          if (changed) {
+            const next = workspaces.map((ws) => (ws.id === updatedWorkspace.id ? updatedWorkspace : ws));
+            await writeWorkspaces(next);
+            out(
+              `📁 Workspace aggiornato con il progetto ${project?.name || workspaceProjectName || workspaceProjectId}`,
+              'upload',
+              'info'
+            );
+          }
+        }
+      }
+
+      const baseName = workspaceMeta
+        ? await buildWorkspaceBaseName(workspaceMeta, dest, slug)
+        : `${yyyymmddHHMMSS(new Date())}_${slug}`;
+      const txtPath = path.join(dest, `${baseName}.txt`);
+      await fsp.copyFile(txtUpload.path, txtPath);
+      out(`📄 Trascrizione ricevuta: ${originalName}`, 'upload', 'completed');
+
+      logStageEvent('transcode', 'completed', 'Step transcode non necessario per TXT.');
+      logStageEvent('transcribe', 'completed', 'Trascrizione fornita come TXT.');
+
+      out('📝 Generazione Markdown…', 'markdown', 'running');
+      const mdPath = path.join(dest, `documento_${baseName}.md`);
+      const gm = await generateMarkdown(txtPath, mdPath, promptRulePayload);
+      if (gm.code !== 0) {
+        const reason = gm.stderr || gm.stdout || 'Generazione Markdown fallita';
+        out(reason, 'markdown', 'failed');
+        throw new Error(`Generazione Markdown fallita: ${reason}`);
+      }
+      if (!fs.existsSync(mdPath)) { throw new Error(`Markdown non trovato: ${mdPath}`); }
+      out(`✅ Markdown generato: ${path.basename(mdPath)}`, 'markdown', 'completed');
+
+      out('📄 Pubblicazione PDF con publish.sh…', 'publish', 'running');
+
+      const customLogoPath = req.files.pdfLogo
+        ? await ensureTempFileHasExtension(req.files.pdfLogo[0])
+        : null;
+      if (customLogoPath) {
+        out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
+      }
+      const publishEnv = buildEnvOptions(
+        promptEnv,
+        customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
+      );
+
+      const pb = await callPublishScript(mdPath, publishEnv);
+
+      if (pb.code !== 0) {
+        out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
+        out('Tentativo fallback pandoc…', 'publish', 'info');
+      }
+
+      const pdfPath = path.join(dest, `documento_${baseName}.pdf`);
+
+      if (!fs.existsSync(pdfPath)) {
+        out('publish.sh non ha generato un PDF, fallback su pandoc…', 'publish', 'info');
+        const pandoc = await zsh(
+          `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
+          publishEnv
+        );
+        if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
+          out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
+          throw new Error('Generazione PDF fallita');
+        }
+        out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
+      }
+
+      out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
+      out('🎉 Pipeline completata', 'complete', 'completed');
+
+      const structure = await analyzeMarkdownStructure(mdPath, { prompt: selectedPrompt });
+      const workspaceAssignment = workspaceAssignmentForResponse(workspaceMeta, workspaceProject, workspaceStatus);
+      const promptAssignment = promptAssignmentForResponse(selectedPrompt, {
+        focus: promptFocus,
+        notes: promptNotes,
+        completedCues: promptCuesCompleted,
+      });
+      return res.json({
+        ok: true,
+        pdfPath,
+        mdPath,
+        logs,
+        stageEvents,
+        workspace: workspaceAssignment,
+        prompt: promptAssignment,
+        structure,
+      });
+    } catch (err) {
+      const message = String(err && err.message ? err.message : err);
+      const failureStage = lastStageKey || 'markdown';
+      const hasFailureEvent = stageEvents.some(evt => evt.stage === failureStage && evt.status === 'failed');
+      if (!hasFailureEvent) {
+        logStageEvent(failureStage, 'failed', message);
+      }
+      if (!stageEvents.some(evt => evt.stage === 'complete')) {
+        logStageEvent('complete', 'failed', 'Pipeline interrotta');
+      }
+      out('❌ Errore durante la pipeline');
+      out(message);
+      return res.status(500).json({ ok: false, message, logs, stageEvents });
+    } finally {
+      try { if (req.files && req.files.transcript) await fsp.unlink(req.files.transcript[0].path); } catch { }
+      try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch { }
+    }
+  }
+);
+
 app.get('/api/markdown', async (req, res) => {
   try {
     const rawPath = String(req.query?.path || '').trim();
