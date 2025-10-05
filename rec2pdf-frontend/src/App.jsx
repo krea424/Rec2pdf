@@ -2865,7 +2865,7 @@ export default function Rec2PdfApp(){
                     <FileCode className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-semibold text-zinc-100">Markdown pronto</h4>
+                    <h4 className="text-sm font-semibold text-zinc-100">Carica Markdown</h4>
                     <p className="text-xs text-zinc-400">Carica un documento .md già strutturato per impaginarlo subito con PPUBR.</p>
                   </div>
                 </div>
@@ -2900,7 +2900,7 @@ export default function Rec2PdfApp(){
                     <FileText className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-semibold text-zinc-100">Testo semplice</h4>
+                    <h4 className="text-sm font-semibold text-zinc-100">Carica TXT</h4>
                     <p className="text-xs text-zinc-400">Carica un file .txt: lo convertiamo in Markdown e avviamo l&apos;impaginazione.</p>
                   </div>
                 </div>
