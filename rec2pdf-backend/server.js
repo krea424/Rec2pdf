@@ -468,6 +468,15 @@ const sanitizeSlug = (value, fallback = 'sessione') => {
     .toLowerCase();
 };
 
+const sanitizeStorageFileName = (value, fallback = 'file') => {
+  const base = path.basename(String(value || fallback));
+  const ext = path.extname(base);
+  const namePart = base.slice(0, base.length - ext.length);
+  const safeName = sanitizeSlug(namePart || fallback, fallback);
+  const safeExt = ext.replace(/[^a-zA-Z0-9.]/g, '');
+  return `${safeName}${safeExt}`;
+};
+
 const findWorkspaceById = (workspaces, id) => {
   if (!id) return null;
   return workspaces.find((ws) => ws.id === id) || null;
@@ -671,6 +680,57 @@ const ensureTempFileHasExtension = async (file, allowedExtensions = VALID_LOGO_E
     console.warn(`⚠️  Impossibile rinominare il file temporaneo ${currentPath}: ${error.message}`);
     return currentPath;
   }
+};
+
+const SUPABASE_AUDIO_BUCKET = 'audio-uploads';
+const SUPABASE_PROCESSED_BUCKET = 'processed-media';
+
+const safeUnlink = async (filePath) => {
+  if (!filePath) return;
+  try {
+    await fsp.unlink(filePath);
+  } catch (error) {
+    if (error && error.code !== 'ENOENT') {
+      console.warn(`⚠️  Impossibile rimuovere file temporaneo ${filePath}: ${error.message}`);
+    }
+  }
+};
+
+const safeRemoveDir = async (dirPath) => {
+  if (!dirPath) return;
+  try {
+    await fsp.rm(dirPath, { recursive: true, force: true });
+  } catch (error) {
+    if (error && error.code !== 'ENOENT') {
+      console.warn(`⚠️  Impossibile rimuovere directory temporanea ${dirPath}: ${error.message}`);
+    }
+  }
+};
+
+const uploadFileToBucket = async (bucket, objectPath, buffer, contentType) => {
+  if (!supabase) {
+    throw new Error('Supabase client is not configured');
+  }
+  const { error } = await supabase.storage.from(bucket).upload(objectPath, buffer, {
+    cacheControl: '3600',
+    contentType: contentType || 'application/octet-stream',
+    upsert: true,
+  });
+  if (error) {
+    throw new Error(`Upload fallito su Supabase (${bucket}/${objectPath}): ${error.message}`);
+  }
+};
+
+const downloadFileFromBucket = async (bucket, objectPath) => {
+  if (!supabase) {
+    throw new Error('Supabase client is not configured');
+  }
+  const { data, error } = await supabase.storage.from(bucket).download(objectPath);
+  if (error) {
+    throw new Error(`Download fallito da Supabase (${bucket}/${objectPath}): ${error.message}`);
+  }
+  const arrayBuffer = await data.arrayBuffer();
+  return Buffer.from(arrayBuffer);
 };
 
 const DEFAULT_PROMPTS = [
@@ -1162,6 +1222,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
   let promptFocus = '';
   let promptNotes = '';
   let promptCuesCompleted = [];
+  const tempFiles = new Set();
+  const tempDirs = new Set();
 
   const logStageEvent = (stage, status = 'info', message = '') => {
     if (!stage) return;
@@ -1232,19 +1294,6 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       }
     }
 
-    const userHome = os.homedir();
-
-    let dest = (req.body.dest || '').trim();
-    if (!dest || /tuo_utente/.test(dest)) { dest = path.join(userHome, 'Recordings'); }
-    await ensureDir(dest);
-    const destWritable = await ensureWritableDirectory(dest);
-    if (!destWritable.ok) {
-      const reason = destWritable.error?.message || 'Permessi insufficienti';
-      out(`❌ Cartella non scrivibile: ${reason}`, 'upload', 'failed');
-      logStageEvent('upload', 'failed', `Cartella non scrivibile: ${reason}`);
-      return res.status(400).json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`, logs, stageEvents });
-    }
-
     let workspaceMeta = null;
     let workspaceProject = null;
     if (workspaceId) {
@@ -1272,47 +1321,130 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       }
     }
 
-    const baseName = workspaceMeta
-      ? await buildWorkspaceBaseName(workspaceMeta, dest, slug)
-      : `${yyyymmddHHMMSS(new Date())}_${slug}`;
-    const inPath = req.files.audio[0].path;
-    const wavPath = path.join(dest, `${baseName}.wav`);
+    const userId = req.user?.id || 'anonymous';
+    const registerTempDir = (dir) => {
+      if (dir) tempDirs.add(dir);
+      return dir;
+    };
+    const registerTempFile = (file) => {
+      if (file) tempFiles.add(file);
+      return file;
+    };
+
+    const pipelineDir = registerTempDir(await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf_pipeline_')));
+
+    const audioFile = req.files.audio[0];
+    const originalAudioName = audioFile.originalname || 'audio';
+    const sanitizedOriginalName = sanitizeStorageFileName(originalAudioName, 'audio');
+    const audioTimestamp = Date.now();
+    const audioStoragePath = `uploads/${userId}/${audioTimestamp}_${sanitizedOriginalName}`;
+
     out('🚀 Preparazione upload…', 'upload', 'running');
-    out(`📦 Upload ricevuto: ${path.basename(req.files.audio[0].originalname || 'audio')}`, 'upload', 'completed');
+    const audioBuffer = await fsp.readFile(audioFile.path);
+    await uploadFileToBucket(
+      SUPABASE_AUDIO_BUCKET,
+      audioStoragePath,
+      audioBuffer,
+      audioFile.mimetype || 'application/octet-stream'
+    );
+    out(`📦 Upload ricevuto: ${path.basename(originalAudioName)}`, 'upload', 'completed');
+    out('☁️ File caricato su Supabase Storage', 'upload', 'info');
+
+    const baseName = workspaceMeta
+      ? await buildWorkspaceBaseName(workspaceMeta, pipelineDir, slug)
+      : `${yyyymmddHHMMSS(new Date())}_${slug}`;
+
+    const processedBasePath = `processed/${userId}`;
+    const wavStoragePath = `${processedBasePath}/${baseName}.wav`;
+    const txtStoragePath = `${processedBasePath}/${baseName}.txt`;
+    const mdStoragePath = `${processedBasePath}/documento_${baseName}.md`;
+    const pdfStoragePath = `${processedBasePath}/documento_${baseName}.pdf`;
+
+    out('🧩 Esecuzione pipeline con Supabase Storage…', 'upload', 'info');
 
     out('🎛️ Transcodifica in WAV…', 'transcode', 'running');
-    const ff = await run('ffmpeg', ['-y', '-i', inPath, '-ac', '1', '-ar', '16000', wavPath]);
-    if (ff.code !== 0) {
-      out(ff.stderr || 'ffmpeg failed', 'transcode', 'failed');
-      throw new Error('Transcodifica fallita');
+    const originalExt = path.extname(sanitizedOriginalName) || path.extname(originalAudioName) || '';
+    const audioLocalPath = registerTempFile(path.join(pipelineDir, `${baseName}${originalExt || '.audio'}`));
+    const wavLocalPath = registerTempFile(path.join(pipelineDir, `${baseName}.wav`));
+    try {
+      const downloadedAudio = await downloadFileFromBucket(SUPABASE_AUDIO_BUCKET, audioStoragePath);
+      await fsp.writeFile(audioLocalPath, downloadedAudio);
+      const ff = await run('ffmpeg', ['-y', '-i', audioLocalPath, '-ac', '1', '-ar', '16000', wavLocalPath]);
+      if (ff.code !== 0) {
+        out(ff.stderr || 'ffmpeg failed', 'transcode', 'failed');
+        throw new Error('Transcodifica fallita');
+      }
+      await uploadFileToBucket(
+        SUPABASE_PROCESSED_BUCKET,
+        wavStoragePath,
+        await fsp.readFile(wavLocalPath),
+        'audio/wav'
+      );
+      out('✅ Transcodifica completata', 'transcode', 'completed');
+    } finally {
+      await safeUnlink(audioLocalPath);
+      await safeUnlink(wavLocalPath);
     }
-    out('✅ Transcodifica completata', 'transcode', 'completed');
 
-    out(`🧩 Esecuzione pipeline: m4a2pdf "${wavPath}" "${dest}"`);
-
-    let txtPath = '';
     out('🎧 Trascrizione con Whisper…', 'transcribe', 'running');
-    const w = await run('bash', ['-lc', `whisper ${JSON.stringify(wavPath)} --language it --model small --output_format txt --output_dir ${JSON.stringify(dest)} --verbose False`]);
-    if (w.code !== 0) {
-      out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
-      throw new Error('Trascrizione fallita');
+    const wavLocalForTranscribe = registerTempFile(path.join(pipelineDir, `${baseName}.wav`));
+    let transcriptLocalPath = '';
+    try {
+      const wavBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, wavStoragePath);
+      await fsp.writeFile(wavLocalForTranscribe, wavBuffer);
+      const whisperOutputDir = pipelineDir;
+      const w = await run('bash', [
+        '-lc',
+        `whisper ${JSON.stringify(wavLocalForTranscribe)} --language it --model small --output_format txt --output_dir ${JSON.stringify(whisperOutputDir)} --verbose False`
+      ]);
+      if (w.code !== 0) {
+        out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
+        throw new Error('Trascrizione fallita');
+      }
+      const candidates = (await fsp.readdir(whisperOutputDir)).filter((file) => file.startsWith(baseName) && file.endsWith('.txt'));
+      if (!candidates.length) {
+        throw new Error('Trascrizione .txt non trovata');
+      }
+      transcriptLocalPath = registerTempFile(path.join(whisperOutputDir, candidates[0]));
+      await uploadFileToBucket(
+        SUPABASE_PROCESSED_BUCKET,
+        txtStoragePath,
+        await fsp.readFile(transcriptLocalPath),
+        'text/plain'
+      );
+      out(`✅ Trascrizione completata: ${path.basename(transcriptLocalPath)}`, 'transcribe', 'completed');
+    } finally {
+      await safeUnlink(wavLocalForTranscribe);
+      await safeUnlink(transcriptLocalPath);
     }
-
-    const prefix = path.join(dest, `${baseName}`);
-    const candidates = (await fsp.readdir(dest)).filter(f => f.startsWith(baseName) && f.endsWith('.txt'));
-    if (!candidates.length) { throw new Error('Trascrizione .txt non trovata'); }
-    txtPath = path.join(dest, candidates[0]);
-    out(`✅ Trascrizione completata: ${path.basename(txtPath)}`, 'transcribe', 'completed');
 
     out('📝 Generazione Markdown…', 'markdown', 'running');
-    const mdFile = path.join(dest, `documento_${baseName}.md`);
-    const gm = await generateMarkdown(txtPath, mdFile, promptRulePayload);
-    if (gm.code !== 0) {
-      out(gm.stderr || gm.stdout || 'Generazione Markdown fallita', 'markdown', 'failed');
-      throw new Error('Generazione Markdown fallita: ' + (gm.stderr || gm.stdout));
+    let txtLocalForMarkdown = '';
+    let mdLocalPath = '';
+    try {
+      const transcriptBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, txtStoragePath);
+      txtLocalForMarkdown = registerTempFile(path.join(pipelineDir, `${baseName}.txt`));
+      await fsp.writeFile(txtLocalForMarkdown, transcriptBuffer);
+      mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
+      const gm = await generateMarkdown(txtLocalForMarkdown, mdLocalPath, promptRulePayload);
+      if (gm.code !== 0) {
+        out(gm.stderr || gm.stdout || 'Generazione Markdown fallita', 'markdown', 'failed');
+        throw new Error('Generazione Markdown fallita: ' + (gm.stderr || gm.stdout));
+      }
+      if (!fs.existsSync(mdLocalPath)) {
+        throw new Error(`Markdown non trovato: ${mdLocalPath}`);
+      }
+      await uploadFileToBucket(
+        SUPABASE_PROCESSED_BUCKET,
+        mdStoragePath,
+        await fsp.readFile(mdLocalPath),
+        'text/markdown'
+      );
+      out(`✅ Markdown generato: ${path.basename(mdLocalPath)}`, 'markdown', 'completed');
+    } finally {
+      await safeUnlink(txtLocalForMarkdown);
+      await safeUnlink(mdLocalPath);
     }
-    if (!fs.existsSync(mdFile)) { throw new Error(`Markdown non trovato: ${mdFile}`); }
-    out(`✅ Markdown generato: ${path.basename(mdFile)}`, 'markdown', 'completed');
 
     out('📄 Pubblicazione PDF con publish.sh…', 'publish', 'running');
     const customLogoPath = req.files.pdfLogo
@@ -1326,31 +1458,59 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
     );
 
-    // Chiama publish.sh
-    const pb = await callPublishScript(mdFile, publishEnv);
+    let mdLocalForPublish = '';
+    let pdfLocalPath = '';
+    try {
+      const mdBufferForPublish = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, mdStoragePath);
+      mdLocalForPublish = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
+      await fsp.writeFile(mdLocalForPublish, mdBufferForPublish);
+      pdfLocalPath = registerTempFile(path.join(path.dirname(mdLocalForPublish), `documento_${baseName}.pdf`));
 
-    if (pb.code !== 0) {
-      out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
-      out('Tentativo fallback pandoc…', 'publish', 'info');
-    }
+      const pb = await callPublishScript(mdLocalForPublish, publishEnv);
 
-    const pdfPath = path.join(dest, `documento_${baseName}.pdf`);
-
-    if (!fs.existsSync(pdfPath)) {
-      const pandoc = await zsh(
-        `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdFile)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdFile)}`,
-        publishEnv
-      );
-      if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
-        out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
-        throw new Error('Generazione PDF fallita');
+      if (pb.code !== 0) {
+        out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
+        out('Tentativo fallback pandoc…', 'publish', 'info');
       }
-      out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
+
+      if (!fs.existsSync(pdfLocalPath)) {
+        const destDir = path.dirname(mdLocalForPublish);
+        const pandoc = await zsh(
+          `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalForPublish)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalForPublish)}`,
+          publishEnv
+        );
+        if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
+          out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
+          throw new Error('Generazione PDF fallita');
+        }
+        out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
+      }
+
+      await uploadFileToBucket(
+        SUPABASE_PROCESSED_BUCKET,
+        pdfStoragePath,
+        await fsp.readFile(pdfLocalPath),
+        'application/pdf'
+      );
+      out(`✅ Fatto! PDF caricato su Supabase: ${path.basename(pdfLocalPath)}`, 'publish', 'completed');
+    } finally {
+      await safeUnlink(mdLocalForPublish);
+      await safeUnlink(pdfLocalPath);
     }
 
-    out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
     out('🎉 Pipeline completata', 'complete', 'completed');
-    const structure = await analyzeMarkdownStructure(mdFile, { prompt: selectedPrompt });
+
+    let structure = null;
+    let analysisMdPath = '';
+    try {
+      const mdBufferForAnalysis = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, mdStoragePath);
+      analysisMdPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}_analysis.md`));
+      await fsp.writeFile(analysisMdPath, mdBufferForAnalysis);
+      structure = await analyzeMarkdownStructure(analysisMdPath, { prompt: selectedPrompt });
+    } finally {
+      await safeUnlink(analysisMdPath);
+    }
+
     const workspaceAssignment = workspaceAssignmentForResponse(workspaceMeta, workspaceProject, workspaceStatus);
     const promptAssignment = promptAssignmentForResponse(selectedPrompt, {
       focus: promptFocus,
@@ -1359,8 +1519,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     });
     return res.json({
       ok: true,
-      pdfPath,
-      mdPath: mdFile,
+      pdfPath: `${SUPABASE_PROCESSED_BUCKET}/${pdfStoragePath}`,
+      mdPath: `${SUPABASE_PROCESSED_BUCKET}/${mdStoragePath}`,
       logs,
       stageEvents,
       workspace: workspaceAssignment,
@@ -1381,8 +1541,14 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     out(message);
     return res.status(500).json({ ok: false, message, logs, stageEvents });
   } finally {
-    try { if (req.files && req.files.audio) await fsp.unlink(req.files.audio[0].path); } catch { }
-    try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch { }
+    try { if (req.files && req.files.audio) await safeUnlink(req.files.audio[0].path); } catch { }
+    try { if (req.files && req.files.pdfLogo) await safeUnlink(req.files.pdfLogo[0].path); } catch { }
+    for (const filePath of tempFiles) {
+      await safeUnlink(filePath);
+    }
+    for (const dirPath of tempDirs) {
+      await safeRemoveDir(dirPath);
+    }
   }
 });
 
@@ -1961,12 +2127,31 @@ app.put('/api/markdown', async (req, res) => {
 });
 
 app.get('/api/file', async (req, res) => {
-  const p = req.query.path;
-  if (!p) return res.status(400).json({ ok: false, message: 'Param path mancante' });
-  const abs = path.resolve(String(p));
-  if (!fs.existsSync(abs)) return res.status(404).json({ ok: false, message: 'File non trovato' });
-  res.setHeader('Content-Disposition', 'inline');
-  return res.sendFile(abs);
+  try {
+    const rawPath = String(req.query?.path || '').trim();
+    if (!rawPath) {
+      return res.status(400).json({ ok: false, message: 'Param path mancante' });
+    }
+    if (!supabase) {
+      return res.status(500).json({ ok: false, message: 'Supabase non configurato' });
+    }
+    const normalized = rawPath.replace(/^\/+/, '');
+    const segments = normalized.split('/').filter(Boolean);
+    if (segments.length < 2) {
+      return res.status(400).json({ ok: false, message: 'Percorso storage non valido' });
+    }
+    const [bucket, ...objectParts] = segments;
+    const objectPath = objectParts.join('/');
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(objectPath, 60);
+    if (error || !data?.signedUrl) {
+      const message = error?.message || 'Impossibile generare URL firmato';
+      return res.status(500).json({ ok: false, message });
+    }
+    return res.redirect(data.signedUrl);
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    return res.status(500).json({ ok: false, message });
+  }
 });
 
 app.use((req, res, next) => {
