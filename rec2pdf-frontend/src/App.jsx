@@ -2218,7 +2218,9 @@ export default function Rec2PdfApp(){
     try {
       const fd = new FormData();
       fd.append('mdPath', mdPathResolved);
-      appendPdfLogoIfPresent(fd, customPdfLogo);
+      if (customPdfLogo) {
+        fd.append('pdfLogo', customPdfLogo);
+      }
 
       const response = await fetch(`${backendUsed}/api/ppubr`, {
         method: 'POST',
@@ -2248,7 +2250,7 @@ export default function Rec2PdfApp(){
 
       setPdfPath(payload.pdfPath);
       setMdPath(mdPathResolved);
-      const pdfLogoLabel = resolvePdfLogoLabel(customPdfLogo);
+      const pdfLogoLabel = customPdfLogo ? (customPdfLogo.name || 'custom') : 'default';
       setHistory(prev => prev.map(item => item.id === entry.id ? hydrateHistoryEntry({
         ...item,
         pdfPath: payload.pdfPath,
