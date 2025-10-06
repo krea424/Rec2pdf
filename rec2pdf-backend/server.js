@@ -8,9 +8,21 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { execFile, exec } = require('child_process');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 7788;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const supabase =
+  SUPABASE_URL && SUPABASE_ANON_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      })
+    : null;
 // ===== Configurazione Path =====
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.join(__dirname, '..');
 const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT || path.join(PROJECT_ROOT, 'Scripts', 'publish.sh');
@@ -28,6 +40,43 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+const authenticateRequest = async (req, res, next) => {
+  if (!supabase) {
+    console.error('Supabase client is not configured.');
+    return res.status(500).json({ error: 'Server configuration error' });
+  }
+
+  const authHeader = req.headers.authorization || '';
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const token = match[1].trim();
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    req.user = data.user;
+    return next();
+  } catch (error) {
+    console.error('Supabase authentication error:', error);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+};
+
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health') {
+    return next();
+  }
+  return authenticateRequest(req, res, next);
+});
 
 const DATA_DIR = path.join(os.homedir(), '.rec2pdf');
 const WORKSPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
