@@ -2193,10 +2193,15 @@ export default function Rec2PdfApp(){
     pushLogs([`♻️ Rigenerazione PDF da Markdown (${entry.title || entry.slug || mdPathResolved})`]);
 
     try {
+      const fd = new FormData();
+      fd.append('mdPath', mdPathResolved);
+      if (customPdfLogo) {
+        fd.append('pdfLogo', customPdfLogo);
+      }
+
       const response = await fetch(`${backendUsed}/api/ppubr`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mdPath: mdPathResolved }),
+        body: fd,
       });
 
       let payload = {};
@@ -2222,6 +2227,7 @@ export default function Rec2PdfApp(){
 
       setPdfPath(payload.pdfPath);
       setMdPath(mdPathResolved);
+      const pdfLogoLabel = customPdfLogo ? (customPdfLogo.name || 'custom') : 'default';
       setHistory(prev => prev.map(item => item.id === entry.id ? hydrateHistoryEntry({
         ...item,
         pdfPath: payload.pdfPath,
@@ -2230,6 +2236,10 @@ export default function Rec2PdfApp(){
         mdUrl,
         backendUrl: backendUsed || item.backendUrl,
         logs: Array.isArray(item.logs) ? item.logs.concat(payload.logs || []) : (payload.logs || []),
+        logos: {
+          ...(item.logos || {}),
+          pdf: pdfLogoLabel,
+        },
       }) : item));
 
       pushLogs([`✅ PDF rigenerato: ${payload.pdfPath}`]);
@@ -2241,7 +2251,7 @@ export default function Rec2PdfApp(){
     } finally {
       setBusy(false);
     }
-  }, [busy, normalizedBackendUrl, pushLogs, setErrorBanner, setBusy, setPdfPath, setMdPath, setHistory, setActivePanel]);
+  }, [busy, normalizedBackendUrl, pushLogs, setErrorBanner, setBusy, setPdfPath, setMdPath, setHistory, setActivePanel, customPdfLogo]);
 
   const handleMdEditorChange = useCallback((nextValue) => {
     setMdEditor((prev) => ({
