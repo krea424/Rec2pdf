@@ -9,6 +9,8 @@ import { pickBestMime } from "./utils/media";
 import WorkspaceNavigator from "./components/WorkspaceNavigator";
 import PromptLibrary from "./components/PromptLibrary";
 import MarkdownEditorModal from "./components/MarkdownEditorModal";
+import LoginPage from "./components/LoginPage";
+import supabase from "./supabaseClient";
 
 const fmtBytes = (bytes) => { if (!bytes && bytes !== 0) return "—"; const u=["B","KB","MB","GB"]; let i=0,v=bytes; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(v<10&&i>0?1:0)} ${u[i]}`; };
 const fmtTime = (s) => { const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const sec=Math.floor(s%60); return [h,m,sec].map(n=>String(n).padStart(2,'0')).join(":"); };
@@ -365,6 +367,8 @@ const themes = {
 };
 
 export default function Rec2PdfApp(){
+  const [session, setSession] = useState(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const [recording,setRecording]=useState(false);
   const [elapsed,setElapsed]=useState(0);
   const [level,setLevel]=useState(0);
@@ -379,7 +383,56 @@ export default function Rec2PdfApp(){
   const [logs,setLogs]=useState([]);
   const [pdfPath,setPdfPath]=useState("");
   const [mdPath, setMdPath] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const initializeSession = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (!isMounted) {
+          return;
+        }
+        if (error) {
+          console.error('Errore recupero sessione Supabase:', error);
+        }
+        setSession(data?.session ?? null);
+      } catch (error) {
+        if (isMounted) {
+          console.error('Errore recupero sessione Supabase:', error);
+        }
+      } finally {
+        if (isMounted) {
+          setSessionChecked(true);
+        }
+      }
+    };
+
+    initializeSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+      setSessionChecked(true);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe();
+    };
+  }, []);
   const [errorBanner,setErrorBanner]=useState(null);
+  const handleLogout = useCallback(async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        setErrorBanner({ title: 'Logout fallito', details: error.message || 'Errore sconosciuto.' });
+      }
+    } catch (error) {
+      setErrorBanner({ title: 'Logout fallito', details: error.message || 'Errore sconosciuto.' });
+    }
+  }, [setErrorBanner]);
   const [theme, setTheme] = useState(() => {
     if (typeof window === 'undefined') {
       return 'zinc';
@@ -2572,10 +2625,24 @@ export default function Rec2PdfApp(){
       icon: Cpu,
     };
   }, [failedStage, pipelineComplete, activeStageDefinition, busy]);
-  const HeaderIcon = headerStatus.icon || Cpu;
+    const HeaderIcon = headerStatus.icon || Cpu;
+
+    if (!sessionChecked) {
+      return (
+        <div className="min-h-screen w-full bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100 flex items-center justify-center">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-6 py-4 text-sm text-zinc-300">
+            Verifica sessione in corso…
+          </div>
+        </div>
+      );
+    }
+
+    if (!session) {
+      return <LoginPage />;
+    }
 
 
-  return (
+    return (
     <div className={classNames("min-h-screen w-full","bg-gradient-to-b", themes[theme].bg,"text-zinc-100")}>
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex items-start justify-between gap-4">
@@ -2595,6 +2662,19 @@ export default function Rec2PdfApp(){
             </button>
             <button onClick={toggleFullScreen} className={classNames("p-2 rounded-xl text-sm border", themes[theme].input, themes[theme].input_hover)}>
               <Maximize className="w-4 h-4"/>
+            </button>
+            {session?.user?.email && (
+              <span className="hidden text-sm text-zinc-300 md:inline">{session.user.email}</span>
+            )}
+            <button
+              onClick={handleLogout}
+              className={classNames(
+                "px-3 py-2 rounded-xl text-sm border",
+                themes[theme].input,
+                themes[theme].input_hover
+              )}
+            >
+              Logout
             </button>
           </div>
         </div>
