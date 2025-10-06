@@ -23,6 +23,11 @@ const supabase =
         },
       })
     : null;
+const isAuthEnabled = Boolean(supabase);
+
+if (!isAuthEnabled) {
+  console.warn('⚠️  Supabase non configurato: il backend è avviato senza autenticazione.');
+}
 // ===== Configurazione Path =====
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.join(__dirname, '..');
 const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT || path.join(PROJECT_ROOT, 'Scripts', 'publish.sh');
@@ -42,9 +47,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const authenticateRequest = async (req, res, next) => {
-  if (!supabase) {
-    console.error('Supabase client is not configured.');
-    return res.status(500).json({ error: 'Server configuration error' });
+  if (!isAuthEnabled) {
+    req.user = { id: 'local-dev', role: 'anon' };
+    return next();
   }
 
   const authHeader = req.headers.authorization || '';
