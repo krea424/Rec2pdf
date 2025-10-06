@@ -1337,9 +1337,10 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
   }
 });
 
-app.post('/api/ppubr', async (req, res) => {
+app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
   const logs = [];
   const out = (s) => { logs.push(s); };
+  let customLogoPath = null;
 
   try {
     const mdPathRaw = String(req.body?.mdPath || '').trim();
@@ -1359,9 +1360,22 @@ app.post('/api/ppubr', async (req, res) => {
     const dest = path.dirname(mdPath);
     out(`♻️ Rigenerazione PDF con publish.sh da ${mdPath}`);
 
-    const pb = await callPublishScript(mdPath);
+    if (req.files?.pdfLogo?.length) {
+      const logoFile = req.files.pdfLogo[0];
+      customLogoPath = await ensureTempFileHasExtension(logoFile);
+      if (customLogoPath) {
+        out(`🎨 Utilizzo logo personalizzato: ${logoFile.originalname}`);
+      }
+    }
+
+    const publishEnv = buildEnvOptions(
+      customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
+    );
+
+    const pb = await callPublishScript(mdPath, publishEnv);
     if (pb.code !== 0) {
       out(pb.stderr || pb.stdout || 'publish.sh failed');
+      out('Tentativo fallback pandoc…');
     }
 
     const baseName = path.basename(mdPath, path.extname(mdPath));
@@ -1370,7 +1384,8 @@ app.post('/api/ppubr', async (req, res) => {
     if (!fs.existsSync(pdfPath)) {
       out('publish.sh non ha generato un PDF, fallback su pandoc…');
       const pandoc = await zsh(
-        `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`
+        `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
+        publishEnv
       );
       if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
         out(pandoc.stderr || pandoc.stdout || 'pandoc failed');
@@ -1384,6 +1399,8 @@ app.post('/api/ppubr', async (req, res) => {
     out('❌ Errore durante la rigenerazione');
     out(String(err && err.message ? err.message : err));
     return res.status(500).json({ ok: false, message: String(err && err.message ? err.message : err), logs });
+  } finally {
+    try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch { }
   }
 });
 

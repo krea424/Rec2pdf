@@ -160,6 +160,33 @@ const normalizePromptEntry = (prompt) => {
   };
 };
 
+const isFileLike = (value) => {
+  if (!value) return false;
+  const FileCtor = typeof File !== 'undefined' ? File : null;
+  const BlobCtor = typeof Blob !== 'undefined' ? Blob : null;
+  if (FileCtor && value instanceof FileCtor) return true;
+  if (BlobCtor && value instanceof BlobCtor) return true;
+  return false;
+};
+
+const appendPdfLogoIfPresent = (formData, logo) => {
+  if (!formData || !isFileLike(logo)) {
+    return false;
+  }
+  const fallbackName = 'custom-logo';
+  const fileName = typeof logo.name === 'string' && logo.name.trim() ? logo.name : fallbackName;
+  formData.append('pdfLogo', logo, fileName);
+  return true;
+};
+
+const resolvePdfLogoLabel = (logo) => {
+  if (!isFileLike(logo)) {
+    return 'default';
+  }
+  const label = typeof logo.name === 'string' && logo.name.trim() ? logo.name.trim() : '';
+  return label || 'custom';
+};
+
 const hydrateHistoryEntry = (entry) => {
   if (!entry) return null;
   const pdfPath = entry.pdfPath || '';
@@ -1423,9 +1450,7 @@ export default function Rec2PdfApp(){
       const m=(mime||blob.type||"").toLowerCase();
       const ext=m.includes('webm')?'webm':m.includes('ogg')?'ogg':m.includes('wav')?'wav':'m4a';
       fd.append('audio',blob,`${blobSource}.${ext}`);
-      if (customPdfLogo) {
-        fd.append('pdfLogo', customPdfLogo);
-      }
+      appendPdfLogoIfPresent(fd, customPdfLogo);
       const isPlaceholder=!destDir.trim()||destDir.includes('tuo_utente');
       if (!isPlaceholder) {
         fd.append('dest',destDir);
@@ -1490,7 +1515,7 @@ export default function Rec2PdfApp(){
         const mdUrl = buildFileUrl(normalizedBackend, data?.mdPath || '');
         const logosUsed={
           frontend: customLogo?'custom':'default',
-          pdf: customPdfLogo?(customPdfLogo.name||'custom'):'default',
+          pdf: resolvePdfLogoLabel(customPdfLogo),
         };
         const structureMeta = data?.structure || null;
         if (structureMeta && Number.isFinite(structureMeta.score)) {
@@ -1597,9 +1622,7 @@ export default function Rec2PdfApp(){
     try{
       const fd=new FormData();
       fd.append(fileFieldName,file,file.name);
-      if(customPdfLogo){
-        fd.append('pdfLogo',customPdfLogo);
-      }
+      appendPdfLogoIfPresent(fd, customPdfLogo);
       if(!isPlaceholder){
         fd.append('dest',destDir);
       }
@@ -1693,7 +1716,7 @@ export default function Rec2PdfApp(){
         const mdUrl=buildFileUrl(normalizedBackend,data?.mdPath||'');
         const logosUsed={
           frontend:customLogo?'custom':'default',
-          pdf:customPdfLogo?(customPdfLogo.name||'custom'):'default',
+          pdf:resolvePdfLogoLabel(customPdfLogo),
         };
         const structureMeta = data?.structure || null;
         if (structureMeta && Number.isFinite(structureMeta.score)) {
@@ -2193,10 +2216,13 @@ export default function Rec2PdfApp(){
     pushLogs([`♻️ Rigenerazione PDF da Markdown (${entry.title || entry.slug || mdPathResolved})`]);
 
     try {
+      const fd = new FormData();
+      fd.append('mdPath', mdPathResolved);
+      appendPdfLogoIfPresent(fd, customPdfLogo);
+
       const response = await fetch(`${backendUsed}/api/ppubr`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mdPath: mdPathResolved }),
+        body: fd,
       });
 
       let payload = {};
@@ -2222,6 +2248,7 @@ export default function Rec2PdfApp(){
 
       setPdfPath(payload.pdfPath);
       setMdPath(mdPathResolved);
+      const pdfLogoLabel = resolvePdfLogoLabel(customPdfLogo);
       setHistory(prev => prev.map(item => item.id === entry.id ? hydrateHistoryEntry({
         ...item,
         pdfPath: payload.pdfPath,
@@ -2230,6 +2257,10 @@ export default function Rec2PdfApp(){
         mdUrl,
         backendUrl: backendUsed || item.backendUrl,
         logs: Array.isArray(item.logs) ? item.logs.concat(payload.logs || []) : (payload.logs || []),
+        logos: {
+          ...(item.logos || {}),
+          pdf: pdfLogoLabel,
+        },
       }) : item));
 
       pushLogs([`✅ PDF rigenerato: ${payload.pdfPath}`]);
@@ -2241,7 +2272,7 @@ export default function Rec2PdfApp(){
     } finally {
       setBusy(false);
     }
-  }, [busy, normalizedBackendUrl, pushLogs, setErrorBanner, setBusy, setPdfPath, setMdPath, setHistory, setActivePanel]);
+  }, [busy, normalizedBackendUrl, pushLogs, setErrorBanner, setBusy, setPdfPath, setMdPath, setHistory, setActivePanel, customPdfLogo]);
 
   const handleMdEditorChange = useCallback((nextValue) => {
     setMdEditor((prev) => ({
