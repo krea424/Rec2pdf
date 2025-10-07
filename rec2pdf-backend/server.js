@@ -1607,11 +1607,93 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
   const logs = [];
   const out = (s) => { logs.push(s); };
   let customLogoPath = null;
+  let workDir = '';
+  const cleanupFiles = new Set();
+  let usedSupabaseFlow = false;
 
   try {
     const mdPathRaw = String(req.body?.mdPath || '').trim();
     if (!mdPathRaw) {
       return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante', logs });
+    }
+
+    const looksLikeStoragePath =
+      !!supabase &&
+      !path.isAbsolute(mdPathRaw) &&
+      !mdPathRaw.startsWith('./') &&
+      !mdPathRaw.startsWith('../') &&
+      mdPathRaw.includes('/');
+
+    if (req.files?.pdfLogo?.length) {
+      const logoFile = req.files.pdfLogo[0];
+      customLogoPath = await ensureTempFileHasExtension(logoFile);
+      if (customLogoPath) {
+        out(`🎨 Utilizzo logo personalizzato: ${logoFile.originalname}`);
+      }
+    }
+
+    const publishEnv = buildEnvOptions(
+      customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
+    );
+
+    if (looksLikeStoragePath) {
+      let bucket;
+      let objectPath;
+      try {
+        ({ bucket, objectPath } = parseStoragePath(mdPathRaw));
+      } catch (parseError) {
+        const status = Number(parseError.statusCode) || 400;
+        return res.status(status).json({ ok: false, message: parseError.message, logs });
+      }
+
+      if (!objectPath.toLowerCase().endsWith('.md')) {
+        return res.status(400).json({ ok: false, message: 'Il file deve avere estensione .md', logs });
+      }
+
+      out(`♻️ Rigenerazione PDF da Supabase (${bucket}/${objectPath})`);
+
+      const pdfObjectPath = objectPath.replace(/\.md$/i, '.pdf');
+      workDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf_ppubr_'));
+      usedSupabaseFlow = true;
+
+      const mdLocalPath = path.join(workDir, path.basename(objectPath));
+      const pdfLocalPath = path.join(workDir, path.basename(pdfObjectPath));
+      cleanupFiles.add(mdLocalPath);
+      cleanupFiles.add(pdfLocalPath);
+
+      const mdBuffer = await downloadFileFromBucket(bucket, objectPath);
+      await fsp.writeFile(mdLocalPath, mdBuffer);
+
+      const pb = await callPublishScript(mdLocalPath, publishEnv);
+      if (pb.code !== 0) {
+        out(pb.stderr || pb.stdout || 'publish.sh failed');
+        out('Tentativo fallback pandoc…');
+      }
+
+      if (!fs.existsSync(pdfLocalPath)) {
+        out('publish.sh non ha generato un PDF, fallback su pandoc…');
+        const pandoc = await zsh(
+          `cd ${JSON.stringify(workDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalPath)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalPath)}`,
+          publishEnv
+        );
+        if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
+          out(pandoc.stderr || pandoc.stdout || 'pandoc failed');
+          throw new Error('Rigenerazione PDF fallita');
+        }
+        out('✅ PDF creato tramite fallback pandoc');
+      }
+
+      await uploadFileToBucket(
+        bucket,
+        pdfObjectPath,
+        await fsp.readFile(pdfLocalPath),
+        'application/pdf'
+      );
+      out(`☁️ PDF aggiornato su Supabase: ${pdfObjectPath}`);
+
+      const normalizedMdPath = `${bucket}/${objectPath}`;
+      const normalizedPdfPath = `${bucket}/${pdfObjectPath}`;
+      return res.json({ ok: true, pdfPath: normalizedPdfPath, mdPath: normalizedMdPath, logs });
     }
 
     const mdPath = path.resolve(mdPathRaw);
@@ -1625,18 +1707,6 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
 
     const dest = path.dirname(mdPath);
     out(`♻️ Rigenerazione PDF con publish.sh da ${mdPath}`);
-
-    if (req.files?.pdfLogo?.length) {
-      const logoFile = req.files.pdfLogo[0];
-      customLogoPath = await ensureTempFileHasExtension(logoFile);
-      if (customLogoPath) {
-        out(`🎨 Utilizzo logo personalizzato: ${logoFile.originalname}`);
-      }
-    }
-
-    const publishEnv = buildEnvOptions(
-      customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
-    );
 
     const pb = await callPublishScript(mdPath, publishEnv);
     if (pb.code !== 0) {
@@ -1666,7 +1736,16 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
     out(String(err && err.message ? err.message : err));
     return res.status(500).json({ ok: false, message: String(err && err.message ? err.message : err), logs });
   } finally {
-    try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch { }
+    if (customLogoPath) {
+      await safeUnlink(customLogoPath);
+    }
+    if (usedSupabaseFlow) {
+      for (const filePath of cleanupFiles) {
+        await safeUnlink(filePath);
+      }
+      await safeRemoveDir(workDir);
+    }
+    try { if (req.files && req.files.pdfLogo) await safeUnlink(req.files.pdfLogo[0].path); } catch { }
   }
 });
 
