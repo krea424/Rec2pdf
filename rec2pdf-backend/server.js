@@ -13,20 +13,23 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 const PORT = process.env.PORT || 7788;
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
 const supabase =
-  SUPABASE_URL && SUPABASE_ANON_KEY
-    ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  SUPABASE_URL && SUPABASE_SERVICE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
         auth: {
           autoRefreshToken: false,
           persistSession: false,
         },
       })
     : null;
-const isAuthEnabled = Boolean(supabase);
+
+// DICHIARA QUI LA VARIABILE MANCANTE
+const isAuthEnabled = !!supabase;
 
 if (!isAuthEnabled) {
-  console.warn('⚠️  Supabase non configurato: il backend è avviato senza autenticazione.');
+  console.warn('⚠️  Supabase non configurato: il backend è avviato senza autenticazione (MODALITÀ SVILUPPO).');
 }
 // ===== Configurazione Path =====
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.join(__dirname, '..');
