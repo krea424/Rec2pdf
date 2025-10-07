@@ -50,10 +50,15 @@ const deriveMarkdownPath = (mdPath, pdfPath) => {
   return '';
 };
 
-const buildFileUrl = (backendUrl, filePath) => {
+const buildFileUrl = (backendUrl, filePath, options = {}) => {
   const normalized = normalizeBackendUrlValue(backendUrl);
   if (!normalized || !filePath) return '';
-  return `${normalized}/api/file?path=${encodeURIComponent(filePath)}`;
+  const params = new URLSearchParams({ path: filePath });
+  const token = typeof options?.token === 'string' ? options.token.trim() : '';
+  if (token) {
+    params.set('token', token);
+  }
+  return `${normalized}/api/file?${params.toString()}`;
 };
 
 const normalizeWorkspaceEntry = (workspace) => {
@@ -194,8 +199,14 @@ const hydrateHistoryEntry = (entry) => {
   const pdfPath = entry.pdfPath || '';
   const mdPath = deriveMarkdownPath(entry.mdPath, pdfPath);
   const backendUrl = normalizeBackendUrlValue(entry.backendUrl || '');
-  const pdfUrl = entry.pdfUrl || buildFileUrl(backendUrl, pdfPath);
-  const mdUrl = entry.mdUrl || buildFileUrl(backendUrl, mdPath);
+  const pdfUrl =
+    entry.pdfUrl && entry.pdfUrl.startsWith('http') && !entry.pdfUrl.includes('/api/file?')
+      ? entry.pdfUrl
+      : '';
+  const mdUrl =
+    entry.mdUrl && entry.mdUrl.startsWith('http') && !entry.mdUrl.includes('/api/file?')
+      ? entry.mdUrl
+      : '';
   const workspace = normalizeWorkspaceEntry(entry.workspace);
   const structure = normalizeStructureMeta(entry.structure);
   const prompt = normalizePromptEntry(entry.prompt);
@@ -568,6 +579,7 @@ export default function Rec2PdfApp(){
   const [historyFilter, setHistoryFilter] = useState('');
   const [activePanel, setActivePanel] = useState('doc');
   const [mdEditor, setMdEditor] = useState(() => ({ ...EMPTY_EDITOR_STATE }));
+  const [sessionToken, setSessionToken] = useState('');
   const {
     secureOK,
     mediaSupported,
@@ -1160,17 +1172,18 @@ export default function Rec2PdfApp(){
           return { ok: false, message };
         }
         const markdown = typeof payload?.content === 'string' ? payload.content : '';
+        const token = await getSessionToken();
         return {
           ok: true,
           markdown,
-          pdfUrl: buildFileUrl(backendTarget, entry.pdfPath),
-          mdUrl: buildFileUrl(backendTarget, mdPathResolved),
+          pdfUrl: buildFileUrl(backendTarget, entry.pdfPath, token ? { token } : undefined),
+          mdUrl: buildFileUrl(backendTarget, mdPathResolved, token ? { token } : undefined),
         };
       } catch (error) {
         return { ok: false, message: error?.message || 'Errore durante il recupero dell\'anteprima.' };
       }
     },
-    [backendUrl, fetchWithAuth]
+    [backendUrl, fetchWithAuth, getSessionToken]
   );
 
   const handleSaveWorkspaceFilter = useCallback(
@@ -2177,30 +2190,93 @@ export default function Rec2PdfApp(){
 
   const pdfDownloadUrl = useMemo(() => {
     if (!pdfPath || !normalizedBackendUrl) return '';
-    return `${normalizedBackendUrl}/api/file?path=${encodeURIComponent(pdfPath)}`;
-  }, [pdfPath, normalizedBackendUrl]);
+    return buildFileUrl(normalizedBackendUrl, pdfPath, sessionToken ? { token: sessionToken } : undefined);
+  }, [pdfPath, normalizedBackendUrl, sessionToken]);
 
   const mdDownloadUrl = useMemo(() => {
     if (!mdPath || !normalizedBackendUrl) return '';
-    return `${normalizedBackendUrl}/api/file?path=${encodeURIComponent(mdPath)}`;
-  }, [mdPath, normalizedBackendUrl]);
+    return buildFileUrl(normalizedBackendUrl, mdPath, sessionToken ? { token: sessionToken } : undefined);
+  }, [mdPath, normalizedBackendUrl, sessionToken]);
 
   const mdEditorDownloadUrl = useMemo(() => {
     if (!mdEditor?.path || !mdEditor?.backendUrl) return '';
-    return `${mdEditor.backendUrl}/api/file?path=${encodeURIComponent(mdEditor.path)}`;
-  }, [mdEditor?.path, mdEditor?.backendUrl]);
+    return buildFileUrl(mdEditor.backendUrl, mdEditor.path, sessionToken ? { token: sessionToken } : undefined);
+  }, [mdEditor?.path, mdEditor?.backendUrl, sessionToken]);
 
   const mdEditorDirty = useMemo(() => mdEditor.content !== mdEditor.originalContent, [mdEditor.content, mdEditor.originalContent]);
 
-  const handleOpenHistoryPdf = useCallback((entry) => {
-    if (!entry?.pdfPath) return;
-    if (typeof window === 'undefined') return;
-    const directUrl = entry.pdfUrl && entry.pdfUrl.startsWith('http') ? entry.pdfUrl : '';
-    const fallbackBackend = entry.backendUrl || normalizedBackendUrl;
-    const target = directUrl || buildFileUrl(fallbackBackend, entry.pdfPath);
-    if (!target) return;
-    window.open(target, '_blank', 'noopener,noreferrer');
-  }, [normalizedBackendUrl, handlePipelineEvents]);
+  useEffect(() => {
+    let isActive = true;
+    const syncToken = async () => {
+      const token = await getSessionToken();
+      if (isActive) {
+        setSessionToken(token || '');
+      }
+    };
+    syncToken();
+
+    let subscription = null;
+    if (supabase?.auth?.onAuthStateChange) {
+      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (isActive) {
+          setSessionToken(session?.access_token || '');
+        }
+      });
+      subscription = data?.subscription || data || null;
+    }
+
+    return () => {
+      isActive = false;
+      if (subscription) {
+        if (typeof subscription.unsubscribe === 'function') {
+          subscription.unsubscribe();
+        } else if (typeof subscription === 'function') {
+          subscription();
+        }
+      }
+    };
+  }, [getSessionToken]);
+
+  const handleOpenHistoryPdf = useCallback(
+    async (entry) => {
+      if (!entry?.pdfPath) return;
+      if (typeof window === 'undefined') return;
+
+      const rawPdfUrl = typeof entry.pdfUrl === 'string' ? entry.pdfUrl : '';
+      const isBackendProxyUrl = rawPdfUrl.includes('/api/file?');
+      const directUrl = rawPdfUrl.startsWith('http') && !isBackendProxyUrl ? rawPdfUrl : '';
+      if (directUrl) {
+        window.open(directUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      const backendTarget = normalizeBackendUrlValue(entry.backendUrl || normalizedBackendUrl);
+      if (!backendTarget) {
+        pushLogs(['❌ Backend non configurato per aprire il PDF.']);
+        return;
+      }
+
+      const newWindow = window.open('about:blank', '_blank', 'noopener,noreferrer');
+      if (!newWindow) {
+        pushLogs(['❌ Apertura del PDF bloccata dal browser. Abilita i pop-up e riprova.']);
+        return;
+      }
+
+      try {
+        const token = (await getSessionToken()) || sessionToken || '';
+        const target = buildFileUrl(backendTarget, entry.pdfPath, token ? { token } : undefined);
+        if (!target) {
+          throw new Error('Percorso PDF non disponibile.');
+        }
+        newWindow.location.replace(target);
+      } catch (error) {
+        newWindow.close();
+        const message = error?.message || 'Impossibile aprire il PDF.';
+        pushLogs([`❌ ${message}`]);
+      }
+    },
+    [getSessionToken, normalizedBackendUrl, pushLogs, sessionToken]
+  );
 
   const handleOpenHistoryMd = useCallback(async (entry, overrideMdPath) => {
     const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
