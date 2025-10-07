@@ -2353,7 +2353,23 @@ app.get('/api/file', async (req, res) => {
       const message = error?.message || 'Impossibile generare URL firmato';
       return res.status(500).json({ ok: false, message });
     }
-    return res.redirect(data.signedUrl);
+    let targetUrl = data.signedUrl;
+    if (targetUrl && SUPABASE_URL && !/^https?:\/\//i.test(targetUrl)) {
+      try {
+        const supabaseOrigin = new URL(SUPABASE_URL);
+        const relativePath = targetUrl.startsWith('/') ? targetUrl.slice(1) : targetUrl;
+        targetUrl = new URL(relativePath, `${supabaseOrigin.origin}/`).toString();
+      } catch (urlError) {
+        console.warn('⚠️  Impossibile normalizzare URL firmato Supabase:', urlError?.message || urlError);
+      }
+    }
+
+    if (!/^https?:\/\//i.test(targetUrl)) {
+      return res.status(500).json({ ok: false, message: 'URL firmato Supabase non valido' });
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    return res.redirect(302, targetUrl);
   } catch (error) {
     const message = error && error.message ? error.message : String(error);
     return res.status(500).json({ ok: false, message });
