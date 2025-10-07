@@ -708,6 +708,7 @@ const ensureTempFileHasExtension = async (file, allowedExtensions = VALID_LOGO_E
 };
 
 const SUPABASE_AUDIO_BUCKET = 'audio-uploads';
+const SUPABASE_TEXT_BUCKET = 'text-uploads';
 const SUPABASE_PROCESSED_BUCKET = 'processed-media';
 
 const safeUnlink = async (filePath) => {
@@ -2018,6 +2019,8 @@ app.post(
     let promptFocus = '';
     let promptNotes = '';
     let promptCuesCompleted = [];
+    const tempFiles = new Set();
+    const tempDirs = new Set();
 
     const logStageEvent = (stage, status = 'info', message = '') => {
       if (!stage) return;
@@ -2101,17 +2104,6 @@ app.post(
         }
       }
 
-      let dest = String(req.body?.dest || '').trim();
-      if (!dest || /tuo_utente/.test(dest)) { dest = path.join(os.homedir(), 'Recordings'); }
-      await ensureDir(dest);
-      const destWritable = await ensureWritableDirectory(dest);
-      if (!destWritable.ok) {
-        const reason = destWritable.error?.message || 'Cartella non scrivibile';
-        out(`❌ Cartella non scrivibile: ${reason}`, 'upload', 'failed');
-        logStageEvent('upload', 'failed', reason);
-        return res.status(400).json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`.trim(), logs, stageEvents });
-      }
-
       let workspaceMeta = null;
       let workspaceProject = null;
       if (workspaceId) {
@@ -2139,26 +2131,66 @@ app.post(
         }
       }
 
+      const registerTempDir = (dir) => {
+        if (dir) tempDirs.add(dir);
+        return dir;
+      };
+      const registerTempFile = (file) => {
+        if (file) tempFiles.add(file);
+        return file;
+      };
+
+      const pipelineDir = registerTempDir(await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf_txt_pipeline_')));
+
+      const userId = req.user?.id || 'anonymous';
+      const sanitizedOriginalName = sanitizeStorageFileName(originalName, 'trascrizione');
+      const textTimestamp = Date.now();
+      const textStoragePath = `uploads/${userId}/${textTimestamp}_${sanitizedOriginalName}`;
+
+      out('🚀 Preparazione upload…', 'upload', 'running');
+      const txtBuffer = await fsp.readFile(txtUpload.path);
+      await uploadFileToBucket(SUPABASE_TEXT_BUCKET, textStoragePath, txtBuffer, 'text/plain');
+      out(`📦 Trascrizione ricevuta: ${originalName}`, 'upload', 'completed');
+      out('☁️ File caricato su Supabase Storage', 'upload', 'info');
+
       const baseName = workspaceMeta
-        ? await buildWorkspaceBaseName(workspaceMeta, dest, slug)
+        ? await buildWorkspaceBaseName(workspaceMeta, pipelineDir, slug)
         : `${yyyymmddHHMMSS(new Date())}_${slug}`;
-      const txtPath = path.join(dest, `${baseName}.txt`);
-      await fsp.copyFile(txtUpload.path, txtPath);
-      out(`📄 Trascrizione ricevuta: ${originalName}`, 'upload', 'completed');
+      const processedBasePath = `processed/${userId}`;
+      const mdStoragePath = `${processedBasePath}/documento_${baseName}.md`;
+      const pdfStoragePath = `${processedBasePath}/documento_${baseName}.pdf`;
 
       logStageEvent('transcode', 'completed', 'Step transcode non necessario per TXT.');
       logStageEvent('transcribe', 'completed', 'Trascrizione fornita come TXT.');
 
       out('📝 Generazione Markdown…', 'markdown', 'running');
-      const mdPath = path.join(dest, `documento_${baseName}.md`);
-      const gm = await generateMarkdown(txtPath, mdPath, promptRulePayload);
-      if (gm.code !== 0) {
-        const reason = gm.stderr || gm.stdout || 'Generazione Markdown fallita';
-        out(reason, 'markdown', 'failed');
-        throw new Error(`Generazione Markdown fallita: ${reason}`);
+      let txtLocalPath = '';
+      let mdLocalPath = '';
+      try {
+        const downloadedTxt = await downloadFileFromBucket(SUPABASE_TEXT_BUCKET, textStoragePath);
+        txtLocalPath = registerTempFile(path.join(pipelineDir, `${baseName}.txt`));
+        await fsp.writeFile(txtLocalPath, downloadedTxt);
+        mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
+        const gm = await generateMarkdown(txtLocalPath, mdLocalPath, promptRulePayload);
+        if (gm.code !== 0) {
+          const reason = gm.stderr || gm.stdout || 'Generazione Markdown fallita';
+          out(reason, 'markdown', 'failed');
+          throw new Error(`Generazione Markdown fallita: ${reason}`);
+        }
+        if (!fs.existsSync(mdLocalPath)) {
+          throw new Error(`Markdown non trovato: ${mdLocalPath}`);
+        }
+        await uploadFileToBucket(
+          SUPABASE_PROCESSED_BUCKET,
+          mdStoragePath,
+          await fsp.readFile(mdLocalPath),
+          'text/markdown'
+        );
+        out(`✅ Markdown generato: ${path.basename(mdLocalPath)}`, 'markdown', 'completed');
+      } finally {
+        await safeUnlink(txtLocalPath);
+        await safeUnlink(mdLocalPath);
       }
-      if (!fs.existsSync(mdPath)) { throw new Error(`Markdown non trovato: ${mdPath}`); }
-      out(`✅ Markdown generato: ${path.basename(mdPath)}`, 'markdown', 'completed');
 
       out('📄 Pubblicazione PDF con publish.sh…', 'publish', 'running');
 
@@ -2173,32 +2205,59 @@ app.post(
         customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
       );
 
-      const pb = await callPublishScript(mdPath, publishEnv);
+      let mdLocalForPublish = '';
+      let pdfLocalPath = '';
+      try {
+        const mdBufferForPublish = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, mdStoragePath);
+        mdLocalForPublish = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
+        await fsp.writeFile(mdLocalForPublish, mdBufferForPublish);
+        pdfLocalPath = registerTempFile(path.join(path.dirname(mdLocalForPublish), `documento_${baseName}.pdf`));
 
-      if (pb.code !== 0) {
-        out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
-        out('Tentativo fallback pandoc…', 'publish', 'info');
-      }
+        const pb = await callPublishScript(mdLocalForPublish, publishEnv);
 
-      const pdfPath = path.join(dest, `documento_${baseName}.pdf`);
-
-      if (!fs.existsSync(pdfPath)) {
-        out('publish.sh non ha generato un PDF, fallback su pandoc…', 'publish', 'info');
-        const pandoc = await zsh(
-          `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
-          publishEnv
-        );
-        if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
-          out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
-          throw new Error('Generazione PDF fallita');
+        if (pb.code !== 0) {
+          out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
+          out('Tentativo fallback pandoc…', 'publish', 'info');
         }
-        out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
+
+        if (!fs.existsSync(pdfLocalPath)) {
+          const destDir = path.dirname(mdLocalForPublish);
+          const pandoc = await zsh(
+            `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalForPublish)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalForPublish)}`,
+            publishEnv
+          );
+          if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
+            out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
+            throw new Error('Generazione PDF fallita');
+          }
+          out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
+        }
+
+        await uploadFileToBucket(
+          SUPABASE_PROCESSED_BUCKET,
+          pdfStoragePath,
+          await fsp.readFile(pdfLocalPath),
+          'application/pdf'
+        );
+        out(`✅ Fatto! PDF caricato su Supabase: ${path.basename(pdfLocalPath)}`, 'publish', 'completed');
+      } finally {
+        await safeUnlink(mdLocalForPublish);
+        await safeUnlink(pdfLocalPath);
       }
 
-      out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
       out('🎉 Pipeline completata', 'complete', 'completed');
 
-      const structure = await analyzeMarkdownStructure(mdPath, { prompt: selectedPrompt });
+      let structure = null;
+      let analysisMdPath = '';
+      try {
+        const mdBufferForAnalysis = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, mdStoragePath);
+        analysisMdPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}_analysis.md`));
+        await fsp.writeFile(analysisMdPath, mdBufferForAnalysis);
+        structure = await analyzeMarkdownStructure(analysisMdPath, { prompt: selectedPrompt });
+      } finally {
+        await safeUnlink(analysisMdPath);
+      }
+
       const workspaceAssignment = workspaceAssignmentForResponse(workspaceMeta, workspaceProject, workspaceStatus);
       const promptAssignment = promptAssignmentForResponse(selectedPrompt, {
         focus: promptFocus,
@@ -2229,8 +2288,14 @@ app.post(
       out(message);
       return res.status(500).json({ ok: false, message, logs, stageEvents });
     } finally {
-      try { if (req.files && req.files.transcript) await fsp.unlink(req.files.transcript[0].path); } catch { }
-      try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch { }
+      try { if (req.files && req.files.transcript) await safeUnlink(req.files.transcript[0].path); } catch { }
+      try { if (req.files && req.files.pdfLogo) await safeUnlink(req.files.pdfLogo[0].path); } catch { }
+      for (const filePath of tempFiles) {
+        await safeUnlink(filePath);
+      }
+      for (const dirPath of tempDirs) {
+        await safeRemoveDir(dirPath);
+      }
     }
   }
 );
