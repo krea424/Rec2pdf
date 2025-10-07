@@ -8,6 +8,7 @@ import { classNames } from "./utils/classNames";
 import { pickBestMime } from "./utils/media";
 import WorkspaceNavigator from "./components/WorkspaceNavigator";
 import PromptLibrary from "./components/PromptLibrary";
+import CloudLibraryPanel from "./components/CloudLibraryPanel";
 import MarkdownEditorModal from "./components/MarkdownEditorModal";
 import LoginPage from "./components/LoginPage";
 import supabase from "./supabaseClient";
@@ -20,6 +21,10 @@ const WORKSPACE_SELECTION_KEY = 'rec2pdfWorkspaceSelection';
 const WORKSPACE_FILTERS_KEY = 'rec2pdfWorkspaceFilters';
 const PROMPT_SELECTION_KEY = 'rec2pdfPromptSelection';
 const PROMPT_FAVORITES_KEY = 'rec2pdfPromptFavorites';
+const HISTORY_TABS = [
+  { key: 'history', label: 'Cronologia' },
+  { key: 'cloud', label: 'Cloud library' },
+];
 const DEFAULT_WORKSPACE_STATUSES = ['Bozza', 'In lavorazione', 'Da revisionare', 'Completato'];
 const EMPTY_EDITOR_STATE = {
   open: false,
@@ -577,6 +582,7 @@ export default function Rec2PdfApp(){
   const [stageMessages, setStageMessages] = useState({});
   const [showRawLogs, setShowRawLogs] = useState(false);
   const [historyFilter, setHistoryFilter] = useState('');
+  const [historyTab, setHistoryTab] = useState('history');
   const [activePanel, setActivePanel] = useState('doc');
   const [mdEditor, setMdEditor] = useState(() => ({ ...EMPTY_EDITOR_STATE }));
   const [sessionToken, setSessionToken] = useState('');
@@ -1141,6 +1147,29 @@ export default function Rec2PdfApp(){
       }
     },
     [handleEnsureWorkspaceProject, fetchWorkspaces]
+  );
+
+  const handleLibraryWorkspaceSelection = useCallback(
+    (assignment = {}) => {
+      const nextSelection = {
+        workspaceId: assignment?.workspaceId || assignment?.id || '',
+        projectId: assignment?.projectId || '',
+        projectName: assignment?.projectName || '',
+        status: assignment?.status || '',
+      };
+      setNavigatorSelection((prev) => {
+        if (
+          prev.workspaceId === nextSelection.workspaceId &&
+          prev.projectId === nextSelection.projectId &&
+          (prev.projectName || '') === (nextSelection.projectName || '') &&
+          (prev.status || '') === (nextSelection.status || '')
+        ) {
+          return prev;
+        }
+        return nextSelection;
+      });
+    },
+    [setNavigatorSelection]
   );
 
   const fetchEntryPreview = useCallback(
@@ -3303,29 +3332,66 @@ export default function Rec2PdfApp(){
           </div>
         </div>
         <div className="mt-8">
-          <WorkspaceNavigator
-            entries={history}
-            workspaces={workspaces}
-            selection={navigatorSelection}
-            onSelectionChange={setNavigatorSelection}
-            savedFilters={savedWorkspaceFilters}
-            onSaveFilter={handleSaveWorkspaceFilter}
-            onDeleteFilter={handleDeleteWorkspaceFilter}
-            onApplyFilter={handleApplyWorkspaceFilter}
-            searchTerm={historyFilter}
-            onSearchChange={setHistoryFilter}
-            fetchPreview={fetchEntryPreview}
-            onOpenPdf={handleOpenHistoryPdf}
-            onOpenMd={handleOpenHistoryMd}
-            onRepublish={handleRepublishFromMd}
-            onShowLogs={handleShowHistoryLogs}
-            onAssignWorkspace={handleAssignEntryWorkspace}
-            themeStyles={themes[theme]}
-            loading={workspaceLoading}
-            onRefresh={handleRefreshWorkspaces}
-            pipelineSelection={workspaceSelection}
-            onAdoptSelection={handleAdoptNavigatorSelection}
-          />
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/60 pb-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {HISTORY_TABS.map((tab) => {
+                const isActive = historyTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setHistoryTab(tab.key)}
+                    className={classNames(
+                      'rounded-lg px-3 py-1.5 text-xs font-semibold transition border',
+                      isActive
+                        ? 'bg-indigo-500/20 text-indigo-100 border-indigo-400/60'
+                        : themes[theme].button
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="mt-5">
+            {historyTab === 'history' ? (
+              <WorkspaceNavigator
+                entries={history}
+                workspaces={workspaces}
+                selection={navigatorSelection}
+                onSelectionChange={setNavigatorSelection}
+                savedFilters={savedWorkspaceFilters}
+                onSaveFilter={handleSaveWorkspaceFilter}
+                onDeleteFilter={handleDeleteWorkspaceFilter}
+                onApplyFilter={handleApplyWorkspaceFilter}
+                searchTerm={historyFilter}
+                onSearchChange={setHistoryFilter}
+                fetchPreview={fetchEntryPreview}
+                onOpenPdf={handleOpenHistoryPdf}
+                onOpenMd={handleOpenHistoryMd}
+                onRepublish={handleRepublishFromMd}
+                onShowLogs={handleShowHistoryLogs}
+                onAssignWorkspace={handleAssignEntryWorkspace}
+                themeStyles={themes[theme]}
+                loading={workspaceLoading}
+                onRefresh={handleRefreshWorkspaces}
+                pipelineSelection={workspaceSelection}
+                onAdoptSelection={handleAdoptNavigatorSelection}
+              />
+            ) : (
+              <CloudLibraryPanel
+                backendUrl={normalizedBackendUrl}
+                fetchBody={fetchBody}
+                buildFileUrl={buildFileUrl}
+                sessionToken={sessionToken}
+                selection={navigatorSelection}
+                onAssignWorkspace={handleLibraryWorkspaceSelection}
+                workspaces={workspaces}
+                themeStyles={themes[theme]}
+              />
+            )}
+          </div>
         </div>
         {!onboardingComplete && (
           <div className="mt-10 text-xs text-zinc-500">

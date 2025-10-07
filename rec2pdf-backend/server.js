@@ -759,6 +759,55 @@ const downloadFileFromBucket = async (bucket, objectPath) => {
   return Buffer.from(arrayBuffer);
 };
 
+const normalizeStoragePrefix = (value) => {
+  if (!value) return '';
+  const trimmed = String(value).trim();
+  if (!trimmed) return '';
+  return trimmed.replace(/^\/+/, '').replace(/\/+$/, '');
+};
+
+const listSupabaseObjects = async (bucket, prefix = '', options = {}) => {
+  if (!supabase) {
+    const error = new Error('Supabase client is not configured');
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const normalizedBucket = String(bucket || '').trim();
+  if (!normalizedBucket) {
+    const error = new Error('Supabase bucket mancante');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const normalizedPrefix = normalizeStoragePrefix(prefix);
+  const limit = Number.isFinite(options.limit) && options.limit > 0 ? Math.min(options.limit, 1000) : 1000;
+  const offset = Number.isFinite(options.offset) && options.offset > 0 ? options.offset : 0;
+  const sortBy = options.sortBy || { column: 'updated_at', order: 'desc' };
+
+  const { data, error } = await supabase.storage
+    .from(normalizedBucket)
+    .list(normalizedPrefix || '', { limit, offset, sortBy });
+
+  if (error) {
+    const listError = new Error(error.message || 'Impossibile elencare gli oggetti Supabase');
+    listError.statusCode = Number(error.statusCode) || 500;
+    throw listError;
+  }
+
+  const entries = Array.isArray(data) ? data : [];
+  return entries
+    .filter((item) => item && item.name && item.metadata && typeof item.metadata.size === 'number')
+    .map((item) => {
+      const relativePath = normalizedPrefix ? `${normalizedPrefix}/${item.name}` : item.name;
+      return {
+        name: relativePath,
+        size: Number(item.metadata.size) || 0,
+        updatedAt: item.updated_at || item.created_at || null,
+      };
+    });
+};
+
 const parseStoragePath = (rawPath) => {
   const normalized = String(rawPath || '').trim().replace(/^\/+/, '');
   if (!normalized) {
@@ -2299,6 +2348,29 @@ app.post(
     }
   }
 );
+
+app.get('/api/storage', async (req, res) => {
+  try {
+    if (!supabase) {
+      return res.status(500).json({ ok: false, message: 'Supabase non configurato' });
+    }
+
+    const bucket = String(req.query?.bucket || '').trim();
+    if (!bucket) {
+      return res.status(400).json({ ok: false, message: 'Parametro bucket mancante' });
+    }
+
+    const prefixRaw = typeof req.query?.prefix === 'string' ? req.query.prefix : '';
+    const normalizedPrefix = normalizeStoragePrefix(prefixRaw);
+
+    const files = await listSupabaseObjects(bucket, normalizedPrefix);
+    return res.json({ ok: true, bucket, prefix: normalizedPrefix, files });
+  } catch (error) {
+    const status = Number(error?.statusCode) || 500;
+    const message = error && error.message ? error.message : 'Errore durante la lettura dello storage';
+    return res.status(status).json({ ok: false, message });
+  }
+});
 
 app.get('/api/markdown', async (req, res) => {
   try {
