@@ -1377,11 +1377,32 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     try {
       const downloadedAudio = await downloadFileFromBucket(SUPABASE_AUDIO_BUCKET, audioStoragePath);
       await fsp.writeFile(audioLocalPath, downloadedAudio);
-      const ff = await run('ffmpeg', ['-y', '-i', audioLocalPath, '-ac', '1', '-ar', '16000', wavLocalPath]);
-      if (ff.code !== 0) {
-        out(ff.stderr || 'ffmpeg failed', 'transcode', 'failed');
-        throw new Error('Transcodifica fallita');
-      }
+
+      if (audioLocalPath === wavLocalPath) {
+        const tempWavPath = registerTempFile(path.join(pipelineDir, `${baseName}_temp.wav`));
+        const ff = await run('ffmpeg', ['-y', '-i', audioLocalPath, '-ac', '1', '-ar', '16000', tempWavPath]);
+        if (ff.code !== 0) {
+          out(ff.stderr || 'ffmpeg failed', 'transcode', 'failed');
+          throw new Error('Transcodifica fallita');
+        }
+        await fsp.rename(tempWavPath, wavLocalPath);
+      } else {
+              if (audioLocalPath === wavLocalPath) {
+                const tempWavPath = registerTempFile(path.join(pipelineDir, `${baseName}_temp.wav`));
+                const ff = await run('ffmpeg', ['-y', '-i', audioLocalPath, '-ac', '1', '-ar', '16000', tempWavPath]);
+                if (ff.code !== 0) {
+                  out(ff.stderr || 'ffmpeg failed', 'transcode', 'failed');
+                  throw new Error('Transcodifica fallita');
+                }
+                await fsp.rename(tempWavPath, wavLocalPath);
+              } else {
+                const ff = await run('ffmpeg', ['-y', '-i', audioLocalPath, '-ac', '1', '-ar', '16000', wavLocalPath]);
+                if (ff.code !== 0) {
+                  out(ff.stderr || 'ffmpeg failed', 'transcode', 'failed');
+                  throw new Error('Transcodifica fallita');
+                }
+              }      }
+
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,
         wavStoragePath,

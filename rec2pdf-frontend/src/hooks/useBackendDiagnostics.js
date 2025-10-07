@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-export function useBackendDiagnostics(backendUrl) {
+export function useBackendDiagnostics(backendUrl, session) {
   const [backendUp, setBackendUp] = useState(null);
   const [checkingHealth, setCheckingHealth] = useState(false);
   const [diagnostics, setDiagnostics] = useState({
@@ -11,8 +11,13 @@ export function useBackendDiagnostics(backendUrl) {
   });
 
   const fetchBody = useCallback(async (url, options = {}) => {
+    const headers = { ...options.headers };
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+
     try {
-      const response = await fetch(url, options);
+      const response = await fetch(url, { ...options, headers });
       const contentType = response.headers.get("content-type") || "";
       const raw = await response.text();
       let data = null;
@@ -27,7 +32,7 @@ export function useBackendDiagnostics(backendUrl) {
     } catch (error) {
       return { ok: false, status: 0, data: null, raw: "", contentType: "", error };
     }
-  }, []);
+  }, [session]);
 
   const checkHealth = useCallback(async () => {
     if (!backendUrl) {

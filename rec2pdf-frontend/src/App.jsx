@@ -592,7 +592,7 @@ export default function Rec2PdfApp(){
     diagnostics,
     runDiagnostics: runBackendDiagnostics,
     fetchBody,
-  } = useBackendDiagnostics(backendUrl);
+  } = useBackendDiagnostics(backendUrl, session);
   const [onboardingComplete, setOnboardingComplete] = useState(() => localStorage.getItem('onboardingComplete') === 'true');
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem('onboardingComplete'));
   const [onboardingStep, setOnboardingStep] = useState(0);
@@ -859,12 +859,12 @@ export default function Rec2PdfApp(){
   );
 
   useEffect(() => {
-    if (!backendUrl) {
+    if (!backendUrl || !sessionChecked) {
       setPrompts([]);
       return;
     }
     fetchPrompts({ silent: true });
-  }, [backendUrl, fetchPrompts]);
+  }, [backendUrl, fetchPrompts, sessionChecked]);
 
   const fetchWorkspaces = useCallback(
     async (options = {}) => {
@@ -898,8 +898,9 @@ export default function Rec2PdfApp(){
   );
 
   useEffect(() => {
+    if (!sessionChecked) return;
     fetchWorkspaces({ silent: true });
-  }, [fetchWorkspaces]);
+  }, [fetchWorkspaces, sessionChecked]);
 
   const handleCreateWorkspace = useCallback(
     async ({ name, client, color, statuses }) => {
