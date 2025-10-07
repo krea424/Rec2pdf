@@ -49,19 +49,36 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const extractAuthToken = (req) => {
+  const authHeader = req.headers.authorization || '';
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (match && match[1]) {
+    const token = match[1].trim();
+    if (token) {
+      return token;
+    }
+  }
+
+  const queryToken = typeof req.query?.token === 'string' ? req.query.token.trim() : '';
+  if (queryToken) {
+    return queryToken;
+  }
+
+  const accessToken = typeof req.query?.access_token === 'string' ? req.query.access_token.trim() : '';
+  if (accessToken) {
+    return accessToken;
+  }
+
+  return '';
+};
+
 const authenticateRequest = async (req, res, next) => {
   if (!isAuthEnabled) {
     req.user = { id: 'local-dev', role: 'anon' };
     return next();
   }
 
-  const authHeader = req.headers.authorization || '';
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const token = match[1].trim();
+  const token = extractAuthToken(req);
   if (!token) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
