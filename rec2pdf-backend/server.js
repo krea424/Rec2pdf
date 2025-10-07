@@ -741,6 +741,28 @@ const downloadFileFromBucket = async (bucket, objectPath) => {
   return Buffer.from(arrayBuffer);
 };
 
+const parseStoragePath = (rawPath) => {
+  const normalized = String(rawPath || '').trim().replace(/^\/+/, '');
+  if (!normalized) {
+    const error = new Error('Percorso storage mancante');
+    error.statusCode = 400;
+    throw error;
+  }
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length < 2) {
+    const error = new Error('Percorso storage non valido');
+    error.statusCode = 400;
+    throw error;
+  }
+  const [bucket, ...objectParts] = segments;
+  if (!bucket || objectParts.length === 0) {
+    const error = new Error('Percorso storage non valido');
+    error.statusCode = 400;
+    throw error;
+  }
+  return { bucket, objectPath: objectParts.join('/') };
+};
+
 const DEFAULT_PROMPTS = [
   {
     id: 'prompt_brief_creativo',
@@ -1782,6 +1804,11 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     const baseName = workspaceMeta
       ? await buildWorkspaceBaseName(workspaceMeta, dest, slug)
       : `${yyyymmddHHMMSS(new Date())}_${slug}`;
+    const userId = req.user?.id || 'anonymous';
+    const processedBasePath = `processed/${userId}`;
+    const mdStoragePath = `${processedBasePath}/${baseName}.md`;
+    const pdfStoragePath = `${processedBasePath}/${baseName}.pdf`;
+
     const mdPath = path.join(dest, `${baseName}.md`);
 
     await fsp.copyFile(mdUpload.path, mdPath);
@@ -1828,6 +1855,22 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     }
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
+
+    out('☁️ Upload degli artefatti su Supabase…', 'publish', 'running');
+    await uploadFileToBucket(
+      SUPABASE_PROCESSED_BUCKET,
+      mdStoragePath,
+      await fsp.readFile(mdPath),
+      'text/markdown; charset=utf-8'
+    );
+    await uploadFileToBucket(
+      SUPABASE_PROCESSED_BUCKET,
+      pdfStoragePath,
+      await fsp.readFile(pdfPath),
+      'application/pdf'
+    );
+    out('☁️ Artefatti caricati su Supabase Storage', 'publish', 'info');
+
     out('🎉 Pipeline completata', 'complete', 'completed');
 
     const structure = await analyzeMarkdownStructure(mdPath, { prompt: selectedPrompt });
@@ -1839,8 +1882,8 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     });
     return res.json({
       ok: true,
-      pdfPath,
-      mdPath,
+      pdfPath: `${SUPABASE_PROCESSED_BUCKET}/${pdfStoragePath}`,
+      mdPath: `${SUPABASE_PROCESSED_BUCKET}/${mdStoragePath}`,
       logs,
       stageEvents,
       workspace: workspaceAssignment,
@@ -2068,8 +2111,8 @@ app.post(
       });
       return res.json({
         ok: true,
-        pdfPath,
-        mdPath,
+        pdfPath: `${SUPABASE_PROCESSED_BUCKET}/${pdfStoragePath}`,
+        mdPath: `${SUPABASE_PROCESSED_BUCKET}/${mdStoragePath}`,
         logs,
         stageEvents,
         workspace: workspaceAssignment,
@@ -2102,18 +2145,36 @@ app.get('/api/markdown', async (req, res) => {
     if (!rawPath) {
       return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante' });
     }
+    if (!supabase) {
+      return res.status(500).json({ ok: false, message: 'Supabase non configurato' });
+    }
 
-    const absPath = path.resolve(rawPath);
-    if (!absPath.toLowerCase().endsWith('.md')) {
+    let bucket;
+    let objectPath;
+    try {
+      ({ bucket, objectPath } = parseStoragePath(rawPath));
+    } catch (parseError) {
+      const status = Number(parseError.statusCode) || 400;
+      return res.status(status).json({ ok: false, message: parseError.message });
+    }
+
+    if (!objectPath.toLowerCase().endsWith('.md')) {
       return res.status(400).json({ ok: false, message: 'Il file deve avere estensione .md' });
     }
 
-    await fsp.access(absPath, fs.constants.R_OK);
-    const content = await fsp.readFile(absPath, 'utf8');
-    return res.json({ ok: true, path: absPath, content });
+    const { data, error } = await supabase.storage.from(bucket).download(objectPath);
+    if (error || !data) {
+      const status = Number(error?.statusCode) === 404 ? 404 : 500;
+      const message = error?.message || 'Download Markdown fallito';
+      return res.status(status).json({ ok: false, message });
+    }
+
+    const buffer = Buffer.from(await data.arrayBuffer());
+    const content = buffer.toString('utf8');
+    return res.json({ ok: true, path: `${bucket}/${objectPath}`, content });
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
-    const code = err && err.code === 'ENOENT' ? 404 : 500;
+    const code = Number(err?.statusCode) || 500;
     return res.status(code).json({ ok: false, message });
   }
 });
@@ -2124,33 +2185,50 @@ app.put('/api/markdown', async (req, res) => {
     if (!rawPath) {
       return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante' });
     }
+    if (!supabase) {
+      return res.status(500).json({ ok: false, message: 'Supabase non configurato' });
+    }
 
     const content = req.body?.content;
     if (typeof content !== 'string') {
       return res.status(400).json({ ok: false, message: 'Contenuto Markdown non valido' });
     }
 
-    const absPath = path.resolve(rawPath);
-    if (!absPath.toLowerCase().endsWith('.md')) {
+    let bucket;
+    let objectPath;
+    try {
+      ({ bucket, objectPath } = parseStoragePath(rawPath));
+    } catch (parseError) {
+      const status = Number(parseError.statusCode) || 400;
+      return res.status(status).json({ ok: false, message: parseError.message });
+    }
+
+    if (!objectPath.toLowerCase().endsWith('.md')) {
       return res.status(400).json({ ok: false, message: 'Il file deve avere estensione .md' });
     }
 
-    await fsp.access(absPath, fs.constants.W_OK);
-
-    try {
-      const backupName = `${path.basename(absPath)}.${yyyymmddHHMMSS()}.bak`;
-      const backupPath = path.join(path.dirname(absPath), backupName);
-      await fsp.copyFile(absPath, backupPath);
-    } catch (backupError) {
-      // Ignore backup errors (e.g. permissions); continue with save.
+    const { data, error } = await supabase.storage.from(bucket).download(objectPath);
+    if (error || !data) {
+      const status = Number(error?.statusCode) === 404 ? 404 : 500;
+      const message = error?.message || 'Markdown non trovato';
+      return res.status(status).json({ ok: false, message });
     }
 
-    await fsp.writeFile(absPath, content, 'utf8');
-    const stats = await fsp.stat(absPath);
-    return res.json({ ok: true, path: absPath, bytes: stats.size, mtime: stats.mtimeMs });
+    const existingBuffer = Buffer.from(await data.arrayBuffer());
+    try {
+      const backupObjectPath = `${objectPath}.${yyyymmddHHMMSS()}.bak`;
+      await uploadFileToBucket(bucket, backupObjectPath, existingBuffer, 'text/markdown; charset=utf-8');
+    } catch (backupError) {
+      console.warn(`⚠️  Impossibile creare backup su Supabase: ${backupError.message}`);
+    }
+
+    const nextBuffer = Buffer.from(content, 'utf8');
+    await uploadFileToBucket(bucket, objectPath, nextBuffer, 'text/markdown; charset=utf-8');
+
+    return res.json({ ok: true, path: `${bucket}/${objectPath}`, bytes: nextBuffer.length });
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
-    const code = err && err.code === 'ENOENT' ? 404 : 500;
+    const code = Number(err?.statusCode) || 500;
     return res.status(code).json({ ok: false, message });
   }
 });
@@ -2164,13 +2242,16 @@ app.get('/api/file', async (req, res) => {
     if (!supabase) {
       return res.status(500).json({ ok: false, message: 'Supabase non configurato' });
     }
-    const normalized = rawPath.replace(/^\/+/, '');
-    const segments = normalized.split('/').filter(Boolean);
-    if (segments.length < 2) {
-      return res.status(400).json({ ok: false, message: 'Percorso storage non valido' });
+
+    let bucket;
+    let objectPath;
+    try {
+      ({ bucket, objectPath } = parseStoragePath(rawPath));
+    } catch (parseError) {
+      const status = Number(parseError.statusCode) || 400;
+      return res.status(status).json({ ok: false, message: parseError.message });
     }
-    const [bucket, ...objectParts] = segments;
-    const objectPath = objectParts.join('/');
+
     const { data, error } = await supabase.storage.from(bucket).createSignedUrl(objectPath, 60);
     if (error || !data?.signedUrl) {
       const message = error?.message || 'Impossibile generare URL firmato';
