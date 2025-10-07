@@ -823,6 +823,45 @@ export default function Rec2PdfApp(){
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
 
+  const getSessionToken = useCallback(async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      return data?.session?.access_token || null;
+    } catch (error) {
+      console.warn('Unable to retrieve session token', error);
+      return null;
+    }
+  }, []);
+
+  const applyAuthToOptions = useCallback(
+    async (options = {}) => {
+      const token = await getSessionToken();
+      if (!token) {
+        return { ...options };
+      }
+      const headers = new Headers(options.headers || {});
+      headers.set('Authorization', `Bearer ${token}`);
+      return { ...options, headers };
+    },
+    [getSessionToken]
+  );
+
+  const fetchBodyWithAuth = useCallback(
+    async (url, options = {}) => {
+      const optsWithAuth = await applyAuthToOptions(options);
+      return fetchBody(url, optsWithAuth);
+    },
+    [applyAuthToOptions, fetchBody]
+  );
+
+  const fetchWithAuth = useCallback(
+    async (url, options = {}) => {
+      const optsWithAuth = await applyAuthToOptions(options);
+      return fetch(url, optsWithAuth);
+    },
+    [applyAuthToOptions]
+  );
+
   const fetchPrompts = useCallback(
     async (options = {}) => {
       const normalized = normalizeBackendUrlValue(options.backendUrlOverride || backendUrl);
@@ -836,7 +875,7 @@ export default function Rec2PdfApp(){
         setPromptLoading(true);
       }
       try {
-        const result = await fetchBody(`${normalized}/api/prompts`, { method: 'GET' });
+        const result = await fetchBodyWithAuth(`${normalized}/api/prompts`, { method: 'GET' });
         if (result.ok && Array.isArray(result.data?.prompts)) {
           setPrompts(result.data.prompts);
         } else if (!result.ok && !options?.silent) {
@@ -855,7 +894,7 @@ export default function Rec2PdfApp(){
         }
       }
     },
-    [backendUrl, fetchBody, pushLogs]
+    [backendUrl, fetchBodyWithAuth, pushLogs]
   );
 
   useEffect(() => {
@@ -877,7 +916,7 @@ export default function Rec2PdfApp(){
       }
       setWorkspaceLoading(true);
       try {
-        const result = await fetchBody(`${normalized}/api/workspaces`, { method: 'GET' });
+        const result = await fetchBodyWithAuth(`${normalized}/api/workspaces`, { method: 'GET' });
         if (result.ok && Array.isArray(result.data?.workspaces)) {
           setWorkspaces(result.data.workspaces);
         } else if (!result.ok && !options?.silent) {
@@ -894,7 +933,7 @@ export default function Rec2PdfApp(){
         setWorkspaceLoading(false);
       }
     },
-    [backendUrl, fetchBody, pushLogs]
+    [backendUrl, fetchBodyWithAuth, pushLogs]
   );
 
   useEffect(() => {
@@ -924,7 +963,7 @@ export default function Rec2PdfApp(){
             .filter(Boolean)
         : [];
       try {
-        const response = await fetch(`${normalized}/api/workspaces`, {
+        const response = await fetchWithAuth(`${normalized}/api/workspaces`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -959,7 +998,7 @@ export default function Rec2PdfApp(){
         return { ok: false, message };
       }
     },
-    [backendUrl, pushLogs, workspaceSelection.workspaceId]
+    [backendUrl, fetchWithAuth, pushLogs, workspaceSelection.workspaceId]
   );
 
   const handleEnsureWorkspaceProject = useCallback(
@@ -1044,7 +1083,7 @@ export default function Rec2PdfApp(){
       }
 
       try {
-        const response = await fetch(`${normalized}/api/workspaces/${workspaceId}`, {
+        const response = await fetchWithAuth(`${normalized}/api/workspaces/${workspaceId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ projects }),
@@ -1070,7 +1109,7 @@ export default function Rec2PdfApp(){
         return { ok: false, message };
       }
     },
-    [backendUrl, workspaces, fetchWorkspaces, pushLogs]
+    [backendUrl, fetchWithAuth, workspaces, fetchWorkspaces, pushLogs]
   );
 
   const handleAssignEntryWorkspace = useCallback(
@@ -1105,7 +1144,10 @@ export default function Rec2PdfApp(){
         return { ok: false, message: 'Backend non configurato per il documento selezionato.' };
       }
       try {
-        const response = await fetch(`${backendTarget}/api/markdown?path=${encodeURIComponent(mdPathResolved)}`);
+        const response = await fetchWithAuth(
+          `${backendTarget}/api/markdown?path=${encodeURIComponent(mdPathResolved)}`,
+          { method: 'GET' }
+        );
         let payload = {};
         try {
           payload = await response.json();
@@ -1127,7 +1169,7 @@ export default function Rec2PdfApp(){
         return { ok: false, message: error?.message || 'Errore durante il recupero dell\'anteprima.' };
       }
     },
-    [backendUrl]
+    [backendUrl, fetchWithAuth]
   );
 
   const handleSaveWorkspaceFilter = useCallback(
@@ -1225,7 +1267,7 @@ export default function Rec2PdfApp(){
       if (!normalized) {
         return { ok: false, message: 'Configura un backend valido prima di creare prompt.' };
       }
-      const result = await fetchBody(`${normalized}/api/prompts`, {
+      const result = await fetchBodyWithAuth(`${normalized}/api/prompts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -1241,7 +1283,7 @@ export default function Rec2PdfApp(){
       const message = result.data?.message || result.raw || 'Impossibile creare il prompt.';
       return { ok: false, message };
     },
-    [backendUrl, fetchBody]
+    [backendUrl, fetchBodyWithAuth]
   );
 
   const handleDeletePrompt = useCallback(
@@ -1250,7 +1292,7 @@ export default function Rec2PdfApp(){
       if (!normalized) {
         return { ok: false, message: 'Backend non configurato' };
       }
-      const result = await fetchBody(`${normalized}/api/prompts/${encodeURIComponent(promptId)}`, {
+      const result = await fetchBodyWithAuth(`${normalized}/api/prompts/${encodeURIComponent(promptId)}`, {
         method: 'DELETE',
       });
       if (result.ok) {
@@ -1262,7 +1304,7 @@ export default function Rec2PdfApp(){
       }
       return result;
     },
-    [backendUrl, fetchBody]
+    [backendUrl, fetchBodyWithAuth]
   );
 
   const handleAdoptNavigatorSelection = useCallback(() => {
@@ -1537,7 +1579,7 @@ export default function Rec2PdfApp(){
       }
       const cap=Number(secondsCap||0);
       if(cap>0) fd.append('seconds',String(cap));
-      const {ok,status,data,raw}=await fetchBody(`${backendUrl}/api/rec2pdf`,{method:'POST',body:fd});
+      const {ok,status,data,raw}=await fetchBodyWithAuth(`${backendUrl}/api/rec2pdf`,{method:'POST',body:fd});
       const stageEventsPayload = Array.isArray(data?.stageEvents) ? data.stageEvents : [];
       if(!ok){
         if (stageEventsPayload.length) {
@@ -1723,7 +1765,7 @@ export default function Rec2PdfApp(){
         if(match&&match[0]) endpointLabel=match[0];
         else endpointLabel=targetEndpoint;
       }
-      const {ok,status,data,raw,contentType}=await fetchBody(targetEndpoint,{method:'POST',body:fd});
+      const {ok,status,data,raw,contentType}=await fetchBodyWithAuth(targetEndpoint,{method:'POST',body:fd});
       const stageEventsPayload=Array.isArray(data?.stageEvents)?data.stageEvents:[];
       if(!ok){
         if(stageEventsPayload.length){
@@ -2187,7 +2229,10 @@ export default function Rec2PdfApp(){
     pushLogs([`✏️ Apertura editor Markdown (${mdPathResolved})`]);
 
     try {
-      const response = await fetch(`${normalizedBackend}/api/markdown?path=${encodeURIComponent(mdPathResolved)}`);
+      const response = await fetchWithAuth(
+        `${normalizedBackend}/api/markdown?path=${encodeURIComponent(mdPathResolved)}`,
+        { method: 'GET' }
+      );
       let payload = {};
       try {
         payload = await response.json();
@@ -2235,7 +2280,7 @@ export default function Rec2PdfApp(){
         return { ...prev, loading: false, error: message };
       });
     }
-  }, [normalizedBackendUrl, pushLogs, setHistory, setErrorBanner]);
+  }, [fetchWithAuth, normalizedBackendUrl, pushLogs, setHistory, setErrorBanner]);
 
   const handleRepublishFromMd = useCallback(async (entry, overrideMdPath) => {
     const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
@@ -2275,7 +2320,7 @@ export default function Rec2PdfApp(){
         fd.append('pdfLogo', customPdfLogo);
       }
 
-      const response = await fetch(`${backendUsed}/api/ppubr`, {
+      const response = await fetchWithAuth(`${backendUsed}/api/ppubr`, {
         method: 'POST',
         body: fd,
       });
@@ -2327,7 +2372,7 @@ export default function Rec2PdfApp(){
     } finally {
       setBusy(false);
     }
-  }, [busy, normalizedBackendUrl, pushLogs, setErrorBanner, setBusy, setPdfPath, setMdPath, setHistory, setActivePanel, customPdfLogo]);
+  }, [busy, customPdfLogo, fetchWithAuth, normalizedBackendUrl, pushLogs, setActivePanel, setBusy, setErrorBanner, setHistory, setMdPath, setPdfPath]);
 
   const handleMdEditorChange = useCallback((nextValue) => {
     setMdEditor((prev) => ({
@@ -2354,7 +2399,7 @@ export default function Rec2PdfApp(){
 
     setMdEditor((prev) => ({ ...prev, saving: true, error: '', success: '' }));
     try {
-      const response = await fetch(`${backendTarget}/api/markdown`, {
+      const response = await fetchWithAuth(`${backendTarget}/api/markdown`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: targetPath, content: nextContent }),
@@ -2408,7 +2453,7 @@ export default function Rec2PdfApp(){
         return { ...prev, saving: false, error: message, success: '' };
       });
     }
-  }, [mdEditor, pushLogs, setHistory]);
+  }, [fetchWithAuth, mdEditor, pushLogs, setHistory]);
 
   const handleRepublishFromEditor = useCallback(() => {
     if (!mdEditor?.entry) return;
