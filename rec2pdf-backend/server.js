@@ -49,19 +49,36 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const extractAuthToken = (req) => {
+  const authHeader = req.headers.authorization || '';
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (match && match[1]) {
+    const token = match[1].trim();
+    if (token) {
+      return token;
+    }
+  }
+
+  const queryToken = typeof req.query?.token === 'string' ? req.query.token.trim() : '';
+  if (queryToken) {
+    return queryToken;
+  }
+
+  const accessToken = typeof req.query?.access_token === 'string' ? req.query.access_token.trim() : '';
+  if (accessToken) {
+    return accessToken;
+  }
+
+  return '';
+};
+
 const authenticateRequest = async (req, res, next) => {
   if (!isAuthEnabled) {
     req.user = { id: 'local-dev', role: 'anon' };
     return next();
   }
 
-  const authHeader = req.headers.authorization || '';
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const token = match[1].trim();
+  const token = extractAuthToken(req);
   if (!token) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
@@ -739,6 +756,28 @@ const downloadFileFromBucket = async (bucket, objectPath) => {
   }
   const arrayBuffer = await data.arrayBuffer();
   return Buffer.from(arrayBuffer);
+};
+
+const parseStoragePath = (rawPath) => {
+  const normalized = String(rawPath || '').trim().replace(/^\/+/, '');
+  if (!normalized) {
+    const error = new Error('Percorso storage mancante');
+    error.statusCode = 400;
+    throw error;
+  }
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length < 2) {
+    const error = new Error('Percorso storage non valido');
+    error.statusCode = 400;
+    throw error;
+  }
+  const [bucket, ...objectParts] = segments;
+  if (!bucket || objectParts.length === 0) {
+    const error = new Error('Percorso storage non valido');
+    error.statusCode = 400;
+    throw error;
+  }
+  return { bucket, objectPath: objectParts.join('/') };
 };
 
 const DEFAULT_PROMPTS = [
@@ -1585,11 +1624,93 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
   const logs = [];
   const out = (s) => { logs.push(s); };
   let customLogoPath = null;
+  let workDir = '';
+  const cleanupFiles = new Set();
+  let usedSupabaseFlow = false;
 
   try {
     const mdPathRaw = String(req.body?.mdPath || '').trim();
     if (!mdPathRaw) {
       return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante', logs });
+    }
+
+    const looksLikeStoragePath =
+      !!supabase &&
+      !path.isAbsolute(mdPathRaw) &&
+      !mdPathRaw.startsWith('./') &&
+      !mdPathRaw.startsWith('../') &&
+      mdPathRaw.includes('/');
+
+    if (req.files?.pdfLogo?.length) {
+      const logoFile = req.files.pdfLogo[0];
+      customLogoPath = await ensureTempFileHasExtension(logoFile);
+      if (customLogoPath) {
+        out(`🎨 Utilizzo logo personalizzato: ${logoFile.originalname}`);
+      }
+    }
+
+    const publishEnv = buildEnvOptions(
+      customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
+    );
+
+    if (looksLikeStoragePath) {
+      let bucket;
+      let objectPath;
+      try {
+        ({ bucket, objectPath } = parseStoragePath(mdPathRaw));
+      } catch (parseError) {
+        const status = Number(parseError.statusCode) || 400;
+        return res.status(status).json({ ok: false, message: parseError.message, logs });
+      }
+
+      if (!objectPath.toLowerCase().endsWith('.md')) {
+        return res.status(400).json({ ok: false, message: 'Il file deve avere estensione .md', logs });
+      }
+
+      out(`♻️ Rigenerazione PDF da Supabase (${bucket}/${objectPath})`);
+
+      const pdfObjectPath = objectPath.replace(/\.md$/i, '.pdf');
+      workDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf_ppubr_'));
+      usedSupabaseFlow = true;
+
+      const mdLocalPath = path.join(workDir, path.basename(objectPath));
+      const pdfLocalPath = path.join(workDir, path.basename(pdfObjectPath));
+      cleanupFiles.add(mdLocalPath);
+      cleanupFiles.add(pdfLocalPath);
+
+      const mdBuffer = await downloadFileFromBucket(bucket, objectPath);
+      await fsp.writeFile(mdLocalPath, mdBuffer);
+
+      const pb = await callPublishScript(mdLocalPath, publishEnv);
+      if (pb.code !== 0) {
+        out(pb.stderr || pb.stdout || 'publish.sh failed');
+        out('Tentativo fallback pandoc…');
+      }
+
+      if (!fs.existsSync(pdfLocalPath)) {
+        out('publish.sh non ha generato un PDF, fallback su pandoc…');
+        const pandoc = await zsh(
+          `cd ${JSON.stringify(workDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalPath)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalPath)}`,
+          publishEnv
+        );
+        if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
+          out(pandoc.stderr || pandoc.stdout || 'pandoc failed');
+          throw new Error('Rigenerazione PDF fallita');
+        }
+        out('✅ PDF creato tramite fallback pandoc');
+      }
+
+      await uploadFileToBucket(
+        bucket,
+        pdfObjectPath,
+        await fsp.readFile(pdfLocalPath),
+        'application/pdf'
+      );
+      out(`☁️ PDF aggiornato su Supabase: ${pdfObjectPath}`);
+
+      const normalizedMdPath = `${bucket}/${objectPath}`;
+      const normalizedPdfPath = `${bucket}/${pdfObjectPath}`;
+      return res.json({ ok: true, pdfPath: normalizedPdfPath, mdPath: normalizedMdPath, logs });
     }
 
     const mdPath = path.resolve(mdPathRaw);
@@ -1603,18 +1724,6 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
 
     const dest = path.dirname(mdPath);
     out(`♻️ Rigenerazione PDF con publish.sh da ${mdPath}`);
-
-    if (req.files?.pdfLogo?.length) {
-      const logoFile = req.files.pdfLogo[0];
-      customLogoPath = await ensureTempFileHasExtension(logoFile);
-      if (customLogoPath) {
-        out(`🎨 Utilizzo logo personalizzato: ${logoFile.originalname}`);
-      }
-    }
-
-    const publishEnv = buildEnvOptions(
-      customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
-    );
 
     const pb = await callPublishScript(mdPath, publishEnv);
     if (pb.code !== 0) {
@@ -1644,7 +1753,16 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
     out(String(err && err.message ? err.message : err));
     return res.status(500).json({ ok: false, message: String(err && err.message ? err.message : err), logs });
   } finally {
-    try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch { }
+    if (customLogoPath) {
+      await safeUnlink(customLogoPath);
+    }
+    if (usedSupabaseFlow) {
+      for (const filePath of cleanupFiles) {
+        await safeUnlink(filePath);
+      }
+      await safeRemoveDir(workDir);
+    }
+    try { if (req.files && req.files.pdfLogo) await safeUnlink(req.files.pdfLogo[0].path); } catch { }
   }
 });
 
@@ -1782,6 +1900,11 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     const baseName = workspaceMeta
       ? await buildWorkspaceBaseName(workspaceMeta, dest, slug)
       : `${yyyymmddHHMMSS(new Date())}_${slug}`;
+    const userId = req.user?.id || 'anonymous';
+    const processedBasePath = `processed/${userId}`;
+    const mdStoragePath = `${processedBasePath}/${baseName}.md`;
+    const pdfStoragePath = `${processedBasePath}/${baseName}.pdf`;
+
     const mdPath = path.join(dest, `${baseName}.md`);
 
     await fsp.copyFile(mdUpload.path, mdPath);
@@ -1828,6 +1951,22 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     }
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
+
+    out('☁️ Upload degli artefatti su Supabase…', 'publish', 'running');
+    await uploadFileToBucket(
+      SUPABASE_PROCESSED_BUCKET,
+      mdStoragePath,
+      await fsp.readFile(mdPath),
+      'text/markdown; charset=utf-8'
+    );
+    await uploadFileToBucket(
+      SUPABASE_PROCESSED_BUCKET,
+      pdfStoragePath,
+      await fsp.readFile(pdfPath),
+      'application/pdf'
+    );
+    out('☁️ Artefatti caricati su Supabase Storage', 'publish', 'info');
+
     out('🎉 Pipeline completata', 'complete', 'completed');
 
     const structure = await analyzeMarkdownStructure(mdPath, { prompt: selectedPrompt });
@@ -1839,8 +1978,8 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     });
     return res.json({
       ok: true,
-      pdfPath,
-      mdPath,
+      pdfPath: `${SUPABASE_PROCESSED_BUCKET}/${pdfStoragePath}`,
+      mdPath: `${SUPABASE_PROCESSED_BUCKET}/${mdStoragePath}`,
       logs,
       stageEvents,
       workspace: workspaceAssignment,
@@ -2068,8 +2207,8 @@ app.post(
       });
       return res.json({
         ok: true,
-        pdfPath,
-        mdPath,
+        pdfPath: `${SUPABASE_PROCESSED_BUCKET}/${pdfStoragePath}`,
+        mdPath: `${SUPABASE_PROCESSED_BUCKET}/${mdStoragePath}`,
         logs,
         stageEvents,
         workspace: workspaceAssignment,
@@ -2102,18 +2241,36 @@ app.get('/api/markdown', async (req, res) => {
     if (!rawPath) {
       return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante' });
     }
+    if (!supabase) {
+      return res.status(500).json({ ok: false, message: 'Supabase non configurato' });
+    }
 
-    const absPath = path.resolve(rawPath);
-    if (!absPath.toLowerCase().endsWith('.md')) {
+    let bucket;
+    let objectPath;
+    try {
+      ({ bucket, objectPath } = parseStoragePath(rawPath));
+    } catch (parseError) {
+      const status = Number(parseError.statusCode) || 400;
+      return res.status(status).json({ ok: false, message: parseError.message });
+    }
+
+    if (!objectPath.toLowerCase().endsWith('.md')) {
       return res.status(400).json({ ok: false, message: 'Il file deve avere estensione .md' });
     }
 
-    await fsp.access(absPath, fs.constants.R_OK);
-    const content = await fsp.readFile(absPath, 'utf8');
-    return res.json({ ok: true, path: absPath, content });
+    const { data, error } = await supabase.storage.from(bucket).download(objectPath);
+    if (error || !data) {
+      const status = Number(error?.statusCode) === 404 ? 404 : 500;
+      const message = error?.message || 'Download Markdown fallito';
+      return res.status(status).json({ ok: false, message });
+    }
+
+    const buffer = Buffer.from(await data.arrayBuffer());
+    const content = buffer.toString('utf8');
+    return res.json({ ok: true, path: `${bucket}/${objectPath}`, content });
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
-    const code = err && err.code === 'ENOENT' ? 404 : 500;
+    const code = Number(err?.statusCode) || 500;
     return res.status(code).json({ ok: false, message });
   }
 });
@@ -2124,33 +2281,50 @@ app.put('/api/markdown', async (req, res) => {
     if (!rawPath) {
       return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante' });
     }
+    if (!supabase) {
+      return res.status(500).json({ ok: false, message: 'Supabase non configurato' });
+    }
 
     const content = req.body?.content;
     if (typeof content !== 'string') {
       return res.status(400).json({ ok: false, message: 'Contenuto Markdown non valido' });
     }
 
-    const absPath = path.resolve(rawPath);
-    if (!absPath.toLowerCase().endsWith('.md')) {
+    let bucket;
+    let objectPath;
+    try {
+      ({ bucket, objectPath } = parseStoragePath(rawPath));
+    } catch (parseError) {
+      const status = Number(parseError.statusCode) || 400;
+      return res.status(status).json({ ok: false, message: parseError.message });
+    }
+
+    if (!objectPath.toLowerCase().endsWith('.md')) {
       return res.status(400).json({ ok: false, message: 'Il file deve avere estensione .md' });
     }
 
-    await fsp.access(absPath, fs.constants.W_OK);
-
-    try {
-      const backupName = `${path.basename(absPath)}.${yyyymmddHHMMSS()}.bak`;
-      const backupPath = path.join(path.dirname(absPath), backupName);
-      await fsp.copyFile(absPath, backupPath);
-    } catch (backupError) {
-      // Ignore backup errors (e.g. permissions); continue with save.
+    const { data, error } = await supabase.storage.from(bucket).download(objectPath);
+    if (error || !data) {
+      const status = Number(error?.statusCode) === 404 ? 404 : 500;
+      const message = error?.message || 'Markdown non trovato';
+      return res.status(status).json({ ok: false, message });
     }
 
-    await fsp.writeFile(absPath, content, 'utf8');
-    const stats = await fsp.stat(absPath);
-    return res.json({ ok: true, path: absPath, bytes: stats.size, mtime: stats.mtimeMs });
+    const existingBuffer = Buffer.from(await data.arrayBuffer());
+    try {
+      const backupObjectPath = `${objectPath}.${yyyymmddHHMMSS()}.bak`;
+      await uploadFileToBucket(bucket, backupObjectPath, existingBuffer, 'text/markdown; charset=utf-8');
+    } catch (backupError) {
+      console.warn(`⚠️  Impossibile creare backup su Supabase: ${backupError.message}`);
+    }
+
+    const nextBuffer = Buffer.from(content, 'utf8');
+    await uploadFileToBucket(bucket, objectPath, nextBuffer, 'text/markdown; charset=utf-8');
+
+    return res.json({ ok: true, path: `${bucket}/${objectPath}`, bytes: nextBuffer.length });
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
-    const code = err && err.code === 'ENOENT' ? 404 : 500;
+    const code = Number(err?.statusCode) || 500;
     return res.status(code).json({ ok: false, message });
   }
 });
@@ -2164,13 +2338,16 @@ app.get('/api/file', async (req, res) => {
     if (!supabase) {
       return res.status(500).json({ ok: false, message: 'Supabase non configurato' });
     }
-    const normalized = rawPath.replace(/^\/+/, '');
-    const segments = normalized.split('/').filter(Boolean);
-    if (segments.length < 2) {
-      return res.status(400).json({ ok: false, message: 'Percorso storage non valido' });
+
+    let bucket;
+    let objectPath;
+    try {
+      ({ bucket, objectPath } = parseStoragePath(rawPath));
+    } catch (parseError) {
+      const status = Number(parseError.statusCode) || 400;
+      return res.status(status).json({ ok: false, message: parseError.message });
     }
-    const [bucket, ...objectParts] = segments;
-    const objectPath = objectParts.join('/');
+
     const { data, error } = await supabase.storage.from(bucket).createSignedUrl(objectPath, 60);
     if (error || !data?.signedUrl) {
       const message = error?.message || 'Impossibile generare URL firmato';
