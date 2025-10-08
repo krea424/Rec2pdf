@@ -12,6 +12,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 7788;
+const HOST = process.env.HOST || '0.0.0.0';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
@@ -32,10 +33,15 @@ if (!isAuthEnabled) {
   console.warn('⚠️  Supabase non configurato: il backend è avviato senza autenticazione (MODALITÀ SVILUPPO).');
 }
 // ===== Configurazione Path =====
-const PROJECT_ROOT = process.env.PROJECT_ROOT || path.join(__dirname, '..');
+const PROJECT_ROOT = path.resolve(__dirname, '..');
 const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT || path.join(PROJECT_ROOT, 'Scripts', 'publish.sh');
 const TEMPLATES_DIR = process.env.TEMPLATES_DIR || path.join(PROJECT_ROOT, 'Templates');
 const ASSETS_DIR = process.env.ASSETS_DIR || path.join(PROJECT_ROOT, 'rec2pdf-frontend', 'src', 'assets');
+
+console.log('📁 Percorsi backend configurati:');
+console.log(`   PROJECT_ROOT:   ${PROJECT_ROOT}`);
+console.log(`   PUBLISH_SCRIPT: ${PUBLISH_SCRIPT}`);
+console.log(`   TEMPLATES_DIR:  ${TEMPLATES_DIR}`);
 
 // Verifica che lo script esista all'avvio
 if (!fs.existsSync(PUBLISH_SCRIPT)) {
@@ -2520,7 +2526,8 @@ app.use((req, res, next) => {
   return next();
 });
 
-app.listen(PORT, () => {
-  console.log(`rec2pdf backend in ascolto su http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  const hostLabel = HOST === '0.0.0.0' ? '0.0.0.0' : HOST;
+  console.log(`rec2pdf backend in ascolto su http://${hostLabel}:${PORT}`);
 });
 ;

@@ -10,6 +10,8 @@ RUN apt-get update \
         python3 \
         python3-pip \
         git \
+        build-essential \
+        rustc \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Whisper via pip
