@@ -46,7 +46,23 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
   console.log(`✅ Script publish.sh trovato: ${PUBLISH_SCRIPT}`);
 }
 
-app.use(cors({ origin: true, credentials: true }));
+const whitelist = [
+  'http://localhost:5173', // Per il tuo sviluppo locale
+  'https://rec2pdf-frontend.vercel.app' // Per la produzione
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (whitelist.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
