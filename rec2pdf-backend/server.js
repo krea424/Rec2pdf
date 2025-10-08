@@ -2506,7 +2506,7 @@ app.get('/api/file', async (req, res) => {
     }
 
     res.setHeader('Cache-Control', 'no-store');
-    return res.redirect(302, targetUrl);
+    return res.json({ ok: true, url: targetUrl });
   } catch (error) {
     const message = error && error.message ? error.message : String(error);
     return res.status(500).json({ ok: false, message });

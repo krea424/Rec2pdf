@@ -75,10 +75,9 @@ const projectOptionsFromWorkspace = (workspace) => {
 export default function CloudLibraryPanel({
   backendUrl,
   fetchBody,
-  buildFileUrl,
-  sessionToken,
   selection,
   onAssignWorkspace,
+  onOpenFile,
   workspaces = [],
   themeStyles = {},
   defaultBucket = DEFAULT_BUCKET,
@@ -339,29 +338,28 @@ export default function CloudLibraryPanel({
               </tr>
             ) : (
               files.map((file) => {
-                const downloadUrl =
-                  backendUrl && file?.name
-                    ? buildFileUrl(
-                        backendUrl,
-                        `${resolvedBucket}/${file.name}`,
-                        sessionToken ? { token: sessionToken } : undefined
-                      )
-                    : "";
+                const fullPath =
+                  backendUrl && file?.name ? `${resolvedBucket}/${file.name}` : "";
                 return (
                   <tr key={file.name} className="transition hover:bg-indigo-500/10">
                     <td className="px-4 py-3 align-top">
                       <div className="flex flex-col gap-1">
                         <span className="font-medium text-zinc-100">{file.name}</span>
-                        {downloadUrl ? (
-                          <a
-                            href={downloadUrl}
-                            className="inline-flex items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200"
-                            target="_blank"
-                            rel="noreferrer"
+                        {fullPath && typeof onOpenFile === "function" ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onOpenFile({
+                                backendUrl,
+                                path: fullPath,
+                                label: file.name,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 text-xs text-indigo-300 transition hover:text-indigo-200"
                           >
                             <LinkIcon className="h-3 w-3" />
                             Apri file firmato
-                          </a>
+                          </button>
                         ) : (
                           <span className="text-xs text-zinc-500">URL non disponibile.</span>
                         )}
