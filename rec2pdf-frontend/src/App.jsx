@@ -880,6 +880,86 @@ export default function Rec2PdfApp(){
     [applyAuthToOptions]
   );
 
+  const requestSignedFileUrl = useCallback(
+    async (backendUrl, filePath) => {
+      const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+      if (!normalizedBackend) {
+        throw new Error('Backend non configurato.');
+      }
+      const trimmedPath = typeof filePath === 'string' ? filePath.trim() : '';
+      if (!trimmedPath) {
+        throw new Error('Percorso file non disponibile.');
+      }
+
+      const token = sessionToken || (await getSessionToken()) || '';
+      const target = buildFileUrl(normalizedBackend, trimmedPath, token ? { token } : undefined);
+      const response = await fetchWithAuth(target, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch {
+        payload = {};
+      }
+
+      if (!response.ok) {
+        const message = payload?.message || `Impossibile generare URL firmato (HTTP ${response.status})`;
+        throw new Error(message);
+      }
+
+      const signedUrl = typeof payload?.url === 'string' ? payload.url.trim() : '';
+      if (!signedUrl) {
+        throw new Error('URL firmato non disponibile.');
+      }
+
+      return signedUrl;
+    },
+    [fetchWithAuth, getSessionToken, sessionToken]
+  );
+
+  const openSignedFileInNewTab = useCallback(
+    async ({ backendUrl, path, label = 'file', directUrl = '' }) => {
+      const normalizedPath = typeof path === 'string' ? path.trim() : '';
+      if (!normalizedPath) {
+        throw new Error(`Percorso ${label} non disponibile.`);
+      }
+
+      if (typeof window === 'undefined') {
+        throw new Error(`Impossibile aprire il ${label} in questo ambiente.`);
+      }
+
+      const newTab = window.open('about:blank', '_blank');
+      if (!newTab) {
+        throw new Error(`Apertura del ${label} bloccata dal browser. Abilita i pop-up e riprova.`);
+      }
+
+      try {
+        if (directUrl) {
+          newTab.location.href = directUrl;
+          return { url: directUrl, tab: newTab };
+        }
+
+        const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+        if (!normalizedBackend) {
+          throw new Error(`Backend non configurato per aprire il ${label}.`);
+        }
+
+        const signedUrl = await requestSignedFileUrl(normalizedBackend, normalizedPath);
+        newTab.location.href = signedUrl;
+        return { url: signedUrl, tab: newTab };
+      } catch (error) {
+        if (!newTab.closed) {
+          newTab.close();
+        }
+        throw error;
+      }
+    },
+    [requestSignedFileUrl]
+  );
+
   const fetchPrompts = useCallback(
     async (options = {}) => {
       const normalized = normalizeBackendUrlValue(options.backendUrlOverride || backendUrl);
@@ -2217,21 +2297,6 @@ export default function Rec2PdfApp(){
 
   const normalizedBackendUrl = useMemo(() => normalizeBackendUrlValue(backendUrl), [backendUrl]);
 
-  const pdfDownloadUrl = useMemo(() => {
-    if (!pdfPath || !normalizedBackendUrl) return '';
-    return buildFileUrl(normalizedBackendUrl, pdfPath, sessionToken ? { token: sessionToken } : undefined);
-  }, [pdfPath, normalizedBackendUrl, sessionToken]);
-
-  const mdDownloadUrl = useMemo(() => {
-    if (!mdPath || !normalizedBackendUrl) return '';
-    return buildFileUrl(normalizedBackendUrl, mdPath, sessionToken ? { token: sessionToken } : undefined);
-  }, [mdPath, normalizedBackendUrl, sessionToken]);
-
-  const mdEditorDownloadUrl = useMemo(() => {
-    if (!mdEditor?.path || !mdEditor?.backendUrl) return '';
-    return buildFileUrl(mdEditor.backendUrl, mdEditor.path, sessionToken ? { token: sessionToken } : undefined);
-  }, [mdEditor?.path, mdEditor?.backendUrl, sessionToken]);
-
   const mdEditorDirty = useMemo(() => mdEditor.content !== mdEditor.originalContent, [mdEditor.content, mdEditor.originalContent]);
 
   useEffect(() => {
@@ -2269,124 +2334,189 @@ export default function Rec2PdfApp(){
   const handleOpenHistoryPdf = useCallback(
     async (entry) => {
       if (!entry?.pdfPath) return;
-      if (typeof window === 'undefined') return;
 
       const rawPdfUrl = typeof entry.pdfUrl === 'string' ? entry.pdfUrl : '';
       const isBackendProxyUrl = rawPdfUrl.includes('/api/file?');
       const directUrl = rawPdfUrl.startsWith('http') && !isBackendProxyUrl ? rawPdfUrl : '';
-      if (directUrl) {
-        window.open(directUrl, '_blank', 'noopener,noreferrer');
-        return;
-      }
 
-      const backendTarget = normalizeBackendUrlValue(entry.backendUrl || normalizedBackendUrl);
-      if (!backendTarget) {
+      const backendTarget = entry?.backendUrl || normalizedBackendUrl;
+      if (!directUrl && !normalizeBackendUrlValue(backendTarget)) {
         pushLogs(['❌ Backend non configurato per aprire il PDF.']);
         return;
       }
 
-      const newWindow = window.open('about:blank', '_blank', 'noopener,noreferrer');
-      if (!newWindow) {
-        pushLogs(['❌ Apertura del PDF bloccata dal browser. Abilita i pop-up e riprova.']);
-        return;
-      }
-
       try {
-        const token = (await getSessionToken()) || sessionToken || '';
-        const target = buildFileUrl(backendTarget, entry.pdfPath, token ? { token } : undefined);
-        if (!target) {
-          throw new Error('Percorso PDF non disponibile.');
-        }
-        newWindow.location.replace(target);
+        await openSignedFileInNewTab({
+          backendUrl: backendTarget,
+          path: entry.pdfPath,
+          label: 'PDF',
+          directUrl,
+        });
       } catch (error) {
-        newWindow.close();
         const message = error?.message || 'Impossibile aprire il PDF.';
         pushLogs([`❌ ${message}`]);
       }
     },
-    [getSessionToken, normalizedBackendUrl, pushLogs, sessionToken]
+    [normalizedBackendUrl, openSignedFileInNewTab, pushLogs]
   );
 
-  const handleOpenHistoryMd = useCallback(async (entry, overrideMdPath) => {
-    const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
-    if (!mdPathResolved) {
-      const label = entry?.title || entry?.slug || 'sessione';
-      pushLogs([`❌ Percorso Markdown non disponibile per ${label}.`]);
-      return;
-    }
+  const handleOpenHistoryMd = useCallback(
+    async (entry, overrideMdPath, options = {}) => {
+      const { openInNewTab = false, skipEditor = false, backendUrlOverride, directUrlOverride } = options || {};
 
-    const backendTarget = entry?.backendUrl || normalizedBackendUrl;
-    const normalizedBackend = normalizeBackendUrlValue(backendTarget);
-    if (!normalizedBackend) {
-      const message = 'Configura un backend valido per modificare il Markdown.';
-      pushLogs([`❌ ${message}`]);
-      setErrorBanner({ title: 'Backend non configurato', details: message });
-      return;
-    }
+      const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
+      if (!mdPathResolved) {
+        const label = entry?.title || entry?.slug || 'sessione';
+        pushLogs([`❌ Percorso Markdown non disponibile per ${label}.`]);
+        return;
+      }
 
-    setMdEditor({
-      ...EMPTY_EDITOR_STATE,
-      open: true,
-      entry,
-      path: mdPathResolved,
-      backendUrl: normalizedBackend,
-      loading: true,
-    });
-    pushLogs([`✏️ Apertura editor Markdown (${mdPathResolved})`]);
+      const backendTarget = backendUrlOverride || entry?.backendUrl || normalizedBackendUrl;
+      const normalizedBackend = normalizeBackendUrlValue(backendTarget);
 
-    try {
-      const response = await fetchWithAuth(
-        `${normalizedBackend}/api/markdown?path=${encodeURIComponent(mdPathResolved)}`,
-        { method: 'GET' }
-      );
-      let payload = {};
+      const rawMdUrl = typeof directUrlOverride === 'string' ? directUrlOverride : typeof entry?.mdUrl === 'string' ? entry.mdUrl : '';
+      const isProxyUrl = rawMdUrl.includes('/api/file?');
+      const directUrl = rawMdUrl.startsWith('http') && !isProxyUrl ? rawMdUrl : '';
+
+      if (openInNewTab) {
+        if (!directUrl && !normalizedBackend) {
+          pushLogs(['❌ Backend non configurato per aprire il Markdown.']);
+          if (skipEditor) {
+            return;
+          }
+        } else {
+          try {
+            await openSignedFileInNewTab({
+              backendUrl: backendTarget,
+              path: mdPathResolved,
+              label: 'Markdown',
+              directUrl,
+            });
+          } catch (error) {
+            const message = error?.message || 'Impossibile aprire il Markdown.';
+            pushLogs([`❌ ${message}`]);
+            return;
+          }
+        }
+
+        if (skipEditor) {
+          return;
+        }
+      }
+
+      if (!normalizedBackend) {
+        const message = 'Configura un backend valido per modificare il Markdown.';
+        pushLogs([`❌ ${message}`]);
+        setErrorBanner({ title: 'Backend non configurato', details: message });
+        return;
+      }
+
+      setMdEditor({
+        ...EMPTY_EDITOR_STATE,
+        open: true,
+        entry,
+        path: mdPathResolved,
+        backendUrl: normalizedBackend,
+        loading: true,
+      });
+      pushLogs([`✏️ Apertura editor Markdown (${mdPathResolved})`]);
+
       try {
-        payload = await response.json();
-      } catch {
-        payload = {};
-      }
-
-      if (!response.ok) {
-        const message = payload?.message || `Impossibile caricare il Markdown (HTTP ${response.status})`;
-        throw new Error(message);
-      }
-
-      const content = typeof payload?.content === 'string' ? payload.content : '';
-      setMdEditor((prev) => {
-        if (prev.path !== mdPathResolved) {
-          return prev;
+        const response = await fetchWithAuth(
+          `${normalizedBackend}/api/markdown?path=${encodeURIComponent(mdPathResolved)}`,
+          { method: 'GET' }
+        );
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch {
+          payload = {};
         }
-        return {
-          ...prev,
-          loading: false,
-          content,
-          originalContent: content,
-          error: '',
-          success: '',
-        };
-      });
-      setHistory((prev) =>
-        prev.map((item) =>
-          item.id === entry.id
-            ? {
-                ...item,
-                mdPath: mdPathResolved,
-                backendUrl: normalizedBackend,
-              }
-            : item
-        )
-      );
-    } catch (err) {
-      const message = err && err.message ? err.message : String(err);
-      pushLogs([`❌ ${message}`]);
-      setMdEditor((prev) => {
-        if (prev.path !== mdPathResolved) {
-          return prev;
+
+        if (!response.ok) {
+          const message = payload?.message || `Impossibile caricare il Markdown (HTTP ${response.status})`;
+          throw new Error(message);
         }
-        return { ...prev, loading: false, error: message };
-      });
+
+        const content = typeof payload?.content === 'string' ? payload.content : '';
+        setMdEditor((prev) => {
+          if (prev.path !== mdPathResolved) {
+            return prev;
+          }
+          return {
+            ...prev,
+            loading: false,
+            content,
+            originalContent: content,
+            error: '',
+            success: '',
+          };
+        });
+        setHistory((prev) =>
+          prev.map((item) =>
+            item.id === entry.id
+              ? {
+                  ...item,
+                  mdPath: mdPathResolved,
+                  backendUrl: normalizedBackend,
+                }
+              : item
+          )
+        );
+      } catch (err) {
+        const message = err && err.message ? err.message : String(err);
+        pushLogs([`❌ ${message}`]);
+        setMdEditor((prev) => {
+          if (prev.path !== mdPathResolved) {
+            return prev;
+          }
+          return { ...prev, loading: false, error: message };
+        });
+      }
+    },
+    [fetchWithAuth, normalizedBackendUrl, openSignedFileInNewTab, pushLogs, setErrorBanner, setHistory]
+  );
+
+  const handleOpenMdInNewTab = useCallback(() => {
+    if (!mdEditor?.path) {
+      return;
     }
-  }, [fetchWithAuth, normalizedBackendUrl, pushLogs, setHistory, setErrorBanner]);
+
+    void handleOpenHistoryMd(mdEditor.entry, mdEditor.path, {
+      openInNewTab: true,
+      skipEditor: true,
+      backendUrlOverride: mdEditor.backendUrl,
+      directUrlOverride: mdEditor?.entry?.mdUrl || '',
+    });
+  }, [handleOpenHistoryMd, mdEditor]);
+
+  const handleOpenLibraryFile = useCallback(
+    async ({ backendUrl: backendOverride, path, label }) => {
+      const resolvedPath = typeof path === 'string' ? path.trim() : '';
+      if (!resolvedPath) {
+        pushLogs(['❌ Percorso file non disponibile.']);
+        return;
+      }
+
+      const backendTarget = backendOverride || normalizedBackendUrl;
+      if (!normalizeBackendUrlValue(backendTarget)) {
+        pushLogs(['❌ Backend non configurato per aprire il file selezionato.']);
+        return;
+      }
+
+      try {
+        await openSignedFileInNewTab({
+          backendUrl: backendTarget,
+          path: resolvedPath,
+          label: label || 'file',
+        });
+      } catch (error) {
+        const message = error?.message || 'Impossibile aprire il file selezionato.';
+        pushLogs([`❌ ${message}`]);
+      }
+    },
+    [normalizedBackendUrl, openSignedFileInNewTab, pushLogs]
+  );
 
   const handleRepublishFromMd = useCallback(async (entry, overrideMdPath) => {
     const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
@@ -3383,10 +3513,9 @@ export default function Rec2PdfApp(){
               <CloudLibraryPanel
                 backendUrl={normalizedBackendUrl}
                 fetchBody={fetchBody}
-                buildFileUrl={buildFileUrl}
-                sessionToken={sessionToken}
                 selection={navigatorSelection}
                 onAssignWorkspace={handleLibraryWorkspaceSelection}
+                onOpenFile={handleOpenLibraryFile}
                 workspaces={workspaces}
                 themeStyles={themes[theme]}
               />
@@ -3421,7 +3550,7 @@ export default function Rec2PdfApp(){
         error={mdEditor.error}
         success={mdEditor.success}
         hasUnsavedChanges={mdEditorDirty}
-        downloadUrl={mdEditorDownloadUrl}
+        onOpenInNewTab={handleOpenMdInNewTab}
         busy={busy}
         themeStyles={themes[theme]}
       />

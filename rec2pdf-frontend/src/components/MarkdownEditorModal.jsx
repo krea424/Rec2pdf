@@ -16,7 +16,7 @@ export default function MarkdownEditorModal({
   error,
   success,
   hasUnsavedChanges,
-  downloadUrl,
+  onOpenInNewTab,
   busy,
   themeStyles,
 }) {
@@ -93,15 +93,14 @@ export default function MarkdownEditorModal({
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-6 py-4 text-xs">
           <div className="flex items-center gap-2 text-zinc-500">
-            {downloadUrl && (
-              <a
-                href={downloadUrl}
-                target="_blank"
-                rel="noreferrer"
+            {typeof onOpenInNewTab === 'function' && (
+              <button
+                type="button"
+                onClick={() => onOpenInNewTab?.()}
                 className="flex items-center gap-1 rounded-lg bg-zinc-800/70 px-3 py-1.5 text-xs text-zinc-200 transition hover:bg-zinc-700/80"
               >
                 <ExternalLink className="h-3.5 w-3.5" /> Apri in nuova scheda
-              </a>
+              </button>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
