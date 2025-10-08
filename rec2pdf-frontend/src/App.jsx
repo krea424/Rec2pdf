@@ -13,6 +13,8 @@ import MarkdownEditorModal from "./components/MarkdownEditorModal";
 import LoginPage from "./components/LoginPage";
 import supabase from "./supabaseClient";
 
+const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
+
 const fmtBytes = (bytes) => { if (!bytes && bytes !== 0) return "—"; const u=["B","KB","MB","GB"]; let i=0,v=bytes; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(v<10&&i>0?1:0)} ${u[i]}`; };
 const fmtTime = (s) => { const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const sec=Math.floor(s%60); return [h,m,sec].map(n=>String(n).padStart(2,'0')).join(":"); };
 const HISTORY_STORAGE_KEY = 'rec2pdfHistory';
@@ -394,7 +396,7 @@ export default function Rec2PdfApp(){
   const [destDir,setDestDir]=useState("/Users/tuo_utente/Recordings");
   const [slug,setSlug]=useState("meeting");
   const [secondsCap,setSecondsCap]=useState(0);
-  const [backendUrl,setBackendUrl]=useState("http://localhost:7788");
+  const [backendUrl,setBackendUrl]=useState(DEFAULT_BACKEND_URL);
   const [busy,setBusy]=useState(false);
   const [logs,setLogs]=useState([]);
   const [pdfPath,setPdfPath]=useState("");
@@ -1644,7 +1646,7 @@ export default function Rec2PdfApp(){
     if(!blob) return;
     const blobSource='name'in blob?'upload':'recording';
     if(!backendUrl){
-      setErrorBanner({title:'Backend URL mancante',details:'Imposta http://localhost:7788 o il tuo endpoint.'});
+      setErrorBanner({title:'Backend URL mancante',details:`Imposta ${DEFAULT_BACKEND_URL} o il tuo endpoint.`});
       return;
     }
     resetPipelineProgress(true);
@@ -1810,7 +1812,7 @@ export default function Rec2PdfApp(){
   const processMarkdownUpload=async(file,options={})=>{
     if(!file) return;
     if(!backendUrl){
-      setErrorBanner({title:'Backend URL mancante',details:'Imposta http://localhost:7788 o il tuo endpoint.'});
+      setErrorBanner({title:'Backend URL mancante',details:`Imposta ${DEFAULT_BACKEND_URL} o il tuo endpoint.`});
       return;
     }
     const endpointOverride=options.endpoint;
@@ -2117,7 +2119,7 @@ export default function Rec2PdfApp(){
   }, []);
 
   const handleBackendDefault = useCallback(() => {
-    setBackendUrl('http://localhost:7788');
+    setBackendUrl(DEFAULT_BACKEND_URL);
   }, [setBackendUrl]);
 
   const handleBackendSettings = useCallback(() => {
@@ -2137,7 +2139,7 @@ export default function Rec2PdfApp(){
 
     const urlStatus = !backendUrl ? 'pending' : backendUrlValid ? 'success' : 'error';
     const urlMessage = !backendUrl
-      ? 'Inserisci l\'URL del backend (es. http://localhost:7788).'
+      ? `Inserisci l'URL del backend (es. ${DEFAULT_BACKEND_URL}).`
       : backendUrlValid
         ? 'URL valido: il frontend può contattare il backend.'
         : 'Controlla che l\'URL includa protocollo (http/https) e porta corretti.';
@@ -2933,7 +2935,7 @@ export default function Rec2PdfApp(){
           <div className="flex items-center gap-2">
             <span className={classNames("inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm", backendUp?"bg-emerald-950 text-emerald-300":backendUp===false?"bg-rose-950 text-rose-300":"bg-zinc-800 text-zinc-300")}>{backendUp?<><CheckCircle2 className="w-4 h-4"/> Backend OK</>:backendUp===false?<><AlertCircle className="w-4 h-4"/> Backend OFF</>:<>—</>}
             </span>
-            <div className={classNames("flex items-center gap-2 rounded-xl px-3 py-2 border", themes[theme].input)}><LinkIcon className="w-4 h-4 text-zinc-400"/><input value={backendUrl} onChange={e=>setBackendUrl(e.target.value)} placeholder="http://localhost:7788" className="bg-transparent outline-none text-sm w-[220px]"/></div>
+            <div className={classNames("flex items-center gap-2 rounded-xl px-3 py-2 border", themes[theme].input)}><LinkIcon className="w-4 h-4 text-zinc-400"/><input value={backendUrl} onChange={e=>setBackendUrl(e.target.value)} placeholder={DEFAULT_BACKEND_URL} className="bg-transparent outline-none text-sm w-[220px]"/></div>
             <button onClick={runDiagnostics} className={classNames("px-3 py-2 rounded-xl text-sm flex items-center gap-2 border", themes[theme].input, themes[theme].input_hover)}><Bug className="w-4 h-4"/> Diagnostica</button>
             <button onClick={openSetupAssistant} className={classNames("px-3 py-2 rounded-xl text-sm flex items-center gap-2 border shadow-sm", themes[theme].button)}>
               <Sparkles className="w-4 h-4"/> Setup assistant
@@ -3524,7 +3526,7 @@ export default function Rec2PdfApp(){
         </div>
         {!onboardingComplete && (
           <div className="mt-10 text-xs text-zinc-500">
-            <p>Assicurati che il backend sia attivo su http://localhost:7788 e che ffmpeg e la toolchain siano configurati nella shell di esecuzione.</p>
+            <p>Assicurati che il backend sia attivo su {DEFAULT_BACKEND_URL} e che ffmpeg e la toolchain siano configurati nella shell di esecuzione.</p>
           </div>
         )}
       </div>
