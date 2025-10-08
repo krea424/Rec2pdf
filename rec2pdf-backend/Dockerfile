@@ -15,7 +15,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Whisper via pip
-RUN pip3 install --no-cache-dir openai-whisper
+RUN pip3 install --no-cache-dir --break-system-packages openai-whisper
 
 # Set working directory
 WORKDIR /app

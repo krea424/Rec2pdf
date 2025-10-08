@@ -33,6 +33,8 @@ if (!isAuthEnabled) {
   console.warn('⚠️  Supabase non configurato: il backend è avviato senza autenticazione (MODALITÀ SVILUPPO).');
 }
 // ===== Configurazione Path =====
+// Il PROJECT_ROOT è la cartella che CONTIENE le cartelle 'rec2pdf-backend', 'Scripts', etc.
+// Dato che server.js è in 'rec2pdf-backend', dobbiamo salire di un livello.
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT || path.join(PROJECT_ROOT, 'Scripts', 'publish.sh');
 const TEMPLATES_DIR = process.env.TEMPLATES_DIR || path.join(PROJECT_ROOT, 'Templates');
@@ -51,7 +53,28 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
   console.log(`✅ Script publish.sh trovato: ${PUBLISH_SCRIPT}`);
 }
 
-app.use(cors({ origin: true, credentials: true }));
+const whitelist = [
+  'http://localhost:5173', // Per il tuo sviluppo locale
+  'https://rec2pdf-frontend.vercel.app' // Per la produzione
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // --- INIZIO BLOCCO DI DEBUG ---
+    console.log('CORS Check: Richiesta ricevuta da origin ->', origin);
+    // --- FINE BLOCCO DI DEBUG ---
+
+    if (whitelist.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      console.error(`CORS BLOCCO: L'origine "${origin}" non è nella whitelist.`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
