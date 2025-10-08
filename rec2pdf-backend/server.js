@@ -40,6 +40,11 @@ const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT || path.join(PROJECT_ROOT, 'Sc
 const TEMPLATES_DIR = process.env.TEMPLATES_DIR || path.join(PROJECT_ROOT, 'Templates');
 const ASSETS_DIR = process.env.ASSETS_DIR || path.join(PROJECT_ROOT, 'rec2pdf-frontend', 'src', 'assets');
 
+console.log('📁 Percorsi backend configurati:');
+console.log(`   PROJECT_ROOT:   ${PROJECT_ROOT}`);
+console.log(`   PUBLISH_SCRIPT: ${PUBLISH_SCRIPT}`);
+console.log(`   TEMPLATES_DIR:  ${TEMPLATES_DIR}`);
+
 // Verifica che lo script esista all'avvio
 if (!fs.existsSync(PUBLISH_SCRIPT)) {
   console.warn(`⚠️  ATTENZIONE: Script publish.sh non trovato in ${PUBLISH_SCRIPT}`);
