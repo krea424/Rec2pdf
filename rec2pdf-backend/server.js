@@ -48,28 +48,13 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
   console.log(`✅ Script publish.sh trovato: ${PUBLISH_SCRIPT}`);
 }
 
-const whitelist = [
-  'http://localhost:5173', // Per il tuo sviluppo locale
-  'https://rec2pdf-frontend.vercel.app' // Per la produzione
-];
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    // --- INIZIO BLOCCO DI DEBUG ---
-    console.log('CORS Check: Richiesta ricevuta da origin ->', origin);
-    // --- FINE BLOCCO DI DEBUG ---
-
-    if (whitelist.indexOf(origin) !== -1 || !origin) {
-      callback(null, true);
-    } else {
-      console.error(`CORS BLOCCO: L'origine "${origin}" non è nella whitelist.`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-};
-
-app.use(cors(corsOptions));
+app.use(cors({
+  origin: [
+    'http://localhost:5173',
+    'https://rec2pdf-frontend.vercel.app'
+  ],
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
