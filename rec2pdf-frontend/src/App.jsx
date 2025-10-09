@@ -2849,7 +2849,7 @@ export default function Rec2PdfApp(){
             <img
               src={customLogo || logo}
               alt="Logo Preview"
-              className="max-h-20 md:max-h-24 w-auto object-contain"
+              className="max-h-24 md:max-h-32 lg:max-h-40 w-auto object-contain"
             />
           </div>
         </div>
@@ -2937,7 +2937,7 @@ export default function Rec2PdfApp(){
             <img
               src={customLogo || logo}
               alt="ThinkDoc Logo"
-              className="h-16 md:h-20 w-auto object-contain"
+              className="h-20 md:h-28 lg:h-32 w-auto object-contain"
             />
           </div>
           <div className="flex items-center gap-2">
