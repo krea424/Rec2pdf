@@ -66,6 +66,29 @@ export default function LoginPage() {
     }
   };
 
+  const signInWithGoogle = async () => {
+    setLoading(true);
+    setMessage('');
+    setMessageType('');
+
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}`,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      setMessage(error.message || 'Accesso con Google fallito.');
+      setMessageType('error');
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100 flex items-center justify-center px-4">
       <div className="w-full max-w-md space-y-6 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-8 shadow-xl">
@@ -129,6 +152,15 @@ export default function LoginPage() {
           disabled={loading}
         >
           Accedi con GitHub
+        </button>
+
+        <button
+          type="button"
+          onClick={signInWithGoogle}
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-800/70 px-4 py-2 text-sm font-medium transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={loading}
+        >
+          Accedi con Google
         </button>
       </div>
     </div>
