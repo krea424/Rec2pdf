@@ -2846,7 +2846,11 @@ export default function Rec2PdfApp(){
         <div className="mt-4">
           <label className="text-sm text-zinc-400">Anteprima Logo Frontend</label>
           <div className={classNames("mt-2 p-4 rounded-xl flex items-center justify-center", themes[theme].input)}>
-            <img src={customLogo || logo} alt="Logo Preview" style={{ maxHeight: '60px', maxWidth: '200px' }} />
+            <img
+              src={customLogo || logo}
+              alt="Logo Preview"
+              className="max-h-24 md:max-h-32 lg:max-h-40 w-auto object-contain"
+            />
           </div>
         </div>
       </div>
@@ -2929,8 +2933,12 @@ export default function Rec2PdfApp(){
     <div className={classNames("min-h-screen w-full","bg-gradient-to-b", themes[theme].bg,"text-zinc-100")}>
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <img src={customLogo || logo} alt="ThinkDoc Logo" style={{ width: '200px', height: '60px' }} />
+          <div className="flex items-center">
+            <img
+              src={customLogo || logo}
+              alt="ThinkDoc Logo"
+              className="h-20 md:h-28 lg:h-32 w-auto object-contain"
+            />
           </div>
           <div className="flex items-center gap-2">
             <span className={classNames("inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm", backendUp?"bg-emerald-950 text-emerald-300":backendUp===false?"bg-rose-950 text-rose-300":"bg-zinc-800 text-zinc-300")}>{backendUp?<><CheckCircle2 className="w-4 h-4"/> Backend OK</>:backendUp===false?<><AlertCircle className="w-4 h-4"/> Backend OFF</>:<>—</>}
