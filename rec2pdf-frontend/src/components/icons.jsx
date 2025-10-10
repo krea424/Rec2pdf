@@ -194,6 +194,14 @@ export const ClipboardList = (props) => (
   </IconBase>
 );
 
+export const LogOut = (props) => (
+  <IconBase {...props}>
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <polyline points="16 17 21 12 16 7" />
+    <line x1="21" y1="12" x2="9" y2="12" />
+  </IconBase>
+);
+
 export const Palette = (props) => (
   <IconBase {...props}>
     <path d="M12 22c-4.97 0-9-3.58-9-8s4.03-8 9-8 9 3.58 9 8a4 4 0 0 1-4 4h-1a2 2 0 0 0-2 2v1a1 1 0 0 1-1 1Z" />

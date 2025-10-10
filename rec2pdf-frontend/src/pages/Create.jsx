@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import {
   Bug,
   Cpu,
@@ -10,11 +11,12 @@ import {
   TimerIcon,
   Upload,
   Info,
+  CheckCircle2,
 } from "../components/icons";
 import PromptLibrary from "../components/PromptLibrary";
 import { useAppContext } from "../hooks/useAppContext";
 import { classNames } from "../utils/classNames";
-import { Toast } from "../components/ui";
+import { Button, Toast } from "../components/ui";
 
 const ErrorBanner = () => {
   const { errorBanner, setErrorBanner } = useAppContext();
@@ -115,16 +117,18 @@ const CreatePage = () => {
           <div className="mt-8 flex items-center justify-center">
             <button
               type="button"
+              aria-pressed={context.recording}
               onClick={
                 context.recording
                   ? context.stopRecording
                   : context.startRecording
               }
               className={classNames(
-                "flex h-40 w-40 flex-col items-center justify-center gap-2 rounded-full text-lg font-semibold shadow-xl transition",
+                "group relative flex h-44 w-44 items-center justify-center overflow-hidden rounded-full text-center text-white transition-all duration-300 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60",
+                "before:absolute before:inset-[7%] before:rounded-full before:border before:border-white/15 before:opacity-90 before:transition-opacity before:content-['']",
                 context.recording
-                  ? "bg-rose-600 hover:bg-rose-500"
-                  : "bg-emerald-600 hover:bg-emerald-500",
+                  ? "bg-gradient-to-br from-rose-500 via-rose-600 to-rose-700 shadow-[0_28px_55px_-28px_rgba(244,63,94,0.95)] focus-visible:ring-4 focus-visible:ring-rose-300/60 animate-pulse"
+                  : "bg-gradient-to-br from-emerald-400 via-emerald-500 to-emerald-600 shadow-[0_32px_70px_-30px_rgba(16,185,129,0.9)] hover:-translate-y-1 hover:shadow-[0_42px_90px_-32px_rgba(16,185,129,0.95)] focus-visible:ring-4 focus-visible:ring-emerald-300/70",
               )}
               disabled={
                 context.busy ||
@@ -140,12 +144,28 @@ const CreatePage = () => {
               }
             >
               {context.recording ? (
-                <div className="flex flex-col items-center gap-2">
-                  <Square className="h-8 w-8" /> Stop
+                <div className="pointer-events-none flex flex-col items-center gap-3">
+                  <span className="flex h-16 w-16 items-center justify-center rounded-full border border-white/25 bg-white/15 shadow-inner shadow-rose-900/30">
+                    <Square className="h-7 w-7" />
+                  </span>
+                  <span className="text-sm font-semibold uppercase tracking-[0.32em] text-white/90">
+                    Stop
+                  </span>
+                  <span className="text-xs font-medium text-white/70">
+                    Registrazione attiva
+                  </span>
                 </div>
               ) : (
-                <div className="flex flex-col items-center gap-2">
-                  <Mic className="h-8 w-8" /> Rec
+                <div className="pointer-events-none flex flex-col items-center gap-3">
+                  <span className="flex h-16 w-16 items-center justify-center rounded-full border border-white/20 bg-white/10 shadow-inner shadow-emerald-900/30 transition-transform duration-300 group-hover:scale-105 group-active:scale-95">
+                    <Mic className="h-7 w-7" />
+                  </span>
+                  <span className="text-sm font-semibold uppercase tracking-[0.32em] text-white/90">
+                    Rec
+                  </span>
+                  <span className="text-xs font-medium text-white/70">
+                    Avvia nuova sessione
+                  </span>
                 </div>
               )}
             </button>
@@ -212,7 +232,11 @@ const CreatePage = () => {
                   context.backendUp === false
                 }
                 className={classNames(
-                  "flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium hover:bg-indigo-500",
+                  "flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0",
+                  isBoardroom
+                    ? "shadow-[0_26px_60px_-32px_rgba(61,176,255,0.85)] focus-visible:ring-sky-200/70 hover:shadow-[0_34px_80px_-36px_rgba(61,176,255,0.95)]"
+                    : "text-white shadow-sm focus-visible:ring-indigo-300 hover:shadow",
+                  themes[theme].button,
                   (!context.audioBlob ||
                     context.busy ||
                     context.backendUp === false) &&
@@ -578,6 +602,58 @@ const CreatePage = () => {
                 <span>{context.progressPercent}%</span>
               </div>
             </div>
+            {context.pipelineComplete && (
+              <div
+                className={classNames(
+                  "mt-4 space-y-3 rounded-xl border px-4 py-3 text-sm shadow-md transition",
+                  isBoardroom
+                    ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-100 shadow-[0_28px_70px_-45px_rgba(16,185,129,0.9)]"
+                    : "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <span
+                    className={classNames(
+                      "flex h-9 w-9 items-center justify-center rounded-full border",
+                      isBoardroom
+                        ? "border-emerald-300/60 bg-emerald-400/20 text-emerald-50"
+                        : "border-emerald-400/60 bg-emerald-500/20 text-emerald-50",
+                    )}
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                  </span>
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold tracking-tight">
+                      Pipeline completata
+                    </p>
+                    <p
+                      className={classNames(
+                        "text-xs leading-relaxed",
+                        isBoardroom
+                          ? "text-emerald-100/90"
+                          : "text-emerald-100/85",
+                      )}
+                    >
+                      Il documento generato è stato salvato nella Library con i
+                      riferimenti della sessione.
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <RouterLink
+                    to="/library"
+                    className={classNames(
+                      "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0",
+                      isBoardroom
+                        ? "border border-emerald-300/60 bg-emerald-400/15 text-emerald-50 hover:bg-emerald-400/25 focus-visible:ring-emerald-200/60"
+                        : "border border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 focus-visible:ring-emerald-200/70",
+                    )}
+                  >
+                    Vai alla Library
+                  </RouterLink>
+                </div>
+              </div>
+            )}
             <div className="space-y-4">
               {context.PIPELINE_STAGES.map((stage, index) => {
                 const status = context.pipelineStatus[stage.key] || "idle";

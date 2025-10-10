@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { AlertCircle, Maximize, Sparkles } from "../../components/icons";
+import { AlertCircle, LogOut, Maximize, Sparkles } from "../../components/icons";
 import logoAsset from "../../assets/logo.svg";
 import { classNames } from "../../utils/classNames";
 import { useAppContext } from "../../hooks/useAppContext";
@@ -59,6 +59,7 @@ const AppShell = () => {
     setSettingsOpen,
     openSettingsDrawer,
     toggleFullScreen,
+    handleLogout,
     theme,
     themes,
   } = useAppContext();
@@ -95,6 +96,15 @@ const AppShell = () => {
                 leadingIcon={Sparkles}
               >
                 Impostazioni
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="gap-2 px-3 text-sm font-medium text-surface-200 hover:text-white"
+                onClick={handleLogout}
+                leadingIcon={LogOut}
+              >
+                Logout
               </Button>
               <IconButton
                 variant="ghost"
