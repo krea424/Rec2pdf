@@ -96,7 +96,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-surface-950 via-surface-900 to-surface-950 px-4 text-surface-50">
       <div className="w-full max-w-md space-y-6 rounded-3xl border border-surface-800 bg-surface-900/80 p-8 shadow-raised">
         <div className="flex flex-col items-center space-y-4 text-center">
-          <img src={logo} alt="ThinkDoc Logo" className="h-16" />
+          <img src={logo} alt="ThinkDoc Logo" className="h-12" />
           <div>
             <h1 className="text-2xl font-semibold text-surface-25">Accedi a ThinkDoc</h1>
             <p className="mt-1 text-sm text-surface-300">
