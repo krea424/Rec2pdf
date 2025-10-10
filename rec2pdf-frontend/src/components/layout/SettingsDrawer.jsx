@@ -158,6 +158,7 @@ export default function SettingsDrawer({ open, onClose }) {
 
   const clearStateOnClose = () => {
     setShowSetupAssistant(false);
+    setActiveSettingsSection(null);
     onClose?.();
   };
 
@@ -873,7 +874,8 @@ export default function SettingsDrawer({ open, onClose }) {
     handleSelectStatusForPipeline,
   ]);
 
-  const ActiveIcon = sectionNav.find((item) => item.key === activeSettingsSection)?.icon ?? Bug;
+  const activeSection = sectionNav.find((item) => item.key === activeSettingsSection);
+  const ActiveIcon = activeSection?.icon ?? Bug;
 
   return (
     <Drawer
@@ -908,11 +910,19 @@ export default function SettingsDrawer({ open, onClose }) {
         </nav>
 
         <div className="mt-5">
-          <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
-            <ActiveIcon className="h-3.5 w-3.5" />
-            {sectionNav.find((item) => item.key === activeSettingsSection)?.label}
-          </div>
-          {sections[activeSettingsSection]}
+          {activeSection ? (
+            <>
+              <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+                <ActiveIcon className="h-3.5 w-3.5" />
+                {activeSection.label}
+              </div>
+              {sections[activeSettingsSection]}
+            </>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/20 p-6 text-center text-sm text-zinc-400">
+              Seleziona una categoria per visualizzare le impostazioni disponibili.
+            </div>
+          )}
         </div>
       </div>
     </Drawer>

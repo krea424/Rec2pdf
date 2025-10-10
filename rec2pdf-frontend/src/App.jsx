@@ -479,11 +479,20 @@ function AppContent(){
   });
   const [showDestDetails,setShowDestDetails]=useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [activeSettingsSection, setActiveSettingsSection] = useState("diagnostics");
+  const [activeSettingsSection, setActiveSettingsSection] = useState(null);
   const [showSetupAssistant, setShowSetupAssistant] = useState(() => {
     if (typeof window === 'undefined') return false;
     return !localStorage.getItem('onboardingComplete');
   });
+  const openSettingsDrawer = useCallback(
+    (section = null, options = {}) => {
+      const { showAssistant = false } = options;
+      setActiveSettingsSection(section);
+      setShowSetupAssistant(showAssistant);
+      setSettingsOpen(true);
+    },
+    [setActiveSettingsSection, setShowSetupAssistant, setSettingsOpen],
+  );
   const [customLogo, setCustomLogo] = useState(null);
   const [customPdfLogo, setCustomPdfLogo] = useState(null);
   const [lastMarkdownUpload,setLastMarkdownUpload]=useState(null);
@@ -2177,9 +2186,8 @@ function AppContent(){
   }, [setBackendUrl]);
 
   const handleBackendSettings = useCallback(() => {
-    setActiveSettingsSection('advanced');
-    setSettingsOpen(true);
-  }, [setActiveSettingsSection, setSettingsOpen]);
+    openSettingsDrawer('advanced');
+  }, [openSettingsDrawer]);
 
   const onboardingSteps = useMemo(() => {
     const micStatus = permission==='granted'?'success':permission==='denied'?'error':'pending';
@@ -2326,15 +2334,11 @@ function AppContent(){
   const openSetupAssistant = useCallback(() => {
     const firstIncomplete = onboardingSteps.findIndex(step => step.status !== 'success');
     setOnboardingStep(firstIncomplete === -1 ? onboardingSteps.length - 1 : firstIncomplete);
-    setActiveSettingsSection('diagnostics');
-    setSettingsOpen(true);
-    setShowSetupAssistant(true);
+    openSettingsDrawer('diagnostics', { showAssistant: true });
   }, [
     onboardingSteps,
     setOnboardingStep,
-    setActiveSettingsSection,
-    setSettingsOpen,
-    setShowSetupAssistant,
+    openSettingsDrawer,
   ]);
 
   const handleOnboardingFinish = useCallback(() => {
@@ -2889,6 +2893,7 @@ function AppContent(){
     diagnostics,
     runDiagnostics,
     openSetupAssistant,
+    openSettingsDrawer,
     settingsOpen,
     setSettingsOpen,
     activeSettingsSection,

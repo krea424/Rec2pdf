@@ -55,9 +55,9 @@ const OnboardingBanner = () => {
 const AppShell = () => {
   const {
     customLogo,
-    openSetupAssistant,
     settingsOpen,
     setSettingsOpen,
+    openSettingsDrawer,
     toggleFullScreen,
     theme,
     themes,
@@ -89,7 +89,9 @@ const AppShell = () => {
                 type="button"
                 variant="ghost"
                 className="gap-2 px-3 text-sm font-medium text-surface-200 hover:text-white"
-                onClick={openSetupAssistant}
+                onClick={() => {
+                  openSettingsDrawer();
+                }}
                 leadingIcon={Sparkles}
               >
                 Impostazioni
