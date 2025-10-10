@@ -292,9 +292,6 @@ const CreatePage = () => {
                   </span>
                 )}
               </div>
-              <p className="mt-2 text-xs text-zinc-500">
-                Carica un logo personalizzato per i PDF generati.
-              </p>
               <div className="mt-3 flex items-center gap-2">
                 <input
                   ref={pdfLogoInputRef}
