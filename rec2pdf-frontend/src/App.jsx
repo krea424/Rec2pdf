@@ -13,7 +13,28 @@ import supabase from "./supabaseClient";
 import { AppProvider } from "./hooks/useAppContext";
 
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
-const DEFAULT_DEST_DIR = '/Users/tuo_utente/Recordings';
+const DEFAULT_DEST_DIR = '/Users/';
+
+const isDestDirPlaceholder = (value) => {
+  const sanitized = (value ?? '').trim();
+  if (!sanitized) {
+    return true;
+  }
+  if (sanitized === DEFAULT_DEST_DIR) {
+    return true;
+  }
+  if (sanitized === DEFAULT_DEST_DIR.replace(/\/$/, '')) {
+    return true;
+  }
+  const lowerSanitized = sanitized.toLowerCase();
+  if (lowerSanitized === 'users/' || lowerSanitized === 'users') {
+    return true;
+  }
+  if (sanitized.includes('tuo_utente')) {
+    return true;
+  }
+  return false;
+};
 const DEST_DIR_STORAGE_KEY = 'rec2pdfDestinationDir';
 
 const fmtBytes = (bytes) => { if (!bytes && bytes !== 0) return "—"; const u=["B","KB","MB","GB"]; let i=0,v=bytes; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(v<10&&i>0?1:0)} ${u[i]}`; };
@@ -419,7 +440,7 @@ function AppContent(){
     try{
       const saved=localStorage.getItem(DEST_DIR_STORAGE_KEY);
       if(saved&&saved.trim()){
-        return saved;
+        return isDestDirPlaceholder(saved)?DEFAULT_DEST_DIR:saved;
       }
     }catch(error){
       console.warn('Impossibile recuperare la cartella di destinazione salvata:',error);
@@ -498,7 +519,7 @@ function AppContent(){
       return;
     }
     try{
-      if(!destDir.trim()||destDir===DEFAULT_DEST_DIR){
+      if(isDestDirPlaceholder(destDir)){
         localStorage.removeItem(DEST_DIR_STORAGE_KEY);
       }else{
         localStorage.setItem(DEST_DIR_STORAGE_KEY,destDir);
@@ -1766,7 +1787,7 @@ function AppContent(){
       const ext=m.includes('webm')?'webm':m.includes('ogg')?'ogg':m.includes('wav')?'wav':'m4a';
       fd.append('audio',blob,`${blobSource}.${ext}`);
       appendPdfLogoIfPresent(fd, customPdfLogo);
-      const isPlaceholder=!destDir.trim()||destDir===DEFAULT_DEST_DIR||destDir.includes('tuo_utente');
+      const isPlaceholder=isDestDirPlaceholder(destDir);
       if (!isPlaceholder) {
         fd.append('dest',destDir);
       } else {
@@ -1929,7 +1950,7 @@ function AppContent(){
       sessionLogs.push(...sanitized);
       setLogs(ls=>ls.concat(sanitized));
     };
-    const isPlaceholder=!destDir.trim()||destDir===DEFAULT_DEST_DIR||destDir.includes('tuo_utente');
+    const isPlaceholder=isDestDirPlaceholder(destDir);
     if(isPlaceholder){
       appendLogs(["ℹ️ Cartella destinazione non specificata o segnaposto: il backend userà la sua cartella predefinita."]); 
     }
@@ -2847,7 +2868,7 @@ function AppContent(){
     setHistory([]);
   }, []);
 
-  const destIsPlaceholder=!destDir.trim()||destDir===DEFAULT_DEST_DIR||destDir.includes('tuo_utente');
+  const destIsPlaceholder=isDestDirPlaceholder(destDir);
 
   const totalStages = PIPELINE_STAGES.length;
   const completedStagesCount = useMemo(() => PIPELINE_STAGES.reduce((acc, stage) => acc + (pipelineStatus[stage.key] === 'done' ? 1 : 0), 0), [pipelineStatus]);

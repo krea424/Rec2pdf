@@ -218,7 +218,7 @@ const CreatePage = () => {
                 )}
                 value={context.destDir}
                 onChange={(event) => context.setDestDir(event.target.value)}
-                placeholder={context.DEFAULT_DEST_DIR}
+                placeholder="Es. /Users/mario/Recordings"
                 type="text"
                 autoComplete="off"
                 spellCheck={false}
@@ -233,8 +233,8 @@ const CreatePage = () => {
                   )}
                 >
                   {context.destIsPlaceholder
-                    ? `Sostituisci "tuo_utente" con il tuo username macOS oppure lascia vuoto per usare la cartella predefinita (${context.DEFAULT_DEST_DIR}).`
-                    : "Lascia vuoto per usare la cartella predefinita del backend."}
+                    ? `Completa il percorso partendo da "${context.DEFAULT_DEST_DIR}" con il tuo username e la cartella finale (es. /Users/mario/Recordings). Lascia "${context.DEFAULT_DEST_DIR}" o il campo vuoto per usare la cartella predefinita del backend.`
+                    : `Lascia "${context.DEFAULT_DEST_DIR}" o il campo vuoto per usare la cartella predefinita del backend.`}
                 </div>
               )}
             </div>
