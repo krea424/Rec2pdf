@@ -201,7 +201,7 @@ const CreatePage = () => {
             >
               <div className="flex items-center justify-between">
                 <label className="flex items-center gap-2 text-sm text-zinc-400">
-                  <FileText className="h-4 w-4" /> Cartella destinazione
+                  <FileText className="h-4 w-4" /> Cartella
                 </label>
                 <div className="flex items-center gap-2">
                   <button
@@ -219,7 +219,7 @@ const CreatePage = () => {
                     type="button"
                     onClick={() => context.setShowDestDetails((prev) => !prev)}
                     className="text-zinc-400 hover:text-zinc-200"
-                    aria-label="Mostra dettagli cartella destinazione"
+                    aria-label="Mostra dettagli cartella"
                     aria-expanded={context.showDestDetails}
                   >
                     <Info className="h-4 w-4" />
