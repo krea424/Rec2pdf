@@ -6,12 +6,10 @@ import {
   Bug,
   CheckCircle2,
   Cpu,
-  FileText,
   Info,
   LinkIcon,
   Mic,
   Palette,
-  Plus,
   RefreshCw,
   Sparkles,
   TimerIcon,
@@ -80,39 +78,8 @@ export default function SettingsDrawer({ open, onClose }) {
     mediaSupported,
     recorderSupported,
     level,
-    showDestDetails,
-    setShowDestDetails,
-    destDir,
-    setDestDir,
-    destIsPlaceholder,
-    slug,
-    setSlug,
     secondsCap,
     setSecondsCap,
-    handleRefreshWorkspaces,
-    workspaceLoading,
-    setWorkspaceBuilderOpen,
-    workspaceBuilderOpen,
-    workspaceBuilder,
-    setWorkspaceBuilder,
-    handleWorkspaceBuilderSubmit,
-    workspaceSelection,
-    handleSelectWorkspaceForPipeline,
-    workspaces,
-    activeWorkspace,
-    projectCreationMode,
-    workspaceProjects,
-    handleSelectProjectForPipeline,
-    projectDraft,
-    setProjectDraft,
-    handleCreateProjectFromDraft,
-    statusCreationMode,
-    statusDraft,
-    setStatusDraft,
-    handleCreateStatusFromDraft,
-    availableStatuses,
-    handleSelectStatusForPipeline,
-    DEFAULT_DEST_DIR,
   } = useAppContext();
 
   const logoInputRef = useRef(null);
@@ -235,360 +202,23 @@ export default function SettingsDrawer({ open, onClose }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className={classNames("rounded-xl border p-4", themes[theme].input)}>
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm text-zinc-400">
-                  <FileText className="h-4 w-4" /> Cartella destinazione
-                </label>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setDestDir(DEFAULT_DEST_DIR)}
-                    className={classNames(
-                      "rounded-lg border px-2 py-1 text-xs",
-                      themes[theme].input,
-                      themes[theme].input_hover,
-                    )}
-                  >
-                    Reimposta
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowDestDetails((prev) => !prev)}
-                    className="text-zinc-400 hover:text-zinc-200"
-                    aria-label="Mostra dettagli cartella destinazione"
-                  >
-                    <Info className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-              <input
-                className={classNames(
-                  "mt-2 w-full rounded-lg border px-3 py-2 outline-none",
-                  destIsPlaceholder ? "border-rose-600" : themes[theme].input,
-                )}
-                value={destDir}
-                onChange={(event) => setDestDir(event.target.value)}
-                placeholder={DEFAULT_DEST_DIR}
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-              />
-              {showDestDetails && (
-                <div
-                  className={classNames(
-                    "mt-2 text-xs",
-                    destIsPlaceholder ? "text-rose-400" : "text-zinc-500",
-                  )}
-                >
-                  {destIsPlaceholder
-                    ? `Sostituisci "tuo_utente" con il tuo username macOS oppure lascia vuoto per usare la cartella predefinita (${DEFAULT_DEST_DIR}).`
-                    : "Lascia vuoto per usare la cartella predefinita del backend."}
-                </div>
-              )}
-            </div>
-            <div className={classNames("rounded-xl border p-4", themes[theme].input)}>
-              <label className="flex items-center gap-2 text-sm text-zinc-400">
-                <FileText className="h-4 w-4" /> Slug
-              </label>
-              <input
-                className="mt-2 w-full rounded-lg border-zinc-800 bg-transparent px-3 py-2 outline-none"
-                value={slug}
-                onChange={(event) => setSlug(event.target.value)}
-                placeholder="meeting"
-              />
-            </div>
-            <div className={classNames("rounded-xl border p-4", themes[theme].input)}>
-              <label className="flex items-center gap-2 text-sm text-zinc-400">
-                <TimerIcon className="h-4 w-4" /> Durata massima (s)
-              </label>
-              <input
-                type="number"
-                min={0}
-                className="mt-2 w-full rounded-lg border-zinc-800 bg-transparent px-3 py-2 outline-none"
-                value={secondsCap}
-                onChange={(event) =>
-                  setSecondsCap(Math.max(0, parseInt(event.target.value || "0", 10) || 0))
-                }
-              />
-              <div className="mt-2 text-xs text-zinc-500">0 = senza limite</div>
-            </div>
+          <div className={classNames("rounded-xl border p-4", themes[theme].input)}>
+            <label className="flex items-center gap-2 text-sm text-zinc-400">
+              <TimerIcon className="h-4 w-4" /> Durata massima (s)
+            </label>
+            <input
+              type="number"
+              min={0}
+              className="mt-2 w-full rounded-lg border-zinc-800 bg-transparent px-3 py-2 outline-none"
+              value={secondsCap}
+              onChange={(event) =>
+                setSecondsCap(Math.max(0, parseInt(event.target.value || "0", 10) || 0))
+              }
+            />
+            <div className="mt-2 text-xs text-zinc-500">0 = senza limite</div>
           </div>
 
-          <div className={classNames("rounded-2xl border p-5", themes[theme].input)}>
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-sm text-zinc-400">
-                  <Users className="h-4 w-4" />
-                  <span>Workspace &amp; progetto</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleRefreshWorkspaces}
-                    className={classNames(
-                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
-                      themes[theme].input,
-                      themes[theme].input_hover,
-                      workspaceLoading && "opacity-60 cursor-not-allowed",
-                    )}
-                    disabled={workspaceLoading}
-                  >
-                    <RefreshCw
-                      className={classNames(
-                        "h-3.5 w-3.5",
-                        workspaceLoading ? "animate-spin" : "",
-                      )}
-                    />
-                    Aggiorna
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWorkspaceBuilderOpen((prev) => !prev)}
-                    className={classNames(
-                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
-                      themes[theme].input,
-                      themes[theme].input_hover,
-                    )}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    {workspaceBuilderOpen ? "Chiudi builder" : "Nuovo workspace"}
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div>
-                  <label className="text-xs text-zinc-500">Workspace</label>
-                  <select
-                    value={workspaceSelection.workspaceId}
-                    onChange={(event) => handleSelectWorkspaceForPipeline(event.target.value)}
-                    className={classNames(
-                      "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                      themes[theme].input,
-                    )}
-                  >
-                    <option value="">Nessun workspace</option>
-                    {workspaces.map((workspace) => (
-                      <option key={workspace.id} value={workspace.id} className="bg-zinc-900">
-                        {workspace.name} · {workspace.client || "—"}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {workspaceSelection.workspaceId && (
-                  <div>
-                    <label className="text-xs text-zinc-500">Policy di versioning</label>
-                    <div className="mt-2 text-xs text-zinc-400">
-                      {activeWorkspace?.versioningPolicy
-                        ? `${
-                            activeWorkspace.versioningPolicy.namingConvention || "timestamped"
-                          } · retention ${
-                            activeWorkspace.versioningPolicy.retentionLimit || 10
-                          }`
-                        : "Timestamp standard"}
-                    </div>
-                  </div>
-                )}
-              </div>
-              {workspaceBuilderOpen && (
-                <div className="space-y-3 rounded-lg border border-dashed border-zinc-700 p-3">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div>
-                      <label className="text-xs text-zinc-500">Nome</label>
-                      <input
-                        value={workspaceBuilder.name}
-                        onChange={(event) =>
-                          setWorkspaceBuilder((prev) => ({
-                            ...prev,
-                            name: event.target.value,
-                          }))
-                        }
-                        className={classNames(
-                          "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                          themes[theme].input,
-                        )}
-                        placeholder="Es. Portfolio Clienti"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-500">Cliente</label>
-                      <input
-                        value={workspaceBuilder.client}
-                        onChange={(event) =>
-                          setWorkspaceBuilder((prev) => ({
-                            ...prev,
-                            client: event.target.value,
-                          }))
-                        }
-                        className={classNames(
-                          "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                          themes[theme].input,
-                        )}
-                        placeholder="Es. Acme Corp"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-500">Colore</label>
-                      <div className="mt-2 flex items-center gap-2">
-                        <input
-                          type="color"
-                          value={workspaceBuilder.color}
-                          onChange={(event) =>
-                            setWorkspaceBuilder((prev) => ({
-                              ...prev,
-                              color: event.target.value,
-                            }))
-                          }
-                          className="h-9 w-12 rounded border border-zinc-700 bg-transparent"
-                        />
-                        <span className="font-mono text-xs text-zinc-400">
-                          {workspaceBuilder.color}
-                        </span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-500">Stati suggeriti (comma-separated)</label>
-                      <input
-                        value={workspaceBuilder.statuses}
-                        onChange={(event) =>
-                          setWorkspaceBuilder((prev) => ({
-                            ...prev,
-                            statuses: event.target.value,
-                          }))
-                        }
-                        className={classNames(
-                          "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                          themes[theme].input,
-                        )}
-                        placeholder="Bozza, In lavorazione, In review"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={handleWorkspaceBuilderSubmit}
-                      className={classNames(
-                        "flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
-                        themes[theme].button,
-                        !workspaceBuilder.name.trim() && "opacity-60 cursor-not-allowed",
-                      )}
-                      disabled={!workspaceBuilder.name.trim()}
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      Crea workspace
-                    </button>
-                  </div>
-                </div>
-              )}
-              {workspaceSelection.workspaceId && (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <label className="text-xs text-zinc-500">Progetto</label>
-                    <select
-                      value={projectCreationMode ? "__new__" : workspaceSelection.projectId}
-                      onChange={(event) => handleSelectProjectForPipeline(event.target.value)}
-                      className={classNames(
-                        "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                        themes[theme].input,
-                      )}
-                    >
-                      <option value="">Nessun progetto</option>
-                      {workspaceProjects.map((project) => (
-                        <option key={project.id} value={project.id} className="bg-zinc-900">
-                          {project.name}
-                        </option>
-                      ))}
-                      <option value="__new__">+ Nuovo progetto…</option>
-                    </select>
-                    {projectCreationMode && (
-                      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                        <input
-                          value={projectDraft}
-                          onChange={(event) => setProjectDraft(event.target.value)}
-                          placeholder="Nome progetto"
-                          className={classNames(
-                            "rounded-lg border bg-transparent px-3 py-2 text-sm",
-                            themes[theme].input,
-                          )}
-                        />
-                        <div className="flex gap-2">
-                          <input
-                            value={statusDraft}
-                            onChange={(event) => setStatusDraft(event.target.value)}
-                            placeholder="Stato iniziale"
-                            className={classNames(
-                              "w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                              themes[theme].input,
-                            )}
-                          />
-                          <button
-                            type="button"
-                            onClick={handleCreateProjectFromDraft}
-                            className={classNames(
-                              "flex items-center gap-1 rounded-lg px-3 py-2 text-xs",
-                              themes[theme].button,
-                              !projectDraft.trim() && "opacity-60 cursor-not-allowed",
-                            )}
-                            disabled={!projectDraft.trim()}
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                            Crea
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-xs text-zinc-500">Stato</label>
-                    <select
-                      value={statusCreationMode ? "__new__" : workspaceSelection.status || ""}
-                      onChange={(event) => handleSelectStatusForPipeline(event.target.value)}
-                      className={classNames(
-                        "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                        themes[theme].input,
-                      )}
-                    >
-                      <option value="">Nessun stato</option>
-                      {availableStatuses.map((statusValue) => (
-                        <option key={statusValue} value={statusValue} className="bg-zinc-900">
-                          {statusValue}
-                        </option>
-                      ))}
-                      <option value="__new__">+ Nuovo stato…</option>
-                    </select>
-                    {statusCreationMode && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <input
-                          value={statusDraft}
-                          onChange={(event) => setStatusDraft(event.target.value)}
-                          placeholder="Es. In revisione"
-                          className={classNames(
-                            "w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                            themes[theme].input,
-                          )}
-                        />
-                        <button
-                          type="button"
-                          onClick={handleCreateStatusFromDraft}
-                          className={classNames(
-                            "flex items-center gap-1 rounded-lg px-3 py-2 text-xs",
-                            themes[theme].button,
-                            !statusDraft.trim() && "opacity-60 cursor-not-allowed",
-                          )}
-                          disabled={!statusDraft.trim()}
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                          Aggiungi
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+
         </div>
       ),
       diagnostics: (
@@ -858,39 +488,8 @@ export default function SettingsDrawer({ open, onClose }) {
     mediaSupported,
     recorderSupported,
     level,
-    showDestDetails,
-    setShowDestDetails,
-    destDir,
-    setDestDir,
-    destIsPlaceholder,
-    slug,
-    setSlug,
     secondsCap,
     setSecondsCap,
-    handleRefreshWorkspaces,
-    workspaceLoading,
-    setWorkspaceBuilderOpen,
-    workspaceBuilderOpen,
-    workspaceBuilder,
-    setWorkspaceBuilder,
-    handleWorkspaceBuilderSubmit,
-    workspaceSelection,
-    handleSelectWorkspaceForPipeline,
-    workspaces,
-    activeWorkspace,
-    projectCreationMode,
-    workspaceProjects,
-    handleSelectProjectForPipeline,
-    projectDraft,
-    setProjectDraft,
-    handleCreateProjectFromDraft,
-    statusCreationMode,
-    statusDraft,
-    setStatusDraft,
-    handleCreateStatusFromDraft,
-    availableStatuses,
-    handleSelectStatusForPipeline,
-    DEFAULT_DEST_DIR,
   ]);
 
   const activeSection = sectionNav.find((item) => item.key === activeSettingsSection);
