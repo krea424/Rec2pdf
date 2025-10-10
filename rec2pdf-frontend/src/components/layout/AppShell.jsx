@@ -1,9 +1,9 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { AlertCircle, CheckCircle2, LinkIcon, Maximize, Sparkles } from "../../components/icons";
+import { AlertCircle, Maximize, Sparkles } from "../../components/icons";
 import logoAsset from "../../assets/logo.svg";
 import { classNames } from "../../utils/classNames";
 import { useAppContext } from "../../hooks/useAppContext";
-import { Badge, Button, IconButton, Input } from "../ui";
+import { Button, IconButton } from "../ui";
 import SettingsDrawer from "./SettingsDrawer";
 
 const NAV_ITEMS = [
@@ -55,43 +55,15 @@ const OnboardingBanner = () => {
 const AppShell = () => {
   const {
     customLogo,
-    backendUp,
-    backendUrl,
-    setBackendUrl,
     openSetupAssistant,
     settingsOpen,
     setSettingsOpen,
     toggleFullScreen,
     theme,
     themes,
-    DEFAULT_BACKEND_URL,
   } = useAppContext();
 
   const cx = classNames;
-
-  const backendStatus = (() => {
-    if (backendUp === true) {
-      return {
-        label: "Backend OK",
-        tone: "success",
-        icon: CheckCircle2,
-      };
-    }
-    if (backendUp === false) {
-      return {
-        label: "Backend OFF",
-        tone: "danger",
-        icon: AlertCircle,
-      };
-    }
-    return {
-      label: "—",
-      tone: "info",
-      icon: null,
-    };
-  })();
-
-  const StatusIcon = backendStatus.icon;
 
   return (
     <div
@@ -113,17 +85,6 @@ const AppShell = () => {
               />
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
-              <Badge tone={backendStatus.tone} icon={StatusIcon || undefined}>
-                {backendStatus.label}
-              </Badge>
-              <Input
-                value={backendUrl}
-                onChange={(event) => setBackendUrl(event.target.value)}
-                placeholder={DEFAULT_BACKEND_URL}
-                prefix={<LinkIcon className="h-4 w-4" />}
-                containerClassName="w-[240px]"
-                className={cx("bg-transparent", themes[theme].input)}
-              />
               <Button
                 type="button"
                 variant="primary"
