@@ -55,9 +55,10 @@ const OnboardingBanner = () => {
 const AppShell = () => {
   const {
     customLogo,
-    openSetupAssistant,
     settingsOpen,
     setSettingsOpen,
+    setActiveSettingsSection,
+    setShowSetupAssistant,
     toggleFullScreen,
     theme,
     themes,
@@ -87,9 +88,13 @@ const AppShell = () => {
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
               <Button
                 type="button"
-                variant="primary"
-                className="gap-2 shadow-subtle"
-                onClick={openSetupAssistant}
+                variant="ghost"
+                className="gap-2 px-3 text-sm font-medium text-surface-200 hover:text-white"
+                onClick={() => {
+                  setShowSetupAssistant(false);
+                  setActiveSettingsSection(null);
+                  setSettingsOpen(true);
+                }}
                 leadingIcon={Sparkles}
               >
                 Impostazioni
