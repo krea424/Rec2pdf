@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import {
   Bug,
   Cpu,
@@ -10,11 +11,12 @@ import {
   TimerIcon,
   Upload,
   Info,
+  CheckCircle2,
 } from "../components/icons";
 import PromptLibrary from "../components/PromptLibrary";
 import { useAppContext } from "../hooks/useAppContext";
 import { classNames } from "../utils/classNames";
-import { Toast } from "../components/ui";
+import { Button, Toast } from "../components/ui";
 
 const ErrorBanner = () => {
   const { errorBanner, setErrorBanner } = useAppContext();
@@ -600,6 +602,58 @@ const CreatePage = () => {
                 <span>{context.progressPercent}%</span>
               </div>
             </div>
+            {context.pipelineComplete && (
+              <div
+                className={classNames(
+                  "mt-4 space-y-3 rounded-xl border px-4 py-3 text-sm shadow-md transition",
+                  isBoardroom
+                    ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-100 shadow-[0_28px_70px_-45px_rgba(16,185,129,0.9)]"
+                    : "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <span
+                    className={classNames(
+                      "flex h-9 w-9 items-center justify-center rounded-full border",
+                      isBoardroom
+                        ? "border-emerald-300/60 bg-emerald-400/20 text-emerald-50"
+                        : "border-emerald-400/60 bg-emerald-500/20 text-emerald-50",
+                    )}
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                  </span>
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold tracking-tight">
+                      Pipeline completata
+                    </p>
+                    <p
+                      className={classNames(
+                        "text-xs leading-relaxed",
+                        isBoardroom
+                          ? "text-emerald-100/90"
+                          : "text-emerald-100/85",
+                      )}
+                    >
+                      Il documento generato è stato salvato nella Library con i
+                      riferimenti della sessione.
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <RouterLink
+                    to="/library"
+                    className={classNames(
+                      "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0",
+                      isBoardroom
+                        ? "border border-emerald-300/60 bg-emerald-400/15 text-emerald-50 hover:bg-emerald-400/25 focus-visible:ring-emerald-200/60"
+                        : "border border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 focus-visible:ring-emerald-200/70",
+                    )}
+                  >
+                    Vai alla Library
+                  </RouterLink>
+                </div>
+              </div>
+            )}
             <div className="space-y-4">
               {context.PIPELINE_STAGES.map((stage, index) => {
                 const status = context.pipelineStatus[stage.key] || "idle";

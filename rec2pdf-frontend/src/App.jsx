@@ -821,8 +821,18 @@ function AppContent(){
     const normalizedStatus = normalizeStageStatus(event.status);
     const normalizedEvent = { ...event, status: normalizedStatus };
     setPipelineStatus((prev) => updateStatusWithEvent(prev, normalizedEvent));
-    if (event.message) {
-      setStageMessages((prev) => ({ ...prev, [event.stage]: event.message }));
+    let messageToStore = typeof event.message === 'string' ? event.message.trim() : '';
+    if (event.stage === 'complete' && normalizedStatus === 'done') {
+      const libraryHint = 'Trovi il documento generato nella Library.';
+      if (messageToStore) {
+        const needsPunctuation = !/[.!?]$/.test(messageToStore);
+        messageToStore = `${messageToStore}${needsPunctuation ? '.' : ''}\n${libraryHint}`;
+      } else {
+        messageToStore = libraryHint;
+      }
+    }
+    if (messageToStore) {
+      setStageMessages((prev) => ({ ...prev, [event.stage]: messageToStore }));
     }
     setActiveStageKey((prev) => {
       if (normalizedStatus === 'running') return event.stage;
@@ -3034,6 +3044,7 @@ function AppContent(){
     handleOpenMdInNewTab,
     headerStatus,
     promptCompletedCues,
+    pipelineComplete,
   };
 
   return (
