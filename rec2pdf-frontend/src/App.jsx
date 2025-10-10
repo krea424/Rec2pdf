@@ -158,6 +158,7 @@ const normalizePromptEntry = (prompt) => {
     id: prompt.id || '',
     slug: prompt.slug || '',
     title: prompt.title || '',
+    summary: typeof prompt.summary === 'string' ? prompt.summary.trim() : '',
     description: prompt.description || '',
     persona: prompt.persona || '',
     color: prompt.color || '#6366f1',

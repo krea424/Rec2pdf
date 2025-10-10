@@ -240,6 +240,11 @@ export default function PromptLibrary({
     const checklistSections = Array.isArray(prompt?.checklist?.sections)
       ? prompt.checklist.sections
       : [];
+    const summaryText = typeof prompt.summary === "string" && prompt.summary.trim()
+      ? prompt.summary.trim()
+      : typeof prompt.description === "string"
+        ? prompt.description.trim()
+        : "";
 
     return (
       <div
@@ -263,8 +268,8 @@ export default function PromptLibrary({
             {prompt.persona && (
               <div className="text-[11px] text-zinc-400">Persona: {prompt.persona}</div>
             )}
-            {prompt.description && (
-              <p className="text-xs text-zinc-400">{prompt.description}</p>
+            {summaryText && (
+              <p className="text-xs text-zinc-400">{summaryText}</p>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -379,6 +384,22 @@ export default function PromptLibrary({
     const checklistSections = Array.isArray(activePrompt?.checklist?.sections)
       ? activePrompt.checklist.sections
       : [];
+    const summaryText = typeof activePrompt.summary === "string" && activePrompt.summary.trim()
+      ? activePrompt.summary.trim()
+      : typeof activePrompt.description === "string"
+        ? activePrompt.description.trim()
+        : "";
+    const descriptionText = typeof activePrompt.description === "string"
+      ? activePrompt.description.trim()
+      : "";
+    let detailedDescription = "";
+    if (descriptionText) {
+      detailedDescription = descriptionText;
+      if (summaryText && descriptionText.startsWith(summaryText)) {
+        detailedDescription = descriptionText.slice(summaryText.length).trim();
+      }
+    }
+    const showDetailedDescription = Boolean(detailedDescription);
 
     return (
       <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-4 space-y-4">
@@ -388,8 +409,8 @@ export default function PromptLibrary({
               <Sparkles className="h-4 w-4" />
               <span className="font-semibold">{activePrompt.title || "Template"}</span>
             </div>
-            {activePrompt.description && (
-              <p className="mt-1 text-xs text-indigo-200/80">{activePrompt.description}</p>
+            {summaryText && (
+              <p className="mt-1 text-xs text-indigo-200/80">{summaryText}</p>
             )}
           </div>
           {onClearSelection && (
@@ -402,6 +423,11 @@ export default function PromptLibrary({
             </button>
           )}
         </div>
+        {showDetailedDescription && (
+          <div className="rounded-lg border border-indigo-400/30 bg-indigo-400/10 p-3 text-[11px] leading-relaxed text-indigo-50/90 whitespace-pre-wrap">
+            {detailedDescription}
+          </div>
+        )}
         {Array.isArray(activePrompt.cueCards) && activePrompt.cueCards.length > 0 && (
           <div className="space-y-2">
             <div className="text-[11px] uppercase tracking-wide text-indigo-200/80">Cue cards</div>
