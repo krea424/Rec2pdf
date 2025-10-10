@@ -1,17 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { Mic, Square, Settings, Folder, FileText, FileCode, Cpu, Download, TimerIcon, Waves, CheckCircle2, AlertCircle, LinkIcon, Upload, RefreshCw, Bug, XCircle, Info, Maximize, Sparkles, Plus, Users } from "./components/icons";
-import logo from './assets/logo.svg';
-import SetupAssistant from "./components/SetupAssistant";
+import AppShell from "./components/layout/AppShell";
+import CreatePage from "./pages/Create";
+import LibraryPage from "./pages/Library";
+import EditorPage from "./pages/Editor";
 import { useMicrophoneAccess } from "./hooks/useMicrophoneAccess";
 import { useBackendDiagnostics } from "./hooks/useBackendDiagnostics";
-import { classNames } from "./utils/classNames";
 import { pickBestMime } from "./utils/media";
-import WorkspaceNavigator from "./components/WorkspaceNavigator";
-import PromptLibrary from "./components/PromptLibrary";
-import CloudLibraryPanel from "./components/CloudLibraryPanel";
-import MarkdownEditorModal from "./components/MarkdownEditorModal";
 import LoginPage from "./components/LoginPage";
 import supabase from "./supabaseClient";
+import { AppProvider } from "./hooks/useAppContext";
 
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
 
@@ -384,7 +383,7 @@ const themes = {
   },
 };
 
-export default function Rec2PdfApp(){
+function AppContent(){
   const [session, setSession] = useState(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [recording,setRecording]=useState(false);
@@ -401,6 +400,8 @@ export default function Rec2PdfApp(){
   const [logs,setLogs]=useState([]);
   const [pdfPath,setPdfPath]=useState("");
   const [mdPath, setMdPath] = useState("");
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     let isMounted = true;
@@ -2423,6 +2424,10 @@ export default function Rec2PdfApp(){
       });
       pushLogs([`✏️ Apertura editor Markdown (${mdPathResolved})`]);
 
+      if (!skipEditor) {
+        navigate("/editor");
+      }
+
       try {
         const response = await fetchWithAuth(
           `${normalizedBackend}/api/markdown?path=${encodeURIComponent(mdPathResolved)}`,
@@ -2736,127 +2741,6 @@ export default function Rec2PdfApp(){
     setHistory([]);
   }, []);
 
-  const PermissionBanner=()=>{
-    const ua=navigator.userAgent||"";
-    const isChromium = ua.includes('Chrome/') && !ua.includes('Edg/') && !ua.includes('OPR/');
-    const isEdge = ua.includes('Edg/');
-    const isBrave = isChromium && ua.includes('Brave/');
-    const site=encodeURIComponent(location.origin);
-    const chromeSiteSettings=`chrome://settings/content/siteDetails?site=${site}`;
-    const chromeMicSettings=`chrome://settings/content/microphone`;
-    return (
-      <div className="mt-3 text-sm bg-amber-950/40 border border-amber-900/40 rounded-xl p-3 text-amber-200">
-        <div className="font-medium">Permesso microfono necessario</div>
-        {permissionMessage&&<div className="mt-1 text-amber-100">{permissionMessage}</div>}
-        {lastMicError&&(
-          <div className="mt-1 text-amber-100">
-            Dettagli ultimo errore: <code className="text-amber-100">{lastMicError.name}</code>
-            {lastMicError.message?`: ${lastMicError.message}`:''}
-          </div>
-        )}
-        <ul className="list-disc pl-5 mt-2 space-y-1">
-          {!secureOK&&<li>Servi l'app in HTTPS o usa <code>http://localhost</code>.</li>}
-          <li>Quando il browser chiede il permesso, scegli <strong>Consenti</strong>.</li>
-          <li>Se in passato hai negato il permesso, apri le impostazioni del sito (icona lucchetto → Permessi) e abilita il microfono.</li>
-          <li>Su macOS: Sistema → Privacy e Sicurezza → Microfono → abilita il browser.</li>
-          {(isChromium||isEdge||isBrave)&&(
-            <li className="mt-1 space-x-3">
-              <a href={chromeSiteSettings} className="underline" target="_blank" rel="noreferrer">Apri permessi sito</a>
-              <a href={chromeMicSettings} className="underline" target="_blank" rel="noreferrer">Apri impostazioni microfono</a>
-            </li>
-          )}
-        </ul>
-      </div>
-    );
-  };
-
-  const ErrorBanner=()=>(!errorBanner?null:(
-    <div className="mt-4 bg-rose-950/40 border border-rose-900/50 text-rose-100 rounded-xl p-3 text-sm flex items-start gap-3">
-      <XCircle className="w-5 h-5 mt-0.5"/>
-      <div className="flex-1">
-        <div className="font-medium">{errorBanner.title}</div>
-        {errorBanner.details&&<div className="text-rose-200/90 whitespace-pre-wrap mt-1">{errorBanner.details}</div>}
-      </div>
-      <button onClick={()=> setErrorBanner(null)} className="text-rose-200/80 hover:text-rose-100 text-xs">Chiudi</button>
-    </div>
-  ));
-
-  const SettingsPanel = () => {
-    const logoInputRef = useRef(null);
-    const pdfLogoInputRef = useRef(null);
-
-    const handleLogoUpload = (event) => {
-      const file = event.target.files[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          setCustomLogo(e.target.result);
-        };
-        reader.readAsDataURL(file);
-      }
-    };
-
-    const handlePdfLogoUpload = (event) => {
-      const file = event.target.files[0];
-      if (file) {
-        setCustomPdfLogo(file);
-      }
-    };
-
-    return (
-      <div className={classNames("p-4 mt-4 rounded-2xl border", themes[theme].card)}>
-        <h3 className="text-lg font-medium">Impostazioni</h3>
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="text-sm text-zinc-400">Tema</label>
-            <button onClick={cycleTheme} className={classNames("w-full mt-2 px-3 py-2 rounded-xl text-sm border", themes[theme].input, themes[theme].input_hover)}>
-              Cycle Theme ({theme})
-            </button>
-          </div>
-          <div>
-            <label className="text-sm text-zinc-400">Logo Frontend</label>
-            <div className="flex items-center gap-2 mt-2">
-              <input type="file" accept="image/*" ref={logoInputRef} onChange={handleLogoUpload} className="hidden" />
-              <button onClick={() => logoInputRef.current.click()} className={classNames("px-3 py-2 rounded-xl text-sm", themes[theme].button)}>
-                Carica
-              </button>
-              {customLogo && (
-                <button onClick={() => setCustomLogo(null)} className={classNames("px-3 py-2 rounded-xl text-sm bg-rose-600 hover:bg-rose-500")}>
-                  Rimuovi
-                </button>
-              )}
-            </div>
-          </div>
-          <div>
-            <label className="text-sm text-zinc-400">Logo per PDF</label>
-            <div className="flex items-center gap-2 mt-2">
-              <input type="file" accept=".pdf,.svg,.png,.jpg" ref={pdfLogoInputRef} onChange={handlePdfLogoUpload} className="hidden" />
-              <button onClick={() => pdfLogoInputRef.current.click()} className={classNames("px-3 py-2 rounded-xl text-sm", themes[theme].button)}>
-                Carica
-              </button>
-              {customPdfLogo && (
-                <button onClick={() => setCustomPdfLogo(null)} className={classNames("px-3 py-2 rounded-xl text-sm bg-rose-600 hover:bg-rose-500")}>
-                  Rimuovi
-                </button>
-              )}
-            </div>
-            {customPdfLogo && <div className="text-xs text-zinc-400 mt-1 truncate">{customPdfLogo.name}</div>}
-          </div>
-        </div>
-        <div className="mt-4">
-          <label className="text-sm text-zinc-400">Anteprima Logo Frontend</label>
-          <div className={classNames("mt-2 p-4 rounded-xl flex items-center justify-center", themes[theme].input)}>
-            <img
-              src={customLogo || logo}
-              alt="Logo Preview"
-              className="max-h-24 md:max-h-32 lg:max-h-40 w-auto object-contain"
-            />
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   const defaultDest="/Users/tuo_utente/Recordings";
   const destIsPlaceholder=!destDir.trim()||destDir===defaultDest||destDir.includes('tuo_utente');
 
@@ -2912,658 +2796,188 @@ export default function Rec2PdfApp(){
       icon: Cpu,
     };
   }, [failedStage, pipelineComplete, activeStageDefinition, busy]);
-    const HeaderIcon = headerStatus.icon || Cpu;
 
-    if (!sessionChecked) {
-      return (
-        <div className="min-h-screen w-full bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100 flex items-center justify-center">
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-6 py-4 text-sm text-zinc-300">
-            Verifica sessione in corso…
-          </div>
-        </div>
-      );
-    }
-
-    if (!session) {
-      return <LoginPage />;
-    }
-
-
+  if (!sessionChecked) {
     return (
-    <div className={classNames("min-h-screen w-full","bg-gradient-to-b", themes[theme].bg,"text-zinc-100")}>
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center">
-            <img
-              src={customLogo || logo}
-              alt="ThinkDoc Logo"
-              className="h-20 md:h-28 lg:h-32 w-auto object-contain"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={classNames("inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm", backendUp?"bg-emerald-950 text-emerald-300":backendUp===false?"bg-rose-950 text-rose-300":"bg-zinc-800 text-zinc-300")}>{backendUp?<><CheckCircle2 className="w-4 h-4"/> Backend OK</>:backendUp===false?<><AlertCircle className="w-4 h-4"/> Backend OFF</>:<>—</>}
-            </span>
-            <div className={classNames("flex items-center gap-2 rounded-xl px-3 py-2 border", themes[theme].input)}><LinkIcon className="w-4 h-4 text-zinc-400"/><input value={backendUrl} onChange={e=>setBackendUrl(e.target.value)} placeholder={DEFAULT_BACKEND_URL} className="bg-transparent outline-none text-sm w-[220px]"/></div>
-            <button onClick={runDiagnostics} className={classNames("px-3 py-2 rounded-xl text-sm flex items-center gap-2 border", themes[theme].input, themes[theme].input_hover)}><Bug className="w-4 h-4"/> Diagnostica</button>
-            <button onClick={openSetupAssistant} className={classNames("px-3 py-2 rounded-xl text-sm flex items-center gap-2 border shadow-sm", themes[theme].button)}>
-              <Sparkles className="w-4 h-4"/> Setup assistant
-            </button>
-            <button onClick={() => setShowSettings(!showSettings)} className={classNames("p-2 rounded-xl text-sm border", themes[theme].input, themes[theme].input_hover)}>
-              <Settings className="w-4 h-4"/>
-            </button>
-            <button onClick={toggleFullScreen} className={classNames("p-2 rounded-xl text-sm border", themes[theme].input, themes[theme].input_hover)}>
-              <Maximize className="w-4 h-4"/>
-            </button>
-            {session?.user?.email && (
-              <span className="hidden text-sm text-zinc-300 md:inline">{session.user.email}</span>
-            )}
-            <button
-              onClick={handleLogout}
-              className={classNames(
-                "px-3 py-2 rounded-xl text-sm border",
-                themes[theme].input,
-                themes[theme].input_hover
-              )}
-            >
-              Logout
-            </button>
-          </div>
+      <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-6 py-4 text-sm text-zinc-300">
+          Verifica sessione in corso…
         </div>
-        {showSettings && <SettingsPanel />} 
-        {!secureOK&&(<div className="mt-4 bg-rose-950/40 border border-rose-900/40 text-rose-200 rounded-xl p-3 text-sm">⚠️ Per accedere al microfono serve HTTPS (o localhost in sviluppo).</div>)}
-        <ErrorBanner/>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-          <div className={classNames("md:col-span-2 rounded-2xl p-6 shadow-lg border", themes[theme].card)}>
-            <div className="flex items-center justify-between"><h2 className="text-xl font-medium flex items-center gap-2"><Mic className="w-5 h-5"/> Registrazione</h2><div className="text-sm text-zinc-400 flex items-center gap-2"><TimerIcon className="w-4 h-4"/> {fmtTime(elapsed)}</div></div>
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-              <button onClick={requestPermission} className={classNames("px-4 py-2 rounded-xl text-sm border", themes[theme].button)}>Concedi microfono</button>
-              <div className="text-sm text-zinc-400">Permesso: <span className="font-mono">{permission}</span></div>
-              <button onClick={refreshDevices} className={classNames("px-3 py-2 rounded-xl text-sm flex items-center gap-2 border", themes[theme].button)}><RefreshCw className="w-4 h-4"/> Dispositivi</button>
-            </div>
-            {permission!=='granted'&&<PermissionBanner/>}
-            {permission==='granted'&&devices.length>0&&(
-              <div className="mt-4"><label className="text-sm text-zinc-400">Sorgente microfono</label><select value={selectedDeviceId} onChange={(e)=>setSelectedDeviceId(e.target.value)} className={classNames("mt-2 w-full rounded-lg px-3 py-2 border bg-transparent", themes[theme].input)}>{devices.map((d,i)=>(<option key={d.deviceId||i} value={d.deviceId} className="bg-zinc-900">{d.label||`Dispositivo ${i+1}`}</option>))}</select></div>
-            )}
-            <div className="mt-4 flex items-center justify-center">
-              <button onClick={recording?stopRecording:startRecording} className={classNames("w-40 h-40 rounded-full flex items-center justify-center text-lg font-semibold transition shadow-xl", recording?"bg-rose-600 hover:bg-rose-500":"bg-emerald-600 hover:bg-emerald-500")} disabled={busy||!mediaSupported||!recorderSupported} title={!mediaSupported?"getUserMedia non supportato":!recorderSupported?"MediaRecorder non supportato":""}>{recording?<div className="flex flex-col items-center gap-2"><Square className="w-8 h-8"/> Stop</div>:<div className="flex flex-col items-center gap-2"><Mic className="w-8 h-8"/> Rec</div>}</button>
-            </div>
-            <div className="mt-6"><div className="h-3 w-full bg-zinc-800 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-300" style={{width:`${Math.min(100,Math.round(level*120))}%`}}/></div><div className="text-xs text-zinc-500 mt-1">Input level</div></div>
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className={classNames("rounded-xl p-4 border", themes[theme].input)}>
-              <div className="flex items-center justify-between">
-                <label className="text-sm text-zinc-400 flex items-center gap-2"><Folder className="w-4 h-4"/> Cartella destinazione</label>
-                <button onClick={()=>setShowDestDetails(!showDestDetails)} className="text-zinc-400 hover:text-zinc-200"><Info className="w-4 h-4"/></button>
-              </div>
-              <input className={classNames("w-full mt-2 bg-transparent border rounded-lg px-3 py-2 outline-none", destIsPlaceholder?"border-rose-600":themes[theme].input)} value={destDir} onChange={e=>setDestDir(e.target.value)} placeholder="/Users/tuo_utente/Recordings"/>
-              {showDestDetails && <div className={classNames("text-xs mt-2", destIsPlaceholder?"text-rose-400":"text-zinc-500")}>{destIsPlaceholder?"Sostituisci \"tuo_utente\" con il tuo username macOS oppure lascia vuoto per usare la cartella predefinita del backend.":"Lascia vuoto per usare la cartella predefinita del backend."}</div>}
-            </div>
-              <div className={classNames("rounded-xl p-4 border", themes[theme].input)}><label className="text-sm text-zinc-400 flex items-center gap-2"><FileText className="w-4 h-4"/> Slug</label><input className="w-full mt-2 bg-transparent border-zinc-800 rounded-lg px-3 py-2 outline-none" value={slug} onChange={e=>setSlug(e.target.value)} placeholder="meeting"/></div>
-              <div className={classNames("rounded-xl p-4 border", themes[theme].input)}><label className="text-sm text-zinc-400 flex items-center gap-2"><TimerIcon className="w-4 h-4"/> Durata massima (s)</label><input type="number" min={0} className="w-full mt-2 bg-transparent border-zinc-800 rounded-lg px-3 py-2 outline-none" value={secondsCap} onChange={e=>setSecondsCap(Math.max(0, parseInt(e.target.value||"0",10) || 0))}/><div className="text-xs text-zinc-500 mt-2">0 = senza limite</div></div>
-            </div>
-            <div className={classNames("mt-4 rounded-xl p-4 border", themes[theme].input)}>
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-sm text-zinc-400">
-                    <Users className="w-4 h-4" />
-                    <span>Workspace &amp; progetto</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleRefreshWorkspaces}
-                      className={classNames(
-                        "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs border",
-                        themes[theme].input,
-                        themes[theme].input_hover,
-                        workspaceLoading && "opacity-60 cursor-not-allowed"
-                      )}
-                      disabled={workspaceLoading}
-                    >
-                      <RefreshCw className={classNames("w-3.5 h-3.5", workspaceLoading ? "animate-spin" : "")} />
-                      Aggiorna
-                    </button>
-                    <button
-                      onClick={() => setWorkspaceBuilderOpen((prev) => !prev)}
-                      className={classNames(
-                        "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs border",
-                        themes[theme].input,
-                        themes[theme].input_hover
-                      )}
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      {workspaceBuilderOpen ? 'Chiudi builder' : 'Nuovo workspace'}
-                    </button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-zinc-500">Workspace</label>
-                    <select
-                      value={workspaceSelection.workspaceId}
-                      onChange={(event) => handleSelectWorkspaceForPipeline(event.target.value)}
-                      className={classNames("mt-2 w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
-                    >
-                      <option value="">Nessun workspace</option>
-                      {workspaces.map((workspace) => (
-                        <option key={workspace.id} value={workspace.id} className="bg-zinc-900">
-                          {workspace.name} · {workspace.client || '—'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {workspaceSelection.workspaceId && (
-                    <div>
-                      <label className="text-xs text-zinc-500">Policy di versioning</label>
-                      <div className="mt-2 text-xs text-zinc-400">
-                        {activeWorkspace?.versioningPolicy
-                          ? `${activeWorkspace.versioningPolicy.namingConvention || 'timestamped'} · retention ${activeWorkspace.versioningPolicy.retentionLimit || 10}`
-                          : 'Timestamp standard'}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {workspaceBuilderOpen && (
-                  <div className="rounded-lg border border-dashed border-zinc-700 p-3 space-y-3">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs text-zinc-500">Nome</label>
-                        <input
-                          value={workspaceBuilder.name}
-                          onChange={(event) => setWorkspaceBuilder((prev) => ({ ...prev, name: event.target.value }))}
-                          className={classNames("mt-2 w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
-                          placeholder="Es. Portfolio Clienti"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-zinc-500">Cliente</label>
-                        <input
-                          value={workspaceBuilder.client}
-                          onChange={(event) => setWorkspaceBuilder((prev) => ({ ...prev, client: event.target.value }))}
-                          className={classNames("mt-2 w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
-                          placeholder="Es. Acme Corp"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-zinc-500">Colore</label>
-                        <div className="mt-2 flex items-center gap-2">
-                          <input
-                            type="color"
-                            value={workspaceBuilder.color}
-                            onChange={(event) => setWorkspaceBuilder((prev) => ({ ...prev, color: event.target.value }))}
-                            className="h-9 w-12 rounded border border-zinc-700 bg-transparent"
-                          />
-                          <span className="text-xs text-zinc-400 font-mono">{workspaceBuilder.color}</span>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-zinc-500">Stati suggeriti (comma-separated)</label>
-                        <input
-                          value={workspaceBuilder.statuses}
-                          onChange={(event) => setWorkspaceBuilder((prev) => ({ ...prev, statuses: event.target.value }))}
-                          className={classNames("mt-2 w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
-                          placeholder="Bozza, In lavorazione, In review"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={handleWorkspaceBuilderSubmit}
-                        className={classNames(
-                          "flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
-                          themes[theme].button,
-                          !workspaceBuilder.name.trim() && "opacity-60 cursor-not-allowed"
-                        )}
-                        disabled={!workspaceBuilder.name.trim()}
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        Crea workspace
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {workspaceSelection.workspaceId && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs text-zinc-500">Progetto</label>
-                      <select
-                        value={projectCreationMode ? '__new__' : workspaceSelection.projectId}
-                        onChange={(event) => handleSelectProjectForPipeline(event.target.value)}
-                        className={classNames("mt-2 w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
-                      >
-                        <option value="">Nessun progetto</option>
-                        {workspaceProjects.map((project) => (
-                          <option key={project.id} value={project.id} className="bg-zinc-900">
-                            {project.name}
-                          </option>
-                        ))}
-                        <option value="__new__">+ Nuovo progetto…</option>
-                      </select>
-                      {projectCreationMode && (
-                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-                          <input
-                            value={projectDraft}
-                            onChange={(event) => setProjectDraft(event.target.value)}
-                            placeholder="Nome progetto"
-                            className={classNames("rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
-                          />
-                          <div className="flex gap-2">
-                            <input
-                              value={statusDraft}
-                              onChange={(event) => setStatusDraft(event.target.value)}
-                              placeholder="Stato iniziale"
-                              className={classNames("w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
-                            />
-                            <button
-                              onClick={handleCreateProjectFromDraft}
-                              className={classNames(
-                                "flex items-center gap-1 rounded-lg px-3 py-2 text-xs",
-                                themes[theme].button,
-                                !projectDraft.trim() && "opacity-60 cursor-not-allowed"
-                              )}
-                              disabled={!projectDraft.trim()}
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              Crea
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-500">Stato</label>
-                      <select
-                        value={statusCreationMode ? '__new__' : (workspaceSelection.status || '')}
-                        onChange={(event) => handleSelectStatusForPipeline(event.target.value)}
-                        className={classNames("mt-2 w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
-                      >
-                        <option value="">Nessun stato</option>
-                        {availableStatuses.map((statusValue) => (
-                          <option key={statusValue} value={statusValue} className="bg-zinc-900">
-                            {statusValue}
-                          </option>
-                        ))}
-                        <option value="__new__">+ Nuovo stato…</option>
-                      </select>
-                      {statusCreationMode && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <input
-                            value={statusDraft}
-                            onChange={(event) => setStatusDraft(event.target.value)}
-                            placeholder="Es. In revisione"
-                            className={classNames("w-full rounded-lg border px-3 py-2 bg-transparent text-sm", themes[theme].input)}
-                          />
-                          <button
-                            onClick={handleCreateStatusFromDraft}
-                            className={classNames(
-                              "flex items-center gap-1 rounded-lg px-3 py-2 text-xs",
-                              themes[theme].button,
-                              !statusDraft.trim() && "opacity-60 cursor-not-allowed"
-                            )}
-                            disabled={!statusDraft.trim()}
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Aggiungi
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            <PromptLibrary
-              prompts={prompts}
-              loading={promptLoading}
-              selection={promptState}
-              onSelectPrompt={handleSelectPromptTemplate}
-              onClearSelection={handleClearPromptSelection}
-              favorites={promptFavorites}
-              onToggleFavorite={handleTogglePromptFavorite}
-              onRefresh={handleRefreshPrompts}
-              themeStyles={themes[theme]}
-              activePrompt={activePrompt}
-              focusValue={promptState.focus}
-              onFocusChange={handlePromptFocusChange}
-              notesValue={promptState.notes}
-              onNotesChange={handlePromptNotesChange}
-              cueProgress={promptState.cueProgress || {}}
-              onCueToggle={handleTogglePromptCue}
-              onCreatePrompt={handleCreatePrompt}
-              onDeletePrompt={handleDeletePrompt}
-            />
-            <div className={classNames("mt-6 rounded-xl p-4 border", themes[theme].input)}>
-              <div className="flex items-center justify-between"><div className="text-sm text-zinc-400">Clip registrata / caricata</div><div className="text-xs text-zinc-500">{mime||"—"} · {fmtBytes(audioBlob?.size)}</div></div>
-              <div className="mt-3">{audioUrl?<audio controls src={audioUrl} className="w-full"/>:<div className="text-zinc-500 text-sm">Nessuna clip disponibile.</div>}</div>
-              <div className="mt-3 flex items-center gap-2 flex-wrap">
-                <button onClick={()=>processViaBackend()} disabled={!audioBlob||busy||backendUp===false} className={classNames("px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium flex items-center gap-2",(!audioBlob||busy||backendUp===false)&&"opacity-60 cursor-not-allowed")}> <Cpu className="w-4 h-4"/> Avvia pipeline</button>
-                <a href={audioUrl} download={`recording.${((mime||"").includes("webm")?"webm":(mime||"").includes("ogg")?"ogg":(mime||"").includes("wav")?"wav":"m4a")}`} className={classNames("px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2", themes[theme].button, !audioUrl&&"pointer-events-none opacity-50")}> <Download className="w-4 h-4"/> Scarica audio</a>
-                <button onClick={resetAll} className={classNames("px-4 py-2 rounded-lg text-sm", themes[theme].button)}>Reset</button>
-              </div>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <div className={classNames("rounded-2xl border p-5 space-y-4 transition-all", themes[theme].input)}>
-                <div className="flex items-start gap-3">
-                  <div className="rounded-xl bg-indigo-500/10 p-2 text-indigo-300">
-                    <Upload className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-semibold text-zinc-100">Carica audio</h4>
-                    <p className="text-xs text-zinc-400">Usa un file audio esistente come sorgente alternativa alla registrazione.</p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <input ref={fileInputRef} type="file" accept="audio/*" onChange={onPickFile} className="hidden" />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className={classNames(
-                      "px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition",
-                      themes[theme].button
-                    )}
-                    type="button"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Seleziona audio
-                  </button>
-                </div>
-                {audioBlob && (
-                  <>
-                    <div className="text-xs text-zinc-500 flex items-center gap-2">
-                      <span
-                        className="truncate max-w-[180px]"
-                        title={
-                          'name' in audioBlob && audioBlob.name
-                            ? audioBlob.name
-                            : 'Registrazione pronta'
-                        }
-                      >
-                        {'name' in audioBlob && audioBlob.name ? audioBlob.name : 'Registrazione pronta'}
-                      </span>
-                      {Number.isFinite(audioBlob.size) && <span>· {fmtBytes(audioBlob.size)}</span>}
-                    </div>
-                    <p className="text-xs text-zinc-500">
-                      Avvia la pipeline dalla card "Clip registrata / caricata" per elaborare questo audio.
-                    </p>
-                  </>
-                )}
-                <p className="text-xs text-zinc-500">Supporta formati comuni (webm/ogg/m4a/wav). Verrà convertito in WAV lato server.</p>
-              </div>
-
-              <div className={classNames("rounded-2xl border p-5 space-y-4 transition-all", themes[theme].input)}>
-                <div className="flex items-start gap-3">
-                  <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-300">
-                    <FileCode className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-semibold text-zinc-100">Carica Markdown</h4>
-                    <p className="text-xs text-zinc-400">Carica un documento .md già strutturato per impaginarlo subito con PPUBR.</p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <input ref={markdownInputRef} type="file" accept=".md,text/markdown" onChange={handleMarkdownFilePicked} className="hidden" disabled={busy}/>
-                  <button
-                    onClick={() => markdownInputRef.current?.click()}
-                    className={classNames(
-                      "px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition",
-                      themes[theme].button,
-                      busy && "opacity-60 cursor-not-allowed"
-                    )}
-                    disabled={busy}
-                    type="button"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Seleziona Markdown
-                  </button>
-                  {lastMarkdownUpload && (
-                    <div className="text-xs text-zinc-500 flex items-center gap-2">
-                      <span className="truncate max-w-[180px]" title={lastMarkdownUpload.name}>{lastMarkdownUpload.name}</span>
-                      <span>· {fmtBytes(lastMarkdownUpload.size)}</span>
-                    </div>
-                  )}
-                </div>
-                <p className="text-xs text-zinc-500">Supporta solo file .md. L'impaginazione usa PPUBR con fallback Pandoc.</p>
-              </div>
-
-              <div className={classNames("rounded-2xl border p-5 space-y-4 transition-all", themes[theme].input)}>
-                <div className="flex items-start gap-3">
-                  <div className="rounded-xl bg-sky-500/10 p-2 text-sky-300">
-                    <FileText className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-semibold text-zinc-100">Carica TXT</h4>
-                    <p className="text-xs text-zinc-400">Carica un file .txt: lo convertiamo in Markdown e avviamo l&apos;impaginazione.</p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <input ref={textInputRef} type="file" accept=".txt,text/plain" onChange={handleTextFilePicked} className="hidden" disabled={busy}/>
-                  <button
-                    onClick={() => textInputRef.current?.click()}
-                    className={classNames(
-                      "px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition",
-                      themes[theme].button,
-                      busy && "opacity-60 cursor-not-allowed"
-                    )}
-                    disabled={busy}
-                    type="button"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Seleziona testo
-                  </button>
-                  {lastTextUpload && (
-                    <div className="text-xs text-zinc-500 flex items-center gap-2">
-                      <span className="truncate max-w-[180px]" title={lastTextUpload.name}>{lastTextUpload.name}</span>
-                      <span>· {fmtBytes(lastTextUpload.size)}</span>
-                    </div>
-                  )}
-                </div>
-                <p className="text-xs text-zinc-500">Supporta file UTF-8 .txt. Il contenuto viene ripulito e salvato come Markdown prima dell&apos;upload.</p>
-              </div>
-            </div>
-          </div>
-          <div className="md:col-span-1 flex flex-col gap-6">
-            <div className={classNames("rounded-2xl p-5 shadow-lg border", themes[theme].card)}><div className="flex items-center justify-between"><h3 className="text-lg font-medium flex items-center gap-2"><Settings className="w-4 h-4"/> Stato</h3></div><div className="mt-4 text-sm text-zinc-300 space-y-1"><div className="flex items-center gap-2"><span className={classNames("w-2 h-2 rounded-full",secureOK?"bg-emerald-500":"bg-rose-500")}/> HTTPS/localhost: {secureOK?"OK":"Richiesto"}</div><div className="flex items-center gap-2"><span className={classNames("w-2 h-2 rounded-full",mediaSupported?"bg-emerald-500":"bg-rose-500")}/> getUserMedia: {mediaSupported?"Supportato":"No"}</div><div className="flex items-center gap-2"><span className={classNames("w-2 h-2 rounded-full",recorderSupported?"bg-emerald-500":"bg-rose-500")}/> MediaRecorder: {recorderSupported?"Supportato":"No"}</div><div className="flex items-center gap-2"><span className={classNames("w-2 h-2 rounded-full",backendUp?"bg-emerald-500":"bg-rose-500")}/> Backend: {backendUp===null?"—":backendUp?"Online":"Offline"}</div><div className="flex items-center gap-2"><span className={classNames("w-2 h-2 rounded-full",busy?"bg-yellow-400":"bg-zinc-600")}/> Pipeline: {busy?"In esecuzione…":"Pronta"}</div></div></div>
-            <div className={classNames("rounded-2xl p-5 shadow-lg border space-y-4", themes[theme].card)}>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h3 className="text-lg font-medium flex items-center gap-2"><Cpu className="w-4 h-4"/> Pipeline</h3>
-                <div className="flex items-center gap-2">
-                  <span className={classNames("inline-flex items-center gap-2 rounded-lg px-2.5 py-1 text-xs font-medium transition", headerStatus.className)}>
-                    <HeaderIcon className="h-4 w-4"/>
-                    {headerStatus.text}
-                  </span>
-                  <button
-                    onClick={() => setShowRawLogs(prev => !prev)}
-                    className={classNames(
-                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition",
-                      themes[theme].input,
-                      themes[theme].input_hover
-                    )}
-                  >
-                    <Bug className="h-3.5 w-3.5"/>
-                    {showRawLogs ? 'Nascondi log grezzi' : 'Mostra log grezzi'}
-                  </button>
-                </div>
-              </div>
-              <div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-indigo-400 via-indigo-300 to-emerald-300 transition-all duration-500"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-zinc-400">
-                  <span>{completedStagesCount}/{totalStages} step completati</span>
-                  <span>{progressPercent}%</span>
-                </div>
-              </div>
-              <div className="space-y-4">
-                {PIPELINE_STAGES.map((stage, index) => {
-                  const status = pipelineStatus[stage.key] || 'idle';
-                  const Icon = stage.icon || Cpu;
-                  const prevStatus = index > 0 ? (pipelineStatus[PIPELINE_STAGES[index - 1].key] || 'idle') : null;
-                  const connectorClass = prevStatus === 'done' ? 'bg-emerald-500/40' : prevStatus === 'failed' ? 'bg-rose-500/40' : 'bg-zinc-700/60';
-                  const stageStyle = STAGE_STATUS_STYLES[status] || STAGE_STATUS_STYLES.idle;
-                  const isActive = failedStage ? failedStage.key === stage.key : activeStageKey === stage.key;
-                  const stageMessage = stageMessages[stage.key];
-                  return (
-                    <div key={stage.key} className="relative pl-10">
-                      {index !== 0 && (
-                        <div className={classNames('absolute left-3 top-0 h-full w-px transition-colors', connectorClass)} />
-                      )}
-                      <div className={classNames(
-                        'absolute left-0 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-xs transition-all',
-                        stageStyle,
-                        isActive && 'ring-2 ring-indigo-400/60'
-                      )}>
-                        <Icon className="h-3.5 w-3.5"/>
-                      </div>
-                      <div className={classNames(
-                        'rounded-lg border px-3 py-2 transition-all',
-                        stageStyle,
-                        isActive && 'shadow-lg shadow-indigo-500/10'
-                      )}>
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-sm font-medium text-zinc-100">{stage.label}</div>
-                          <span className={classNames(
-                            'rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide',
-                            stageStyle,
-                            status === 'running' && 'animate-pulse'
-                          )}>
-                            {STAGE_STATUS_LABELS[status] || status}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs text-zinc-300">{stage.description}</p>
-                        {stageMessage && (
-                          <div
-                            className={classNames(
-                              'mt-2 rounded-md border px-3 py-2 text-xs font-mono leading-relaxed whitespace-pre-wrap',
-                              status === 'failed' ? 'border-rose-500/40 bg-rose-500/10 text-rose-200' : 'border-zinc-700/60 bg-black/20 text-zinc-200'
-                            )}
-                          >
-                            {stageMessage}
-                          </div>
-                        )}
-                        {status === 'failed' && stage.help && (
-                          <div className="mt-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-                            {stage.help}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {!showRawLogs && logs?.length > 0 && (
-                <div className="text-xs text-zinc-500">
-                  {logs.length} righe di log disponibili. Apri i log grezzi per i dettagli completi.
-                </div>
-              )}
-              {showRawLogs && (
-                <div className={classNames('mt-2 max-h-56 overflow-auto rounded-xl border p-3 font-mono text-xs leading-relaxed', themes[theme].log)}>
-                  {logs?.length ? (
-                    logs.map((ln, i) => (
-                      <div key={i} className="whitespace-pre-wrap">
-                        {ln}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-zinc-500">Nessun log ancora.</div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="mt-8">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/60 pb-2">
-            <div className="flex flex-wrap items-center gap-2">
-              {HISTORY_TABS.map((tab) => {
-                const isActive = historyTab === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setHistoryTab(tab.key)}
-                    className={classNames(
-                      'rounded-lg px-3 py-1.5 text-xs font-semibold transition border',
-                      isActive
-                        ? 'bg-indigo-500/20 text-indigo-100 border-indigo-400/60'
-                        : themes[theme].button
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div className="mt-5">
-            {historyTab === 'history' ? (
-              <WorkspaceNavigator
-                entries={history}
-                workspaces={workspaces}
-                selection={navigatorSelection}
-                onSelectionChange={setNavigatorSelection}
-                savedFilters={savedWorkspaceFilters}
-                onSaveFilter={handleSaveWorkspaceFilter}
-                onDeleteFilter={handleDeleteWorkspaceFilter}
-                onApplyFilter={handleApplyWorkspaceFilter}
-                searchTerm={historyFilter}
-                onSearchChange={setHistoryFilter}
-                fetchPreview={fetchEntryPreview}
-                onOpenPdf={handleOpenHistoryPdf}
-                onOpenMd={handleOpenHistoryMd}
-                onRepublish={handleRepublishFromMd}
-                onShowLogs={handleShowHistoryLogs}
-                onAssignWorkspace={handleAssignEntryWorkspace}
-                themeStyles={themes[theme]}
-                loading={workspaceLoading}
-                onRefresh={handleRefreshWorkspaces}
-                pipelineSelection={workspaceSelection}
-                onAdoptSelection={handleAdoptNavigatorSelection}
-              />
-            ) : (
-              <CloudLibraryPanel
-                backendUrl={normalizedBackendUrl}
-                fetchBody={fetchBody}
-                selection={navigatorSelection}
-                onAssignWorkspace={handleLibraryWorkspaceSelection}
-                onOpenFile={handleOpenLibraryFile}
-                workspaces={workspaces}
-                themeStyles={themes[theme]}
-              />
-            )}
-          </div>
-        </div>
-        {!onboardingComplete && (
-          <div className="mt-10 text-xs text-zinc-500">
-            <p>Assicurati che il backend sia attivo su {DEFAULT_BACKEND_URL} e che ffmpeg e la toolchain siano configurati nella shell di esecuzione.</p>
-          </div>
-        )}
       </div>
-      <SetupAssistant
-        isOpen={showOnboarding}
-        onClose={() => setShowOnboarding(false)}
-        steps={onboardingSteps}
-        currentStep={onboardingStep}
-        onStepChange={setOnboardingStep}
-        onFinish={handleOnboardingFinish}
-      />
-      <MarkdownEditorModal
-        open={mdEditor.open}
-        title={mdEditor?.entry?.title || mdEditor?.entry?.slug || ''}
-        path={mdEditor.path}
-        value={mdEditor.content}
-        onChange={handleMdEditorChange}
-        onClose={handleMdEditorClose}
-        onSave={handleMdEditorSave}
-        onRepublish={handleRepublishFromEditor}
-        loading={mdEditor.loading}
-        saving={mdEditor.saving}
-        error={mdEditor.error}
-        success={mdEditor.success}
-        hasUnsavedChanges={mdEditorDirty}
-        onOpenInNewTab={handleOpenMdInNewTab}
-        busy={busy}
-        themeStyles={themes[theme]}
-      />
-    </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginPage />;
+  }
+
+  const contextValue = {
+    DEFAULT_BACKEND_URL,
+    theme,
+    themes,
+    cycleTheme,
+    customLogo,
+    setCustomLogo,
+    customPdfLogo,
+    setCustomPdfLogo,
+    backendUp,
+    backendUrl,
+    setBackendUrl,
+    runDiagnostics,
+    openSetupAssistant,
+    showSettings,
+    setShowSettings,
+    toggleFullScreen,
+    session,
+    handleLogout,
+    showOnboarding,
+    setShowOnboarding,
+    onboardingSteps,
+    onboardingStep,
+    setOnboardingStep,
+    handleOnboardingFinish,
+    secureOK,
+    errorBanner,
+    setErrorBanner,
+    permissionMessage,
+    lastMicError,
+    fmtTime,
+    fmtBytes,
+    elapsed,
+    requestPermission,
+    permission,
+    refreshDevices,
+    devices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+    recording,
+    stopRecording,
+    startRecording,
+    busy,
+    mediaSupported,
+    recorderSupported,
+    level,
+    showDestDetails,
+    setShowDestDetails,
+    destDir,
+    setDestDir,
+    destIsPlaceholder,
+    slug,
+    setSlug,
+    secondsCap,
+    setSecondsCap,
+    handleRefreshWorkspaces,
+    workspaceLoading,
+    setWorkspaceBuilderOpen,
+    workspaceBuilderOpen,
+    workspaceBuilder,
+    setWorkspaceBuilder,
+    handleWorkspaceBuilderSubmit,
+    handleSelectWorkspaceForPipeline,
+    workspaceSelection,
+    workspaces,
+    activeWorkspace,
+    projectCreationMode,
+    workspaceProjects,
+    handleSelectProjectForPipeline,
+    projectDraft,
+    setProjectDraft,
+    handleCreateProjectFromDraft,
+    statusCreationMode,
+    statusDraft,
+    setStatusDraft,
+    handleCreateStatusFromDraft,
+    availableStatuses,
+    handleSelectStatusForPipeline,
+    prompts,
+    promptLoading,
+    promptState,
+    handleSelectPromptTemplate,
+    handleClearPromptSelection,
+    promptFavorites,
+    handleTogglePromptFavorite,
+    handleRefreshPrompts,
+    activePrompt,
+    handlePromptFocusChange,
+    handlePromptNotesChange,
+    handleTogglePromptCue,
+    handleCreatePrompt,
+    handleDeletePrompt,
+    mime,
+    audioBlob,
+    audioUrl,
+    processViaBackend,
+    resetAll,
+    fileInputRef,
+    onPickFile,
+    markdownInputRef,
+    handleMarkdownFilePicked,
+    lastMarkdownUpload,
+    textInputRef,
+    handleTextFilePicked,
+    lastTextUpload,
+    showRawLogs,
+    setShowRawLogs,
+    PIPELINE_STAGES,
+    pipelineStatus,
+    stageMessages,
+    STAGE_STATUS_STYLES,
+    STAGE_STATUS_LABELS,
+    failedStage,
+    activeStageKey,
+    progressPercent,
+    completedStagesCount,
+    totalStages,
+    logs,
+    onboardingComplete,
+    HISTORY_TABS,
+    historyTab,
+    setHistoryTab,
+    history,
+    navigatorSelection,
+    setNavigatorSelection,
+    savedWorkspaceFilters,
+    handleSaveWorkspaceFilter,
+    handleDeleteWorkspaceFilter,
+    handleApplyWorkspaceFilter,
+    historyFilter,
+    setHistoryFilter,
+    fetchEntryPreview,
+    handleOpenHistoryPdf,
+    handleOpenHistoryMd,
+    handleRepublishFromMd,
+    handleShowHistoryLogs,
+    handleAssignEntryWorkspace,
+    handleAdoptNavigatorSelection,
+    normalizedBackendUrl,
+    fetchBody,
+    handleLibraryWorkspaceSelection,
+    handleOpenLibraryFile,
+    mdEditor,
+    handleMdEditorChange,
+    handleMdEditorClose,
+    handleMdEditorSave,
+    handleRepublishFromEditor,
+    mdEditorDirty,
+    handleOpenMdInNewTab,
+    headerStatus,
+    promptCompletedCues,
+  };
+
+  return (
+    <AppProvider value={contextValue}>
+      <Routes>
+        <Route element={<AppShell />}>
+          <Route index element={<Navigate to="/create" replace />} />
+          <Route path="/create" element={<CreatePage />} />
+          <Route path="/library" element={<LibraryPage />} />
+          <Route path="/editor" element={<EditorPage />} />
+          <Route path="*" element={<Navigate to="/create" replace />} />
+        </Route>
+      </Routes>
+    </AppProvider>
   );
 }
+
+export default AppContent;
+
