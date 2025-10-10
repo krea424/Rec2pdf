@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
   Bug,
@@ -78,10 +78,27 @@ const CreatePage = () => {
   const HeaderIcon = context.headerStatus?.icon || Cpu;
 
   const [openInfo, setOpenInfo] = useState(null);
+  const pdfLogoInputRef = useRef(null);
 
   const toggleInfo = (section) => {
     setOpenInfo((prev) => (prev === section ? null : section));
   };
+
+  const handlePdfLogoUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      context.setCustomPdfLogo(file);
+      event.target.value = "";
+    }
+  };
+
+  const pdfLogoLabel = useMemo(() => {
+    if (!context.customPdfLogo) return null;
+    if (typeof context.customPdfLogo === "string") {
+      return context.customPdfLogo;
+    }
+    return context.customPdfLogo.name || "Logo personalizzato";
+  }, [context.customPdfLogo]);
 
   const audioDownloadExtension = useMemo(() => {
     const mime = context.mime || "";
@@ -175,7 +192,7 @@ const CreatePage = () => {
             </button>
           </div>
 
-          <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
             <div
               className={classNames(
                 "rounded-2xl border p-4 transition-all",
@@ -257,6 +274,60 @@ const CreatePage = () => {
                 onChange={(event) => context.setSlug(event.target.value)}
                 placeholder="meeting"
               />
+            </div>
+
+            <div
+              className={classNames(
+                "rounded-2xl border p-4 transition-all",
+                isBoardroom ? boardroomSecondarySurface : themes[theme].input,
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-sm text-zinc-400">
+                  <FileCode className="h-4 w-4" /> Logo per PDF
+                </label>
+                {pdfLogoLabel && (
+                  <span className="max-w-[55%] truncate text-[11px] text-zinc-500" title={pdfLogoLabel}>
+                    {pdfLogoLabel}
+                  </span>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-zinc-500">
+                Carica un logo personalizzato per i PDF generati.
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  ref={pdfLogoInputRef}
+                  type="file"
+                  accept=".pdf,.svg,.png,.jpg,.jpeg"
+                  onChange={handlePdfLogoUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => pdfLogoInputRef.current?.click()}
+                  className={classNames(
+                    "rounded-lg px-3 py-1.5 text-xs font-medium",
+                    themes[theme].button,
+                  )}
+                >
+                  Carica
+                </button>
+                {context.customPdfLogo && (
+                  <button
+                    type="button"
+                    onClick={() => context.setCustomPdfLogo(null)}
+                    className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rose-500"
+                  >
+                    Rimuovi
+                  </button>
+                )}
+              </div>
+              {pdfLogoLabel && (
+                <div className="mt-2 truncate text-xs text-zinc-500" title={pdfLogoLabel}>
+                  {pdfLogoLabel}
+                </div>
+              )}
             </div>
           </div>
 

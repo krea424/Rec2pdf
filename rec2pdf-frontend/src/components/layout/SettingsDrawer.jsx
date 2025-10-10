@@ -49,8 +49,6 @@ export default function SettingsDrawer({ open, onClose }) {
     cycleTheme,
     customLogo,
     setCustomLogo,
-    customPdfLogo,
-    setCustomPdfLogo,
     backendUp,
     backendUrl,
     setBackendUrl,
@@ -83,7 +81,6 @@ export default function SettingsDrawer({ open, onClose }) {
   } = useAppContext();
 
   const logoInputRef = useRef(null);
-  const pdfLogoInputRef = useRef(null);
 
   const diagnosticsStatus = diagnostics?.status || "idle";
   const diagnosticsMessage = diagnosticsStatus === "error"
@@ -115,13 +112,6 @@ export default function SettingsDrawer({ open, onClose }) {
       }
     };
     reader.readAsDataURL(file);
-  };
-
-  const handlePdfLogoUpload = (event) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setCustomPdfLogo(file);
-    }
   };
 
   const clearStateOnClose = () => {
@@ -345,40 +335,6 @@ export default function SettingsDrawer({ open, onClose }) {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-4">
-            <div className="text-sm font-semibold text-zinc-100">Logo per PDF</div>
-            <p className="mt-1 text-xs text-zinc-400">
-              Sostituisci il logo utilizzato nei PDF esportati dal backend.
-            </p>
-            <div className="mt-3 flex items-center gap-2">
-              <input
-                ref={pdfLogoInputRef}
-                type="file"
-                accept=".pdf,.svg,.png,.jpg,.jpeg"
-                onChange={handlePdfLogoUpload}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => pdfLogoInputRef.current?.click()}
-                className={classNames("rounded-lg px-3 py-1.5 text-xs font-medium", themes[theme].button)}
-              >
-                Carica
-              </button>
-              {customPdfLogo && (
-                <button
-                  type="button"
-                  onClick={() => setCustomPdfLogo(null)}
-                  className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rose-500"
-                >
-                  Rimuovi
-                </button>
-              )}
-            </div>
-            {customPdfLogo && (
-              <div className="mt-2 truncate text-xs text-zinc-400">{customPdfLogo.name}</div>
-            )}
-          </div>
         </div>
       ),
       advanced: (
