@@ -1,7 +1,7 @@
 import CloudLibraryPanel from "../components/CloudLibraryPanel";
 import WorkspaceNavigator from "../components/WorkspaceNavigator";
 import { useAppContext } from "../hooks/useAppContext";
-import { classNames } from "../utils/classNames";
+import { Tabs, TabsList, TabsTrigger } from "../components/ui";
 
 const LibraryPage = () => {
   const context = useAppContext();
@@ -9,25 +9,16 @@ const LibraryPage = () => {
 
   return (
     <div className="mt-8">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/60 pb-2">
-        <div className="flex flex-wrap items-center gap-2">
-          {context.HISTORY_TABS.map((tab) => {
-            const isActive = context.historyTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => context.setHistoryTab(tab.key)}
-                className={classNames(
-                  "rounded-lg px-3 py-1.5 text-xs font-semibold transition border",
-                  isActive ? "bg-indigo-500/20 text-indigo-100 border-indigo-400/60" : themes[theme].button,
-                )}
-              >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-2">
+        <Tabs value={context.historyTab} onValueChange={context.setHistoryTab}>
+          <TabsList className="flex gap-2 border-none bg-transparent p-0">
+            {context.HISTORY_TABS.map((tab) => (
+              <TabsTrigger key={tab.key} value={tab.key} className="px-4">
                 {tab.label}
-              </button>
-            );
-          })}
-        </div>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
       <div className="mt-5">
         {context.historyTab === "history" ? (
