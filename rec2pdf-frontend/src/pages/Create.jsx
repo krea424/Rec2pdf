@@ -229,9 +229,9 @@ const CreatePage = () => {
               <input
                 className={classNames(
                   "mt-2 w-full rounded-lg border px-3 py-2 outline-none",
-                  context.destIsPlaceholder
-                    ? "border-rose-600"
-                    : themes[theme].input,
+                  themes[theme].input,
+                  context.destIsPlaceholder &&
+                    "border-rose-600 focus:border-rose-500 focus:ring-rose-500/30",
                 )}
                 value={context.destDir}
                 onChange={(event) => context.setDestDir(event.target.value)}
