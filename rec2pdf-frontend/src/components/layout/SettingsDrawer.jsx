@@ -112,6 +112,7 @@ export default function SettingsDrawer({ open, onClose }) {
     handleCreateStatusFromDraft,
     availableStatuses,
     handleSelectStatusForPipeline,
+    DEFAULT_DEST_DIR,
   } = useAppContext();
 
   const logoInputRef = useRef(null);
@@ -240,13 +241,27 @@ export default function SettingsDrawer({ open, onClose }) {
                 <label className="flex items-center gap-2 text-sm text-zinc-400">
                   <FileText className="h-4 w-4" /> Cartella destinazione
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setShowDestDetails((prev) => !prev)}
-                  className="text-zinc-400 hover:text-zinc-200"
-                >
-                  <Info className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDestDir(DEFAULT_DEST_DIR)}
+                    className={classNames(
+                      "rounded-lg border px-2 py-1 text-xs",
+                      themes[theme].input,
+                      themes[theme].input_hover,
+                    )}
+                  >
+                    Reimposta
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDestDetails((prev) => !prev)}
+                    className="text-zinc-400 hover:text-zinc-200"
+                    aria-label="Mostra dettagli cartella destinazione"
+                  >
+                    <Info className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
               <input
                 className={classNames(
@@ -255,7 +270,10 @@ export default function SettingsDrawer({ open, onClose }) {
                 )}
                 value={destDir}
                 onChange={(event) => setDestDir(event.target.value)}
-                placeholder="/Users/tuo_utente/Recordings"
+                placeholder={DEFAULT_DEST_DIR}
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
               />
               {showDestDetails && (
                 <div
@@ -265,7 +283,7 @@ export default function SettingsDrawer({ open, onClose }) {
                   )}
                 >
                   {destIsPlaceholder
-                    ? "Sostituisci \"tuo_utente\" con il tuo username macOS oppure lascia vuoto per usare la cartella predefinita del backend."
+                    ? `Sostituisci "tuo_utente" con il tuo username macOS oppure lascia vuoto per usare la cartella predefinita (${DEFAULT_DEST_DIR}).`
                     : "Lascia vuoto per usare la cartella predefinita del backend."}
                 </div>
               )}
@@ -872,6 +890,7 @@ export default function SettingsDrawer({ open, onClose }) {
     handleCreateStatusFromDraft,
     availableStatuses,
     handleSelectStatusForPipeline,
+    DEFAULT_DEST_DIR,
   ]);
 
   const activeSection = sectionNav.find((item) => item.key === activeSettingsSection);
