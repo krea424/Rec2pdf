@@ -247,6 +247,7 @@ const normalizePdfRules = (rules = {}) => {
 const mergePromptUpdate = (prompt, patch = {}) => {
   const updated = { ...prompt };
   if (patch.title) updated.title = String(patch.title).trim();
+  if (patch.summary) updated.summary = String(patch.summary).trim();
   if (patch.description) updated.description = String(patch.description).trim();
   if (patch.persona) updated.persona = String(patch.persona).trim();
   if (patch.slug) updated.slug = sanitizeSlug(patch.slug, prompt.slug || prompt.id || 'prompt');
@@ -296,6 +297,7 @@ const promptAssignmentForResponse = (prompt, extras = {}) => {
     id: prompt.id,
     slug: prompt.slug || '',
     title: prompt.title || '',
+    summary: prompt.summary || '',
     description: prompt.description || '',
     persona: prompt.persona || '',
     color: prompt.color || '#6366f1',
@@ -318,6 +320,7 @@ const buildPromptRulePayload = (prompt, extras = {}) => {
     slug: prompt.slug || '',
     title: prompt.title || '',
     persona: prompt.persona || '',
+    summary: prompt.summary || '',
     description: prompt.description || '',
     tags: Array.isArray(prompt.tags) ? prompt.tags.filter(Boolean) : [],
     cueCards: normalizeCueCards(prompt.cueCards),
@@ -927,7 +930,9 @@ const DEFAULT_PROMPTS = [
     id: 'prompt_format_base',
     slug: 'format_base',
     title: 'Format base',
-    description: "Trasforma gli appunti in un documento Markdown professionale. Inserire all'inizio del file un blocco YAML senza righe vuote sopra, evita di inserire all'inizio del file markdownaltri segni,simboli o termini che non siano i 3 trattininella prima riga solo 3 trattini e 3 trattini alla fine del blocco YAML, con i campi nell’ordine seguente: title, author, owner, project_name, project_code, artifact_type, version, identifier, location, summary, usageterms, ssot, status, created, updated, tags, ai.generated, ai.model, ai.prompt_id. Versioni in forma SemVer con underscore (es. v1_0_0). La struttura del documento DEVE includere sezioni con i titoli esatti: 'Executive Summary', 'Punti Chiave', 'Analisi Dettagliata', 'Prossime Azioni'. Inserisci almeno una tabella con un massimo di 4 colonne e una tabella dei 3 principali rischi. NON usare backticks di codice.",
+    summary: 'Trasforma gli appunti in un documento Markdown professionale.',
+    description:
+      "Trasforma gli appunti in un documento Markdown professionale. Inserire all'inizio del file un blocco YAML senza righe vuote sopra, evita di inserire all'inizio del file markdownaltri segni,simboli o termini che non siano i 3 trattininella prima riga solo 3 trattini e 3 trattini alla fine del blocco YAML, con i campi nell’ordine seguente: title, author, owner, project_name, project_code, artifact_type, version, identifier, location, summary, usageterms, ssot, status, created, updated, tags, ai.generated, ai.model, ai.prompt_id. Versioni in forma SemVer con underscore (es. v1_0_0). La struttura del documento DEVE includere sezioni con i titoli esatti: 'Executive Summary', 'Punti Chiave', 'Analisi Dettagliata', 'Prossime Azioni'. Inserisci almeno una tabella con un massimo di 4 colonne e una tabella dei 3 principali rischi. NON usare backticks di codice.",
     persona: 'Senior consultant',
     color: '#00FF00',
     tags: ['test', 'beta'],
@@ -995,6 +1000,14 @@ const DEFAULT_PROMPTS = [
   },
 ];
 
+const DEFAULT_PROMPTS_BY_ID = new Map(
+  DEFAULT_PROMPTS.filter((prompt) => prompt && prompt.id).map((prompt) => [prompt.id, prompt])
+);
+
+const DEFAULT_PROMPTS_BY_SLUG = new Map(
+  DEFAULT_PROMPTS.filter((prompt) => prompt && prompt.slug).map((prompt) => [prompt.slug, prompt])
+);
+
 const bootstrapDefaultPrompts = () => {
   const now = Date.now();
   return DEFAULT_PROMPTS.map((prompt, index) => ({
@@ -1002,6 +1015,34 @@ const bootstrapDefaultPrompts = () => {
     createdAt: prompt.createdAt || now + index,
     updatedAt: prompt.updatedAt || now + index,
   }));
+};
+
+const applyPromptMigrations = (prompts = []) => {
+  let changed = false;
+  const upgraded = (prompts || []).map((prompt) => {
+    if (!prompt || typeof prompt !== 'object') {
+      return prompt;
+    }
+
+    if (prompt.builtIn) {
+      const defaults =
+        DEFAULT_PROMPTS_BY_ID.get(prompt.id) ||
+        (prompt.slug ? DEFAULT_PROMPTS_BY_SLUG.get(prompt.slug) : null);
+
+      if (defaults) {
+        const next = { ...prompt };
+        if (!next.summary && defaults.summary) {
+          next.summary = defaults.summary;
+          changed = true;
+        }
+        return next;
+      }
+    }
+
+    return prompt;
+  });
+
+  return { prompts: upgraded, changed };
 };
 
 const ensureDataStore = async () => {
@@ -1031,7 +1072,11 @@ const readPrompts = async () => {
     const raw = await fsp.readFile(PROMPTS_FILE, 'utf8');
     const parsed = JSON.parse(raw);
     if (parsed && Array.isArray(parsed.prompts)) {
-      return parsed.prompts;
+      const { prompts, changed } = applyPromptMigrations(parsed.prompts);
+      if (changed) {
+        await writePrompts(prompts);
+      }
+      return prompts;
     }
   } catch (error) {
     console.warn('Impossibile leggere prompts.json:', error.message || error);
@@ -1214,6 +1259,7 @@ app.post('/api/prompts', async (req, res) => {
       id: generateId('prompt'),
       slug,
       title,
+      summary: String(req.body?.summary || '').trim(),
       description: String(req.body?.description || '').trim(),
       persona: String(req.body?.persona || '').trim(),
       color: normalizeColor(req.body?.color || '#6366f1'),
