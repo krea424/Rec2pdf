@@ -230,7 +230,11 @@ const CreatePage = () => {
                   context.backendUp === false
                 }
                 className={classNames(
-                  "flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium hover:bg-indigo-500",
+                  "flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0",
+                  isBoardroom
+                    ? "shadow-[0_26px_60px_-32px_rgba(61,176,255,0.85)] focus-visible:ring-sky-200/70 hover:shadow-[0_34px_80px_-36px_rgba(61,176,255,0.95)]"
+                    : "text-white shadow-sm focus-visible:ring-indigo-300 hover:shadow",
+                  themes[theme].button,
                   (!context.audioBlob ||
                     context.busy ||
                     context.backendUp === false) &&
