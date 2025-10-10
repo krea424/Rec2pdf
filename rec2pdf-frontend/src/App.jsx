@@ -460,7 +460,12 @@ function AppContent(){
     return saved && themes[saved] ? saved : 'zinc';
   });
   const [showDestDetails,setShowDestDetails]=useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeSettingsSection, setActiveSettingsSection] = useState("diagnostics");
+  const [showSetupAssistant, setShowSetupAssistant] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return !localStorage.getItem('onboardingComplete');
+  });
   const [customLogo, setCustomLogo] = useState(null);
   const [customPdfLogo, setCustomPdfLogo] = useState(null);
   const [lastMarkdownUpload,setLastMarkdownUpload]=useState(null);
@@ -615,7 +620,6 @@ function AppContent(){
     fetchBody,
   } = useBackendDiagnostics(backendUrl, session);
   const [onboardingComplete, setOnboardingComplete] = useState(() => localStorage.getItem('onboardingComplete') === 'true');
-  const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem('onboardingComplete'));
   const [onboardingStep, setOnboardingStep] = useState(0);
 
   const mediaRecorderRef=useRef(null);
@@ -2105,6 +2109,13 @@ function AppContent(){
     return `${trimmed}/api/diag`;
   }, [backendUrl, backendUrlValid]);
 
+  const shouldShowOnboardingBanner = useMemo(() => {
+    if (diagnostics.status === 'error') {
+      return true;
+    }
+    return !onboardingComplete;
+  }, [diagnostics.status, onboardingComplete]);
+
   const openMicSettings = useCallback(() => {
     if (typeof window === 'undefined') return;
     const ua = window.navigator?.userAgent || '';
@@ -2124,8 +2135,9 @@ function AppContent(){
   }, [setBackendUrl]);
 
   const handleBackendSettings = useCallback(() => {
-    setShowSettings(true);
-  }, [setShowSettings]);
+    setActiveSettingsSection('advanced');
+    setSettingsOpen(true);
+  }, [setActiveSettingsSection, setSettingsOpen]);
 
   const onboardingSteps = useMemo(() => {
     const micStatus = permission==='granted'?'success':permission==='denied'?'error':'pending';
@@ -2256,28 +2268,37 @@ function AppContent(){
     if (!onboardingSteps.length) return;
     if (onboardingSteps.every(step => step.status === 'success')) {
       setOnboardingComplete(true);
+      setShowSetupAssistant(false);
     }
-  }, [onboardingSteps]);
+  }, [onboardingSteps, setShowSetupAssistant]);
 
   useEffect(() => {
-    if (!showOnboarding || !onboardingSteps.length) return;
+    if (!showSetupAssistant || !onboardingSteps.length) return;
     const firstIncomplete = onboardingSteps.findIndex(step => step.status !== 'success');
     const targetIndex = firstIncomplete === -1 ? onboardingSteps.length - 1 : firstIncomplete;
     if (targetIndex !== onboardingStep) {
       setOnboardingStep(targetIndex);
     }
-  }, [showOnboarding, onboardingSteps, onboardingStep]);
+  }, [showSetupAssistant, onboardingSteps, onboardingStep]);
 
   const openSetupAssistant = useCallback(() => {
     const firstIncomplete = onboardingSteps.findIndex(step => step.status !== 'success');
     setOnboardingStep(firstIncomplete === -1 ? onboardingSteps.length - 1 : firstIncomplete);
-    setShowOnboarding(true);
-  }, [onboardingSteps, setOnboardingStep]);
+    setActiveSettingsSection('diagnostics');
+    setSettingsOpen(true);
+    setShowSetupAssistant(true);
+  }, [
+    onboardingSteps,
+    setOnboardingStep,
+    setActiveSettingsSection,
+    setSettingsOpen,
+    setShowSetupAssistant,
+  ]);
 
   const handleOnboardingFinish = useCallback(() => {
     setOnboardingComplete(true);
-    setShowOnboarding(false);
-  }, [setOnboardingComplete, setShowOnboarding]);
+    setShowSetupAssistant(false);
+  }, [setOnboardingComplete, setShowSetupAssistant]);
 
   const onPickFile=(e)=>{ const f=e.target.files?.[0]; if(!f) return; setAudioBlob(f); setAudioUrl(URL.createObjectURL(f)); setMime(f.type||""); setErrorBanner(null); };
 
@@ -2825,13 +2846,16 @@ function AppContent(){
     setBackendUrl,
     runDiagnostics,
     openSetupAssistant,
-    showSettings,
-    setShowSettings,
+    settingsOpen,
+    setSettingsOpen,
+    activeSettingsSection,
+    setActiveSettingsSection,
+    showSetupAssistant,
+    setShowSetupAssistant,
+    shouldShowOnboardingBanner,
     toggleFullScreen,
     session,
     handleLogout,
-    showOnboarding,
-    setShowOnboarding,
     onboardingSteps,
     onboardingStep,
     setOnboardingStep,

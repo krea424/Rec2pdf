@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
   AlertCircle,
@@ -10,9 +9,9 @@ import {
   Sparkles,
 } from "../../components/icons";
 import logoAsset from "../../assets/logo.svg";
-import SetupAssistant from "../SetupAssistant";
 import { classNames } from "../../utils/classNames";
 import { useAppContext } from "../../hooks/useAppContext";
+import SettingsDrawer from "./SettingsDrawer";
 
 const NAV_ITEMS = [
   { to: "/create", label: "Create" },
@@ -20,127 +19,38 @@ const NAV_ITEMS = [
   { to: "/editor", label: "Editor" },
 ];
 
-const SettingsPanel = () => {
-  const {
-    theme,
-    themes,
-    cycleTheme,
-    customLogo,
-    setCustomLogo,
-    customPdfLogo,
-    setCustomPdfLogo,
-  } = useAppContext();
+const OnboardingBanner = () => {
+  const { shouldShowOnboardingBanner, diagnostics, openSetupAssistant } = useAppContext();
 
-  const logoInputRef = useRef(null);
-  const pdfLogoInputRef = useRef(null);
+  if (!shouldShowOnboardingBanner) {
+    return null;
+  }
 
-  const handleLogoUpload = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      if (e.target?.result) {
-        setCustomLogo(e.target.result);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handlePdfLogoUpload = (event) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setCustomPdfLogo(file);
-    }
-  };
+  const hasDiagnosticsError = diagnostics.status === "error";
+  const description = hasDiagnosticsError
+    ? diagnostics.message ||
+      "La diagnostica ha evidenziato problemi. Apri l'assistente per seguire i passaggi di risoluzione."
+    : "Completa la procedura guidata per terminare l'onboarding e assicurarti che tutto sia configurato correttamente.";
 
   return (
-    <div className={classNames("p-4 mt-4 rounded-2xl border", themes[theme].card)}>
-      <h3 className="text-lg font-medium">Impostazioni</h3>
-      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div>
-          <label className="text-sm text-zinc-400">Tema</label>
-          <button
-            type="button"
-            onClick={cycleTheme}
-            className={classNames(
-              "w-full mt-2 px-3 py-2 rounded-xl text-sm border",
-              themes[theme].input,
-              themes[theme].input_hover,
-            )}
-          >
-            Cycle Theme ({theme})
-          </button>
-        </div>
-        <div>
-          <label className="text-sm text-zinc-400">Logo Frontend</label>
-          <div className="mt-2 flex items-center gap-2">
-            <input
-              ref={logoInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleLogoUpload}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => logoInputRef.current?.click()}
-              className={classNames("px-3 py-2 rounded-xl text-sm", themes[theme].button)}
-            >
-              Carica
-            </button>
-            {customLogo && (
-              <button
-                type="button"
-                onClick={() => setCustomLogo(null)}
-                className="px-3 py-2 rounded-xl text-sm bg-rose-600 hover:bg-rose-500"
-              >
-                Rimuovi
-              </button>
-            )}
+    <div className="rounded-2xl border border-amber-900/50 bg-amber-950/40 p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3 text-sm text-amber-100">
+          <AlertCircle className="mt-1 h-5 w-5 text-amber-300" />
+          <div>
+            <div className="font-semibold text-amber-200">
+              {hasDiagnosticsError ? "La diagnostica richiede attenzione" : "Completa l'onboarding"}
+            </div>
+            <p className="mt-1 text-amber-100/80">{description}</p>
           </div>
         </div>
-        <div>
-          <label className="text-sm text-zinc-400">Logo per PDF</label>
-          <div className="mt-2 flex items-center gap-2">
-            <input
-              ref={pdfLogoInputRef}
-              type="file"
-              accept=".pdf,.svg,.png,.jpg"
-              onChange={handlePdfLogoUpload}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => pdfLogoInputRef.current?.click()}
-              className={classNames("px-3 py-2 rounded-xl text-sm", themes[theme].button)}
-            >
-              Carica
-            </button>
-            {customPdfLogo && (
-              <button
-                type="button"
-                onClick={() => setCustomPdfLogo(null)}
-                className="px-3 py-2 rounded-xl text-sm bg-rose-600 hover:bg-rose-500"
-              >
-                Rimuovi
-              </button>
-            )}
-          </div>
-          {customPdfLogo && (
-            <div className="mt-1 truncate text-xs text-zinc-400">{customPdfLogo.name}</div>
-          )}
-        </div>
-      </div>
-      <div className="mt-4">
-        <label className="text-sm text-zinc-400">Anteprima Logo Frontend</label>
-        <div className={classNames("mt-2 flex items-center justify-center rounded-xl p-4", themes[theme].input)}>
-          <img
-            src={customLogo || logoAsset}
-            alt="Logo Preview"
-            className="max-h-24 w-auto object-contain md:max-h-32 lg:max-h-40"
-          />
-        </div>
+        <button
+          type="button"
+          onClick={openSetupAssistant}
+          className="inline-flex items-center justify-center rounded-lg border border-amber-500/40 px-3 py-2 text-xs font-semibold text-amber-100 transition hover:bg-amber-500/10"
+        >
+          <Sparkles className="mr-2 h-4 w-4" /> Apri assistente
+        </button>
       </div>
     </div>
   );
@@ -154,20 +64,15 @@ const AppShell = () => {
     setBackendUrl,
     runDiagnostics,
     openSetupAssistant,
-    showSettings,
-    setShowSettings,
+    settingsOpen,
+    setSettingsOpen,
+    setActiveSettingsSection,
     toggleFullScreen,
     session,
     handleLogout,
     theme,
     themes,
     DEFAULT_BACKEND_URL,
-    showOnboarding,
-    setShowOnboarding,
-    onboardingSteps,
-    onboardingStep,
-    setOnboardingStep,
-    handleOnboardingFinish,
   } = useAppContext();
 
   const cx = classNames;
@@ -264,12 +169,16 @@ const AppShell = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setShowSettings((prev) => !prev)}
+                onClick={() => {
+                  setActiveSettingsSection("diagnostics");
+                  setSettingsOpen(true);
+                }}
                 className={cx(
                   "rounded-xl border p-2 text-sm",
                   themes[theme].input,
                   themes[theme].input_hover,
                 )}
+                aria-label="Apri impostazioni"
               >
                 <SettingsIcon className="h-4 w-4" />
               </button>
@@ -281,6 +190,7 @@ const AppShell = () => {
                   themes[theme].input,
                   themes[theme].input_hover,
                 )}
+                aria-label="Attiva schermo intero"
               >
                 <Maximize className="h-4 w-4" />
               </button>
@@ -322,23 +232,19 @@ const AppShell = () => {
           </nav>
         </header>
 
-        {showSettings && <SettingsPanel />}
+        <div className="mt-6 space-y-6">
+          <OnboardingBanner />
 
-        <main className="mt-6">
-          <Outlet />
-        </main>
+          <main>
+            <Outlet />
+          </main>
+        </div>
       </div>
 
-      <SetupAssistant
-        isOpen={showOnboarding}
-        onClose={() => setShowOnboarding(false)}
-        steps={onboardingSteps}
-        currentStep={onboardingStep}
-        onStepChange={setOnboardingStep}
-        onFinish={handleOnboardingFinish}
-      />
+      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 };
 
 export default AppShell;
+
