@@ -87,8 +87,8 @@ const AppShell = () => {
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
               <Button
                 type="button"
-                variant="primary"
-                className="gap-2 shadow-subtle"
+                variant="ghost"
+                className="gap-2 px-3 text-sm font-medium text-surface-200 hover:text-white"
                 onClick={openSetupAssistant}
                 leadingIcon={Sparkles}
               >
