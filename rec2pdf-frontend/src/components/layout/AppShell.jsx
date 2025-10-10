@@ -1,13 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import {
-  AlertCircle,
-  Bug,
-  CheckCircle2,
-  LinkIcon,
-  Maximize,
-  Settings as SettingsIcon,
-  Sparkles,
-} from "../../components/icons";
+import { AlertCircle, CheckCircle2, LinkIcon, Maximize, Sparkles } from "../../components/icons";
 import logoAsset from "../../assets/logo.svg";
 import { classNames } from "../../utils/classNames";
 import { useAppContext } from "../../hooks/useAppContext";
@@ -66,14 +58,10 @@ const AppShell = () => {
     backendUp,
     backendUrl,
     setBackendUrl,
-    runDiagnostics,
     openSetupAssistant,
     settingsOpen,
     setSettingsOpen,
-    setActiveSettingsSection,
     toggleFullScreen,
-    session,
-    handleLogout,
     theme,
     themes,
     DEFAULT_BACKEND_URL,
@@ -138,15 +126,6 @@ const AppShell = () => {
               />
               <Button
                 type="button"
-                variant="subtle"
-                className={cx("gap-2", themes[theme].input_hover)}
-                onClick={runDiagnostics}
-                leadingIcon={Bug}
-              >
-                Diagnostica
-              </Button>
-              <Button
-                type="button"
                 variant="primary"
                 className="gap-2 shadow-subtle"
                 onClick={openSetupAssistant}
@@ -156,37 +135,11 @@ const AppShell = () => {
               </Button>
               <IconButton
                 variant="ghost"
-                onClick={() => {
-                  setActiveSettingsSection("diagnostics");
-                  setSettingsOpen(true);
-                }}
-                aria-label="Apri impostazioni"
-              >
-                <SettingsIcon className="h-4 w-4" />
-              </IconButton>
-              <IconButton
-                variant="ghost"
                 onClick={toggleFullScreen}
                 aria-label="Attiva schermo intero"
               >
                 <Maximize className="h-4 w-4" />
               </IconButton>
-              {session?.user?.email && (
-                <span className="hidden text-sm text-zinc-300 md:inline">
-                  {session.user.email}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={handleLogout}
-                className={cx(
-                  "rounded-xl border px-3 py-2 text-sm",
-                  themes[theme].input,
-                  themes[theme].input_hover,
-                )}
-              >
-                Logout
-              </button>
             </div>
           </div>
           <nav className="flex flex-wrap items-center gap-2">
