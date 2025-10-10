@@ -736,6 +736,30 @@ function AppContent(){
   }, [prompts, promptState.promptId]);
 
   useEffect(() => {
+    if (!Array.isArray(prompts) || prompts.length === 0) return;
+    setPromptState((prev) => {
+      if (prev.promptId) {
+        return prev;
+      }
+      const defaultPrompt = prompts.find((prompt) => {
+        const slugMatch = typeof prompt.slug === 'string' && prompt.slug === 'format_base';
+        const titleMatch =
+          typeof prompt.title === 'string' && prompt.title.trim().toLowerCase() === 'format base';
+        return slugMatch || titleMatch;
+      });
+      if (!defaultPrompt || !defaultPrompt.id) {
+        return prev;
+      }
+      return {
+        promptId: defaultPrompt.id,
+        focus: prev.focus || '',
+        notes: prev.notes || '',
+        cueProgress: {},
+      };
+    });
+  }, [prompts, setPromptState]);
+
+  useEffect(() => {
     setNavigatorSelection((prev) => {
       if (prev.workspaceId || !workspaceSelection.workspaceId) {
         return prev;
