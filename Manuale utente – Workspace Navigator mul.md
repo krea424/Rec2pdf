@@ -1,72 +1,53 @@
 Manuale utente – Workspace Navigator multi-cliente
+===============================================
+
 1. Panoramica
-Workspace Navigator è la nuova vista della Libreria che organizza l’intero archivio per cliente, progetto e stato, fornendo anteprime istantanee e indicatori di completezza per ogni documento generato dalla pipeline.
+-------------
+Workspace Navigator organizza la cronologia Rec2PDF per cliente, progetto e stato. La vista unifica filtri salvabili, anteprime Markdown in cache e azioni rapide su PDF/MD/log per accelerare la gestione multi-brand.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L215】
 
 2. Prerequisiti e configurazione backend
-Definisci gli spazi di lavoro: il backend espone le API /api/workspaces per creare, aggiornare e cancellare workspace con metadati su cliente, colori, cataloghi di stato, progetti e policy di versioning (retention, naming, freeze).
+---------------------------------------
+* Definisci i workspace dal backend (`/api/workspaces`) impostando client, colori, cataloghi di stato e policy di versioning. Gli aggiornamenti vengono sincronizzati con il frontend al refresh della libreria.【F:rec2pdf-backend/server.js†L1131-L1217】【F:rec2pdf-frontend/src/App.jsx†L1376-L1554】
+* La pipeline restituisce workspace assegnato, progetto, stato e struttura del documento (punteggio, sezioni mancanti, checklist prompt) per alimentare le anteprime.【F:rec2pdf-backend/server.js†L1681-L1707】【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L35-L58】
+* Le librerie cloud e locale condividono la stessa selezione; l’adozione dei filtri nel form pipeline avviene tramite `onAdoptSelection` e `handleAssignEntryWorkspace`.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L215】【F:rec2pdf-frontend/src/App.jsx†L560-L714】
 
-Allinea progetti e stati: durante l’elaborazione l’API aggiorna o crea automaticamente progetti e cataloghi di stato se il documento porta nuovi metadati, garantendo coerenza multi-brand.
+3. Layout e comandi principali
+------------------------------
+### 3.1 Barra strumenti
+* **Tabs Cronologia/Cloud**: consente di alternare la vista locale e quella Supabase mantenendo la stessa selezione.【F:rec2pdf-frontend/src/pages/Library.jsx†L6-L59】 
+* **Ricerca full-text**: filtra titoli, clienti, progetti, stati, tag e sezioni mancanti; apre automaticamente il pannello Filtri.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L40-L120】
+* **Filtri salvati**: memorizza combinazioni di workspace/progetto/stato/query e le ripristina in un clic.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L84-L115】【F:rec2pdf-frontend/src/App.jsx†L560-L714】
+* **Pulsante "Usa nel form pipeline"**: copia la selezione corrente nel form principale, proponendo stato e progetto coerenti.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L83】
 
-Naming controllato: i documenti ereditano convenzioni di naming/time-stamping o versioning incrementale in base alla policy del workspace, evitando collisioni fra clienti.
+### 3.2 Colonne navigator
+* **Workspace**: elenco con colori brand, conteggio documenti e ordinamento alfabetico; include voce “Non assegnati”.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L122-L198】
+* **Progetti e stati**: pill con contatori, palette dedicate e default derivati da workspace o `DEFAULT_STATUSES`.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L122-L198】
+* **Lista documenti**: card cronologiche con timestamp formattato, punteggio completezza e badge progetto/stato.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L28-L38】【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L122-L198】
 
-Metadati arricchiti: ogni risposta della pipeline include workspace assegnato e punteggio di struttura (completezza, sezioni mancanti, callout) per alimentare la libreria e le anteprime.
-
-Analisi struttura Markdown: il backend calcola automaticamente heading, sezioni raccomandate, bullet point e word count per orientare il knowledge worker su lacune contenutistiche.
-
-Persistenza nel frontend: la libreria normalizza workspace, struttura e link (PDF/MD), calcolando il punteggio di completezza per ogni elemento salvato.
-
-3. Accesso e layout della vista
-Header di controllo – Pulsanti “Aggiorna” (ricarica le definizioni dal backend) e “Usa nel form pipeline” (sincronizza i filtri correnti con il form di registrazione/caricamento) sono sempre disponibili, con badge visivo quando la selezione coincide con quella del form.
-
-Ricerca e filtri salvati – Barra di ricerca full-text su titoli, clienti, progetti, stati, tag e sezioni mancanti, campo per nominare i filtri e chip riutilizzabili/eliminabili per richiami rapidi.
-
-Breadcrumb & sincronizzazione pipeline – Un breadcrumb colorato mostra workspace → progetto → stato e indica quando la selezione è già applicata al form principale.
-
-Colonna Workspace – Elenco ordinato alfabeticamente con colore brand, cliente e conteggio documenti; “Mostra tutti” ripristina la vista completa.
-
-Colonna Progetti e Stati – Pill per progetto con conteggi e palette dedicata, badge stato con frequenze, supporto per “Tutti” e reset rapidi.
-
-Lista documenti – Cards cronologiche con titolo, timestamp, badge progetto/stato, punteggio di completezza e alert sulle sezioni mancanti.
-
-Pannello anteprima – Preview Markdown con fallback di errore, dettagli client/progetto/stato e azioni rapide (Apri PDF, Apri MD, Rigenera PDF, Log pipeline).
-
-Azioni di assegnazione – Pulsanti per allineare o rimuovere l’associazione workspace/progetto/stato dal documento selezionato, con gestione dello stato “in corso”.
+### 3.3 Pannello anteprima
+* Richiama il Markdown solo al primo click e lo cachea per navigazioni successive (`previewCache`).【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L91-L108】
+* Mostra link rapidi per Apri PDF/MD, Rigenera PDF, Visualizza log e Allinea workspace; tutte le azioni espongono stato di caricamento.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L198】
+* Evidenzia l’elenco delle sezioni mancanti (checklist prompt) e i metadati prompt/pipeline a supporto della revisione.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L35-L58】
 
 4. Operazioni fondamentali
-Filtra e salva viste: combina ricerca libera con selezioni workspace/progetto/stato e salva la configurazione per riapplicarla in un clic.
+--------------------------
+1. **Aggiorna e sincronizza**: premi “Aggiorna” per ricaricare workspaces e cronologia dal backend; il pannello mostra spinner finché `loading` è attivo.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L115】
+2. **Salva un filtro personale**: combina ricerca + selezione workspace/progetto/stato, inserisci un nome e salva; la configurazione è persistita in `localStorage`.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L84-L115】【F:rec2pdf-frontend/src/App.jsx†L560-L714】
+3. **Esamina un documento**: seleziona la card, attiva l’anteprima Markdown e consulta punteggi di completezza/mancanze per decidere eventuali revisioni.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L35-L108】
+4. **Allinea al workspace**: usa l’azione dedicata per aggiornare workspace/progetto/stato del documento, mantenendo sincronizzati storico locale e backend.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L198】
+5. **Propaga al form pipeline**: applica “Usa nel form pipeline” per preparare la prossima registrazione/caricamento con gli stessi metadati.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L83】【F:rec2pdf-frontend/src/App.jsx†L560-L714】
 
-Anteprima immediata: il frontend richiede il Markdown al backend solo al primo click e lo cachea per navigazioni rapide; in assenza di MD segnala l’errore all’utente.
-
-Azioni documento: apri PDF/MD in nuova scheda, rilancia la pubblicazione o consulta i log senza lasciare la vista corrente.
-
-Allinea metadata: “Allinea al workspace” aggiorna il record locale e, se richiesto, crea/aggiorna progetto e stati sul backend prima di sincronizzare l’elenco workspace.
-
-Gestisci non assegnati: puoi filtrare la colonna workspace sui documenti “Non assegnati” per classificarli successivamente.
-
-Propaga al form pipeline: il pulsante “Usa nel form pipeline” copia la selezione corrente nel form di registrazione/caricamento e propone il primo stato utile del progetto scelto.
-
-Gestisci filtri utente: i filtri salvati memorizzano workspace, progetto, stato e query testuale per ripristinare vista e ricerca in un solo click.
-
-5. User journey di riferimento
-Crea il workspace del cliente tramite POST /api/workspaces, impostando nome cliente, palette, stati e policy di versioning.
-
-Registra o carica il brainstorming selezionando il workspace (e progetto/stato) nel form; la pipeline restituisce PDF/MD con struttura e metadata arricchiti e aggiorna l’elenco workspace.
-
-Apri Workspace Navigator, filtra per workspace e progetto per vedere solo i deliverable del cliente, con badge di stato e punteggi di completezza.
-
-Valuta la qualità: osserva la percentuale di completezza e l’elenco delle sezioni mancanti per decidere eventuali revisioni o arricchimenti.
-
-Associa o aggiorna lo stato con “Allinea al workspace” e salva un filtro nominativo (es. “Cliente ACME – In revisione”) per ritrovarlo rapidamente.
-
-Propaga le impostazioni al form pipeline con “Usa nel form pipeline” così la prossima registrazione parte già con workspace/progetto/stato corretti.
-
-Itera: ripeti la registrazione o carica nuovi spunti; Workspace Navigator consoliderà cronologia, versioning e insight per cliente/progetto.
+5. Workflow consigliato
+-----------------------
+1. Crea workspace e progetti dal cassetto **Impostazioni → Branding/Advanced**, definendo colori, default di stato e policy di versioning.【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L47-L199】
+2. Registra o carica documenti associando workspace/progetto/stato; la pipeline aggiorna cronologia e metriche di struttura.【F:rec2pdf-frontend/src/App.jsx†L1658-L2354】【F:rec2pdf-backend/server.js†L1681-L1707】
+3. Usa Workspace Navigator per filtrare per cliente/progetto, analizzare punteggi e se necessario rigenerare PDF o aprire i log.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L198】
+4. Salva viste ricorrenti (es. “Cliente ACME – In revisione”) e adotta le selezioni nel form pipeline per mantenere consistenza tra registrazioni successive.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L84-L115】【F:rec2pdf-frontend/src/App.jsx†L560-L714】
+5. Monitora i documenti “Non assegnati” filtrando la colonna workspace per completare rapidamente i metadati mancanti.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L122-L198】
 
 6. Suggerimenti e best practice
-Monitora la “completezza”: usa il punteggio automatico e l’elenco delle sezioni mancanti per guidare la revisione e assicurare deliverable allineati agli standard di business analysis.
-
-Sfrutta i warning semantici: highlight come “Manca: executive summary” mettono in luce i gap più comuni per knowledge worker frettolosi.
-
-Imposta naming coerenti: definisci slug, colori e policy di naming/versioning per mantenere archivio ordinato tra più clienti e versioni successive.
-
-Crea progetti/stati direttamente dalla pipeline: se assegni un documento a un nuovo progetto o stato, il backend li registra e li rende disponibili a tutta l’interfaccia.
+-------------------------------
+* Tieni d’occhio il punteggio di completezza e le sezioni mancanti per indirizzare la revisione editoriale prima di condividere il PDF.【F:rec2pdf-backend/server.js†L1681-L1707】【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L35-L58】
+* Utilizza l’anteprima cache per confrontare versioni consecutive senza ricaricare lo stesso Markdown dal backend.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L91-L108】
+* Affianca la Cloud Library quando ti serve il file originale da Supabase: il prefisso di ricerca viene sincronizzato con la selezione corrente, evitando errori di percorso.【F:rec2pdf-frontend/src/components/CloudLibraryPanel.jsx†L76-L198】【F:rec2pdf-frontend/src/pages/Library.jsx†L6-L59】
+* In caso di riassegnazioni massive, usa i filtri salvati per scorrere rapidamente i documenti che richiedono la stessa etichetta e applica l’azione di allineamento in sequenza.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L198】

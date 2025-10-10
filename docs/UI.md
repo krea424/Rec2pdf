@@ -21,24 +21,24 @@ These guidelines codify the consulting-grade UX overhaul of the Rec2PDF web appl
 - **Code/metadata**: Use `"JetBrains Mono", "Fira Code", monospace` for logs and pipeline IDs.
 
 ## Component Usage
-- **Shell**: `AppFrame` orchestrates header, sidebar, and work area. Sidebar switches between Navigator, Library, and Diagnostics. Header hosts workspace selector, prompt badge, and publish status pill.
-- **Navigation**: `NavigatorRail` replaces the legacy tab bar. Icons default to 24px line style with text labels appearing on hover or when the rail expands at 960px.
-- **Primary actions**: Adopt the `ActionButton` component (formerly `PrimaryCTAButton`). It exposes props `{ tone: "brand" | "neutral" | "danger", size: "md" | "lg", icon }` and enforces uppercase labels only when tone is `brand`.
-- **Forms**: Inputs use the `FieldStack` wrapper for label, helper text, validation, and optional inline progress. All fields must define `aria-describedby` to hook into FieldStack messaging.
-- **Data visualization**: Pipeline status charts use the `StageTimeline` component with stepped progress dots and tooltips describing backend log references.
+- **Shell**: `AppShell` gestisce il layout boardroom (header con logo/custom logo, onboarding banner, navigazione principale) e monta il `SettingsDrawer` per temi, diagnostica, builder workspace/progetti e gestione dispositivi.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L15-L139】【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L26-L199】
+- **Navigazione**: la barra superiore utilizza `NavLink` per Create/Library/Editor, mentre la libreria interna alterna cronologia/cloud tramite i componenti `Tabs`, `TabsList` e `TabsTrigger`. Mantieni le tab ghost e i badge coerenti con le classi fornite.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L108-L125】【F:rec2pdf-frontend/src/pages/Library.jsx†L6-L59】【F:rec2pdf-frontend/src/components/ui/Tabs.jsx†L1-L74】
+- **Primary actions**: usa `Button` e `IconButton` per CTA e controlli rapidi; rispettare varianti/size predefinite e spinner integrati (`isLoading`).【F:rec2pdf-frontend/src/components/ui/Button.jsx†L5-L129】
+- **Drawer e modali**: `Drawer` fornisce overlay con gestione ESC/click esterno per il cassetto impostazioni; `MarkdownEditorModal` definisce struttura e comandi per l’editing Markdown.【F:rec2pdf-frontend/src/components/ui/Drawer.jsx†L1-L70】【F:rec2pdf-frontend/src/components/MarkdownEditorModal.jsx†L9-L133】
+- **Forms**: `Input`, `Select`, `TextArea` e componenti helper allineano label, helper text e stati. Riutilizza le classi esistenti e collega `aria-describedby` quando fornisci messaggi contestuali.【F:rec2pdf-frontend/src/components/ui/Input.jsx†L1-L120】【F:rec2pdf-frontend/src/components/ui/Select.jsx†L1-L140】【F:rec2pdf-frontend/src/components/MarkdownEditorModal.jsx†L69-L94】
+- **Data surfaces**: `WorkspaceNavigator` aggrega cronologia e metadata, `CloudLibraryPanel` dialoga con Supabase, e i log pipeline vengono visualizzati nella Create page. Le nuove viste devono derivare da questi pattern invece di introdurre container custom.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L215】【F:rec2pdf-frontend/src/components/CloudLibraryPanel.jsx†L6-L198】【F:rec2pdf-frontend/src/pages/Create.jsx†L88-L160】
 
 ## State Patterns
-- **Loading**: Prefer skeletons for surfaces larger than 240px height. Buttons show inline spinners with `aria-live="polite"` messages. Avoid global blocking loaders.
-- **Success**: Provide toast confirmations via `useToaster` with 5s default lifetime. Toast copy should include the workspace name for audit context.
-- **Error**: All components emit structured error objects `{ code, title, body, action }`. `ErrorBoundaryPanel` renders fallback UI, and components allow retry without forcing navigation resets.
-- **Offline**: Use the `useConnectivityBanner` hook to pin a status bar at the top when Supabase or backend APIs are unreachable. Local drafts persist to IndexedDB until connectivity resumes.
+- **Loading**: impiega `Skeleton` per superfici >240px (es. editor Markdown) e sfrutta `isLoading`/`loading` props su `Button` e pannelli (es. `WorkspaceNavigator` mostra spinner durante refresh). Evitare overlay bloccanti.【F:rec2pdf-frontend/src/components/ui/Skeleton.jsx†L1-L12】【F:rec2pdf-frontend/src/components/ui/Button.jsx†L37-L110】【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L115】
+- **Success**: usa `Toast` con `tone="success"` per conferme di salvataggio/rigenerazione; includi contesto (workspace/progetto) nella descrizione.【F:rec2pdf-frontend/src/components/ui/Toast.jsx†L3-L24】【F:rec2pdf-frontend/src/components/MarkdownEditorModal.jsx†L84-L95】
+- **Error**: visualizza errori tramite `Toast` `tone="danger"` o banner dedicati (`ErrorBanner` in Create). Fornisci azioni contestuali (es. chiusura, retry) mantenendo focus sull’elemento interessato.【F:rec2pdf-frontend/src/components/ui/Toast.jsx†L3-L24】【F:rec2pdf-frontend/src/pages/Create.jsx†L19-L39】
+- **Diagnostica/offline**: rappresenta stato backend con `backendUp` e `diagnostics` nel cassetto impostazioni/onboarding banner; quando la connessione manca invita l’utente ad aprire il Setup Assistant per la risoluzione guidata.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L15-L53】【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L47-L138】【F:rec2pdf-frontend/src/hooks/useBackendDiagnostics.js†L3-L86】
 
 ## Keyboard Shortcuts
-- `Ctrl/Cmd + K`: Open global command palette for workspace switching and prompt search.
-- `Ctrl/Cmd + Shift + U`: Upload or record new audio. Disabled if the user lacks workspace selection.
-- `Ctrl/Cmd + E`: Open the Markdown editor for the currently selected artifact.
-- `?`: Display overlay with contextual help and shortcut reference.
-- All shortcuts must be discoverable through the command palette and documented in the Help overlay.
+Keyboard accelerators non sono ancora attivi. Quando li introdurrai:
+- Registra gli handler a livello di `App.jsx` così da propagare gli effetti via `AppProvider` e mantenere coerenza tra Create/Library/Editor.【F:rec2pdf-frontend/src/App.jsx†L473-L714】
+- Assicurati che ogni scorciatoia abbia un equivalente visibile (es. pulsante o voce di menu) e che l’Help/Setup Assistant venga aggiornato di conseguenza.【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L47-L138】
+- Prevedi preferenze per abilitare/disabilitare shortcut globali nel cassetto impostazioni prima della release pubblica.【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L47-L199】
 
 ## Accessibility Expectations
 - Maintain minimum 4.5:1 contrast for text and 3:1 for large UI icons. Buttons in the brand tone must be tested against both light and dark backgrounds.
@@ -48,10 +48,10 @@ These guidelines codify the consulting-grade UX overhaul of the Rec2PDF web appl
 - Ensure screen reader labels include workspace, prompt, and artifact metadata so multi-document workflows remain distinguishable.
 
 ## Implementation Checklist
-1. Scaffold screens using the grid constants above and verify responsiveness in Chrome DevTools for each breakpoint.
-2. Compose views from `AppFrame`, `NavigatorRail`, `ActionButton`, `FieldStack`, and `StageTimeline`. Avoid bespoke wrappers unless they extend these primitives.
-3. Wire state management through the established hooks (`useWorkspace`, `usePipelineRuns`, `useToaster`, `useConnectivityBanner`).
-4. Register keyboard shortcuts in `useGlobalHotkeys` and write integration tests to confirm discoverability in the command palette.
-5. Run the accessibility smoke suite (`npm run test:a11y`, forthcoming) and manual screen reader sweeps before merging.
+1. Progetta le schermate rispettando la griglia e valida le varianti 1280/960/768/480px in DevTools.
+2. Componi le viste a partire da `AppShell`, `SettingsDrawer`, `WorkspaceNavigator`, `CloudLibraryPanel`, `MarkdownEditorModal`, `Button/IconButton`, `Tabs` e `Toast`; estensioni custom devono mantenere le stesse classi base.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L15-L139】【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L26-L199】【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L215】【F:rec2pdf-frontend/src/components/ui/Button.jsx†L5-L129】【F:rec2pdf-frontend/src/components/ui/Tabs.jsx†L1-L74】
+3. Gestisci stato e preferenze tramite `AppProvider` (localStorage keys), `useBackendDiagnostics`, `useMicrophoneAccess` e i setter già esposti; evita duplicazioni globali.【F:rec2pdf-frontend/src/App.jsx†L473-L714】【F:rec2pdf-frontend/src/hooks/useBackendDiagnostics.js†L3-L86】【F:rec2pdf-frontend/src/hooks/useMicrophoneAccess.js†L1-L160】
+4. Quando introduci shortcut o nuove azioni, sincronizzale con Setup Assistant/Settings e aggiungi fallback manuali per utenti touch.【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L47-L199】
+5. Testa manualmente focus order, contrasto e annunci `role="status"` (`Toast`) prima della review; aggiungi test end-to-end quando disponibili.【F:rec2pdf-frontend/src/components/ui/Toast.jsx†L3-L24】【F:rec2pdf-frontend/src/components/MarkdownEditorModal.jsx†L41-L132】
 
 Following these standards keeps the Rec2PDF interface cohesive as new pipeline capabilities ship.
