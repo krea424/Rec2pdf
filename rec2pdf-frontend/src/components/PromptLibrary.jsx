@@ -96,6 +96,7 @@ export default function PromptLibrary({
   onDeletePrompt,
 }) {
   const hasActivePrompt = Boolean(activePrompt && selection?.promptId);
+  const shouldAutoExpandActive = hasActivePrompt && selection?.expandPromptDetails !== false;
   const isBoardroom = themeName === "boardroom";
   const boardroomContainerSurface =
     "border-white/15 bg-white/[0.015] backdrop-blur-2xl";
@@ -104,7 +105,7 @@ export default function PromptLibrary({
   const boardroomControlActive = "border-white/35 bg-white/[0.06] text-white";
   const [expandedSections, setExpandedSections] = useState(() => ({
     library: false,
-    active: hasActivePrompt,
+    active: shouldAutoExpandActive,
     builder: false,
   }));
   const [searchTerm, setSearchTerm] = useState("");
@@ -116,10 +117,10 @@ export default function PromptLibrary({
   const builderOpen = expandedSections.builder;
 
   useEffect(() => {
-    if (hasActivePrompt) {
-      setExpandedSections((prev) => ({ ...prev, active: true }));
-    }
-  }, [hasActivePrompt]);
+    if (!hasActivePrompt) return;
+    if (selection?.expandPromptDetails === false) return;
+    setExpandedSections((prev) => ({ ...prev, active: true }));
+  }, [hasActivePrompt, selection?.expandPromptDetails]);
 
   const toggleSection = (key) => {
     setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
