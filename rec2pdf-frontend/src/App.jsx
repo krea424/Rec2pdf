@@ -381,6 +381,14 @@ const themes = {
     button: "bg-emerald-500 hover:bg-emerald-400 text-slate-900 border-emerald-300 font-semibold",
     log: "bg-slate-950/70 border-emerald-500/20",
   },
+  boardroom: {
+    bg: "from-[#020817] via-[#0b1a33] to-[#123552]",
+    card: "bg-white/10 border-white/10 backdrop-blur-xl shadow-lg shadow-black/30",
+    input: "bg-white/10 border-white/20 backdrop-blur-xl",
+    input_hover: "hover:bg-white/15",
+    button: "bg-gradient-to-r from-[#5dd5c4] via-[#39b0ff] to-[#5a78ff] text-slate-950 border-transparent font-semibold shadow-md shadow-black/20 hover:from-[#39b0ff] hover:via-[#5a78ff] hover:to-[#7b5dff]",
+    log: "bg-[#061226]/80 border-white/10 backdrop-blur",
+  },
 };
 
 function AppContent(){
