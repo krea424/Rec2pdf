@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Bug,
   Cpu,
@@ -9,6 +9,7 @@ import {
   Square,
   TimerIcon,
   Upload,
+  Info,
 } from "../components/icons";
 import PromptLibrary from "../components/PromptLibrary";
 import { useAppContext } from "../hooks/useAppContext";
@@ -43,6 +44,12 @@ const CreatePage = () => {
 
   const HeaderIcon = context.headerStatus?.icon || Cpu;
 
+  const [openInfo, setOpenInfo] = useState(null);
+
+  const toggleInfo = (section) => {
+    setOpenInfo((prev) => (prev === section ? null : section));
+  };
+
   const audioDownloadExtension = useMemo(() => {
     const mime = context.mime || "";
     if (mime.includes("webm")) return "webm";
@@ -62,33 +69,47 @@ const CreatePage = () => {
       <ErrorBanner />
 
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-3">
-        <div className={classNames("md:col-span-2 rounded-2xl border p-6 shadow-lg", themes[theme].card)}>
+        <div
+          className={classNames(
+            "md:col-span-2 rounded-2xl border p-6 shadow-lg",
+            themes[theme].card,
+          )}
+        >
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-xl font-medium">
               <Mic className="h-5 w-5" /> Registrazione
             </h2>
             <div className="flex items-center gap-2 text-sm text-zinc-400">
-              <TimerIcon className="h-4 w-4" /> {context.fmtTime(context.elapsed)}
+              <TimerIcon className="h-4 w-4" />{" "}
+              {context.fmtTime(context.elapsed)}
             </div>
           </div>
 
           <div className="mt-8 flex items-center justify-center">
             <button
               type="button"
-              onClick={context.recording ? context.stopRecording : context.startRecording}
+              onClick={
+                context.recording
+                  ? context.stopRecording
+                  : context.startRecording
+              }
               className={classNames(
                 "flex h-40 w-40 flex-col items-center justify-center gap-2 rounded-full text-lg font-semibold shadow-xl transition",
-                context.recording ? "bg-rose-600 hover:bg-rose-500" : "bg-emerald-600 hover:bg-emerald-500",
+                context.recording
+                  ? "bg-rose-600 hover:bg-rose-500"
+                  : "bg-emerald-600 hover:bg-emerald-500",
               )}
               disabled={
-                context.busy || !context.mediaSupported || !context.recorderSupported
+                context.busy ||
+                !context.mediaSupported ||
+                !context.recorderSupported
               }
               title={
                 !context.mediaSupported
                   ? "getUserMedia non supportato"
                   : !context.recorderSupported
-                  ? "MediaRecorder non supportato"
-                  : ""
+                    ? "MediaRecorder non supportato"
+                    : ""
               }
             >
               {context.recording ? (
@@ -104,7 +125,8 @@ const CreatePage = () => {
           </div>
 
           <div className="mt-6 text-center text-sm text-zinc-400">
-            Configura microfono, cartelle e workspace da <strong>Impostazioni → Registrazione</strong>.
+            Configura microfono, cartelle e workspace da{" "}
+            <strong>Impostazioni → Registrazione</strong>.
           </div>
 
           <PromptLibrary
@@ -128,28 +150,44 @@ const CreatePage = () => {
             onDeletePrompt={context.handleDeletePrompt}
           />
 
-          <div className={classNames("mt-6 rounded-xl border p-4", themes[theme].input)}>
+          <div
+            className={classNames(
+              "mt-6 rounded-xl border p-4",
+              themes[theme].input,
+            )}
+          >
             <div className="flex items-center justify-between">
-              <div className="text-sm text-zinc-400">Clip registrata / caricata</div>
+              <div className="text-sm text-zinc-400">
+                Clip registrata / caricata
+              </div>
               <div className="text-xs text-zinc-500">
-                {context.mime || "—"} · {context.fmtBytes(context.audioBlob?.size)}
+                {context.mime || "—"} ·{" "}
+                {context.fmtBytes(context.audioBlob?.size)}
               </div>
             </div>
             <div className="mt-3">
               {context.audioUrl ? (
                 <audio controls src={context.audioUrl} className="w-full" />
               ) : (
-                <div className="text-sm text-zinc-500">Nessuna clip disponibile.</div>
+                <div className="text-sm text-zinc-500">
+                  Nessuna clip disponibile.
+                </div>
               )}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => context.processViaBackend()}
-                disabled={!context.audioBlob || context.busy || context.backendUp === false}
+                disabled={
+                  !context.audioBlob ||
+                  context.busy ||
+                  context.backendUp === false
+                }
                 className={classNames(
                   "flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium hover:bg-indigo-500",
-                  (!context.audioBlob || context.busy || context.backendUp === false) &&
+                  (!context.audioBlob ||
+                    context.busy ||
+                    context.backendUp === false) &&
                     "cursor-not-allowed opacity-60",
                 )}
               >
@@ -169,27 +207,35 @@ const CreatePage = () => {
               <button
                 type="button"
                 onClick={context.resetAll}
-                className={classNames("rounded-lg px-4 py-2 text-sm", themes[theme].button)}
+                className={classNames(
+                  "rounded-lg px-4 py-2 text-sm",
+                  themes[theme].button,
+                )}
               >
                 Reset
               </button>
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <div className={classNames("space-y-4 rounded-2xl border p-5 transition-all", themes[theme].input)}>
-              <div className="flex items-start gap-3">
-                <div className="rounded-xl bg-indigo-500/10 p-2 text-indigo-300">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div
+              className={classNames(
+                "rounded-2xl border p-4 transition-all",
+                themes[theme].input,
+              )}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => context.fileInputRef.current?.click()}
+                  className={classNames(
+                    "flex flex-1 items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold text-zinc-100 transition focus:outline-none focus:ring-2 focus:ring-indigo-400",
+                    themes[theme].button,
+                  )}
+                >
                   <Upload className="h-4 w-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-zinc-100">Carica audio</h4>
-                  <p className="text-xs text-zinc-400">
-                    Usa un file audio esistente come sorgente alternativa alla registrazione.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
+                  Carica audio
+                </button>
                 <input
                   ref={context.fileInputRef}
                   type="file"
@@ -199,58 +245,75 @@ const CreatePage = () => {
                 />
                 <button
                   type="button"
-                  onClick={() => context.fileInputRef.current?.click()}
-                  className={classNames(
-                    "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition",
-                    themes[theme].button,
-                  )}
+                  onClick={() => toggleInfo("audio")}
+                  aria-label="Informazioni su Carica audio"
+                  aria-expanded={openInfo === "audio"}
+                  aria-controls="upload-audio-info"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 transition hover:border-indigo-400 hover:text-indigo-300"
                 >
-                  <Upload className="h-4 w-4" />
-                  Seleziona audio
+                  <Info className="h-4 w-4" />
                 </button>
               </div>
-              {context.audioBlob && (
-                <>
-                  <div className="flex items-center gap-2 text-xs text-zinc-500">
-                    <span
-                      className="max-w-[180px] truncate"
-                      title={
-                        "name" in context.audioBlob && context.audioBlob.name
-                          ? context.audioBlob.name
-                          : "Registrazione pronta"
-                      }
-                    >
-                      {"name" in context.audioBlob && context.audioBlob.name
-                        ? context.audioBlob.name
-                        : "Registrazione pronta"}
-                    </span>
-                    {Number.isFinite(context.audioBlob.size) && (
-                      <span>· {context.fmtBytes(context.audioBlob.size)}</span>
-                    )}
-                  </div>
-                  <p className="text-xs text-zinc-500">
-                    Avvia la pipeline dalla card "Clip registrata / caricata" per elaborare questo audio.
+              {openInfo === "audio" && (
+                <div
+                  id="upload-audio-info"
+                  className="mt-3 space-y-2 rounded-xl border border-zinc-700/60 bg-zinc-900/40 p-3 text-xs text-zinc-400"
+                >
+                  <p>
+                    Usa un file audio esistente come sorgente alternativa alla
+                    registrazione.
                   </p>
-                </>
+                  <p>
+                    Avvia la pipeline dalla card «Clip registrata / caricata»
+                    per elaborare questo audio una volta caricato.
+                  </p>
+                  <p>
+                    Supporta formati comuni (webm/ogg/m4a/wav). Verrà convertito
+                    in WAV lato server.
+                  </p>
+                </div>
               )}
-              <p className="text-xs text-zinc-500">
-                Supporta formati comuni (webm/ogg/m4a/wav). Verrà convertito in WAV lato server.
-              </p>
+              {context.audioBlob && (
+                <div className="mt-3 flex items-center gap-2 rounded-xl border border-zinc-700/50 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-400">
+                  <span
+                    className="max-w-[160px] truncate"
+                    title={
+                      "name" in context.audioBlob && context.audioBlob.name
+                        ? context.audioBlob.name
+                        : "Registrazione pronta"
+                    }
+                  >
+                    {"name" in context.audioBlob && context.audioBlob.name
+                      ? context.audioBlob.name
+                      : "Registrazione pronta"}
+                  </span>
+                  {Number.isFinite(context.audioBlob.size) && (
+                    <span>· {context.fmtBytes(context.audioBlob.size)}</span>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className={classNames("space-y-4 rounded-2xl border p-5 transition-all", themes[theme].input)}>
-              <div className="flex items-start gap-3">
-                <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-300">
+            <div
+              className={classNames(
+                "rounded-2xl border p-4 transition-all",
+                themes[theme].input,
+              )}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => context.markdownInputRef.current?.click()}
+                  className={classNames(
+                    "flex flex-1 items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold text-zinc-100 transition focus:outline-none focus:ring-2 focus:ring-emerald-400",
+                    themes[theme].button,
+                    context.busy && "cursor-not-allowed opacity-60",
+                  )}
+                  disabled={context.busy}
+                >
                   <FileCode className="h-4 w-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-zinc-100">Carica Markdown</h4>
-                  <p className="text-xs text-zinc-400">
-                    Carica un documento .md già strutturato per impaginarlo subito con PPUBR.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
+                  Carica Markdown
+                </button>
                 <input
                   ref={context.markdownInputRef}
                   type="file"
@@ -261,47 +324,65 @@ const CreatePage = () => {
                 />
                 <button
                   type="button"
-                  onClick={() => context.markdownInputRef.current?.click()}
+                  onClick={() => toggleInfo("markdown")}
+                  aria-label="Informazioni su Carica Markdown"
+                  aria-expanded={openInfo === "markdown"}
+                  aria-controls="upload-markdown-info"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 transition hover:border-emerald-400 hover:text-emerald-300"
+                >
+                  <Info className="h-4 w-4" />
+                </button>
+              </div>
+              {openInfo === "markdown" && (
+                <div
+                  id="upload-markdown-info"
+                  className="mt-3 space-y-2 rounded-xl border border-zinc-700/60 bg-zinc-900/40 p-3 text-xs text-zinc-400"
+                >
+                  <p>
+                    Carica un documento .md già strutturato per impaginarlo
+                    subito con PPUBR.
+                  </p>
+                  <p>
+                    Supporta solo file Markdown. L&apos;impaginazione usa PPUBR
+                    con fallback Pandoc.
+                  </p>
+                </div>
+              )}
+              {context.lastMarkdownUpload && (
+                <div className="mt-3 flex items-center gap-2 rounded-xl border border-zinc-700/50 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-400">
+                  <span
+                    className="max-w-[160px] truncate"
+                    title={context.lastMarkdownUpload.name}
+                  >
+                    {context.lastMarkdownUpload.name}
+                  </span>
+                  <span>
+                    · {context.fmtBytes(context.lastMarkdownUpload.size)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div
+              className={classNames(
+                "rounded-2xl border p-4 transition-all",
+                themes[theme].input,
+              )}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => context.textInputRef.current?.click()}
                   className={classNames(
-                    "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition",
+                    "flex flex-1 items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold text-zinc-100 transition focus:outline-none focus:ring-2 focus:ring-sky-400",
                     themes[theme].button,
                     context.busy && "cursor-not-allowed opacity-60",
                   )}
                   disabled={context.busy}
                 >
-                  <Upload className="h-4 w-4" />
-                  Seleziona Markdown
-                </button>
-                {context.lastMarkdownUpload && (
-                  <div className="flex items-center gap-2 text-xs text-zinc-500">
-                    <span
-                      className="max-w-[180px] truncate"
-                      title={context.lastMarkdownUpload.name}
-                    >
-                      {context.lastMarkdownUpload.name}
-                    </span>
-                    <span>· {context.fmtBytes(context.lastMarkdownUpload.size)}</span>
-                  </div>
-                )}
-              </div>
-              <p className="text-xs text-zinc-500">
-                Supporta solo file .md. L'impaginazione usa PPUBR con fallback Pandoc.
-              </p>
-            </div>
-
-            <div className={classNames("space-y-4 rounded-2xl border p-5 transition-all", themes[theme].input)}>
-              <div className="flex items-start gap-3">
-                <div className="rounded-xl bg-sky-500/10 p-2 text-sky-300">
                   <FileText className="h-4 w-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-zinc-100">Carica TXT</h4>
-                  <p className="text-xs text-zinc-400">
-                    Carica un file .txt: lo convertiamo in Markdown e avviamo l'impaginazione.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
+                  Carica TXT
+                </button>
                 <input
                   ref={context.textInputRef}
                   type="file"
@@ -312,38 +393,52 @@ const CreatePage = () => {
                 />
                 <button
                   type="button"
-                  onClick={() => context.textInputRef.current?.click()}
-                  className={classNames(
-                    "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition",
-                    themes[theme].button,
-                    context.busy && "cursor-not-allowed opacity-60",
-                  )}
-                  disabled={context.busy}
+                  onClick={() => toggleInfo("text")}
+                  aria-label="Informazioni su Carica TXT"
+                  aria-expanded={openInfo === "text"}
+                  aria-controls="upload-text-info"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 transition hover:border-sky-400 hover:text-sky-300"
                 >
-                  <Upload className="h-4 w-4" />
-                  Seleziona testo
+                  <Info className="h-4 w-4" />
                 </button>
-                {context.lastTextUpload && (
-                  <div className="flex items-center gap-2 text-xs text-zinc-500">
-                    <span
-                      className="max-w-[180px] truncate"
-                      title={context.lastTextUpload.name}
-                    >
-                      {context.lastTextUpload.name}
-                    </span>
-                    <span>· {context.fmtBytes(context.lastTextUpload.size)}</span>
-                  </div>
-                )}
               </div>
-              <p className="text-xs text-zinc-500">
-                Supporta file UTF-8 .txt. Il contenuto viene ripulito e salvato come Markdown prima dell'upload.
-              </p>
+              {openInfo === "text" && (
+                <div
+                  id="upload-text-info"
+                  className="mt-3 space-y-2 rounded-xl border border-zinc-700/60 bg-zinc-900/40 p-3 text-xs text-zinc-400"
+                >
+                  <p>
+                    Carica un file .txt: lo convertiamo in Markdown e avviamo
+                    l&apos;impaginazione.
+                  </p>
+                  <p>
+                    Supporta file UTF-8 .txt. Il contenuto viene ripulito e
+                    salvato come Markdown prima dell&apos;upload.
+                  </p>
+                </div>
+              )}
+              {context.lastTextUpload && (
+                <div className="mt-3 flex items-center gap-2 rounded-xl border border-zinc-700/50 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-400">
+                  <span
+                    className="max-w-[160px] truncate"
+                    title={context.lastTextUpload.name}
+                  >
+                    {context.lastTextUpload.name}
+                  </span>
+                  <span>· {context.fmtBytes(context.lastTextUpload.size)}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
         <div className="md:col-span-1">
-          <div className={classNames("space-y-4 rounded-2xl border p-5 shadow-lg", themes[theme].card)}>
+          <div
+            className={classNames(
+              "space-y-4 rounded-2xl border p-5 shadow-lg",
+              themes[theme].card,
+            )}
+          >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="flex items-center gap-2 text-lg font-medium">
                 <Cpu className="h-4 w-4" /> Pipeline
@@ -368,7 +463,9 @@ const CreatePage = () => {
                   )}
                 >
                   <Bug className="h-3.5 w-3.5" />
-                  {context.showRawLogs ? "Nascondi log grezzi" : "Mostra log grezzi"}
+                  {context.showRawLogs
+                    ? "Nascondi log grezzi"
+                    : "Mostra log grezzi"}
                 </button>
               </div>
             </div>
@@ -381,7 +478,8 @@ const CreatePage = () => {
               </div>
               <div className="mt-2 flex items-center justify-between text-xs text-zinc-400">
                 <span>
-                  {context.completedStagesCount}/{context.totalStages} step completati
+                  {context.completedStagesCount}/{context.totalStages} step
+                  completati
                 </span>
                 <span>{context.progressPercent}%</span>
               </div>
@@ -391,14 +489,20 @@ const CreatePage = () => {
                 const status = context.pipelineStatus[stage.key] || "idle";
                 const Icon = stage.icon || Cpu;
                 const prevStatus =
-                  index > 0 ? context.pipelineStatus[context.PIPELINE_STAGES[index - 1].key] || "idle" : null;
+                  index > 0
+                    ? context.pipelineStatus[
+                        context.PIPELINE_STAGES[index - 1].key
+                      ] || "idle"
+                    : null;
                 const connectorClass =
                   prevStatus === "done"
                     ? "bg-emerald-500/40"
                     : prevStatus === "failed"
-                    ? "bg-rose-500/40"
-                    : "bg-zinc-700/60";
-                const stageStyle = context.STAGE_STATUS_STYLES[status] || context.STAGE_STATUS_STYLES.idle;
+                      ? "bg-rose-500/40"
+                      : "bg-zinc-700/60";
+                const stageStyle =
+                  context.STAGE_STATUS_STYLES[status] ||
+                  context.STAGE_STATUS_STYLES.idle;
                 const isActive = context.failedStage
                   ? context.failedStage.key === stage.key
                   : context.activeStageKey === stage.key;
@@ -407,7 +511,12 @@ const CreatePage = () => {
                 return (
                   <div key={stage.key} className="relative pl-10">
                     {index !== 0 && (
-                      <div className={classNames("absolute left-3 top-0 h-full w-px transition-colors", connectorClass)} />
+                      <div
+                        className={classNames(
+                          "absolute left-3 top-0 h-full w-px transition-colors",
+                          connectorClass,
+                        )}
+                      />
                     )}
                     <div
                       className={classNames(
@@ -426,7 +535,9 @@ const CreatePage = () => {
                       )}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-medium text-zinc-100">{stage.label}</div>
+                        <div className="text-sm font-medium text-zinc-100">
+                          {stage.label}
+                        </div>
                         <span
                           className={classNames(
                             "rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
@@ -437,7 +548,9 @@ const CreatePage = () => {
                           {context.STAGE_STATUS_LABELS[status] || status}
                         </span>
                       </div>
-                      <p className="mt-1 text-xs text-zinc-300">{stage.description}</p>
+                      <p className="mt-1 text-xs text-zinc-300">
+                        {stage.description}
+                      </p>
                       {stageMessage && (
                         <div
                           className={classNames(
@@ -462,7 +575,8 @@ const CreatePage = () => {
             </div>
             {!context.showRawLogs && context.logs?.length > 0 && (
               <div className="text-xs text-zinc-500">
-                {context.logs.length} righe di log disponibili. Apri i log grezzi per i dettagli completi.
+                {context.logs.length} righe di log disponibili. Apri i log
+                grezzi per i dettagli completi.
               </div>
             )}
             {context.showRawLogs && (
@@ -486,7 +600,6 @@ const CreatePage = () => {
           </div>
         </div>
       </div>
-
     </div>
   );
 };
