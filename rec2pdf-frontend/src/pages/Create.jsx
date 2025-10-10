@@ -50,6 +50,24 @@ const CreatePage = () => {
     "border-white/15 bg-white/[0.03] text-slate-100";
   const boardroomInfoSurface =
     "border-white/12 bg-white/[0.02] text-slate-200";
+  const boardroomStageStyles = {
+    idle: "border-white/12 bg-white/[0.01] text-white/60 backdrop-blur-xl",
+    pending: "border-white/14 bg-white/[0.02] text-white/80 backdrop-blur-xl",
+    running:
+      "border-sky-400/40 bg-gradient-to-r from-[#39b0ff1a] via-[#5dd5c41a] to-[#7b5dff1a] text-white/90 backdrop-blur-xl",
+    done:
+      "border-emerald-400/50 bg-emerald-400/15 text-emerald-100 backdrop-blur-xl",
+    failed:
+      "border-rose-400/50 bg-rose-500/12 text-rose-100 backdrop-blur-xl",
+    info: "border-white/14 bg-white/[0.02] text-white/75 backdrop-blur-xl",
+  };
+  const boardroomStageMessageSurface =
+    "border-white/12 bg-white/[0.02] text-white/75 backdrop-blur-xl";
+  const boardroomConnectorColors = {
+    done: "bg-emerald-400/60",
+    failed: "bg-rose-500/60",
+    base: "bg-white/12",
+  };
 
   const HeaderIcon = context.headerStatus?.icon || Cpu;
 
@@ -531,13 +549,28 @@ const CreatePage = () => {
               </div>
             </div>
             <div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+              <div
+                className={classNames(
+                  "h-2 w-full overflow-hidden rounded-full",
+                  isBoardroom ? "bg-white/12" : "bg-zinc-800",
+                )}
+              >
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-indigo-400 via-indigo-300 to-emerald-300 transition-all duration-500"
+                  className={classNames(
+                    "h-full rounded-full transition-all duration-500",
+                    isBoardroom
+                      ? "bg-gradient-to-r from-[#39b0ff] via-[#5dd5c4] to-[#7b5dff]"
+                      : "bg-gradient-to-r from-indigo-400 via-indigo-300 to-emerald-300",
+                  )}
                   style={{ width: `${context.progressPercent}%` }}
                 />
               </div>
-              <div className="mt-2 flex items-center justify-between text-xs text-zinc-400">
+              <div
+                className={classNames(
+                  "mt-2 flex items-center justify-between text-xs",
+                  isBoardroom ? "text-white/70" : "text-zinc-400",
+                )}
+              >
                 <span>
                   {context.completedStagesCount}/{context.totalStages} step
                   completati
@@ -555,15 +588,21 @@ const CreatePage = () => {
                         context.PIPELINE_STAGES[index - 1].key
                       ] || "idle"
                     : null;
-                const connectorClass =
-                  prevStatus === "done"
+                const connectorClass = isBoardroom
+                  ? prevStatus === "done"
+                    ? boardroomConnectorColors.done
+                    : prevStatus === "failed"
+                      ? boardroomConnectorColors.failed
+                      : boardroomConnectorColors.base
+                  : prevStatus === "done"
                     ? "bg-emerald-500/40"
                     : prevStatus === "failed"
                       ? "bg-rose-500/40"
                       : "bg-zinc-700/60";
-                const stageStyle =
-                  context.STAGE_STATUS_STYLES[status] ||
-                  context.STAGE_STATUS_STYLES.idle;
+                const stageStyle = isBoardroom
+                  ? boardroomStageStyles[status] || boardroomStageStyles.idle
+                  : context.STAGE_STATUS_STYLES[status] ||
+                    context.STAGE_STATUS_STYLES.idle;
                 const isActive = context.failedStage
                   ? context.failedStage.key === stage.key
                   : context.activeStageKey === stage.key;
@@ -583,7 +622,10 @@ const CreatePage = () => {
                       className={classNames(
                         "absolute left-0 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-xs transition-all",
                         stageStyle,
-                        isActive && "ring-2 ring-indigo-400/60",
+                        isActive &&
+                          (isBoardroom
+                            ? "ring-2 ring-sky-400/60"
+                            : "ring-2 ring-indigo-400/60"),
                       )}
                     >
                       <Icon className="h-3.5 w-3.5" />
@@ -592,11 +634,19 @@ const CreatePage = () => {
                       className={classNames(
                         "rounded-lg border px-3 py-2 transition-all",
                         stageStyle,
-                        isActive && "shadow-lg shadow-indigo-500/10",
+                        isActive &&
+                          (isBoardroom
+                            ? "shadow-lg shadow-sky-500/15"
+                            : "shadow-lg shadow-indigo-500/10"),
                       )}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-medium text-zinc-100">
+                        <div
+                          className={classNames(
+                            "text-sm font-medium",
+                            isBoardroom ? "text-white/90" : "text-zinc-100",
+                          )}
+                        >
                           {stage.label}
                         </div>
                         <span
@@ -609,7 +659,12 @@ const CreatePage = () => {
                           {context.STAGE_STATUS_LABELS[status] || status}
                         </span>
                       </div>
-                      <p className="mt-1 text-xs text-zinc-300">
+                      <p
+                        className={classNames(
+                          "mt-1 text-xs",
+                          isBoardroom ? "text-white/70" : "text-zinc-300",
+                        )}
+                      >
                         {stage.description}
                       </p>
                       {stageMessage && (
@@ -617,8 +672,12 @@ const CreatePage = () => {
                           className={classNames(
                             "mt-2 whitespace-pre-wrap rounded-md border px-3 py-2 text-xs font-mono leading-relaxed",
                             status === "failed"
-                              ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
-                              : "border-zinc-700/60 bg-black/20 text-zinc-200",
+                              ? isBoardroom
+                                ? "border-rose-500/50 bg-rose-500/15 text-rose-100"
+                                : "border-rose-500/40 bg-rose-500/10 text-rose-200"
+                              : isBoardroom
+                                ? boardroomStageMessageSurface
+                                : "border-zinc-700/60 bg-black/20 text-zinc-200",
                           )}
                         >
                           {stageMessage}
@@ -635,7 +694,12 @@ const CreatePage = () => {
               })}
             </div>
             {!context.showRawLogs && context.logs?.length > 0 && (
-              <div className="text-xs text-zinc-500">
+              <div
+                className={classNames(
+                  "text-xs",
+                  isBoardroom ? "text-white/60" : "text-zinc-500",
+                )}
+              >
                 {context.logs.length} righe di log disponibili. Apri i log
                 grezzi per i dettagli completi.
               </div>
