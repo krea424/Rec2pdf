@@ -15,11 +15,11 @@ import {
   TimerIcon,
   Upload,
   Users,
-  XCircle,
 } from "../components/icons";
 import PromptLibrary from "../components/PromptLibrary";
 import { useAppContext } from "../hooks/useAppContext";
 import { classNames } from "../utils/classNames";
+import { Button, Select, Toast } from "../components/ui";
 
 const PermissionBanner = () => {
   const {
@@ -81,22 +81,17 @@ const ErrorBanner = () => {
   }
 
   return (
-    <div className="mt-4 flex items-start gap-3 rounded-xl border border-rose-900/50 bg-rose-950/40 p-3 text-sm text-rose-100">
-      <XCircle className="mt-0.5 h-5 w-5" />
-      <div className="flex-1">
-        <div className="font-medium">{errorBanner.title}</div>
-        {errorBanner.details && (
-          <div className="mt-1 whitespace-pre-wrap text-rose-200/90">{errorBanner.details}</div>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={() => setErrorBanner(null)}
-        className="text-xs text-rose-200/80 hover:text-rose-100"
-      >
-        Chiudi
-      </button>
-    </div>
+    <Toast
+      tone="danger"
+      title={errorBanner.title}
+      description={errorBanner.details}
+      className="mt-4"
+      action={
+        <Button size="sm" variant="ghost" onClick={() => setErrorBanner(null)}>
+          Chiudi
+        </Button>
+      }
+    />
   );
 };
 
@@ -136,48 +131,46 @@ const CreatePage = () => {
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <button
+            <Button
               type="button"
+              size="sm"
+              variant="secondary"
+              className={themes[theme].button}
               onClick={context.requestPermission}
-              className={classNames("rounded-xl border px-4 py-2 text-sm", themes[theme].button)}
             >
               Concedi microfono
-            </button>
+            </Button>
             <div className="text-sm text-zinc-400">
               Permesso: <span className="font-mono">{context.permission}</span>
             </div>
-            <button
+            <Button
               type="button"
+              size="sm"
+              variant="secondary"
+              className={classNames("gap-2", themes[theme].button)}
               onClick={context.refreshDevices}
-              className={classNames(
-                "flex items-center gap-2 rounded-xl border px-3 py-2 text-sm",
-                themes[theme].button,
-              )}
+              leadingIcon={RefreshCw}
             >
-              <RefreshCw className="h-4 w-4" /> Dispositivi
-            </button>
+              Dispositivi
+            </Button>
           </div>
 
           {context.permission !== "granted" && <PermissionBanner />}
 
           {context.permission === "granted" && context.devices.length > 0 && (
-            <div className="mt-4">
-              <label className="text-sm text-zinc-400">Sorgente microfono</label>
-              <select
-                value={context.selectedDeviceId}
-                onChange={(event) => context.setSelectedDeviceId(event.target.value)}
-                className={classNames(
-                  "mt-2 w-full rounded-lg border bg-transparent px-3 py-2",
-                  themes[theme].input,
-                )}
-              >
-                {context.devices.map((device, index) => (
-                  <option key={device.deviceId || index} value={device.deviceId} className="bg-zinc-900">
-                    {device.label || `Dispositivo ${index + 1}`}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <Select
+              label="Sorgente microfono"
+              value={context.selectedDeviceId}
+              onChange={(event) => context.setSelectedDeviceId(event.target.value)}
+              containerClassName="mt-4"
+              className={themes[theme].input}
+            >
+              {context.devices.map((device, index) => (
+                <option key={device.deviceId || index} value={device.deviceId}>
+                  {device.label || `Dispositivo ${index + 1}`}
+                </option>
+              ))}
+            </Select>
           )}
 
           <div className="mt-4 flex items-center justify-center">

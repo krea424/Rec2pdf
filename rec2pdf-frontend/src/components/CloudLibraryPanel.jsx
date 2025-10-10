@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { classNames } from "../utils/classNames";
 import { Folder, RefreshCw, LinkIcon, AlertCircle, Info, Users } from "./icons";
+import { Button, Input, Select, Toast, EmptyState, Skeleton } from "./ui";
 
 const DEFAULT_BUCKET = "processed-media";
 
@@ -227,72 +228,66 @@ export default function CloudLibraryPanel({
             </p>
           </div>
         </div>
-        <button
+        <Button
           type="button"
+          size="sm"
+          variant="secondary"
+          className={classNames("gap-2", themeButton)}
           onClick={loadFiles}
-          className={classNames(
-            "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition",
-            themeButton,
-            loading && "opacity-60 cursor-wait"
-          )}
-          disabled={loading}
+          leadingIcon={RefreshCw}
+          isLoading={loading}
         >
-          <RefreshCw className={classNames("h-4 w-4", loading && "animate-spin")} />
           Aggiorna
-        </button>
+        </Button>
       </div>
 
       <form onSubmit={handleSubmit} className="mt-5 grid gap-4 md:grid-cols-[1fr_1fr] lg:grid-cols-[1fr_1fr_1fr]">
-        <label className="flex flex-col text-xs text-zinc-500">
-          Bucket
-          <input
-            value={bucket}
-            onChange={(event) => setBucket(event.target.value)}
-            className={classNames("mt-2 rounded-lg border px-3 py-2 text-sm bg-transparent", themeInput)}
-            placeholder="processed-media"
-          />
-        </label>
-        <label className="flex flex-col text-xs text-zinc-500">
-          Prefisso
-          <input
-            value={prefix}
-            onChange={(event) => setPrefix(event.target.value)}
-            className={classNames("mt-2 rounded-lg border px-3 py-2 text-sm bg-transparent", themeInput)}
-            placeholder="workspace-id/progetto"
-          />
-        </label>
+        <Input
+          label="Bucket"
+          value={bucket}
+          onChange={(event) => setBucket(event.target.value)}
+          placeholder="processed-media"
+          containerClassName="text-xs"
+          className={classNames("bg-transparent", themeInput)}
+        />
+        <Input
+          label="Prefisso"
+          value={prefix}
+          onChange={(event) => setPrefix(event.target.value)}
+          placeholder="workspace-id/progetto"
+          containerClassName="text-xs"
+          className={classNames("bg-transparent", themeInput)}
+        />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-          <label className="flex flex-col text-xs text-zinc-500">
-            Workspace
-            <select
-              value={selection?.workspaceId || ""}
-              onChange={handleWorkspaceChange}
-              className={classNames("mt-2 rounded-lg border px-3 py-2 text-sm bg-transparent", themeInput)}
-            >
-              <option value="">Tutti</option>
-              {workspaces.map((workspace) => (
-                <option key={workspace.id || workspace.name} value={workspace.id || workspace.name} className="bg-zinc-900">
-                  {workspace.name || workspace.client || workspace.id || "Workspace"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col text-xs text-zinc-500">
-            Progetto
-            <select
-              value={selection?.projectId || ""}
-              onChange={handleProjectChange}
-              className={classNames("mt-2 rounded-lg border px-3 py-2 text-sm bg-transparent", themeInput)}
-              disabled={!selection?.workspaceId}
-            >
-              <option value="">Tutti</option>
-              {projectOptions.map((project) => (
-                <option key={project.value} value={project.value} className="bg-zinc-900">
-                  {project.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Select
+            label="Workspace"
+            value={selection?.workspaceId || ""}
+            onChange={handleWorkspaceChange}
+            containerClassName="text-xs"
+            className={classNames("bg-transparent", themeInput)}
+          >
+            <option value="">Tutti</option>
+            {workspaces.map((workspace) => (
+              <option key={workspace.id || workspace.name} value={workspace.id || workspace.name}>
+                {workspace.name || workspace.client || workspace.id || "Workspace"}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Progetto"
+            value={selection?.projectId || ""}
+            onChange={handleProjectChange}
+            containerClassName="text-xs"
+            className={classNames("bg-transparent", themeInput)}
+            disabled={!selection?.workspaceId}
+          >
+            <option value="">Tutti</option>
+            {projectOptions.map((project) => (
+              <option key={project.value} value={project.value}>
+                {project.label}
+              </option>
+            ))}
+          </Select>
         </div>
       </form>
 
@@ -314,10 +309,7 @@ export default function CloudLibraryPanel({
       </div>
 
       {error && (
-        <div className="mt-4 flex items-start gap-2 rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-100">
-          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-          <span>{error}</span>
-        </div>
+        <Toast tone="danger" description={error} className="mt-4 text-xs" />
       )}
 
       <div className="mt-5 overflow-hidden rounded-xl border border-zinc-800/60">
@@ -330,10 +322,21 @@ export default function CloudLibraryPanel({
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-800/60 bg-black/10">
-            {files.length === 0 && !loading ? (
+            {loading ? (
+              Array.from({ length: 3 }).map((_, index) => (
+                <tr key={`skeleton-${index}`}>
+                  <td colSpan={3} className="px-4 py-3">
+                    <Skeleton className="h-6 w-full rounded-lg bg-surface-800/60" />
+                  </td>
+                </tr>
+              ))
+            ) : files.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-xs text-zinc-500">
-                  Nessun file trovato per il prefisso selezionato.
+                <td colSpan={3} className="px-4 py-6">
+                  <EmptyState
+                    title="Nessun file trovato"
+                    description="Modifica il prefisso o seleziona un workspace differente per visualizzare gli artefatti disponibili."
+                  />
                 </td>
               </tr>
             ) : (
@@ -346,8 +349,11 @@ export default function CloudLibraryPanel({
                       <div className="flex flex-col gap-1">
                         <span className="font-medium text-zinc-100">{file.name}</span>
                         {fullPath && typeof onOpenFile === "function" ? (
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="w-fit gap-1 text-indigo-300 hover:text-indigo-200"
                             onClick={() =>
                               onOpenFile({
                                 backendUrl,
@@ -355,11 +361,10 @@ export default function CloudLibraryPanel({
                                 label: file.name,
                               })
                             }
-                            className="inline-flex items-center gap-1 text-xs text-indigo-300 transition hover:text-indigo-200"
+                            leadingIcon={LinkIcon}
                           >
-                            <LinkIcon className="h-3 w-3" />
                             Apri file firmato
-                          </button>
+                          </Button>
                         ) : (
                           <span className="text-xs text-zinc-500">URL non disponibile.</span>
                         )}
@@ -374,10 +379,6 @@ export default function CloudLibraryPanel({
           </tbody>
         </table>
       </div>
-
-      {loading && (
-        <div className="mt-4 text-xs text-zinc-500">Caricamento in corso…</div>
-      )}
     </div>
   );
 }
