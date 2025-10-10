@@ -1,6 +1,10 @@
 import React from "react";
 import { classNames } from "../utils/classNames";
 import { FileCode, Save, RefreshCw, ExternalLink, XCircle } from "./icons";
+import { Button, IconButton } from "./ui/Button";
+import { TextArea } from "./ui/Input";
+import { Toast } from "./ui/Toast";
+import { Skeleton } from "./ui/Skeleton";
 
 export default function MarkdownEditorModal({
   open,
@@ -38,98 +42,92 @@ export default function MarkdownEditorModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur">
       <div
         className={classNames(
-          "mx-4 flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border shadow-2xl",
+          "mx-4 flex w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-surface-800 bg-surface-950/95 shadow-raised",
           themeStyles?.card
         )}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-surface-800 px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-white">Modifica Markdown</h2>
-            <p className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
+            <h2 className="text-lg font-semibold text-surface-25">Modifica Markdown</h2>
+            <p className="mt-1 flex items-center gap-2 text-xs text-surface-300">
               <FileCode className="h-4 w-4" />
-              <span className="font-mono text-[11px] text-zinc-300 break-all">{path}</span>
+              <span className="break-all font-mono text-[11px] text-surface-200">{path}</span>
             </p>
             {title && (
-              <p className="mt-1 text-xs text-zinc-500">Sessione: {title}</p>
+              <p className="mt-1 text-xs text-surface-400">Sessione: {title}</p>
             )}
           </div>
-          <button
+          <IconButton
+            variant="ghost"
             onClick={handleClose}
-            className="flex items-center gap-1 rounded-lg bg-zinc-800/60 px-3 py-1.5 text-xs text-zinc-300 transition hover:bg-zinc-700/80"
+            aria-label="Chiudi editor"
           >
-            <XCircle className="h-4 w-4" /> Chiudi
-          </button>
+            <XCircle className="h-4 w-4" />
+          </IconButton>
         </div>
         <div className="flex-1 overflow-auto px-6 py-4">
           {loading ? (
-            <div className="flex h-64 items-center justify-center text-sm text-zinc-400">
-              Caricamento del Markdown…
-            </div>
+            <Skeleton className="h-[420px] w-full rounded-2xl bg-surface-800/70" />
           ) : (
-            <textarea
+            <TextArea
               value={value}
               onChange={(event) => onChange?.(event.target.value)}
-              className={classNames(
-                "h-[420px] w-full resize-none rounded-xl border px-4 py-3 font-mono text-sm leading-relaxed text-zinc-100 shadow-inner",
-                themeStyles?.input
-              )}
               spellCheck={false}
               disabled={saving}
+              containerClassName="w-full"
+              className={classNames(
+                "h-[420px] resize-none font-mono leading-relaxed",
+                themeStyles?.input
+              )}
             />
           )}
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-            {error && (
-              <span className="rounded-lg bg-rose-900/50 px-3 py-1 text-rose-200">❌ {error}</span>
-            )}
-            {success && !error && (
-              <span className="rounded-lg bg-emerald-900/40 px-3 py-1 text-emerald-200">✅ {success}</span>
-            )}
-            {hasUnsavedChanges && !loading && !saving && (
-              <span className="rounded-lg bg-amber-900/40 px-3 py-1 text-amber-200">
-                Modifiche non salvate
-              </span>
-            )}
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            {error ? (
+              <Toast tone="danger" description={error} className="text-xs" />
+            ) : null}
+            {success && !error ? (
+              <Toast tone="success" description={success} className="text-xs" />
+            ) : null}
+            {hasUnsavedChanges && !loading && !saving ? (
+              <Toast tone="warning" description="Modifiche non salvate" className="text-xs" />
+            ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-6 py-4 text-xs">
-          <div className="flex items-center gap-2 text-zinc-500">
-            {typeof onOpenInNewTab === 'function' && (
-              <button
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-surface-800 bg-surface-900/60 px-6 py-4 text-xs">
+          <div className="flex items-center gap-2 text-surface-300">
+            {typeof onOpenInNewTab === "function" && (
+              <Button
                 type="button"
+                size="sm"
+                variant="ghost"
                 onClick={() => onOpenInNewTab?.()}
-                className="flex items-center gap-1 rounded-lg bg-zinc-800/70 px-3 py-1.5 text-xs text-zinc-200 transition hover:bg-zinc-700/80"
+                leadingIcon={ExternalLink}
               >
-                <ExternalLink className="h-3.5 w-3.5" /> Apri in nuova scheda
-              </button>
+                Apri in nuova scheda
+              </Button>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
+            <Button
               onClick={() => onRepublish?.()}
               disabled={busy || hasUnsavedChanges || !onRepublish}
-              className={classNames(
-                "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs transition",
-                busy || hasUnsavedChanges
-                  ? "bg-zinc-800/60 text-zinc-500 cursor-not-allowed"
-                  : "bg-emerald-600 text-white hover:bg-emerald-500"
-              )}
+              variant="secondary"
+              size="sm"
+              leadingIcon={RefreshCw}
+              isLoading={busy}
             >
-              <RefreshCw className={classNames("h-4 w-4", busy && "animate-spin") } />
               {busy ? "Rigenerazione…" : hasUnsavedChanges ? "Salva per rigenerare" : "Rigenera PDF"}
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => onSave?.(value)}
               disabled={loading || saving || !hasUnsavedChanges}
-              className={classNames(
-                "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs transition",
-                loading || saving || !hasUnsavedChanges
-                  ? "bg-zinc-800/60 text-zinc-500 cursor-not-allowed"
-                  : "bg-sky-600 text-white hover:bg-sky-500"
-              )}
+              variant="primary"
+              size="sm"
+              leadingIcon={Save}
+              isLoading={saving}
             >
-              <Save className={classNames("h-4 w-4", saving && "animate-pulse") } />
               {saving ? "Salvataggio…" : "Salva Markdown"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
