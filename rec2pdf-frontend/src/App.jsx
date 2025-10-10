@@ -462,10 +462,10 @@ function AppContent(){
   }, [setErrorBanner]);
   const [theme, setTheme] = useState(() => {
     if (typeof window === 'undefined') {
-      return 'zinc';
+      return 'boardroom';
     }
     const saved = localStorage.getItem('theme');
-    return saved && themes[saved] ? saved : 'zinc';
+    return saved && themes[saved] ? saved : 'boardroom';
   });
   const [showDestDetails,setShowDestDetails]=useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -660,7 +660,7 @@ function AppContent(){
 
   useEffect(() => {
     if (!themes[theme]) {
-      setTheme('zinc');
+      setTheme('boardroom');
       return;
     }
     localStorage.setItem('theme', theme);
