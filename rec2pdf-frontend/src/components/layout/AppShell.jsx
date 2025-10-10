@@ -1,16 +1,9 @@
 import { NavLink, Outlet } from "react-router-dom";
-import {
-  AlertCircle,
-  Bug,
-  CheckCircle2,
-  LinkIcon,
-  Maximize,
-  Settings as SettingsIcon,
-  Sparkles,
-} from "../../components/icons";
+import { AlertCircle, Maximize, Sparkles } from "../../components/icons";
 import logoAsset from "../../assets/logo.svg";
 import { classNames } from "../../utils/classNames";
 import { useAppContext } from "../../hooks/useAppContext";
+import { Button, IconButton } from "../ui";
 import SettingsDrawer from "./SettingsDrawer";
 
 const NAV_ITEMS = [
@@ -33,24 +26,27 @@ const OnboardingBanner = () => {
     : "Completa la procedura guidata per terminare l'onboarding e assicurarti che tutto sia configurato correttamente.";
 
   return (
-    <div className="rounded-2xl border border-amber-900/50 bg-amber-950/40 p-4">
+    <div className="rounded-3xl border border-feedback-warning/30 bg-feedback-warning/10 p-4 shadow-subtle">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3 text-sm text-amber-100">
-          <AlertCircle className="mt-1 h-5 w-5 text-amber-300" />
+        <div className="flex items-start gap-3 text-sm text-feedback-warning">
+          <AlertCircle className="mt-1 h-5 w-5" />
           <div>
-            <div className="font-semibold text-amber-200">
+            <div className="font-semibold text-feedback-warning">
               {hasDiagnosticsError ? "La diagnostica richiede attenzione" : "Completa l'onboarding"}
             </div>
-            <p className="mt-1 text-amber-100/80">{description}</p>
+            <p className="mt-1 text-feedback-warning/80">{description}</p>
           </div>
         </div>
-        <button
+        <Button
           type="button"
+          size="sm"
+          variant="ghost"
+          className="border border-feedback-warning/50 bg-feedback-warning/10 text-feedback-warning hover:bg-feedback-warning/20"
           onClick={openSetupAssistant}
-          className="inline-flex items-center justify-center rounded-lg border border-amber-500/40 px-3 py-2 text-xs font-semibold text-amber-100 transition hover:bg-amber-500/10"
+          leadingIcon={Sparkles}
         >
-          <Sparkles className="mr-2 h-4 w-4" /> Apri assistente
-        </button>
+          Apri assistente
+        </Button>
       </div>
     </div>
   );
@@ -59,47 +55,15 @@ const OnboardingBanner = () => {
 const AppShell = () => {
   const {
     customLogo,
-    backendUp,
-    backendUrl,
-    setBackendUrl,
-    runDiagnostics,
     openSetupAssistant,
     settingsOpen,
     setSettingsOpen,
-    setActiveSettingsSection,
     toggleFullScreen,
-    session,
-    handleLogout,
     theme,
     themes,
-    DEFAULT_BACKEND_URL,
   } = useAppContext();
 
   const cx = classNames;
-
-  const backendStatus = (() => {
-    if (backendUp === true) {
-      return {
-        label: "Backend OK",
-        tone: "bg-emerald-950 text-emerald-300",
-        icon: CheckCircle2,
-      };
-    }
-    if (backendUp === false) {
-      return {
-        label: "Backend OFF",
-        tone: "bg-rose-950 text-rose-300",
-        icon: AlertCircle,
-      };
-    }
-    return {
-      label: "—",
-      tone: "bg-zinc-800 text-zinc-300",
-      icon: null,
-    };
-  })();
-
-  const StatusIcon = backendStatus.icon;
 
   return (
     <div
@@ -121,95 +85,22 @@ const AppShell = () => {
               />
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
-              <span
-                className={cx(
-                  "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm",
-                  backendStatus.tone,
-                )}
-              >
-                {StatusIcon ? <StatusIcon className="h-4 w-4" /> : null}
-                {backendStatus.label}
-              </span>
-              <div
-                className={cx(
-                  "flex items-center gap-2 rounded-xl border px-3 py-2",
-                  themes[theme].input,
-                )}
-              >
-                <LinkIcon className="h-4 w-4 text-zinc-400" />
-                <input
-                  value={backendUrl}
-                  onChange={(event) => setBackendUrl(event.target.value)}
-                  placeholder={DEFAULT_BACKEND_URL}
-                  className="w-[220px] bg-transparent text-sm outline-none"
-                />
-              </div>
-              <button
+              <Button
                 type="button"
-                onClick={runDiagnostics}
-                className={cx(
-                  "flex items-center gap-2 rounded-xl border px-3 py-2 text-sm",
-                  themes[theme].input,
-                  themes[theme].input_hover,
-                )}
-              >
-                <Bug className="h-4 w-4" />
-                Diagnostica
-              </button>
-              <button
-                type="button"
+                variant="primary"
+                className="gap-2 shadow-subtle"
                 onClick={openSetupAssistant}
-                className={cx(
-                  "flex items-center gap-2 rounded-xl border px-3 py-2 text-sm shadow-sm",
-                  themes[theme].button,
-                )}
+                leadingIcon={Sparkles}
               >
-                <Sparkles className="h-4 w-4" />
                 Setup assistant
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveSettingsSection("diagnostics");
-                  setSettingsOpen(true);
-                }}
-                className={cx(
-                  "rounded-xl border p-2 text-sm",
-                  themes[theme].input,
-                  themes[theme].input_hover,
-                )}
-                aria-label="Apri impostazioni"
-              >
-                <SettingsIcon className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
+              </Button>
+              <IconButton
+                variant="ghost"
                 onClick={toggleFullScreen}
-                className={cx(
-                  "rounded-xl border p-2 text-sm",
-                  themes[theme].input,
-                  themes[theme].input_hover,
-                )}
                 aria-label="Attiva schermo intero"
               >
                 <Maximize className="h-4 w-4" />
-              </button>
-              {session?.user?.email && (
-                <span className="hidden text-sm text-zinc-300 md:inline">
-                  {session.user.email}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={handleLogout}
-                className={cx(
-                  "rounded-xl border px-3 py-2 text-sm",
-                  themes[theme].input,
-                  themes[theme].input_hover,
-                )}
-              >
-                Logout
-              </button>
+              </IconButton>
             </div>
           </div>
           <nav className="flex flex-wrap items-center gap-2">
