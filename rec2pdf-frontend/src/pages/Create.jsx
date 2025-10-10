@@ -1002,14 +1002,6 @@ const CreatePage = () => {
         </div>
       </div>
 
-      {!context.onboardingComplete && (
-        <div className="mt-10 text-xs text-zinc-500">
-          <p>
-            Assicurati che il backend sia attivo su {context.DEFAULT_BACKEND_URL} e che ffmpeg e la toolchain siano configurati
-            nella shell di esecuzione.
-          </p>
-        </div>
-      )}
     </div>
   );
 };
