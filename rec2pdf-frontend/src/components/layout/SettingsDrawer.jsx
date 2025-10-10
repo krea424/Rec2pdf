@@ -67,9 +67,9 @@ export default function SettingsDrawer({ open, onClose }) {
   const logoInputRef = useRef(null);
   const pdfLogoInputRef = useRef(null);
 
-  const diagnosticsStatus = diagnostics.status || "idle";
+  const diagnosticsStatus = diagnostics?.status || "idle";
   const diagnosticsMessage = diagnosticsStatus === "error"
-    ? diagnostics.message || "La diagnostica ha rilevato problemi nella toolchain."
+    ? diagnostics?.message || "La diagnostica ha rilevato problemi nella toolchain."
     : diagnosticsStatus === "success"
     ? "Ultima diagnostica completata con successo."
     : diagnosticsStatus === "running"
@@ -349,7 +349,7 @@ export default function SettingsDrawer({ open, onClose }) {
     backendStateTone,
     diagnosticsMessage,
     statusCardTone,
-    diagnostics.logs,
+    diagnostics?.logs,
     runDiagnostics,
     showSetupAssistant,
     onboardingComplete,

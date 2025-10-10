@@ -2844,6 +2844,7 @@ function AppContent(){
     backendUp,
     backendUrl,
     setBackendUrl,
+    diagnostics,
     runDiagnostics,
     openSetupAssistant,
     settingsOpen,
