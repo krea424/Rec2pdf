@@ -240,11 +240,20 @@ export default function PromptLibrary({
     const checklistSections = Array.isArray(prompt?.checklist?.sections)
       ? prompt.checklist.sections
       : [];
-    const summaryText = typeof prompt.summary === "string" && prompt.summary.trim()
-      ? prompt.summary.trim()
-      : typeof prompt.description === "string"
-        ? prompt.description.trim()
-        : "";
+    const summaryText = (() => {
+      const explicit = typeof prompt.summary === "string" ? prompt.summary.trim() : "";
+      if (explicit) return explicit;
+
+      if (typeof prompt.description === "string") {
+        const trimmed = prompt.description.trim();
+        if (!trimmed) return "";
+        const firstLine = trimmed.split(/\r?\n/)[0]?.trim() || trimmed;
+        const snippet = firstLine || trimmed;
+        return snippet.length > 140 ? `${snippet.slice(0, 137).trimEnd()}...` : snippet;
+      }
+
+      return "";
+    })();
 
     return (
       <div

@@ -1000,6 +1000,14 @@ const DEFAULT_PROMPTS = [
   },
 ];
 
+const DEFAULT_PROMPTS_BY_ID = new Map(
+  DEFAULT_PROMPTS.filter((prompt) => prompt && prompt.id).map((prompt) => [prompt.id, prompt])
+);
+
+const DEFAULT_PROMPTS_BY_SLUG = new Map(
+  DEFAULT_PROMPTS.filter((prompt) => prompt && prompt.slug).map((prompt) => [prompt.slug, prompt])
+);
+
 const bootstrapDefaultPrompts = () => {
   const now = Date.now();
   return DEFAULT_PROMPTS.map((prompt, index) => ({
@@ -1007,6 +1015,34 @@ const bootstrapDefaultPrompts = () => {
     createdAt: prompt.createdAt || now + index,
     updatedAt: prompt.updatedAt || now + index,
   }));
+};
+
+const applyPromptMigrations = (prompts = []) => {
+  let changed = false;
+  const upgraded = (prompts || []).map((prompt) => {
+    if (!prompt || typeof prompt !== 'object') {
+      return prompt;
+    }
+
+    if (prompt.builtIn) {
+      const defaults =
+        DEFAULT_PROMPTS_BY_ID.get(prompt.id) ||
+        (prompt.slug ? DEFAULT_PROMPTS_BY_SLUG.get(prompt.slug) : null);
+
+      if (defaults) {
+        const next = { ...prompt };
+        if (!next.summary && defaults.summary) {
+          next.summary = defaults.summary;
+          changed = true;
+        }
+        return next;
+      }
+    }
+
+    return prompt;
+  });
+
+  return { prompts: upgraded, changed };
 };
 
 const ensureDataStore = async () => {
@@ -1036,7 +1072,11 @@ const readPrompts = async () => {
     const raw = await fsp.readFile(PROMPTS_FILE, 'utf8');
     const parsed = JSON.parse(raw);
     if (parsed && Array.isArray(parsed.prompts)) {
-      return parsed.prompts;
+      const { prompts, changed } = applyPromptMigrations(parsed.prompts);
+      if (changed) {
+        await writePrompts(prompts);
+      }
+      return prompts;
     }
   } catch (error) {
     console.warn('Impossibile leggere prompts.json:', error.message || error);
