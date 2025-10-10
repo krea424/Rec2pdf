@@ -81,7 +81,7 @@ const AppShell = () => {
               <img
                 src={customLogo || logoAsset}
                 alt="ThinkDoc Logo"
-                className="h-20 w-auto object-contain md:h-28 lg:h-32"
+                className="h-14 w-auto object-contain md:h-16 lg:h-20"
               />
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">

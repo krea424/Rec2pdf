@@ -1,77 +1,20 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Bug,
   Cpu,
   Download,
   FileCode,
   FileText,
-  Info,
   Mic,
-  Plus,
-  RefreshCw,
-  Settings as SettingsIcon,
-  Sparkles,
   Square,
   TimerIcon,
   Upload,
-  Users,
+  Info,
 } from "../components/icons";
 import PromptLibrary from "../components/PromptLibrary";
 import { useAppContext } from "../hooks/useAppContext";
 import { classNames } from "../utils/classNames";
-import { Button, Select, Toast } from "../components/ui";
-
-const PermissionBanner = () => {
-  const {
-    permissionMessage,
-    lastMicError,
-    secureOK,
-  } = useAppContext();
-
-  const ua = navigator.userAgent || "";
-  const isChromium = ua.includes("Chrome/") && !ua.includes("Edg/") && !ua.includes("OPR/");
-  const isEdge = ua.includes("Edg/");
-  const isBrave = isChromium && ua.includes("Brave/");
-  const site = encodeURIComponent(window.location.origin);
-  const chromeSiteSettings = `chrome://settings/content/siteDetails?site=${site}`;
-  const chromeMicSettings = `chrome://settings/content/microphone`;
-
-  return (
-    <div className="mt-3 rounded-xl border border-amber-900/40 bg-amber-950/40 p-3 text-sm text-amber-200">
-      <div className="font-medium">Permesso microfono necessario</div>
-      {permissionMessage && <div className="mt-1 text-amber-100">{permissionMessage}</div>}
-      {lastMicError && (
-        <div className="mt-1 text-amber-100">
-          Dettagli ultimo errore: <code className="text-amber-100">{lastMicError.name}</code>
-          {lastMicError.message ? `: ${lastMicError.message}` : ""}
-        </div>
-      )}
-      <ul className="mt-2 space-y-1 list-disc pl-5">
-        {!secureOK && (
-          <li>
-            Servi l'app in HTTPS o usa <code>http://localhost</code>.
-          </li>
-        )}
-        <li>Quando il browser chiede il permesso, scegli <strong>Consenti</strong>.</li>
-        <li>
-          Se in passato hai negato il permesso, apri le impostazioni del sito (icona lucchetto → Permessi) e abilita il
-          microfono.
-        </li>
-        <li>Su macOS: Sistema → Privacy e Sicurezza → Microfono → abilita il browser.</li>
-        {(isChromium || isEdge || isBrave) && (
-          <li className="mt-1 space-x-3">
-            <a href={chromeSiteSettings} className="underline" target="_blank" rel="noreferrer">
-              Apri permessi sito
-            </a>
-            <a href={chromeMicSettings} className="underline" target="_blank" rel="noreferrer">
-              Apri impostazioni microfono
-            </a>
-          </li>
-        )}
-      </ul>
-    </div>
-  );
-};
+import { Toast } from "../components/ui";
 
 const ErrorBanner = () => {
   const { errorBanner, setErrorBanner } = useAppContext();
@@ -101,6 +44,12 @@ const CreatePage = () => {
 
   const HeaderIcon = context.headerStatus?.icon || Cpu;
 
+  const [openInfo, setOpenInfo] = useState(null);
+
+  const toggleInfo = (section) => {
+    setOpenInfo((prev) => (prev === section ? null : section));
+  };
+
   const audioDownloadExtension = useMemo(() => {
     const mime = context.mime || "";
     if (mime.includes("webm")) return "webm";
@@ -120,76 +69,47 @@ const CreatePage = () => {
       <ErrorBanner />
 
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-3">
-        <div className={classNames("md:col-span-2 rounded-2xl border p-6 shadow-lg", themes[theme].card)}>
+        <div
+          className={classNames(
+            "md:col-span-2 rounded-2xl border p-6 shadow-lg",
+            themes[theme].card,
+          )}
+        >
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-xl font-medium">
               <Mic className="h-5 w-5" /> Registrazione
             </h2>
             <div className="flex items-center gap-2 text-sm text-zinc-400">
-              <TimerIcon className="h-4 w-4" /> {context.fmtTime(context.elapsed)}
+              <TimerIcon className="h-4 w-4" />{" "}
+              {context.fmtTime(context.elapsed)}
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className={themes[theme].button}
-              onClick={context.requestPermission}
-            >
-              Concedi microfono
-            </Button>
-            <div className="text-sm text-zinc-400">
-              Permesso: <span className="font-mono">{context.permission}</span>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className={classNames("gap-2", themes[theme].button)}
-              onClick={context.refreshDevices}
-              leadingIcon={RefreshCw}
-            >
-              Dispositivi
-            </Button>
-          </div>
-
-          {context.permission !== "granted" && <PermissionBanner />}
-
-          {context.permission === "granted" && context.devices.length > 0 && (
-            <Select
-              label="Sorgente microfono"
-              value={context.selectedDeviceId}
-              onChange={(event) => context.setSelectedDeviceId(event.target.value)}
-              containerClassName="mt-4"
-              className={themes[theme].input}
-            >
-              {context.devices.map((device, index) => (
-                <option key={device.deviceId || index} value={device.deviceId}>
-                  {device.label || `Dispositivo ${index + 1}`}
-                </option>
-              ))}
-            </Select>
-          )}
-
-          <div className="mt-4 flex items-center justify-center">
+          <div className="mt-8 flex items-center justify-center">
             <button
               type="button"
-              onClick={context.recording ? context.stopRecording : context.startRecording}
+              onClick={
+                context.recording
+                  ? context.stopRecording
+                  : context.startRecording
+              }
               className={classNames(
                 "flex h-40 w-40 flex-col items-center justify-center gap-2 rounded-full text-lg font-semibold shadow-xl transition",
-                context.recording ? "bg-rose-600 hover:bg-rose-500" : "bg-emerald-600 hover:bg-emerald-500",
+                context.recording
+                  ? "bg-rose-600 hover:bg-rose-500"
+                  : "bg-emerald-600 hover:bg-emerald-500",
               )}
               disabled={
-                context.busy || !context.mediaSupported || !context.recorderSupported
+                context.busy ||
+                !context.mediaSupported ||
+                !context.recorderSupported
               }
               title={
                 !context.mediaSupported
                   ? "getUserMedia non supportato"
                   : !context.recorderSupported
-                  ? "MediaRecorder non supportato"
-                  : ""
+                    ? "MediaRecorder non supportato"
+                    : ""
               }
             >
               {context.recording ? (
@@ -204,360 +124,9 @@ const CreatePage = () => {
             </button>
           </div>
 
-          <div className="mt-6">
-            <div className="h-3 w-full overflow-hidden rounded-full bg-zinc-800">
-              <div
-                className="h-full bg-gradient-to-r from-emerald-500 to-emerald-300"
-                style={{ width: `${Math.min(100, Math.round(context.level * 120))}%` }}
-              />
-            </div>
-            <div className="mt-1 text-xs text-zinc-500">Input level</div>
-          </div>
-
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className={classNames("rounded-xl border p-4", themes[theme].input)}>
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm text-zinc-400">
-                  <FileText className="h-4 w-4" /> Cartella destinazione
-                </label>
-                <button
-                  type="button"
-                  onClick={() => context.setShowDestDetails((prev) => !prev)}
-                  className="text-zinc-400 hover:text-zinc-200"
-                >
-                  <Info className="h-4 w-4" />
-                </button>
-              </div>
-              <input
-                className={classNames(
-                  "mt-2 w-full rounded-lg border px-3 py-2 outline-none",
-                  context.destIsPlaceholder ? "border-rose-600" : themes[theme].input,
-                )}
-                value={context.destDir}
-                onChange={(event) => context.setDestDir(event.target.value)}
-                placeholder="/Users/tuo_utente/Recordings"
-              />
-              {context.showDestDetails && (
-                <div
-                  className={classNames(
-                    "mt-2 text-xs",
-                    context.destIsPlaceholder ? "text-rose-400" : "text-zinc-500",
-                  )}
-                >
-                  {context.destIsPlaceholder
-                    ? "Sostituisci \"tuo_utente\" con il tuo username macOS oppure lascia vuoto per usare la cartella predefinita del backend."
-                    : "Lascia vuoto per usare la cartella predefinita del backend."}
-                </div>
-              )}
-            </div>
-            <div className={classNames("rounded-xl border p-4", themes[theme].input)}>
-              <label className="flex items-center gap-2 text-sm text-zinc-400">
-                <FileText className="h-4 w-4" /> Slug
-              </label>
-              <input
-                className="mt-2 w-full rounded-lg border-zinc-800 bg-transparent px-3 py-2 outline-none"
-                value={context.slug}
-                onChange={(event) => context.setSlug(event.target.value)}
-                placeholder="meeting"
-              />
-            </div>
-            <div className={classNames("rounded-xl border p-4", themes[theme].input)}>
-              <label className="flex items-center gap-2 text-sm text-zinc-400">
-                <TimerIcon className="h-4 w-4" /> Durata massima (s)
-              </label>
-              <input
-                type="number"
-                min={0}
-                className="mt-2 w-full rounded-lg border-zinc-800 bg-transparent px-3 py-2 outline-none"
-                value={context.secondsCap}
-                onChange={(event) =>
-                  context.setSecondsCap(
-                    Math.max(0, parseInt(event.target.value || "0", 10) || 0),
-                  )
-                }
-              />
-              <div className="mt-2 text-xs text-zinc-500">0 = senza limite</div>
-            </div>
-          </div>
-
-          <div className={classNames("mt-4 rounded-xl border p-4", themes[theme].input)}>
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-sm text-zinc-400">
-                  <Users className="h-4 w-4" />
-                  <span>Workspace &amp; progetto</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={context.handleRefreshWorkspaces}
-                    className={classNames(
-                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
-                      themes[theme].input,
-                      themes[theme].input_hover,
-                      context.workspaceLoading && "opacity-60 cursor-not-allowed",
-                    )}
-                    disabled={context.workspaceLoading}
-                  >
-                    <RefreshCw
-                      className={classNames(
-                        "h-3.5 w-3.5",
-                        context.workspaceLoading ? "animate-spin" : "",
-                      )}
-                    />
-                    Aggiorna
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => context.setWorkspaceBuilderOpen((prev) => !prev)}
-                    className={classNames(
-                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
-                      themes[theme].input,
-                      themes[theme].input_hover,
-                    )}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    {context.workspaceBuilderOpen ? "Chiudi builder" : "Nuovo workspace"}
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div>
-                  <label className="text-xs text-zinc-500">Workspace</label>
-                  <select
-                    value={context.workspaceSelection.workspaceId}
-                    onChange={(event) =>
-                      context.handleSelectWorkspaceForPipeline(event.target.value)
-                    }
-                    className={classNames(
-                      "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                      themes[theme].input,
-                    )}
-                  >
-                    <option value="">Nessun workspace</option>
-                    {context.workspaces.map((workspace) => (
-                      <option key={workspace.id} value={workspace.id} className="bg-zinc-900">
-                        {workspace.name} · {workspace.client || "—"}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {context.workspaceSelection.workspaceId && (
-                  <div>
-                    <label className="text-xs text-zinc-500">Policy di versioning</label>
-                    <div className="mt-2 text-xs text-zinc-400">
-                      {context.activeWorkspace?.versioningPolicy
-                        ? `${
-                            context.activeWorkspace.versioningPolicy.namingConvention || "timestamped"
-                          } · retention ${
-                            context.activeWorkspace.versioningPolicy.retentionLimit || 10
-                          }`
-                        : "Timestamp standard"}
-                    </div>
-                  </div>
-                )}
-              </div>
-              {context.workspaceBuilderOpen && (
-                <div className="space-y-3 rounded-lg border border-dashed border-zinc-700 p-3">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div>
-                      <label className="text-xs text-zinc-500">Nome</label>
-                      <input
-                        value={context.workspaceBuilder.name}
-                        onChange={(event) =>
-                          context.setWorkspaceBuilder((prev) => ({
-                            ...prev,
-                            name: event.target.value,
-                          }))
-                        }
-                        className={classNames(
-                          "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                          themes[theme].input,
-                        )}
-                        placeholder="Es. Portfolio Clienti"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-500">Cliente</label>
-                      <input
-                        value={context.workspaceBuilder.client}
-                        onChange={(event) =>
-                          context.setWorkspaceBuilder((prev) => ({
-                            ...prev,
-                            client: event.target.value,
-                          }))
-                        }
-                        className={classNames(
-                          "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                          themes[theme].input,
-                        )}
-                        placeholder="Es. Acme Corp"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-500">Colore</label>
-                      <div className="mt-2 flex items-center gap-2">
-                        <input
-                          type="color"
-                          value={context.workspaceBuilder.color}
-                          onChange={(event) =>
-                            context.setWorkspaceBuilder((prev) => ({
-                              ...prev,
-                              color: event.target.value,
-                            }))
-                          }
-                          className="h-9 w-12 rounded border border-zinc-700 bg-transparent"
-                        />
-                        <span className="font-mono text-xs text-zinc-400">
-                          {context.workspaceBuilder.color}
-                        </span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-500">Stati suggeriti (comma-separated)</label>
-                      <input
-                        value={context.workspaceBuilder.statuses}
-                        onChange={(event) =>
-                          context.setWorkspaceBuilder((prev) => ({
-                            ...prev,
-                            statuses: event.target.value,
-                          }))
-                        }
-                        className={classNames(
-                          "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                          themes[theme].input,
-                        )}
-                        placeholder="Bozza, In lavorazione, In review"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={context.handleWorkspaceBuilderSubmit}
-                      className={classNames(
-                        "flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
-                        themes[theme].button,
-                        !context.workspaceBuilder.name.trim() && "opacity-60 cursor-not-allowed",
-                      )}
-                      disabled={!context.workspaceBuilder.name.trim()}
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      Crea workspace
-                    </button>
-                  </div>
-                </div>
-              )}
-              {context.workspaceSelection.workspaceId && (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <label className="text-xs text-zinc-500">Progetto</label>
-                    <select
-                      value={context.projectCreationMode ? "__new__" : context.workspaceSelection.projectId}
-                      onChange={(event) =>
-                        context.handleSelectProjectForPipeline(event.target.value)
-                      }
-                      className={classNames(
-                        "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                        themes[theme].input,
-                      )}
-                    >
-                      <option value="">Nessun progetto</option>
-                      {context.workspaceProjects.map((project) => (
-                        <option key={project.id} value={project.id} className="bg-zinc-900">
-                          {project.name}
-                        </option>
-                      ))}
-                      <option value="__new__">+ Nuovo progetto…</option>
-                    </select>
-                    {context.projectCreationMode && (
-                      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                        <input
-                          value={context.projectDraft}
-                          onChange={(event) => context.setProjectDraft(event.target.value)}
-                          placeholder="Nome progetto"
-                          className={classNames(
-                            "rounded-lg border bg-transparent px-3 py-2 text-sm",
-                            themes[theme].input,
-                          )}
-                        />
-                        <div className="flex gap-2">
-                          <input
-                            value={context.statusDraft}
-                            onChange={(event) => context.setStatusDraft(event.target.value)}
-                            placeholder="Stato iniziale"
-                            className={classNames(
-                              "w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                              themes[theme].input,
-                            )}
-                          />
-                          <button
-                            type="button"
-                            onClick={context.handleCreateProjectFromDraft}
-                            className={classNames(
-                              "flex items-center gap-1 rounded-lg px-3 py-2 text-xs",
-                              themes[theme].button,
-                              !context.projectDraft.trim() && "opacity-60 cursor-not-allowed",
-                            )}
-                            disabled={!context.projectDraft.trim()}
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                            Crea
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-xs text-zinc-500">Stato</label>
-                    <select
-                      value={context.statusCreationMode ? "__new__" : context.workspaceSelection.status || ""}
-                      onChange={(event) =>
-                        context.handleSelectStatusForPipeline(event.target.value)
-                      }
-                      className={classNames(
-                        "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                        themes[theme].input,
-                      )}
-                    >
-                      <option value="">Nessun stato</option>
-                      {context.availableStatuses.map((statusValue) => (
-                        <option key={statusValue} value={statusValue} className="bg-zinc-900">
-                          {statusValue}
-                        </option>
-                      ))}
-                      <option value="__new__">+ Nuovo stato…</option>
-                    </select>
-                    {context.statusCreationMode && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <input
-                          value={context.statusDraft}
-                          onChange={(event) => context.setStatusDraft(event.target.value)}
-                          placeholder="Es. In revisione"
-                          className={classNames(
-                            "w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                            themes[theme].input,
-                          )}
-                        />
-                        <button
-                          type="button"
-                          onClick={context.handleCreateStatusFromDraft}
-                          className={classNames(
-                            "flex items-center gap-1 rounded-lg px-3 py-2 text-xs",
-                            themes[theme].button,
-                            !context.statusDraft.trim() && "opacity-60 cursor-not-allowed",
-                          )}
-                          disabled={!context.statusDraft.trim()}
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                          Aggiungi
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+          <div className="mt-6 text-center text-sm text-zinc-400">
+            Configura microfono, cartelle e workspace da{" "}
+            <strong>Impostazioni → Registrazione</strong>.
           </div>
 
           <PromptLibrary
@@ -581,28 +150,44 @@ const CreatePage = () => {
             onDeletePrompt={context.handleDeletePrompt}
           />
 
-          <div className={classNames("mt-6 rounded-xl border p-4", themes[theme].input)}>
+          <div
+            className={classNames(
+              "mt-6 rounded-xl border p-4",
+              themes[theme].input,
+            )}
+          >
             <div className="flex items-center justify-between">
-              <div className="text-sm text-zinc-400">Clip registrata / caricata</div>
+              <div className="text-sm text-zinc-400">
+                Clip registrata / caricata
+              </div>
               <div className="text-xs text-zinc-500">
-                {context.mime || "—"} · {context.fmtBytes(context.audioBlob?.size)}
+                {context.mime || "—"} ·{" "}
+                {context.fmtBytes(context.audioBlob?.size)}
               </div>
             </div>
             <div className="mt-3">
               {context.audioUrl ? (
                 <audio controls src={context.audioUrl} className="w-full" />
               ) : (
-                <div className="text-sm text-zinc-500">Nessuna clip disponibile.</div>
+                <div className="text-sm text-zinc-500">
+                  Nessuna clip disponibile.
+                </div>
               )}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => context.processViaBackend()}
-                disabled={!context.audioBlob || context.busy || context.backendUp === false}
+                disabled={
+                  !context.audioBlob ||
+                  context.busy ||
+                  context.backendUp === false
+                }
                 className={classNames(
                   "flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium hover:bg-indigo-500",
-                  (!context.audioBlob || context.busy || context.backendUp === false) &&
+                  (!context.audioBlob ||
+                    context.busy ||
+                    context.backendUp === false) &&
                     "cursor-not-allowed opacity-60",
                 )}
               >
@@ -622,27 +207,35 @@ const CreatePage = () => {
               <button
                 type="button"
                 onClick={context.resetAll}
-                className={classNames("rounded-lg px-4 py-2 text-sm", themes[theme].button)}
+                className={classNames(
+                  "rounded-lg px-4 py-2 text-sm",
+                  themes[theme].button,
+                )}
               >
                 Reset
               </button>
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <div className={classNames("space-y-4 rounded-2xl border p-5 transition-all", themes[theme].input)}>
-              <div className="flex items-start gap-3">
-                <div className="rounded-xl bg-indigo-500/10 p-2 text-indigo-300">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div
+              className={classNames(
+                "rounded-2xl border p-4 transition-all",
+                themes[theme].input,
+              )}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => context.fileInputRef.current?.click()}
+                  className={classNames(
+                    "flex flex-1 items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold text-zinc-100 transition focus:outline-none focus:ring-2 focus:ring-indigo-400",
+                    themes[theme].button,
+                  )}
+                >
                   <Upload className="h-4 w-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-zinc-100">Carica audio</h4>
-                  <p className="text-xs text-zinc-400">
-                    Usa un file audio esistente come sorgente alternativa alla registrazione.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
+                  Carica audio
+                </button>
                 <input
                   ref={context.fileInputRef}
                   type="file"
@@ -652,58 +245,75 @@ const CreatePage = () => {
                 />
                 <button
                   type="button"
-                  onClick={() => context.fileInputRef.current?.click()}
-                  className={classNames(
-                    "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition",
-                    themes[theme].button,
-                  )}
+                  onClick={() => toggleInfo("audio")}
+                  aria-label="Informazioni su Carica audio"
+                  aria-expanded={openInfo === "audio"}
+                  aria-controls="upload-audio-info"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 transition hover:border-indigo-400 hover:text-indigo-300"
                 >
-                  <Upload className="h-4 w-4" />
-                  Seleziona audio
+                  <Info className="h-4 w-4" />
                 </button>
               </div>
-              {context.audioBlob && (
-                <>
-                  <div className="flex items-center gap-2 text-xs text-zinc-500">
-                    <span
-                      className="max-w-[180px] truncate"
-                      title={
-                        "name" in context.audioBlob && context.audioBlob.name
-                          ? context.audioBlob.name
-                          : "Registrazione pronta"
-                      }
-                    >
-                      {"name" in context.audioBlob && context.audioBlob.name
-                        ? context.audioBlob.name
-                        : "Registrazione pronta"}
-                    </span>
-                    {Number.isFinite(context.audioBlob.size) && (
-                      <span>· {context.fmtBytes(context.audioBlob.size)}</span>
-                    )}
-                  </div>
-                  <p className="text-xs text-zinc-500">
-                    Avvia la pipeline dalla card "Clip registrata / caricata" per elaborare questo audio.
+              {openInfo === "audio" && (
+                <div
+                  id="upload-audio-info"
+                  className="mt-3 space-y-2 rounded-xl border border-zinc-700/60 bg-zinc-900/40 p-3 text-xs text-zinc-400"
+                >
+                  <p>
+                    Usa un file audio esistente come sorgente alternativa alla
+                    registrazione.
                   </p>
-                </>
+                  <p>
+                    Avvia la pipeline dalla card «Clip registrata / caricata»
+                    per elaborare questo audio una volta caricato.
+                  </p>
+                  <p>
+                    Supporta formati comuni (webm/ogg/m4a/wav). Verrà convertito
+                    in WAV lato server.
+                  </p>
+                </div>
               )}
-              <p className="text-xs text-zinc-500">
-                Supporta formati comuni (webm/ogg/m4a/wav). Verrà convertito in WAV lato server.
-              </p>
+              {context.audioBlob && (
+                <div className="mt-3 flex items-center gap-2 rounded-xl border border-zinc-700/50 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-400">
+                  <span
+                    className="max-w-[160px] truncate"
+                    title={
+                      "name" in context.audioBlob && context.audioBlob.name
+                        ? context.audioBlob.name
+                        : "Registrazione pronta"
+                    }
+                  >
+                    {"name" in context.audioBlob && context.audioBlob.name
+                      ? context.audioBlob.name
+                      : "Registrazione pronta"}
+                  </span>
+                  {Number.isFinite(context.audioBlob.size) && (
+                    <span>· {context.fmtBytes(context.audioBlob.size)}</span>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className={classNames("space-y-4 rounded-2xl border p-5 transition-all", themes[theme].input)}>
-              <div className="flex items-start gap-3">
-                <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-300">
+            <div
+              className={classNames(
+                "rounded-2xl border p-4 transition-all",
+                themes[theme].input,
+              )}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => context.markdownInputRef.current?.click()}
+                  className={classNames(
+                    "flex flex-1 items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold text-zinc-100 transition focus:outline-none focus:ring-2 focus:ring-emerald-400",
+                    themes[theme].button,
+                    context.busy && "cursor-not-allowed opacity-60",
+                  )}
+                  disabled={context.busy}
+                >
                   <FileCode className="h-4 w-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-zinc-100">Carica Markdown</h4>
-                  <p className="text-xs text-zinc-400">
-                    Carica un documento .md già strutturato per impaginarlo subito con PPUBR.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
+                  Carica Markdown
+                </button>
                 <input
                   ref={context.markdownInputRef}
                   type="file"
@@ -714,47 +324,65 @@ const CreatePage = () => {
                 />
                 <button
                   type="button"
-                  onClick={() => context.markdownInputRef.current?.click()}
+                  onClick={() => toggleInfo("markdown")}
+                  aria-label="Informazioni su Carica Markdown"
+                  aria-expanded={openInfo === "markdown"}
+                  aria-controls="upload-markdown-info"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 transition hover:border-emerald-400 hover:text-emerald-300"
+                >
+                  <Info className="h-4 w-4" />
+                </button>
+              </div>
+              {openInfo === "markdown" && (
+                <div
+                  id="upload-markdown-info"
+                  className="mt-3 space-y-2 rounded-xl border border-zinc-700/60 bg-zinc-900/40 p-3 text-xs text-zinc-400"
+                >
+                  <p>
+                    Carica un documento .md già strutturato per impaginarlo
+                    subito con PPUBR.
+                  </p>
+                  <p>
+                    Supporta solo file Markdown. L&apos;impaginazione usa PPUBR
+                    con fallback Pandoc.
+                  </p>
+                </div>
+              )}
+              {context.lastMarkdownUpload && (
+                <div className="mt-3 flex items-center gap-2 rounded-xl border border-zinc-700/50 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-400">
+                  <span
+                    className="max-w-[160px] truncate"
+                    title={context.lastMarkdownUpload.name}
+                  >
+                    {context.lastMarkdownUpload.name}
+                  </span>
+                  <span>
+                    · {context.fmtBytes(context.lastMarkdownUpload.size)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div
+              className={classNames(
+                "rounded-2xl border p-4 transition-all",
+                themes[theme].input,
+              )}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => context.textInputRef.current?.click()}
                   className={classNames(
-                    "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition",
+                    "flex flex-1 items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold text-zinc-100 transition focus:outline-none focus:ring-2 focus:ring-sky-400",
                     themes[theme].button,
                     context.busy && "cursor-not-allowed opacity-60",
                   )}
                   disabled={context.busy}
                 >
-                  <Upload className="h-4 w-4" />
-                  Seleziona Markdown
-                </button>
-                {context.lastMarkdownUpload && (
-                  <div className="flex items-center gap-2 text-xs text-zinc-500">
-                    <span
-                      className="max-w-[180px] truncate"
-                      title={context.lastMarkdownUpload.name}
-                    >
-                      {context.lastMarkdownUpload.name}
-                    </span>
-                    <span>· {context.fmtBytes(context.lastMarkdownUpload.size)}</span>
-                  </div>
-                )}
-              </div>
-              <p className="text-xs text-zinc-500">
-                Supporta solo file .md. L'impaginazione usa PPUBR con fallback Pandoc.
-              </p>
-            </div>
-
-            <div className={classNames("space-y-4 rounded-2xl border p-5 transition-all", themes[theme].input)}>
-              <div className="flex items-start gap-3">
-                <div className="rounded-xl bg-sky-500/10 p-2 text-sky-300">
                   <FileText className="h-4 w-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-zinc-100">Carica TXT</h4>
-                  <p className="text-xs text-zinc-400">
-                    Carica un file .txt: lo convertiamo in Markdown e avviamo l'impaginazione.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
+                  Carica TXT
+                </button>
                 <input
                   ref={context.textInputRef}
                   type="file"
@@ -765,93 +393,52 @@ const CreatePage = () => {
                 />
                 <button
                   type="button"
-                  onClick={() => context.textInputRef.current?.click()}
-                  className={classNames(
-                    "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition",
-                    themes[theme].button,
-                    context.busy && "cursor-not-allowed opacity-60",
-                  )}
-                  disabled={context.busy}
+                  onClick={() => toggleInfo("text")}
+                  aria-label="Informazioni su Carica TXT"
+                  aria-expanded={openInfo === "text"}
+                  aria-controls="upload-text-info"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 transition hover:border-sky-400 hover:text-sky-300"
                 >
-                  <Upload className="h-4 w-4" />
-                  Seleziona testo
+                  <Info className="h-4 w-4" />
                 </button>
-                {context.lastTextUpload && (
-                  <div className="flex items-center gap-2 text-xs text-zinc-500">
-                    <span
-                      className="max-w-[180px] truncate"
-                      title={context.lastTextUpload.name}
-                    >
-                      {context.lastTextUpload.name}
-                    </span>
-                    <span>· {context.fmtBytes(context.lastTextUpload.size)}</span>
-                  </div>
-                )}
               </div>
-              <p className="text-xs text-zinc-500">
-                Supporta file UTF-8 .txt. Il contenuto viene ripulito e salvato come Markdown prima dell'upload.
-              </p>
+              {openInfo === "text" && (
+                <div
+                  id="upload-text-info"
+                  className="mt-3 space-y-2 rounded-xl border border-zinc-700/60 bg-zinc-900/40 p-3 text-xs text-zinc-400"
+                >
+                  <p>
+                    Carica un file .txt: lo convertiamo in Markdown e avviamo
+                    l&apos;impaginazione.
+                  </p>
+                  <p>
+                    Supporta file UTF-8 .txt. Il contenuto viene ripulito e
+                    salvato come Markdown prima dell&apos;upload.
+                  </p>
+                </div>
+              )}
+              {context.lastTextUpload && (
+                <div className="mt-3 flex items-center gap-2 rounded-xl border border-zinc-700/50 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-400">
+                  <span
+                    className="max-w-[160px] truncate"
+                    title={context.lastTextUpload.name}
+                  >
+                    {context.lastTextUpload.name}
+                  </span>
+                  <span>· {context.fmtBytes(context.lastTextUpload.size)}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col gap-6 md:col-span-1">
-          <div className={classNames("rounded-2xl border p-5 shadow-lg", themes[theme].card)}>
-            <div className="flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-lg font-medium">
-                <SettingsIcon className="h-4 w-4" /> Stato
-              </h3>
-            </div>
-            <div className="mt-4 space-y-1 text-sm text-zinc-300">
-              <div className="flex items-center gap-2">
-                <span
-                  className={classNames(
-                    "h-2 w-2 rounded-full",
-                    context.secureOK ? "bg-emerald-500" : "bg-rose-500",
-                  )}
-                />
-                HTTPS/localhost: {context.secureOK ? "OK" : "Richiesto"}
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={classNames(
-                    "h-2 w-2 rounded-full",
-                    context.mediaSupported ? "bg-emerald-500" : "bg-rose-500",
-                  )}
-                />
-                getUserMedia: {context.mediaSupported ? "Supportato" : "No"}
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={classNames(
-                    "h-2 w-2 rounded-full",
-                    context.recorderSupported ? "bg-emerald-500" : "bg-rose-500",
-                  )}
-                />
-                MediaRecorder: {context.recorderSupported ? "Supportato" : "No"}
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={classNames(
-                    "h-2 w-2 rounded-full",
-                    context.backendUp ? "bg-emerald-500" : "bg-rose-500",
-                  )}
-                />
-                Backend: {context.backendUp === null ? "—" : context.backendUp ? "Online" : "Offline"}
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={classNames(
-                    "h-2 w-2 rounded-full",
-                    context.busy ? "bg-yellow-400" : "bg-zinc-600",
-                  )}
-                />
-                Pipeline: {context.busy ? "In esecuzione…" : "Pronta"}
-              </div>
-            </div>
-          </div>
-
-          <div className={classNames("space-y-4 rounded-2xl border p-5 shadow-lg", themes[theme].card)}>
+        <div className="md:col-span-1">
+          <div
+            className={classNames(
+              "space-y-4 rounded-2xl border p-5 shadow-lg",
+              themes[theme].card,
+            )}
+          >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="flex items-center gap-2 text-lg font-medium">
                 <Cpu className="h-4 w-4" /> Pipeline
@@ -876,7 +463,9 @@ const CreatePage = () => {
                   )}
                 >
                   <Bug className="h-3.5 w-3.5" />
-                  {context.showRawLogs ? "Nascondi log grezzi" : "Mostra log grezzi"}
+                  {context.showRawLogs
+                    ? "Nascondi log grezzi"
+                    : "Mostra log grezzi"}
                 </button>
               </div>
             </div>
@@ -889,7 +478,8 @@ const CreatePage = () => {
               </div>
               <div className="mt-2 flex items-center justify-between text-xs text-zinc-400">
                 <span>
-                  {context.completedStagesCount}/{context.totalStages} step completati
+                  {context.completedStagesCount}/{context.totalStages} step
+                  completati
                 </span>
                 <span>{context.progressPercent}%</span>
               </div>
@@ -899,14 +489,20 @@ const CreatePage = () => {
                 const status = context.pipelineStatus[stage.key] || "idle";
                 const Icon = stage.icon || Cpu;
                 const prevStatus =
-                  index > 0 ? context.pipelineStatus[context.PIPELINE_STAGES[index - 1].key] || "idle" : null;
+                  index > 0
+                    ? context.pipelineStatus[
+                        context.PIPELINE_STAGES[index - 1].key
+                      ] || "idle"
+                    : null;
                 const connectorClass =
                   prevStatus === "done"
                     ? "bg-emerald-500/40"
                     : prevStatus === "failed"
-                    ? "bg-rose-500/40"
-                    : "bg-zinc-700/60";
-                const stageStyle = context.STAGE_STATUS_STYLES[status] || context.STAGE_STATUS_STYLES.idle;
+                      ? "bg-rose-500/40"
+                      : "bg-zinc-700/60";
+                const stageStyle =
+                  context.STAGE_STATUS_STYLES[status] ||
+                  context.STAGE_STATUS_STYLES.idle;
                 const isActive = context.failedStage
                   ? context.failedStage.key === stage.key
                   : context.activeStageKey === stage.key;
@@ -915,7 +511,12 @@ const CreatePage = () => {
                 return (
                   <div key={stage.key} className="relative pl-10">
                     {index !== 0 && (
-                      <div className={classNames("absolute left-3 top-0 h-full w-px transition-colors", connectorClass)} />
+                      <div
+                        className={classNames(
+                          "absolute left-3 top-0 h-full w-px transition-colors",
+                          connectorClass,
+                        )}
+                      />
                     )}
                     <div
                       className={classNames(
@@ -934,7 +535,9 @@ const CreatePage = () => {
                       )}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-medium text-zinc-100">{stage.label}</div>
+                        <div className="text-sm font-medium text-zinc-100">
+                          {stage.label}
+                        </div>
                         <span
                           className={classNames(
                             "rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
@@ -945,7 +548,9 @@ const CreatePage = () => {
                           {context.STAGE_STATUS_LABELS[status] || status}
                         </span>
                       </div>
-                      <p className="mt-1 text-xs text-zinc-300">{stage.description}</p>
+                      <p className="mt-1 text-xs text-zinc-300">
+                        {stage.description}
+                      </p>
                       {stageMessage && (
                         <div
                           className={classNames(
@@ -970,7 +575,8 @@ const CreatePage = () => {
             </div>
             {!context.showRawLogs && context.logs?.length > 0 && (
               <div className="text-xs text-zinc-500">
-                {context.logs.length} righe di log disponibili. Apri i log grezzi per i dettagli completi.
+                {context.logs.length} righe di log disponibili. Apri i log
+                grezzi per i dettagli completi.
               </div>
             )}
             {context.showRawLogs && (
@@ -994,7 +600,6 @@ const CreatePage = () => {
           </div>
         </div>
       </div>
-
     </div>
   );
 };
