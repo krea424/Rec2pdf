@@ -691,7 +691,7 @@ export default function SettingsDrawer({ open, onClose }) {
               <img
                 src={customLogo || logoAsset}
                 alt="Anteprima logo"
-                className="max-h-20 w-auto object-contain"
+                className="max-h-16 w-auto object-contain"
               />
             </div>
           </div>
