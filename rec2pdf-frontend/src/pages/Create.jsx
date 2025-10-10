@@ -12,6 +12,10 @@ import {
   Upload,
   Info,
   CheckCircle2,
+  Users,
+  RefreshCw,
+  Plus,
+  Sparkles,
 } from "../components/icons";
 import PromptLibrary from "../components/PromptLibrary";
 import { useAppContext } from "../hooks/useAppContext";
@@ -171,9 +175,397 @@ const CreatePage = () => {
             </button>
           </div>
 
-          <div className="mt-6 text-center text-sm text-zinc-400">
-            Configura microfono, cartelle e workspace da{" "}
-            <strong>Impostazioni → Registrazione</strong>.
+          <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div
+              className={classNames(
+                "rounded-2xl border p-4 transition-all",
+                isBoardroom ? boardroomSecondarySurface : themes[theme].input,
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-sm text-zinc-400">
+                  <FileText className="h-4 w-4" /> Cartella destinazione
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => context.setDestDir(context.DEFAULT_DEST_DIR)}
+                    className={classNames(
+                      "rounded-lg border px-2 py-1 text-xs",
+                      themes[theme].input,
+                      themes[theme].input_hover,
+                    )}
+                  >
+                    Reimposta
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => context.setShowDestDetails((prev) => !prev)}
+                    className="text-zinc-400 hover:text-zinc-200"
+                    aria-label="Mostra dettagli cartella destinazione"
+                    aria-expanded={context.showDestDetails}
+                  >
+                    <Info className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              <input
+                className={classNames(
+                  "mt-2 w-full rounded-lg border px-3 py-2 outline-none",
+                  context.destIsPlaceholder
+                    ? "border-rose-600"
+                    : themes[theme].input,
+                )}
+                value={context.destDir}
+                onChange={(event) => context.setDestDir(event.target.value)}
+                placeholder="Es. /Users/mario/Recordings"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              {context.showDestDetails && (
+                <div
+                  className={classNames(
+                    "mt-2 text-xs",
+                    context.destIsPlaceholder
+                      ? "text-rose-400"
+                      : "text-zinc-500",
+                  )}
+                >
+                  {context.destIsPlaceholder
+                    ? `Completa il percorso partendo da "${context.DEFAULT_DEST_DIR}" con il tuo username e la cartella finale (es. /Users/mario/Recordings). Lascia "${context.DEFAULT_DEST_DIR}" o il campo vuoto per usare la cartella predefinita del backend.`
+                    : `Lascia "${context.DEFAULT_DEST_DIR}" o il campo vuoto per usare la cartella predefinita del backend.`}
+                </div>
+              )}
+            </div>
+
+            <div
+              className={classNames(
+                "rounded-2xl border p-4 transition-all",
+                isBoardroom ? boardroomSecondarySurface : themes[theme].input,
+              )}
+            >
+              <label className="flex items-center gap-2 text-sm text-zinc-400">
+                <FileText className="h-4 w-4" /> Slug
+              </label>
+              <input
+                className={classNames(
+                  "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 outline-none",
+                  themes[theme].input,
+                )}
+                value={context.slug}
+                onChange={(event) => context.setSlug(event.target.value)}
+                placeholder="meeting"
+              />
+            </div>
+          </div>
+
+          <div
+            className={classNames(
+              "mt-4 space-y-3 rounded-2xl border p-5 transition-all",
+              isBoardroom ? boardroomSecondarySurface : themes[theme].input,
+            )}
+          >
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm text-zinc-400">
+                  <Users className="h-4 w-4" />
+                  <span>Workspace &amp; progetto</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={context.handleRefreshWorkspaces}
+                    className={classNames(
+                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
+                      themes[theme].input,
+                      themes[theme].input_hover,
+                      context.workspaceLoading && "opacity-60 cursor-not-allowed",
+                    )}
+                    disabled={context.workspaceLoading}
+                  >
+                    <RefreshCw
+                      className={classNames(
+                        "h-3.5 w-3.5",
+                        context.workspaceLoading ? "animate-spin" : "",
+                      )}
+                    />
+                    Aggiorna
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => context.setWorkspaceBuilderOpen((prev) => !prev)}
+                    className={classNames(
+                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
+                      themes[theme].input,
+                      themes[theme].input_hover,
+                    )}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {context.workspaceBuilderOpen ? "Chiudi builder" : "Nuovo workspace"}
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <label className="text-xs text-zinc-500">Workspace</label>
+                  <select
+                    value={context.workspaceSelection.workspaceId}
+                    onChange={(event) =>
+                      context.handleSelectWorkspaceForPipeline(event.target.value)
+                    }
+                    className={classNames(
+                      "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
+                      themes[theme].input,
+                    )}
+                  >
+                    <option value="">Nessun workspace</option>
+                    {context.workspaces.map((workspace) => (
+                      <option key={workspace.id} value={workspace.id} className="bg-zinc-900">
+                        {workspace.name} · {workspace.client || "—"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {context.workspaceSelection.workspaceId && (
+                  <div>
+                    <label className="text-xs text-zinc-500">Policy di versioning</label>
+                    <div className="mt-2 text-xs text-zinc-400">
+                      {context.activeWorkspace?.versioningPolicy
+                        ? `${
+                            context.activeWorkspace.versioningPolicy.namingConvention || "timestamped"
+                          } · retention ${
+                            context.activeWorkspace.versioningPolicy.retentionLimit || 10
+                          }`
+                        : "Timestamp standard"}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {context.workspaceBuilderOpen && (
+                <div className="space-y-3 rounded-lg border border-dashed border-zinc-700 p-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="text-xs text-zinc-500">Nome</label>
+                      <input
+                        value={context.workspaceBuilder.name}
+                        onChange={(event) =>
+                          context.setWorkspaceBuilder((prev) => ({
+                            ...prev,
+                            name: event.target.value,
+                          }))
+                        }
+                        className={classNames(
+                          "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
+                          themes[theme].input,
+                        )}
+                        placeholder="Es. Portfolio Clienti"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-zinc-500">Cliente</label>
+                      <input
+                        value={context.workspaceBuilder.client}
+                        onChange={(event) =>
+                          context.setWorkspaceBuilder((prev) => ({
+                            ...prev,
+                            client: event.target.value,
+                          }))
+                        }
+                        className={classNames(
+                          "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
+                          themes[theme].input,
+                        )}
+                        placeholder="Es. Acme Corp"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-zinc-500">Colore</label>
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={context.workspaceBuilder.color}
+                          onChange={(event) =>
+                            context.setWorkspaceBuilder((prev) => ({
+                              ...prev,
+                              color: event.target.value,
+                            }))
+                          }
+                          className="h-9 w-12 rounded border border-zinc-700 bg-transparent"
+                        />
+                        <span className="font-mono text-xs text-zinc-400">
+                          {context.workspaceBuilder.color}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-zinc-500">
+                        Stati suggeriti (comma-separated)
+                      </label>
+                      <input
+                        value={context.workspaceBuilder.statuses}
+                        onChange={(event) =>
+                          context.setWorkspaceBuilder((prev) => ({
+                            ...prev,
+                            statuses: event.target.value,
+                          }))
+                        }
+                        className={classNames(
+                          "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
+                          themes[theme].input,
+                        )}
+                        placeholder="Bozza, In lavorazione, In review"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={context.handleWorkspaceBuilderSubmit}
+                      className={classNames(
+                        "flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
+                        themes[theme].button,
+                        !context.workspaceBuilder.name.trim() && "opacity-60 cursor-not-allowed",
+                      )}
+                      disabled={!context.workspaceBuilder.name.trim()}
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Crea workspace
+                    </button>
+                  </div>
+                </div>
+              )}
+              {context.workspaceSelection.workspaceId && (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="text-xs text-zinc-500">Progetto</label>
+                    <select
+                      value={context.projectCreationMode
+                        ? "__new__"
+                        : context.workspaceSelection.projectId}
+                      onChange={(event) =>
+                        context.handleSelectProjectForPipeline(event.target.value)
+                      }
+                      className={classNames(
+                        "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
+                        themes[theme].input,
+                      )}
+                    >
+                      <option value="">Nessun progetto</option>
+                      {context.workspaceProjects.map((project) => (
+                        <option key={project.id} value={project.id} className="bg-zinc-900">
+                          {project.name}
+                        </option>
+                      ))}
+                      <option value="__new__">+ Nuovo progetto…</option>
+                    </select>
+                    {context.projectCreationMode && (
+                      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                        <input
+                          value={context.projectDraft}
+                          onChange={(event) => context.setProjectDraft(event.target.value)}
+                          placeholder="Nome progetto"
+                          className={classNames(
+                            "rounded-lg border bg-transparent px-3 py-2 text-sm",
+                            themes[theme].input,
+                          )}
+                        />
+                        <div className="flex gap-2">
+                          <input
+                            value={context.statusDraft}
+                            onChange={(event) => context.setStatusDraft(event.target.value)}
+                            placeholder="Stato iniziale"
+                            className={classNames(
+                              "flex-1 rounded-lg border bg-transparent px-3 py-2 text-sm",
+                              themes[theme].input,
+                            )}
+                          />
+                          <button
+                            type="button"
+                            onClick={context.handleCreateStatusFromDraft}
+                            className={classNames(
+                              "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs",
+                              themes[theme].input,
+                              themes[theme].input_hover,
+                              (!context.statusDraft.trim() || context.statusCreationMode) &&
+                                "cursor-not-allowed opacity-60",
+                            )}
+                            disabled={!context.statusDraft.trim() || context.statusCreationMode}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Aggiungi stato
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={context.handleCreateProjectFromDraft}
+                          className={classNames(
+                            "flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs",
+                            themes[theme].button,
+                            !context.projectDraft.trim() && "opacity-60 cursor-not-allowed",
+                          )}
+                          disabled={!context.projectDraft.trim()}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Salva progetto
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs text-zinc-500">Stato</label>
+                    <select
+                      value={context.statusCreationMode
+                        ? "__new__"
+                        : context.workspaceSelection.status || ""}
+                      onChange={(event) =>
+                        context.handleSelectStatusForPipeline(event.target.value)
+                      }
+                      className={classNames(
+                        "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
+                        themes[theme].input,
+                      )}
+                    >
+                      <option value="">Nessuno stato</option>
+                      {context.availableStatuses.map((status) => (
+                        <option key={status} value={status} className="bg-zinc-900">
+                          {status}
+                        </option>
+                      ))}
+                      <option value="__new__">+ Nuovo stato…</option>
+                    </select>
+                    {context.statusCreationMode && (
+                      <div className="mt-2 flex gap-2">
+                        <input
+                          value={context.statusDraft}
+                          onChange={(event) => context.setStatusDraft(event.target.value)}
+                          placeholder="Nuovo stato"
+                          className={classNames(
+                            "flex-1 rounded-lg border bg-transparent px-3 py-2 text-sm",
+                            themes[theme].input,
+                          )}
+                        />
+                        <button
+                          type="button"
+                          onClick={context.handleCreateStatusFromDraft}
+                          className={classNames(
+                            "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs",
+                            themes[theme].input,
+                            themes[theme].input_hover,
+                            (!context.statusDraft.trim() || context.statusCreationMode) &&
+                              "cursor-not-allowed opacity-60",
+                          )}
+                          disabled={!context.statusDraft.trim() || context.statusCreationMode}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Aggiungi stato
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <PromptLibrary
