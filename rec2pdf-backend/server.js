@@ -168,7 +168,42 @@ const yyyymmddHHMMSS = (d = new Date()) => {
   return d.toISOString().replace(/[-:.]/g, '').slice(0, 14);
 };
 
-const ensureDir = (dir) => fsp.mkdir(dir, { recursive: true });
+const DEFAULT_DEST_DIR = path.join(os.homedir(), 'Recordings');
+
+const sanitizeDestDirInput = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const raw = value.trim();
+  if (!raw) {
+    return '';
+  }
+  const normalized = raw.replace(/\\+/g, '/').trim();
+  if (!normalized || /tuo_utente/i.test(normalized)) {
+    return '';
+  }
+  if (normalized === '/Users/' || normalized === '/Users') {
+    return '';
+  }
+  if (normalized.toLowerCase() === 'users/' || normalized.toLowerCase() === 'users') {
+    return '';
+  }
+  return raw;
+};
+
+const resolveDestinationDirectory = async (rawDest) => {
+  const sanitized = sanitizeDestDirInput(rawDest);
+  const targetDir = sanitized ? path.resolve(sanitized) : DEFAULT_DEST_DIR;
+  const writable = await ensureWritableDirectory(targetDir);
+  if (!writable.ok) {
+    const reason = writable.error?.message || 'Cartella non scrivibile';
+    const error = new Error(reason);
+    error.statusCode = 400;
+    error.reason = reason;
+    throw error;
+  }
+  return { dir: targetDir, isCustom: !!sanitized };
+};
 
 
 
@@ -1360,7 +1395,7 @@ app.get('/api/diag', async (req, res) => {
   } catch { out('⚠️ pandoc non disponibile'); }
 
   try {
-    const defaultDest = path.join(os.homedir(), 'Recordings');
+    const defaultDest = DEFAULT_DEST_DIR;
     const writable = await ensureWritableDirectory(defaultDest);
     out(writable.ok ? `✅ Permessi scrittura OK su ${defaultDest}` : `❌ Permessi scrittura insufficienti su ${defaultDest}`);
   } catch { out('⚠️ Impossibile verificare permessi di scrittura'); }
@@ -1401,6 +1436,9 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       logStageEvent(stage, status || 'info', s);
     }
   };
+
+  let finalMdPath = '';
+  let finalPdfPath = '';
 
   try {
     if (!req.files || !req.files.audio) {
@@ -1478,6 +1516,28 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       }
     }
 
+    let destDir = DEFAULT_DEST_DIR;
+    let destIsCustom = false;
+    try {
+      const destConfig = await resolveDestinationDirectory(req.body?.dest);
+      destDir = destConfig.dir;
+      destIsCustom = destConfig.isCustom;
+      out(
+        destIsCustom
+          ? `📁 Cartella destinazione personalizzata: ${destDir}`
+          : `📁 Cartella destinazione predefinita: ${destDir}`,
+        'upload',
+        'info'
+      );
+    } catch (destError) {
+      const reason = destError?.reason || destError?.message || 'Cartella destinazione non scrivibile';
+      out(`❌ Cartella destinazione non utilizzabile: ${reason}`, 'upload', 'failed');
+      logStageEvent('upload', 'failed', reason);
+      return res
+        .status(Number(destError?.statusCode) || 400)
+        .json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`, logs, stageEvents });
+    }
+
     const userId = req.user?.id || 'anonymous';
     const registerTempDir = (dir) => {
       if (dir) tempDirs.add(dir);
@@ -1508,7 +1568,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     out('☁️ File caricato su Supabase Storage', 'upload', 'info');
 
     const baseName = workspaceMeta
-      ? await buildWorkspaceBaseName(workspaceMeta, pipelineDir, slug)
+      ? await buildWorkspaceBaseName(workspaceMeta, destDir, slug)
       : `${yyyymmddHHMMSS(new Date())}_${slug}`;
 
     const processedBasePath = `processed/${userId}`;
@@ -1670,6 +1730,21 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         await fsp.readFile(pdfLocalPath),
         'application/pdf'
       );
+
+      const destMdPath = path.join(destDir, path.basename(mdLocalForPublish));
+      const destPdfPath = path.join(destDir, path.basename(pdfLocalPath));
+      try {
+        await fsp.copyFile(mdLocalForPublish, destMdPath);
+        await fsp.copyFile(pdfLocalPath, destPdfPath);
+        finalMdPath = destMdPath;
+        finalPdfPath = destPdfPath;
+        out(`📁 Artefatti salvati in ${destDir}`, 'publish', 'info');
+      } catch (copyError) {
+        const reason = copyError?.message || 'Salvataggio nella cartella di destinazione fallito';
+        out(`❌ Salvataggio cartella destinazione fallito: ${reason}`, 'publish', 'failed');
+        throw new Error(`Salvataggio cartella destinazione fallito: ${reason}`);
+      }
+
       out(`✅ Fatto! PDF caricato su Supabase: ${path.basename(pdfLocalPath)}`, 'publish', 'completed');
     } finally {
       await safeUnlink(mdLocalForPublish);
@@ -1699,6 +1774,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       ok: true,
       pdfPath: `${SUPABASE_PROCESSED_BUCKET}/${pdfStoragePath}`,
       mdPath: `${SUPABASE_PROCESSED_BUCKET}/${mdStoragePath}`,
+      localPdfPath: finalPdfPath,
+      localMdPath: finalMdPath,
       logs,
       stageEvents,
       workspace: workspaceAssignment,
@@ -1969,15 +2046,24 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
       }
     }
 
-    let dest = String(req.body?.dest || '').trim();
-    if (!dest || /tuo_utente/.test(dest)) { dest = path.join(os.homedir(), 'Recordings'); }
-    await ensureDir(dest);
-    const destWritable = await ensureWritableDirectory(dest);
-    if (!destWritable.ok) {
-      const reason = destWritable.error?.message || 'Cartella non scrivibile';
+    let destDir = DEFAULT_DEST_DIR;
+    try {
+      const destConfig = await resolveDestinationDirectory(req.body?.dest);
+      destDir = destConfig.dir;
+      out(
+        destConfig.isCustom
+          ? `📁 Cartella destinazione personalizzata: ${destDir}`
+          : `📁 Cartella destinazione predefinita: ${destDir}`,
+        'upload',
+        'info'
+      );
+    } catch (destError) {
+      const reason = destError?.reason || destError?.message || 'Cartella non scrivibile';
       out(`❌ Cartella non scrivibile: ${reason}`, 'upload', 'failed');
       logStageEvent('upload', 'failed', reason);
-      return res.status(400).json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`.trim(), logs, stageEvents });
+      return res
+        .status(Number(destError?.statusCode) || 400)
+        .json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`, logs, stageEvents });
     }
 
     let workspaceMeta = null;
@@ -2008,14 +2094,14 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     }
 
     const baseName = workspaceMeta
-      ? await buildWorkspaceBaseName(workspaceMeta, dest, slug)
+      ? await buildWorkspaceBaseName(workspaceMeta, destDir, slug)
       : `${yyyymmddHHMMSS(new Date())}_${slug}`;
     const userId = req.user?.id || 'anonymous';
     const processedBasePath = `processed/${userId}`;
     const mdStoragePath = `${processedBasePath}/${baseName}.md`;
     const pdfStoragePath = `${processedBasePath}/${baseName}.pdf`;
 
-    const mdPath = path.join(dest, `${baseName}.md`);
+    const mdPath = path.join(destDir, `${baseName}.md`);
 
     await fsp.copyFile(mdUpload.path, mdPath);
     out(`📄 Markdown ricevuto: ${originalName}`, 'upload', 'completed');
@@ -2045,12 +2131,12 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
       out('Tentativo fallback pandoc…', 'publish', 'info');
     }
 
-    const pdfPath = path.join(dest, `${baseName}.pdf`);
+    const pdfPath = path.join(destDir, `${baseName}.pdf`);
 
     if (!fs.existsSync(pdfPath)) {
       out('publish.sh non ha generato un PDF, fallback su pandoc…', 'publish', 'info');
       const pandoc = await zsh(
-        `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
+        `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
         publishEnv
       );
       if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
@@ -2090,6 +2176,8 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
       ok: true,
       pdfPath: `${SUPABASE_PROCESSED_BUCKET}/${pdfStoragePath}`,
       mdPath: `${SUPABASE_PROCESSED_BUCKET}/${mdStoragePath}`,
+      localPdfPath: pdfPath,
+      localMdPath: mdPath,
       logs,
       stageEvents,
       workspace: workspaceAssignment,
@@ -2150,6 +2238,9 @@ app.post(
         logStageEvent(stage, status || 'info', s);
       }
     };
+
+    let finalMdPath = '';
+    let finalPdfPath = '';
 
     try {
       if (!req.files || !req.files.transcript) {
@@ -2240,6 +2331,26 @@ app.post(
         }
       }
 
+      let destDir = DEFAULT_DEST_DIR;
+      try {
+        const destConfig = await resolveDestinationDirectory(req.body?.dest);
+        destDir = destConfig.dir;
+        out(
+          destConfig.isCustom
+            ? `📁 Cartella destinazione personalizzata: ${destDir}`
+            : `📁 Cartella destinazione predefinita: ${destDir}`,
+          'upload',
+          'info'
+        );
+      } catch (destError) {
+        const reason = destError?.reason || destError?.message || 'Cartella destinazione non scrivibile';
+        out(`❌ Cartella destinazione non utilizzabile: ${reason}`, 'upload', 'failed');
+        logStageEvent('upload', 'failed', reason);
+        return res
+          .status(Number(destError?.statusCode) || 400)
+          .json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`, logs, stageEvents });
+      }
+
       const registerTempDir = (dir) => {
         if (dir) tempDirs.add(dir);
         return dir;
@@ -2263,7 +2374,7 @@ app.post(
       out('☁️ File caricato su Supabase Storage', 'upload', 'info');
 
       const baseName = workspaceMeta
-        ? await buildWorkspaceBaseName(workspaceMeta, pipelineDir, slug)
+        ? await buildWorkspaceBaseName(workspaceMeta, destDir, slug)
         : `${yyyymmddHHMMSS(new Date())}_${slug}`;
       const processedBasePath = `processed/${userId}`;
       const mdStoragePath = `${processedBasePath}/documento_${baseName}.md`;
@@ -2348,6 +2459,20 @@ app.post(
           await fsp.readFile(pdfLocalPath),
           'application/pdf'
         );
+        const destMdPath = path.join(destDir, path.basename(mdLocalForPublish));
+        const destPdfPath = path.join(destDir, path.basename(pdfLocalPath));
+        try {
+          await fsp.copyFile(mdLocalForPublish, destMdPath);
+          await fsp.copyFile(pdfLocalPath, destPdfPath);
+          finalMdPath = destMdPath;
+          finalPdfPath = destPdfPath;
+          out(`📁 Artefatti salvati in ${destDir}`, 'publish', 'info');
+        } catch (copyError) {
+          const reason = copyError?.message || 'Salvataggio nella cartella di destinazione fallito';
+          out(`❌ Salvataggio cartella destinazione fallito: ${reason}`, 'publish', 'failed');
+          throw new Error(`Salvataggio cartella destinazione fallito: ${reason}`);
+        }
+
         out(`✅ Fatto! PDF caricato su Supabase: ${path.basename(pdfLocalPath)}`, 'publish', 'completed');
       } finally {
         await safeUnlink(mdLocalForPublish);
@@ -2377,6 +2502,8 @@ app.post(
         ok: true,
         pdfPath: `${SUPABASE_PROCESSED_BUCKET}/${pdfStoragePath}`,
         mdPath: `${SUPABASE_PROCESSED_BUCKET}/${mdStoragePath}`,
+        localPdfPath: finalPdfPath,
+        localMdPath: finalMdPath,
         logs,
         stageEvents,
         workspace: workspaceAssignment,

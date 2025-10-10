@@ -512,9 +512,6 @@ export default function PromptLibrary({
             <Sparkles className="h-4 w-4" />
             <span>Prompt Library modulare</span>
           </div>
-          <p className="text-xs text-zinc-500">
-            Mantieni l'interfaccia essenziale e apri solo le aree che ti servono: filtra i template oppure consulta i dettagli del template attivo quando vuoi.
-          </p>
           <div className="flex flex-wrap gap-2 text-[11px] text-zinc-400">
             {hasActivePrompt ? (
               <span
