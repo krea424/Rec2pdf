@@ -158,6 +158,7 @@ const normalizePromptEntry = (prompt) => {
     id: prompt.id || '',
     slug: prompt.slug || '',
     title: prompt.title || '',
+    summary: typeof prompt.summary === 'string' ? prompt.summary.trim() : '',
     description: prompt.description || '',
     persona: prompt.persona || '',
     color: prompt.color || '#6366f1',
@@ -172,6 +173,15 @@ const normalizePromptEntry = (prompt) => {
     builtIn: Boolean(prompt.builtIn),
   };
 };
+
+const buildPromptState = (overrides = {}) => ({
+  promptId: '',
+  focus: '',
+  notes: '',
+  cueProgress: {},
+  expandPromptDetails: true,
+  ...overrides,
+});
 
 const isFileLike = (value) => {
   if (!value) return false;
@@ -494,18 +504,18 @@ function AppContent(){
   const [promptLoading, setPromptLoading] = useState(false);
   const [promptState, setPromptState] = useState(() => {
     if (typeof window === 'undefined') {
-      return { promptId: '', focus: '', notes: '', cueProgress: {} };
+      return buildPromptState();
     }
     try {
       const raw = localStorage.getItem(PROMPT_SELECTION_KEY);
       if (!raw) {
-        return { promptId: '', focus: '', notes: '', cueProgress: {} };
+        return buildPromptState();
       }
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object') {
-        return { promptId: '', focus: '', notes: '', cueProgress: {} };
+        return buildPromptState();
       }
-      return {
+      return buildPromptState({
         promptId: parsed.promptId || '',
         focus: parsed.focus || '',
         notes: parsed.notes || '',
@@ -513,9 +523,10 @@ function AppContent(){
           parsed.cueProgress && typeof parsed.cueProgress === 'object'
             ? parsed.cueProgress
             : {},
-      };
+        expandPromptDetails: parsed.expandPromptDetails === false ? false : true,
+      });
     } catch {
-      return { promptId: '', focus: '', notes: '', cueProgress: {} };
+      return buildPromptState();
     }
   });
   const [promptFavorites, setPromptFavorites] = useState(() => {
@@ -731,9 +742,34 @@ function AppContent(){
     if (!promptState.promptId) return;
     const exists = prompts.some((prompt) => prompt.id === promptState.promptId);
     if (!exists) {
-      setPromptState({ promptId: '', focus: '', notes: '', cueProgress: {} });
+      setPromptState(buildPromptState());
     }
   }, [prompts, promptState.promptId]);
+
+  useEffect(() => {
+    if (!Array.isArray(prompts) || prompts.length === 0) return;
+    setPromptState((prev) => {
+      if (prev.promptId) {
+        return prev;
+      }
+      const defaultPrompt = prompts.find((prompt) => {
+        const slugMatch = typeof prompt.slug === 'string' && prompt.slug === 'format_base';
+        const titleMatch =
+          typeof prompt.title === 'string' && prompt.title.trim().toLowerCase() === 'format base';
+        return slugMatch || titleMatch;
+      });
+      if (!defaultPrompt || !defaultPrompt.id) {
+        return prev;
+      }
+      return buildPromptState({
+        promptId: defaultPrompt.id,
+        focus: prev.focus || '',
+        notes: prev.notes || '',
+        cueProgress: {},
+        expandPromptDetails: false,
+      });
+    });
+  }, [prompts, setPromptState]);
 
   useEffect(() => {
     setNavigatorSelection((prev) => {
@@ -1349,19 +1385,19 @@ function AppContent(){
 
   const handleSelectPromptTemplate = useCallback((prompt) => {
     if (!prompt || !prompt.id) {
-      setPromptState({ promptId: '', focus: '', notes: '', cueProgress: {} });
+      setPromptState(buildPromptState());
       return;
     }
     setPromptState((prev) => {
       if (prev.promptId === prompt.id) {
         return prev;
       }
-      return { promptId: prompt.id, focus: '', notes: '', cueProgress: {} };
+      return buildPromptState({ promptId: prompt.id });
     });
   }, []);
 
   const handleClearPromptSelection = useCallback(() => {
-    setPromptState({ promptId: '', focus: '', notes: '', cueProgress: {} });
+    setPromptState(buildPromptState());
   }, []);
 
   const handlePromptFocusChange = useCallback((value) => {
@@ -1436,9 +1472,7 @@ function AppContent(){
       if (result.ok) {
         setPrompts((prev) => prev.filter((prompt) => prompt.id !== promptId));
         setPromptFavorites((prev) => prev.filter((id) => id !== promptId));
-        setPromptState((prev) =>
-          prev.promptId === promptId ? { promptId: '', focus: '', notes: '', cueProgress: {} } : prev
-        );
+        setPromptState((prev) => (prev.promptId === promptId ? buildPromptState() : prev));
       }
       return result;
     },
