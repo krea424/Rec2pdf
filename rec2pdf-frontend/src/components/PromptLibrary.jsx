@@ -84,6 +84,7 @@ export default function PromptLibrary({
   onToggleFavorite,
   onRefresh,
   themeStyles = {},
+  themeName = "",
   activePrompt,
   focusValue = "",
   onFocusChange,
@@ -95,6 +96,12 @@ export default function PromptLibrary({
   onDeletePrompt,
 }) {
   const hasActivePrompt = Boolean(activePrompt && selection?.promptId);
+  const isBoardroom = themeName === "boardroom";
+  const boardroomContainerSurface =
+    "border-white/15 bg-white/[0.015] backdrop-blur-2xl";
+  const boardroomControlIdle =
+    "border border-white/18 bg-transparent text-slate-200 hover:border-white/35 hover:text-white";
+  const boardroomControlActive = "border-white/35 bg-white/[0.06] text-white";
   const [expandedSections, setExpandedSections] = useState(() => ({
     library: false,
     active: hasActivePrompt,
@@ -457,7 +464,12 @@ export default function PromptLibrary({
   };
 
   return (
-    <div className={classNames("mt-6 overflow-hidden rounded-xl border", themeStyles?.input)}>
+    <div
+      className={classNames(
+        "mt-6 overflow-hidden rounded-xl border",
+        isBoardroom ? boardroomContainerSurface : themeStyles?.input,
+      )}
+    >
       <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm text-zinc-300">
@@ -469,7 +481,14 @@ export default function PromptLibrary({
           </p>
           <div className="flex flex-wrap gap-2 text-[11px] text-zinc-400">
             {hasActivePrompt ? (
-              <span className="flex items-center gap-2 rounded-full border border-indigo-500/40 bg-indigo-500/10 px-3 py-1 text-indigo-100">
+              <span
+                className={classNames(
+                  "flex items-center gap-2 rounded-full border px-3 py-1",
+                  isBoardroom
+                    ? "border-white/25 bg-white/[0.05] text-slate-100"
+                    : "border-indigo-500/40 bg-indigo-500/10 text-indigo-100",
+                )}
+              >
                 <Target className="h-3 w-3" /> In uso: {activePrompt?.title || "Template"}
               </span>
             ) : (
@@ -485,9 +504,13 @@ export default function PromptLibrary({
             onClick={() => toggleSection("library")}
             className={classNames(
               "flex items-center justify-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition",
-              expandedSections.library
-                ? "border-zinc-600 bg-zinc-800/70 text-zinc-100"
-                : "border-zinc-700 bg-transparent text-zinc-300 hover:border-indigo-400/50 hover:text-indigo-100"
+              isBoardroom
+                ? expandedSections.library
+                  ? boardroomControlActive
+                  : boardroomControlIdle
+                : expandedSections.library
+                    ? "border-zinc-600 bg-zinc-800/70 text-zinc-100"
+                    : "border-zinc-700 bg-transparent text-zinc-300 hover:border-indigo-400/50 hover:text-indigo-100"
             )}
           >
             <Sparkles className="h-3.5 w-3.5" />
@@ -498,9 +521,13 @@ export default function PromptLibrary({
             onClick={() => toggleSection("active")}
             className={classNames(
               "flex items-center justify-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition",
-              expandedSections.active
-                ? "border-indigo-500/50 bg-indigo-500/15 text-indigo-100"
-                : "border-zinc-700 bg-transparent text-zinc-300 hover:border-indigo-400/50 hover:text-indigo-100"
+              isBoardroom
+                ? expandedSections.active
+                  ? boardroomControlActive
+                  : boardroomControlIdle
+                : expandedSections.active
+                    ? "border-indigo-500/50 bg-indigo-500/15 text-indigo-100"
+                    : "border-zinc-700 bg-transparent text-zinc-300 hover:border-indigo-400/50 hover:text-indigo-100"
             )}
           >
             <Target className="h-3.5 w-3.5" />
@@ -510,7 +537,12 @@ export default function PromptLibrary({
       </div>
 
       {expandedSections.library && (
-        <div className="space-y-4 border-t border-zinc-800/60 p-4">
+        <div
+          className={classNames(
+            "space-y-4 border-t p-4",
+            isBoardroom ? "border-white/12" : "border-zinc-800/60",
+          )}
+        >
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
               <div className="relative flex-1 min-w-[200px]">

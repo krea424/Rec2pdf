@@ -383,11 +383,11 @@ const themes = {
   },
   boardroom: {
     bg: "from-[#020817] via-[#0b1a33] to-[#123552]",
-    card: "bg-white/10 border-white/10 backdrop-blur-xl shadow-lg shadow-black/30",
-    input: "bg-white/10 border-white/20 backdrop-blur-xl",
-    input_hover: "hover:bg-white/15",
+    card: "border-white/18 bg-gradient-to-br from-white/[0.08] via-white/[0.02] to-transparent backdrop-blur-2xl shadow-[0_30px_80px_-45px_rgba(7,23,45,0.9)]",
+    input: "border-white/15 bg-white/[0.015] backdrop-blur-2xl",
+    input_hover: "hover:border-white/35 hover:bg-white/[0.04]",
     button: "bg-gradient-to-r from-[#5dd5c4] via-[#39b0ff] to-[#5a78ff] text-slate-950 border-transparent font-semibold shadow-md shadow-black/20 hover:from-[#39b0ff] hover:via-[#5a78ff] hover:to-[#7b5dff]",
-    log: "bg-[#061226]/80 border-white/10 backdrop-blur",
+    log: "border-white/15 bg-[#061226]/70 backdrop-blur-xl",
   },
 };
 

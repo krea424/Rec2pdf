@@ -41,6 +41,15 @@ const ErrorBanner = () => {
 const CreatePage = () => {
   const context = useAppContext();
   const { theme, themes } = context;
+  const isBoardroom = theme === "boardroom";
+  const boardroomPrimarySurface =
+    "border-white/18 bg-white/[0.02] backdrop-blur-2xl shadow-[0_28px_80px_-40px_rgba(6,20,40,0.85)]";
+  const boardroomSecondarySurface =
+    "border-white/15 bg-white/[0.015] backdrop-blur-2xl";
+  const boardroomChipSurface =
+    "border-white/15 bg-white/[0.03] text-slate-100";
+  const boardroomInfoSurface =
+    "border-white/12 bg-white/[0.02] text-slate-200";
 
   const HeaderIcon = context.headerStatus?.icon || Cpu;
 
@@ -72,7 +81,7 @@ const CreatePage = () => {
         <div
           className={classNames(
             "md:col-span-2 rounded-2xl border p-6 shadow-lg",
-            themes[theme].card,
+            isBoardroom ? boardroomPrimarySurface : themes[theme].card,
           )}
         >
           <div className="flex items-center justify-between">
@@ -139,6 +148,7 @@ const CreatePage = () => {
             onToggleFavorite={context.handleTogglePromptFavorite}
             onRefresh={context.handleRefreshPrompts}
             themeStyles={themes[theme]}
+            themeName={theme}
             activePrompt={context.activePrompt}
             focusValue={context.promptState.focus}
             onFocusChange={context.handlePromptFocusChange}
@@ -153,7 +163,7 @@ const CreatePage = () => {
           <div
             className={classNames(
               "mt-6 rounded-xl border p-4",
-              themes[theme].input,
+              isBoardroom ? boardroomSecondarySurface : themes[theme].input,
             )}
           >
             <div className="flex items-center justify-between">
@@ -221,7 +231,7 @@ const CreatePage = () => {
             <div
               className={classNames(
                 "rounded-2xl border p-4 transition-all",
-                themes[theme].input,
+                isBoardroom ? boardroomSecondarySurface : themes[theme].input,
               )}
             >
               <div className="flex items-center justify-between gap-3">
@@ -249,7 +259,12 @@ const CreatePage = () => {
                   aria-label="Informazioni su Carica audio"
                   aria-expanded={openInfo === "audio"}
                   aria-controls="upload-audio-info"
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 transition hover:border-indigo-400 hover:text-indigo-300"
+                  className={classNames(
+                    "flex h-9 w-9 items-center justify-center rounded-full transition",
+                    isBoardroom
+                      ? "border border-white/20 bg-white/[0.02] text-slate-200 hover:border-white/45 hover:bg-white/[0.06]"
+                      : "border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 hover:border-indigo-400 hover:text-indigo-300",
+                  )}
                 >
                   <Info className="h-4 w-4" />
                 </button>
@@ -257,7 +272,12 @@ const CreatePage = () => {
               {openInfo === "audio" && (
                 <div
                   id="upload-audio-info"
-                  className="mt-3 space-y-2 rounded-xl border border-zinc-700/60 bg-zinc-900/40 p-3 text-xs text-zinc-400"
+                  className={classNames(
+                    "mt-3 space-y-2 rounded-xl border p-3 text-xs",
+                    isBoardroom
+                      ? boardroomInfoSurface
+                      : "border-zinc-700/60 bg-zinc-900/40 text-zinc-400",
+                  )}
                 >
                   <p>
                     Usa un file audio esistente come sorgente alternativa alla
@@ -274,7 +294,14 @@ const CreatePage = () => {
                 </div>
               )}
               {context.audioBlob && (
-                <div className="mt-3 flex items-center gap-2 rounded-xl border border-zinc-700/50 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-400">
+                <div
+                  className={classNames(
+                    "mt-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs",
+                    isBoardroom
+                      ? boardroomChipSurface
+                      : "border-zinc-700/50 bg-zinc-900/30 text-zinc-400",
+                  )}
+                >
                   <span
                     className="max-w-[160px] truncate"
                     title={
@@ -297,7 +324,7 @@ const CreatePage = () => {
             <div
               className={classNames(
                 "rounded-2xl border p-4 transition-all",
-                themes[theme].input,
+                isBoardroom ? boardroomSecondarySurface : themes[theme].input,
               )}
             >
               <div className="flex items-center justify-between gap-3">
@@ -328,7 +355,12 @@ const CreatePage = () => {
                   aria-label="Informazioni su Carica Markdown"
                   aria-expanded={openInfo === "markdown"}
                   aria-controls="upload-markdown-info"
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 transition hover:border-emerald-400 hover:text-emerald-300"
+                  className={classNames(
+                    "flex h-9 w-9 items-center justify-center rounded-full transition",
+                    isBoardroom
+                      ? "border border-white/20 bg-white/[0.02] text-slate-200 hover:border-white/45 hover:bg-white/[0.06]"
+                      : "border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 hover:border-emerald-400 hover:text-emerald-300",
+                  )}
                 >
                   <Info className="h-4 w-4" />
                 </button>
@@ -336,7 +368,12 @@ const CreatePage = () => {
               {openInfo === "markdown" && (
                 <div
                   id="upload-markdown-info"
-                  className="mt-3 space-y-2 rounded-xl border border-zinc-700/60 bg-zinc-900/40 p-3 text-xs text-zinc-400"
+                  className={classNames(
+                    "mt-3 space-y-2 rounded-xl border p-3 text-xs",
+                    isBoardroom
+                      ? boardroomInfoSurface
+                      : "border-zinc-700/60 bg-zinc-900/40 text-zinc-400",
+                  )}
                 >
                   <p>
                     Carica un documento .md già strutturato per impaginarlo
@@ -349,7 +386,14 @@ const CreatePage = () => {
                 </div>
               )}
               {context.lastMarkdownUpload && (
-                <div className="mt-3 flex items-center gap-2 rounded-xl border border-zinc-700/50 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-400">
+                <div
+                  className={classNames(
+                    "mt-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs",
+                    isBoardroom
+                      ? boardroomChipSurface
+                      : "border-zinc-700/50 bg-zinc-900/30 text-zinc-400",
+                  )}
+                >
                   <span
                     className="max-w-[160px] truncate"
                     title={context.lastMarkdownUpload.name}
@@ -366,7 +410,7 @@ const CreatePage = () => {
             <div
               className={classNames(
                 "rounded-2xl border p-4 transition-all",
-                themes[theme].input,
+                isBoardroom ? boardroomSecondarySurface : themes[theme].input,
               )}
             >
               <div className="flex items-center justify-between gap-3">
@@ -397,7 +441,12 @@ const CreatePage = () => {
                   aria-label="Informazioni su Carica TXT"
                   aria-expanded={openInfo === "text"}
                   aria-controls="upload-text-info"
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 transition hover:border-sky-400 hover:text-sky-300"
+                  className={classNames(
+                    "flex h-9 w-9 items-center justify-center rounded-full transition",
+                    isBoardroom
+                      ? "border border-white/20 bg-white/[0.02] text-slate-200 hover:border-white/45 hover:bg-white/[0.06]"
+                      : "border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 hover:border-sky-400 hover:text-sky-300",
+                  )}
                 >
                   <Info className="h-4 w-4" />
                 </button>
@@ -405,7 +454,12 @@ const CreatePage = () => {
               {openInfo === "text" && (
                 <div
                   id="upload-text-info"
-                  className="mt-3 space-y-2 rounded-xl border border-zinc-700/60 bg-zinc-900/40 p-3 text-xs text-zinc-400"
+                  className={classNames(
+                    "mt-3 space-y-2 rounded-xl border p-3 text-xs",
+                    isBoardroom
+                      ? boardroomInfoSurface
+                      : "border-zinc-700/60 bg-zinc-900/40 text-zinc-400",
+                  )}
                 >
                   <p>
                     Carica un file .txt: lo convertiamo in Markdown e avviamo
@@ -418,7 +472,14 @@ const CreatePage = () => {
                 </div>
               )}
               {context.lastTextUpload && (
-                <div className="mt-3 flex items-center gap-2 rounded-xl border border-zinc-700/50 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-400">
+                <div
+                  className={classNames(
+                    "mt-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs",
+                    isBoardroom
+                      ? boardroomChipSurface
+                      : "border-zinc-700/50 bg-zinc-900/30 text-zinc-400",
+                  )}
+                >
                   <span
                     className="max-w-[160px] truncate"
                     title={context.lastTextUpload.name}
@@ -436,7 +497,7 @@ const CreatePage = () => {
           <div
             className={classNames(
               "space-y-4 rounded-2xl border p-5 shadow-lg",
-              themes[theme].card,
+              isBoardroom ? boardroomPrimarySurface : themes[theme].card,
             )}
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
