@@ -92,7 +92,7 @@ const AppShell = () => {
                 onClick={openSetupAssistant}
                 leadingIcon={Sparkles}
               >
-                Setup assistant
+                Impostazioni
               </Button>
               <IconButton
                 variant="ghost"
