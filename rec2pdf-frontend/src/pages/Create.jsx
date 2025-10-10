@@ -5,16 +5,10 @@ import {
   Download,
   FileCode,
   FileText,
-  Info,
   Mic,
-  Plus,
-  RefreshCw,
-  Settings as SettingsIcon,
-  Sparkles,
   Square,
   TimerIcon,
   Upload,
-  Users,
 } from "../components/icons";
 import PromptLibrary from "../components/PromptLibrary";
 import { useAppContext } from "../hooks/useAppContext";
@@ -348,62 +342,7 @@ const CreatePage = () => {
           </div>
         </div>
 
-        <div className="flex flex-col gap-6 md:col-span-1">
-          <div className={classNames("rounded-2xl border p-5 shadow-lg", themes[theme].card)}>
-            <div className="flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-lg font-medium">
-                <SettingsIcon className="h-4 w-4" /> Stato
-              </h3>
-            </div>
-            <div className="mt-4 space-y-1 text-sm text-zinc-300">
-              <div className="flex items-center gap-2">
-                <span
-                  className={classNames(
-                    "h-2 w-2 rounded-full",
-                    context.secureOK ? "bg-emerald-500" : "bg-rose-500",
-                  )}
-                />
-                HTTPS/localhost: {context.secureOK ? "OK" : "Richiesto"}
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={classNames(
-                    "h-2 w-2 rounded-full",
-                    context.mediaSupported ? "bg-emerald-500" : "bg-rose-500",
-                  )}
-                />
-                getUserMedia: {context.mediaSupported ? "Supportato" : "No"}
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={classNames(
-                    "h-2 w-2 rounded-full",
-                    context.recorderSupported ? "bg-emerald-500" : "bg-rose-500",
-                  )}
-                />
-                MediaRecorder: {context.recorderSupported ? "Supportato" : "No"}
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={classNames(
-                    "h-2 w-2 rounded-full",
-                    context.backendUp ? "bg-emerald-500" : "bg-rose-500",
-                  )}
-                />
-                Backend: {context.backendUp === null ? "—" : context.backendUp ? "Online" : "Offline"}
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={classNames(
-                    "h-2 w-2 rounded-full",
-                    context.busy ? "bg-yellow-400" : "bg-zinc-600",
-                  )}
-                />
-                Pipeline: {context.busy ? "In esecuzione…" : "Pronta"}
-              </div>
-            </div>
-          </div>
-
+        <div className="md:col-span-1">
           <div className={classNames("space-y-4 rounded-2xl border p-5 shadow-lg", themes[theme].card)}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="flex items-center gap-2 text-lg font-medium">
