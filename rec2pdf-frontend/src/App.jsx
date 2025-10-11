@@ -257,6 +257,37 @@ const isFileLike = (value) => {
   return false;
 };
 
+const isWorkspaceProfileLogoDescriptor = (value) =>
+  Boolean(
+    value &&
+      typeof value === 'object' &&
+      value.source === 'workspace-profile' &&
+      typeof value.profileId === 'string' &&
+      value.profileId &&
+      typeof value.path === 'string' &&
+      value.path
+  );
+
+const buildWorkspaceProfileLogoDescriptor = (workspaceId, profile) => {
+  if (!workspaceId || !profile || typeof profile !== 'object') {
+    return null;
+  }
+  if (!profile.id || !profile.pdfLogoPath) {
+    return null;
+  }
+  const label =
+    (profile.pdfLogo && profile.pdfLogo.originalName) ||
+    profile.label ||
+    profile.id;
+  return {
+    source: 'workspace-profile',
+    workspaceId,
+    profileId: profile.id,
+    path: profile.pdfLogoPath,
+    label: label || profile.id,
+  };
+};
+
 const appendPdfLogoIfPresent = (formData, logo) => {
   if (!formData || !isFileLike(logo)) {
     return false;
@@ -267,7 +298,39 @@ const appendPdfLogoIfPresent = (formData, logo) => {
   return true;
 };
 
+const appendWorkspaceProfileDetails = (
+  formData,
+  { selection, profile, logoDescriptor }
+) => {
+  if (!formData || !selection || !selection.profileId) {
+    return;
+  }
+  if (!formData.has('workspaceProfileId')) {
+    formData.append('workspaceProfileId', selection.profileId);
+  }
+  if (profile?.label && !formData.has('workspaceProfileLabel')) {
+    formData.append('workspaceProfileLabel', profile.label);
+  }
+  const profileTemplate = String(profile?.pdfTemplate || '').trim();
+  if (profileTemplate && !formData.has('workspaceProfileTemplate')) {
+    formData.append('workspaceProfileTemplate', profileTemplate);
+  }
+  const descriptor =
+    isWorkspaceProfileLogoDescriptor(logoDescriptor) && logoDescriptor.path
+      ? logoDescriptor
+      : buildWorkspaceProfileLogoDescriptor(selection.workspaceId, profile);
+  if (descriptor?.path && !formData.has('workspaceProfileLogoPath')) {
+    formData.append('workspaceProfileLogoPath', descriptor.path);
+    if (descriptor.label && !formData.has('workspaceProfileLogoLabel')) {
+      formData.append('workspaceProfileLogoLabel', descriptor.label);
+    }
+  }
+};
+
 const resolvePdfLogoLabel = (logo) => {
+  if (isWorkspaceProfileLogoDescriptor(logo)) {
+    return logo.label || logo.profileId || 'profilo workspace';
+  }
   if (typeof logo === 'string') {
     return logo || 'default';
   }
@@ -2072,8 +2135,8 @@ function AppContent(){
         setPromptState(buildPromptState({ promptId: profile.promptId }));
       }
       if (profile.pdfLogoPath) {
-        const logoLabel = profile.pdfLogo?.originalName || profile.label || profile.id;
-        setCustomPdfLogo(logoLabel);
+        const descriptor = buildWorkspaceProfileLogoDescriptor(targetWorkspaceId, profile);
+        setCustomPdfLogo(descriptor || null);
       } else {
         setCustomPdfLogo(null);
       }
@@ -2211,16 +2274,12 @@ function AppContent(){
         if (workspaceSelection.status) {
           fd.append('workspaceStatus', workspaceSelection.status);
         }
-        if (
-          workspaceProfileSelection.profileId &&
-          workspaceProfileSelection.workspaceId === workspaceSelection.workspaceId
-        ) {
-          fd.append('workspaceProfileId', workspaceProfileSelection.profileId);
-          if (activeWorkspaceProfile?.pdfTemplate) {
-            fd.append('workspaceProfileTemplate', activeWorkspaceProfile.pdfTemplate);
-          }
-        }
       }
+      appendWorkspaceProfileDetails(fd, {
+        selection: workspaceProfileSelection,
+        profile: activeWorkspaceProfile,
+        logoDescriptor: customPdfLogo,
+      });
       if (promptState.promptId) {
         fd.append('promptId', promptState.promptId);
         if (promptState.focus && promptState.focus.trim()) {
@@ -2395,6 +2454,11 @@ function AppContent(){
           fd.append('workspaceStatus', workspaceSelection.status);
         }
       }
+      appendWorkspaceProfileDetails(fd, {
+        selection: workspaceProfileSelection,
+        profile: activeWorkspaceProfile,
+        logoDescriptor: customPdfLogo,
+      });
       if (promptState.promptId) {
         fd.append('promptId', promptState.promptId);
         if (promptState.focus && promptState.focus.trim()) {
@@ -3141,9 +3205,29 @@ function AppContent(){
       if (entry?.localMdPath) {
         fd.append('localMdPath', entry.localMdPath);
       }
-      if (customPdfLogo) {
-        fd.append('pdfLogo', customPdfLogo);
+      if (isFileLike(customPdfLogo)) {
+        const fallbackName = 'custom-logo';
+        const fileName =
+          typeof customPdfLogo.name === 'string' && customPdfLogo.name.trim()
+            ? customPdfLogo.name
+            : fallbackName;
+        fd.append('pdfLogo', customPdfLogo, fileName);
+      } else if (isWorkspaceProfileLogoDescriptor(customPdfLogo)) {
+        if (customPdfLogo.profileId && !fd.has('workspaceProfileId')) {
+          fd.append('workspaceProfileId', customPdfLogo.profileId);
+        }
+        if (customPdfLogo.label && !fd.has('workspaceProfileLabel')) {
+          fd.append('workspaceProfileLabel', customPdfLogo.label);
+        }
+        if (customPdfLogo.path && !fd.has('workspaceProfileLogoPath')) {
+          fd.append('workspaceProfileLogoPath', customPdfLogo.path);
+        }
       }
+      appendWorkspaceProfileDetails(fd, {
+        selection: workspaceProfileSelection,
+        profile: activeWorkspaceProfile,
+        logoDescriptor: customPdfLogo,
+      });
 
       const response = await fetchWithAuth(`${backendUsed}/api/ppubr`, {
         method: 'POST',
@@ -3184,7 +3268,7 @@ function AppContent(){
 
       setPdfPath(payload.pdfPath);
       setMdPath(mdPathResolved);
-      const pdfLogoLabel = customPdfLogo ? (customPdfLogo.name || 'custom') : 'default';
+      const pdfLogoLabel = resolvePdfLogoLabel(customPdfLogo);
       setHistory(prev => prev.map(item => item.id === entry.id ? hydrateHistoryEntry({
         ...item,
         pdfPath: payload.pdfPath,
