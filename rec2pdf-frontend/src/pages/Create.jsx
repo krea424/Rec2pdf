@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
   Bug,
@@ -78,6 +78,7 @@ const CreatePage = () => {
   const HeaderIcon = context.headerStatus?.icon || Cpu;
 
   const [openInfo, setOpenInfo] = useState(null);
+  const [showCompletionHighlight, setShowCompletionHighlight] = useState(false);
   const pdfLogoInputRef = useRef(null);
 
   const toggleInfo = (section) => {
@@ -107,6 +108,23 @@ const CreatePage = () => {
     if (mime.includes("wav")) return "wav";
     return "m4a";
   }, [context.mime]);
+
+  useEffect(() => {
+    if (!context.pipelineComplete) {
+      setShowCompletionHighlight(false);
+      return;
+    }
+
+    setShowCompletionHighlight(true);
+    const timeout = setTimeout(() => {
+      setShowCompletionHighlight(false);
+    }, 1600);
+
+    return () => clearTimeout(timeout);
+  }, [context.pipelineComplete]);
+
+  const shouldNeutralizePipelineStages =
+    context.pipelineComplete && !showCompletionHighlight;
 
   return (
     <div>
@@ -1124,7 +1142,7 @@ const CreatePage = () => {
                         context.PIPELINE_STAGES[index - 1].key
                       ] || "idle"
                     : null;
-                const connectorClass = isBoardroom
+                const baseConnectorClass = isBoardroom
                   ? prevStatus === "done"
                     ? boardroomConnectorColors.done
                     : prevStatus === "failed"
@@ -1135,10 +1153,22 @@ const CreatePage = () => {
                     : prevStatus === "failed"
                       ? "bg-rose-500/40"
                       : "bg-zinc-700/60";
-                const stageStyle = isBoardroom
+                const connectorClass =
+                  shouldNeutralizePipelineStages && prevStatus === "done"
+                    ? isBoardroom
+                      ? boardroomConnectorColors.base
+                      : "bg-zinc-700/60"
+                    : baseConnectorClass;
+                const baseStageStyle = isBoardroom
                   ? boardroomStageStyles[status] || boardroomStageStyles.idle
                   : context.STAGE_STATUS_STYLES[status] ||
                     context.STAGE_STATUS_STYLES.idle;
+                const stageStyle =
+                  shouldNeutralizePipelineStages && status === "done"
+                    ? isBoardroom
+                      ? boardroomStageStyles.idle
+                      : context.STAGE_STATUS_STYLES.idle
+                    : baseStageStyle;
                 const isActive = context.failedStage
                   ? context.failedStage.key === stage.key
                   : context.activeStageKey === stage.key;
