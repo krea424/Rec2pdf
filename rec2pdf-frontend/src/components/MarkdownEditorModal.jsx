@@ -29,6 +29,8 @@ export default function MarkdownEditorModal({
   success,
   hasUnsavedChanges,
   onOpenInNewTab,
+  onViewPdf,
+  canViewPdf,
   busy,
   themeStyles,
   lastAction,
@@ -98,17 +100,17 @@ export default function MarkdownEditorModal({
       : "pending";
 
   const stepOneDescription = hasUnsavedChanges
-    ? "Apporta le correzioni direttamente nel testo Markdown. Hai modifiche non ancora salvate."
-    : "Apporta le correzioni direttamente nel testo Markdown prima di procedere.";
+    ? "Apporta le correzioni direttamente nel testo del documento. Hai modifiche non ancora salvate."
+    : "Apporta le correzioni direttamente nel testo del documento prima di procedere.";
 
   const stepTwoDescription = hasUnsavedChanges
     ? "Salva per rendere disponibili le modifiche alla rigenerazione."
     : ["saved", "republished"].includes(normalizedLastAction)
-      ? "Markdown salvato correttamente: puoi passare alla rigenerazione."
-      : "Quando hai terminato, salva il Markdown aggiornato.";
+      ? "Modifiche salvate correttamente: puoi passare alla rigenerazione."
+      : "Quando hai terminato, salva le modifiche.";
 
   const stepThreeDescription = normalizedLastAction === "republished"
-    ? "Chiudi l'editor, torna alla libreria e usa \"Apri PDF\" sul documento per verificare la versione aggiornata."
+    ? "Il PDF aggiornato è pronto. Usa il pulsante \"Apri PDF aggiornato\" per visualizzarlo subito."
     : "Dopo il salvataggio, rigenera il PDF e poi aprilo dalla libreria per verificarlo.";
 
   const renderStep = (index, title, description, status) => (
@@ -156,7 +158,7 @@ export default function MarkdownEditorModal({
       >
         <div className="flex items-start justify-between gap-4 border-b border-surface-800 px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-surface-25">Modifica Markdown</h2>
+            <h2 className="text-lg font-semibold text-surface-25">Modifica il PDF</h2>
             <p className="mt-1 flex items-center gap-2 text-xs text-surface-300">
               <FileCode className="h-4 w-4" />
               <span className="break-all font-mono text-[11px] text-surface-200">{path}</span>
@@ -205,7 +207,7 @@ export default function MarkdownEditorModal({
               Percorso guidato
             </p>
             <ol className="mt-3 space-y-3 text-sm">
-              {renderStep(1, "Modifica il Markdown", stepOneDescription, stepOneStatus)}
+              {renderStep(1, "Modifica il PDF", stepOneDescription, stepOneStatus)}
               {renderStep(2, "Salva le modifiche", stepTwoDescription, stepTwoStatus)}
               {renderStep(3, "Rigenera e verifica il PDF", stepThreeDescription, stepThreeStatus)}
             </ol>
@@ -214,9 +216,23 @@ export default function MarkdownEditorModal({
                 Rigenerazione in corso. Puoi seguire l'avanzamento dal pannello principale.
               </p>
             ) : normalizedLastAction === "republished" ? (
-              <p className="mt-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-emerald-100">
-                PDF rigenerato con successo. Chiudi l'editor, torna alla libreria e seleziona "Apri PDF" per visualizzare la versione aggiornata.
-              </p>
+              <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+                <p>
+                  PDF rigenerato con successo. Apri subito la nuova versione oppure chiudi l'editor per tornare alla libreria.
+                </p>
+                {typeof onViewPdf === "function" && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="primary"
+                    leadingIcon={ExternalLink}
+                    onClick={() => onViewPdf?.()}
+                    disabled={busy || !canViewPdf}
+                  >
+                    Apri PDF aggiornato
+                  </Button>
+                )}
+              </div>
             ) : null}
           </div>
         </div>
@@ -230,7 +246,7 @@ export default function MarkdownEditorModal({
               leadingIcon={ChevronLeft}
               disabled={busy}
             >
-              Torna alla libreria
+              Chiudi editor
             </Button>
             {typeof onOpenInNewTab === "function" && (
               <Button
@@ -240,7 +256,7 @@ export default function MarkdownEditorModal({
                 onClick={() => onOpenInNewTab?.()}
                 leadingIcon={ExternalLink}
               >
-                Apri Markdown in nuova scheda
+                Apri documento in nuova scheda
               </Button>
             )}
           </div>
@@ -263,7 +279,7 @@ export default function MarkdownEditorModal({
               leadingIcon={Save}
               isLoading={saving}
             >
-              {saving ? "Salvataggio…" : "Salva Markdown"}
+              {saving ? "Salvataggio…" : "Salva modifiche"}
             </Button>
           </div>
         </div>

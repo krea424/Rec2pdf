@@ -21,6 +21,8 @@ const EditorPage = () => {
       success={context.mdEditor.success}
       hasUnsavedChanges={context.mdEditorDirty}
       onOpenInNewTab={context.handleOpenMdInNewTab}
+      onViewPdf={context.handleMdEditorViewPdf}
+      canViewPdf={Boolean(context.mdEditor?.entry?.pdfPath)}
       busy={context.busy}
       lastAction={context.mdEditor.lastAction}
       themeStyles={themes[theme]}

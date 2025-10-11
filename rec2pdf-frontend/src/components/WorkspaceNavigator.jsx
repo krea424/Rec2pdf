@@ -1124,7 +1124,7 @@ export default function WorkspaceNavigator({
                         onClick={() => onOpenMd?.(selectedEntry)}
                         className={classNames("flex items-center gap-2 rounded-lg px-3 py-2 text-xs", themeStyles?.button)}
                       >
-                        <FileText className="h-3.5 w-3.5" /> Apri MD
+                        <FileText className="h-3.5 w-3.5" /> Modifica PDF
                       </button>
                       <button
                         onClick={() => onRepublish?.(selectedEntry)}

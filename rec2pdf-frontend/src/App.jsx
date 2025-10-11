@@ -2500,7 +2500,7 @@ function AppContent(){
       const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
       if (!mdPathResolved) {
         const label = entry?.title || entry?.slug || 'sessione';
-        pushLogs([`❌ Percorso Markdown non disponibile per ${label}.`]);
+        pushLogs([`❌ Percorso del testo non disponibile per ${label}.`]);
         return;
       }
 
@@ -2513,7 +2513,7 @@ function AppContent(){
 
       if (openInNewTab) {
         if (!directUrl && !normalizedBackend) {
-          pushLogs(['❌ Backend non configurato per aprire il Markdown.']);
+          pushLogs(['❌ Backend non configurato per aprire il testo del PDF.']);
           if (skipEditor) {
             return;
           }
@@ -2522,11 +2522,11 @@ function AppContent(){
             await openSignedFileInNewTab({
               backendUrl: backendTarget,
               path: mdPathResolved,
-              label: 'Markdown',
+              label: 'Testo PDF',
               directUrl,
             });
           } catch (error) {
-            const message = error?.message || 'Impossibile aprire il Markdown.';
+            const message = error?.message || 'Impossibile aprire il testo del PDF.';
             pushLogs([`❌ ${message}`]);
             return;
           }
@@ -2538,7 +2538,7 @@ function AppContent(){
       }
 
       if (!normalizedBackend) {
-        const message = 'Configura un backend valido per modificare il Markdown.';
+        const message = 'Configura un backend valido per modificare il PDF.';
         pushLogs([`❌ ${message}`]);
         setErrorBanner({ title: 'Backend non configurato', details: message });
         return;
@@ -2556,7 +2556,7 @@ function AppContent(){
         lastAction: 'opening',
         originPath: currentPath === '/editor' ? '/library' : currentPath,
       });
-      pushLogs([`✏️ Apertura editor Markdown (${mdPathResolved})`]);
+      pushLogs([`✏️ Apertura editor del PDF (${mdPathResolved})`]);
 
       if (!skipEditor) {
         navigate("/editor");
@@ -2575,7 +2575,7 @@ function AppContent(){
         }
 
         if (!response.ok) {
-          const message = payload?.message || `Impossibile caricare il Markdown (HTTP ${response.status})`;
+          const message = payload?.message || `Impossibile caricare il testo del PDF (HTTP ${response.status})`;
           throw new Error(message);
         }
 
@@ -2677,7 +2677,7 @@ function AppContent(){
   const handleRepublishFromMd = useCallback(async (entry, overrideMdPath) => {
     const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
     if (!mdPathResolved) {
-      pushLogs(['❌ Percorso Markdown non disponibile per la rigenerazione.']);
+      pushLogs(['❌ Percorso del testo non disponibile per la rigenerazione.']);
       return;
     }
     if (busy) {
@@ -2687,7 +2687,7 @@ function AppContent(){
 
     const backendTarget = entry?.backendUrl || normalizedBackendUrl;
     if (!backendTarget) {
-      const message = 'Configura un backend valido per rigenerare il PDF dal Markdown.';
+      const message = 'Configura un backend valido per rigenerare il PDF dal testo modificato.';
       pushLogs([`❌ ${message}`]);
       setErrorBanner({ title: 'Backend non configurato', details: message });
       return;
@@ -2714,7 +2714,7 @@ function AppContent(){
         error: '',
       };
     });
-    pushLogs([`♻️ Rigenerazione PDF da Markdown (${entry.title || entry.slug || mdPathResolved})`]);
+    pushLogs([`♻️ Rigenerazione PDF dal testo (${entry.title || entry.slug || mdPathResolved})`]);
 
     try {
       const fd = new FormData();
@@ -2783,10 +2783,17 @@ function AppContent(){
         }
         return {
           ...prev,
-          success:
-            'PDF rigenerato. Chiudi l\'editor per tornare alla libreria e utilizza "Apri PDF" sul documento per verificarne l\'aggiornamento.',
+          success: 'PDF rigenerato con successo. Usa "Apri PDF aggiornato" per visualizzarlo subito.',
           error: '',
           lastAction: 'republished',
+          entry: {
+            ...(prev.entry || {}),
+            pdfPath: payload.pdfPath,
+            pdfUrl,
+            mdPath: mdPathResolved,
+            mdUrl,
+            backendUrl: backendUsed || prev.entry?.backendUrl || normalizedBackendUrl,
+          },
         };
       });
       pushLogs([`✅ PDF rigenerato: ${payload.pdfPath}`]);
@@ -2821,6 +2828,26 @@ function AppContent(){
     }));
   }, []);
 
+  const handleMdEditorViewPdf = useCallback(async () => {
+    const entry = mdEditor?.entry;
+    if (!entry?.pdfPath) {
+      handleMdEditorClose();
+      return;
+    }
+
+    const backendForEntry = entry.backendUrl || mdEditor?.backendUrl || normalizedBackendUrl;
+    const preparedEntry = {
+      ...entry,
+      backendUrl: backendForEntry,
+    };
+
+    try {
+      await handleOpenHistoryPdf(preparedEntry);
+    } finally {
+      handleMdEditorClose();
+    }
+  }, [handleMdEditorClose, handleOpenHistoryPdf, mdEditor, normalizedBackendUrl]);
+
   const originPath = mdEditor?.originPath;
 
   const handleMdEditorClose = useCallback(() => {
@@ -2836,7 +2863,7 @@ function AppContent(){
     const entryId = mdEditor?.entry?.id;
 
     if (!targetPath || !backendTarget) {
-      pushLogs(['❌ Nessun backend configurato per salvare il Markdown.']);
+      pushLogs(['❌ Nessun backend configurato per salvare le modifiche.']);
       return;
     }
 
@@ -2862,7 +2889,7 @@ function AppContent(){
       }
 
       if (!response.ok) {
-        const message = payload?.message || `Salvataggio Markdown fallito (HTTP ${response.status})`;
+        const message = payload?.message || `Salvataggio modifiche fallito (HTTP ${response.status})`;
         throw new Error(message);
       }
 
@@ -2875,7 +2902,7 @@ function AppContent(){
           saving: false,
           content: nextContent,
           originalContent: nextContent,
-          success: 'Markdown salvato con successo',
+          success: 'Modifiche salvate con successo',
           error: '',
           lastAction: 'saved',
         };
@@ -2892,7 +2919,7 @@ function AppContent(){
             : item
         )
       );
-      pushLogs([`💾 Markdown salvato (${targetPath})`]);
+      pushLogs([`💾 Modifiche salvate (${targetPath})`]);
     } catch (err) {
       const message = err && err.message ? err.message : String(err);
       pushLogs([`❌ ${message}`]);
@@ -3178,6 +3205,7 @@ function AppContent(){
     handleRepublishFromEditor,
     mdEditorDirty,
     handleOpenMdInNewTab,
+    handleMdEditorViewPdf,
     headerStatus,
     promptCompletedCues,
     pipelineComplete,
