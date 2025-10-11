@@ -135,6 +135,15 @@ const CreatePage = () => {
 
       <ErrorBanner />
 
+      {showProjectProfileRoadmap ? (
+        <Toast
+          tone="info"
+          title="Profili progetto in arrivo"
+          description="Abbiamo abilitato il salvataggio dei profili progetto nei workspace. L'interfaccia per crearli e applicarli sarà visibile nei prossimi passi: nel frattempo puoi prepararli aggiornando workspaces.json secondo la guida docs/project_profiles.md."
+          className="mt-4"
+        />
+      ) : null}
+
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-3">
         <div
           className={classNames(
