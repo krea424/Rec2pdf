@@ -107,7 +107,21 @@ const CreatePage = () => {
     if (typeof context.customPdfLogo === "string") {
       return context.customPdfLogo;
     }
-    return context.customPdfLogo.name || "Logo personalizzato";
+    if (
+      context.customPdfLogo &&
+      typeof context.customPdfLogo === "object" &&
+      context.customPdfLogo.source === "workspace-profile"
+    ) {
+      return (
+        context.customPdfLogo.label ||
+        context.customPdfLogo.profileId ||
+        "Logo profilo workspace"
+      );
+    }
+    if (context.customPdfLogo.name) {
+      return context.customPdfLogo.name;
+    }
+    return "Logo personalizzato";
   }, [context.customPdfLogo]);
 
   const hasWorkspaceProfiles = activeWorkspaceProfiles.length > 0;

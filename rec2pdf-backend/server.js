@@ -2046,6 +2046,9 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     const workspaceStatus = String(req.body?.workspaceStatus || '').trim();
     const workspaceProfileId = String(req.body?.workspaceProfileId || '').trim();
     const workspaceProfileTemplate = String(req.body?.workspaceProfileTemplate || '').trim();
+    const workspaceProfileLabel = String(req.body?.workspaceProfileLabel || '').trim();
+    const workspaceProfileLogoPath = String(req.body?.workspaceProfileLogoPath || '').trim();
+    const workspaceProfileLogoLabel = String(req.body?.workspaceProfileLogoLabel || '').trim();
     promptFocus = String(req.body?.promptFocus || '').trim();
     promptNotes = String(req.body?.promptNotes || '').trim();
     promptCuesCompleted = [];
@@ -2134,6 +2137,50 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
             'info'
           );
         }
+      }
+    }
+
+    if (workspaceProfileLogoPath) {
+      const labelCandidate =
+        workspaceProfileLogoLabel ||
+        workspaceProfile?.pdfLogo?.originalName ||
+        workspaceProfileLabel ||
+        workspaceProfile?.label ||
+        workspaceProfileId ||
+        '';
+      if (workspaceProfile) {
+        workspaceProfile = {
+          ...workspaceProfile,
+          pdfLogoPath: workspaceProfileLogoPath,
+          pdfLogo: {
+            ...(workspaceProfile.pdfLogo || {}),
+            originalName: labelCandidate || workspaceProfile?.pdfLogo?.originalName || '',
+            fileName:
+              (workspaceProfile.pdfLogo && workspaceProfile.pdfLogo.fileName) ||
+              path.basename(workspaceProfileLogoPath) ||
+              'logo.pdf',
+            updatedAt:
+              (workspaceProfile.pdfLogo && workspaceProfile.pdfLogo.updatedAt) ||
+              Date.now(),
+          },
+        };
+      } else if (workspaceProfileId) {
+        workspaceProfile = {
+          id: workspaceProfileId,
+          label: workspaceProfileLabel || labelCandidate || workspaceProfileId,
+          slug: '',
+          destDir: '',
+          promptId: '',
+          pdfTemplate: workspaceProfileTemplate || '',
+          pdfLogoPath: workspaceProfileLogoPath,
+          pdfLogo: labelCandidate
+            ? {
+                originalName: labelCandidate,
+                fileName: path.basename(workspaceProfileLogoPath) || 'logo.pdf',
+                updatedAt: Date.now(),
+              }
+            : null,
+        };
       }
     }
 
