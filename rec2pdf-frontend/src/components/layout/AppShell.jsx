@@ -9,7 +9,6 @@ import SettingsDrawer from "./SettingsDrawer";
 const NAV_ITEMS = [
   { to: "/create", label: "Create" },
   { to: "/library", label: "Library" },
-  { to: "/editor", label: "Editor" },
 ];
 
 const OnboardingBanner = () => {
