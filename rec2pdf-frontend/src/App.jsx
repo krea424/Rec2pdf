@@ -240,6 +240,8 @@ const hydrateHistoryEntry = (entry) => {
   const pdfPath = entry.pdfPath || '';
   const mdPath = deriveMarkdownPath(entry.mdPath, pdfPath);
   const backendUrl = normalizeBackendUrlValue(entry.backendUrl || '');
+  const localPdfPath = typeof entry.localPdfPath === 'string' ? entry.localPdfPath : '';
+  const localMdPath = typeof entry.localMdPath === 'string' ? entry.localMdPath : '';
   const pdfUrl =
     entry.pdfUrl && entry.pdfUrl.startsWith('http') && !entry.pdfUrl.includes('/api/file?')
       ? entry.pdfUrl
@@ -258,6 +260,8 @@ const hydrateHistoryEntry = (entry) => {
     pdfPath,
     mdPath,
     backendUrl,
+    localPdfPath,
+    localMdPath,
     pdfUrl,
     mdUrl,
     tags: Array.isArray(entry?.tags) ? entry.tags : [],
@@ -1893,6 +1897,8 @@ function AppContent(){
           pdfUrl,
           mdPath:data?.mdPath||'',
           mdUrl,
+          localPdfPath: data?.localPdfPath || '',
+          localMdPath: data?.localMdPath || '',
           backendUrl:normalizedBackend,
           logos:logosUsed,
           tags:[],
@@ -2094,6 +2100,8 @@ function AppContent(){
           pdfUrl,
           mdPath:data?.mdPath||'',
           mdUrl,
+          localPdfPath: data?.localPdfPath || '',
+          localMdPath: data?.localMdPath || '',
           backendUrl:normalizedBackend,
           logos:logosUsed,
           tags:[],
@@ -2719,6 +2727,12 @@ function AppContent(){
     try {
       const fd = new FormData();
       fd.append('mdPath', mdPathResolved);
+      if (entry?.localPdfPath) {
+        fd.append('localPdfPath', entry.localPdfPath);
+      }
+      if (entry?.localMdPath) {
+        fd.append('localMdPath', entry.localMdPath);
+      }
       if (customPdfLogo) {
         fd.append('pdfLogo', customPdfLogo);
       }
@@ -2769,6 +2783,8 @@ function AppContent(){
         pdfUrl,
         mdPath: mdPathResolved,
         mdUrl,
+        localPdfPath: payload?.localPdfPath || item.localPdfPath || '',
+        localMdPath: payload?.localMdPath || item.localMdPath || '',
         backendUrl: backendUsed || item.backendUrl,
         logs: Array.isArray(item.logs) ? item.logs.concat(payload.logs || []) : (payload.logs || []),
         logos: {
@@ -2793,6 +2809,8 @@ function AppContent(){
             mdPath: mdPathResolved,
             mdUrl,
             backendUrl: backendUsed || prev.entry?.backendUrl || normalizedBackendUrl,
+            localPdfPath: payload?.localPdfPath || prev.entry?.localPdfPath || '',
+            localMdPath: payload?.localMdPath || prev.entry?.localMdPath || '',
           },
         };
       });
