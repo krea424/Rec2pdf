@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Mic, Square, Settings, Folder, FileText, FileCode, Cpu, Download, TimerIcon, Waves, CheckCircle2, AlertCircle, LinkIcon, Upload, RefreshCw, Bug, XCircle, Info, Maximize, Sparkles, Plus, Users } from "./components/icons";
 import AppShell from "./components/layout/AppShell";
 import CreatePage from "./pages/Create";
@@ -62,6 +62,7 @@ const EMPTY_EDITOR_STATE = {
   error: '',
   success: '',
   lastAction: 'idle',
+  originPath: '/library',
 };
 
 const normalizeBackendUrlValue = (url) => {
@@ -457,6 +458,7 @@ function AppContent(){
   const [mdPath, setMdPath] = useState("");
 
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     let isMounted = true;
@@ -2542,6 +2544,8 @@ function AppContent(){
         return;
       }
 
+      const currentPath = location?.pathname || '/library';
+
       setMdEditor({
         ...EMPTY_EDITOR_STATE,
         open: true,
@@ -2550,6 +2554,7 @@ function AppContent(){
         backendUrl: normalizedBackend,
         loading: true,
         lastAction: 'opening',
+        originPath: currentPath === '/editor' ? '/library' : currentPath,
       });
       pushLogs([`✏️ Apertura editor Markdown (${mdPathResolved})`]);
 
@@ -2616,7 +2621,16 @@ function AppContent(){
         });
       }
     },
-    [fetchWithAuth, normalizedBackendUrl, openSignedFileInNewTab, pushLogs, setErrorBanner, setHistory]
+    [
+      fetchWithAuth,
+      location,
+      navigate,
+      normalizedBackendUrl,
+      openSignedFileInNewTab,
+      pushLogs,
+      setErrorBanner,
+      setHistory,
+    ]
   );
 
   const handleOpenMdInNewTab = useCallback(() => {
@@ -2807,9 +2821,14 @@ function AppContent(){
     }));
   }, []);
 
+  const originPath = mdEditor?.originPath;
+
   const handleMdEditorClose = useCallback(() => {
+    const targetPath = originPath && originPath !== '/editor' ? originPath : '/library';
+
+    navigate(targetPath);
     setMdEditor(() => ({ ...EMPTY_EDITOR_STATE }));
-  }, []);
+  }, [navigate, originPath]);
 
   const handleMdEditorSave = useCallback(async (nextContent) => {
     const targetPath = mdEditor?.path;
