@@ -594,6 +594,80 @@ const sanitizeStorageFileName = (value, fallback = 'file') => {
   return `${safeName}${safeExt}`;
 };
 
+const normalizeWorkspaceProfiles = (profiles, { existingProfiles } = {}) => {
+  if (!Array.isArray(profiles)) {
+    return Array.isArray(existingProfiles) ? existingProfiles : [];
+  }
+
+  const previousById = new Map();
+  if (Array.isArray(existingProfiles)) {
+    existingProfiles.forEach((profile) => {
+      if (profile && typeof profile === 'object' && profile.id) {
+        previousById.set(profile.id, profile);
+      }
+    });
+  }
+
+  const seen = new Set();
+  const now = Date.now();
+
+  return profiles
+    .map((profile) => {
+      if (!profile || typeof profile !== 'object') {
+        return null;
+      }
+
+      const rawId = typeof profile.id === 'string' ? profile.id.trim() : '';
+      const id = rawId || generateId('profile');
+      if (seen.has(id)) {
+        return null;
+      }
+
+      const previous = previousById.get(id) || {};
+
+      const label = String(profile.label ?? previous.label ?? '').trim();
+      if (!label) {
+        return null;
+      }
+
+      const slug = sanitizeSlug(profile.slug || previous.slug || label, label);
+      const destDirInput = profile.destDir ?? previous.destDir ?? '';
+      const destDir = sanitizeDestDirInput(destDirInput) || '';
+      const promptId = typeof profile.promptId === 'string'
+        ? profile.promptId.trim()
+        : typeof previous.promptId === 'string'
+          ? previous.promptId
+          : '';
+      const pdfTemplate = profile.pdfTemplate
+        ? sanitizeStorageFileName(profile.pdfTemplate)
+        : typeof previous.pdfTemplate === 'string'
+          ? previous.pdfTemplate
+          : '';
+      const pdfLogoPath = typeof profile.pdfLogoPath === 'string'
+        ? profile.pdfLogoPath.trim()
+        : typeof previous.pdfLogoPath === 'string'
+          ? previous.pdfLogoPath
+          : '';
+
+      const createdAt = Number.isFinite(previous.createdAt) ? previous.createdAt : now;
+
+      seen.add(id);
+
+      return {
+        id,
+        label,
+        slug,
+        destDir,
+        promptId,
+        pdfTemplate,
+        pdfLogoPath,
+        createdAt,
+        updatedAt: now,
+      };
+    })
+    .filter(Boolean);
+};
+
 const findWorkspaceById = (workspaces, id) => {
   if (!id) return null;
   return workspaces.find((ws) => ws.id === id) || null;
@@ -1163,6 +1237,9 @@ const readPrompts = async () => {
 
 const mergeWorkspaceUpdate = (workspace, patch) => {
   const updated = { ...workspace };
+  updated.profiles = Array.isArray(workspace.profiles)
+    ? workspace.profiles.map((profile) => ({ ...profile }))
+    : [];
   if (patch.name) updated.name = String(patch.name).trim();
   if (patch.client) updated.client = String(patch.client).trim();
   if (patch.color) updated.color = normalizeColor(patch.color);
@@ -1199,6 +1276,12 @@ const mergeWorkspaceUpdate = (workspace, patch) => {
       .filter(Boolean);
   }
 
+  if (Array.isArray(patch.profiles)) {
+    updated.profiles = normalizeWorkspaceProfiles(patch.profiles, {
+      existingProfiles: workspace.profiles || [],
+    });
+  }
+
   updated.updatedAt = Date.now();
   return updated;
 };
@@ -1220,8 +1303,9 @@ app.post('/api/workspaces', async (req, res) => {
     }
 
     const workspaces = await readWorkspaces();
+    const workspaceId = generateId('ws');
     const workspace = {
-      id: generateId('ws'),
+      id: workspaceId,
       name,
       client: String(req.body?.client || name).trim(),
       color: normalizeColor(req.body?.color || '#6366f1'),
@@ -1248,6 +1332,7 @@ app.post('/api/workspaces', async (req, res) => {
           updatedAt: Date.now(),
         }))
         : [],
+      profiles: normalizeWorkspaceProfiles(req.body?.profiles) || [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
