@@ -2049,6 +2049,9 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     const workspaceProfileLabel = String(req.body?.workspaceProfileLabel || '').trim();
     const workspaceProfileLogoPath = String(req.body?.workspaceProfileLogoPath || '').trim();
     const workspaceProfileLogoLabel = String(req.body?.workspaceProfileLogoLabel || '').trim();
+    const workspaceProfileLogoDownloadUrl = String(
+      req.body?.workspaceProfileLogoDownloadUrl || ''
+    ).trim();
     promptFocus = String(req.body?.promptFocus || '').trim();
     promptNotes = String(req.body?.promptNotes || '').trim();
     promptCuesCompleted = [];
@@ -2379,6 +2382,35 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         } catch (logoError) {
           out(`⚠️ Logo profilo non accessibile: ${logoError?.message || logoError}`, 'publish', 'warning');
         }
+      }
+    }
+
+    if (!customLogoPath && workspaceProfileLogoDownloadUrl) {
+      try {
+        const response = await fetch(workspaceProfileLogoDownloadUrl);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const downloadUrl = new URL(workspaceProfileLogoDownloadUrl, 'http://localhost');
+        const urlName = path.basename(downloadUrl.pathname) || 'logo.pdf';
+        const preferredName =
+          workspaceProfileLogoLabel ||
+          workspaceProfile?.pdfLogo?.originalName ||
+          urlName ||
+          'logo.pdf';
+        const safeName = sanitizeStorageFileName(preferredName, 'logo.pdf');
+        const tempLogoPath = registerTempFile(path.join(pipelineDir, safeName));
+        await fsp.writeFile(tempLogoPath, buffer);
+        customLogoPath = tempLogoPath;
+        out(`🎨 Logo scaricato dal profilo: ${safeName}`, 'publish', 'info');
+      } catch (downloadError) {
+        out(
+          `⚠️ Download logo profilo fallito: ${downloadError?.message || downloadError}`,
+          'publish',
+          'warning'
+        );
       }
     }
 

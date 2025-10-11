@@ -285,6 +285,7 @@ const buildWorkspaceProfileLogoDescriptor = (workspaceId, profile) => {
     profileId: profile.id,
     path: profile.pdfLogoPath,
     label: label || profile.id,
+    downloadUrl: profile.logoDownloadPath || '',
   };
 };
 
@@ -302,28 +303,52 @@ const appendWorkspaceProfileDetails = (
   formData,
   { selection, profile, logoDescriptor }
 ) => {
-  if (!formData || !selection || !selection.profileId) {
+  if (!formData) {
     return;
-  }
-  if (!formData.has('workspaceProfileId')) {
-    formData.append('workspaceProfileId', selection.profileId);
-  }
-  if (profile?.label && !formData.has('workspaceProfileLabel')) {
-    formData.append('workspaceProfileLabel', profile.label);
-  }
-  const profileTemplate = String(profile?.pdfTemplate || '').trim();
-  if (profileTemplate && !formData.has('workspaceProfileTemplate')) {
-    formData.append('workspaceProfileTemplate', profileTemplate);
   }
   const descriptor =
     isWorkspaceProfileLogoDescriptor(logoDescriptor) && logoDescriptor.path
       ? logoDescriptor
-      : buildWorkspaceProfileLogoDescriptor(selection.workspaceId, profile);
+      : buildWorkspaceProfileLogoDescriptor(selection?.workspaceId, profile);
+
+  const profileId =
+    (selection && selection.profileId) ||
+    (descriptor && descriptor.profileId) ||
+    (profile && profile.id) ||
+    '';
+
+  if (!profileId) {
+    return;
+  }
+
+  if (!formData.has('workspaceProfileId')) {
+    formData.append('workspaceProfileId', profileId);
+  }
+
+  if (!formData.has('workspaceId') && descriptor?.workspaceId) {
+    formData.append('workspaceId', descriptor.workspaceId);
+  }
+
+  const labelCandidate = profile?.label || descriptor?.label;
+  if (labelCandidate && !formData.has('workspaceProfileLabel')) {
+    formData.append('workspaceProfileLabel', labelCandidate);
+  }
+
+  const profileTemplate = String(profile?.pdfTemplate || '').trim();
+  if (profileTemplate && !formData.has('workspaceProfileTemplate')) {
+    formData.append('workspaceProfileTemplate', profileTemplate);
+  }
+
   if (descriptor?.path && !formData.has('workspaceProfileLogoPath')) {
     formData.append('workspaceProfileLogoPath', descriptor.path);
-    if (descriptor.label && !formData.has('workspaceProfileLogoLabel')) {
-      formData.append('workspaceProfileLogoLabel', descriptor.label);
-    }
+  }
+
+  if (descriptor?.label && !formData.has('workspaceProfileLogoLabel')) {
+    formData.append('workspaceProfileLogoLabel', descriptor.label);
+  }
+
+  if (descriptor?.downloadUrl && !formData.has('workspaceProfileLogoDownloadUrl')) {
+    formData.append('workspaceProfileLogoDownloadUrl', descriptor.downloadUrl);
   }
 };
 
