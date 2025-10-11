@@ -80,6 +80,15 @@ const CreatePage = () => {
   const [openInfo, setOpenInfo] = useState(null);
   const [showCompletionHighlight, setShowCompletionHighlight] = useState(false);
   const pdfLogoInputRef = useRef(null);
+  const showProjectProfileRoadmap = useMemo(() => {
+    const workspaceList = Array.isArray(context.workspaces) ? context.workspaces : [];
+    if (!workspaceList.length) {
+      return true;
+    }
+    return workspaceList.every(
+      (workspace) => !Array.isArray(workspace.profiles) || workspace.profiles.length === 0,
+    );
+  }, [context.workspaces]);
 
   const toggleInfo = (section) => {
     setOpenInfo((prev) => (prev === section ? null : section));
@@ -135,6 +144,15 @@ const CreatePage = () => {
       )}
 
       <ErrorBanner />
+
+      {showProjectProfileRoadmap ? (
+        <Toast
+          tone="info"
+          title="Profili progetto in arrivo"
+          description="Abbiamo abilitato il salvataggio dei profili progetto nei workspace. L'interfaccia per crearli e applicarli sarà visibile nei prossimi passi: nel frattempo puoi prepararli aggiornando workspaces.json secondo la guida docs/project_profiles.md."
+          className="mt-4"
+        />
+      ) : null}
 
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-3">
         <div

@@ -44,6 +44,11 @@ Extend workspace records with a `profiles` array. Each profile keeps only projec
 - **Create form**: Insert a “Profilo preconfigurato” select above destination/logo inputs. Selecting a profile pre-populates and locks the relevant fields until the user opts to unlink.
 - **Profile authoring**: Extend `WorkspaceNavigator` or `SettingsDrawer` with dialogs to create or edit profiles, including file pickers for PDF logos and validation messaging.
 
+## Stato attuale nell'interfaccia
+- Il backend conserva già i profili associati a ciascun workspace, ma la pagina “Crea” continua a funzionare come prima.
+- In attesa dell'editor dedicato, l'app mostra un banner informativo che spiega come preparare i profili aggiornando `workspaces.json` seguendo questa guida.
+- Quando le API di gestione e la UI saranno pronte, lo stesso spazio ospiterà il selettore “Profilo preconfigurato”.
+
 ## UX Considerations
 - Show a visual cue (chip or badge) when a profile is active so users know fields are preset.
 - Allow manual overrides with a “Scollega profilo” action, reverting the form to standalone mode.
