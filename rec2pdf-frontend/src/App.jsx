@@ -199,6 +199,46 @@ const normalizePromptEntry = (prompt) => {
   };
 };
 
+const normalizeWorkspaceProfile = (workspaceId, profile) => {
+  if (!profile || typeof profile !== 'object') {
+    return null;
+  }
+  return {
+    id: profile.id || '',
+    label: profile.label || '',
+    slug: profile.slug || '',
+    destDir: profile.destDir || '',
+    promptId: profile.promptId || '',
+    pdfTemplate: profile.pdfTemplate || '',
+    pdfLogoPath: profile.pdfLogoPath || '',
+    pdfLogo: profile.pdfLogo || null,
+    logoDownloadPath:
+      profile.logoDownloadPath || (profile.pdfLogoPath && profile.id ? `/api/workspaces/${workspaceId}/profiles/${profile.id}/logo` : ''),
+    updatedAt: profile.updatedAt || Date.now(),
+  };
+};
+
+const sortWorkspaceProfiles = (profiles = []) => {
+  if (!Array.isArray(profiles)) {
+    return [];
+  }
+  return [...profiles].sort((a, b) => {
+    const aLabel = (a?.label || a?.id || '').toString();
+    const bLabel = (b?.label || b?.id || '').toString();
+    return aLabel.localeCompare(bLabel, 'it', { sensitivity: 'base' });
+  });
+};
+
+const normalizeWorkspaceProfiles = (workspace) => {
+  if (!workspace || typeof workspace !== 'object') {
+    return [];
+  }
+  const profiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
+  return profiles
+    .map((profile) => normalizeWorkspaceProfile(workspace.id || '', profile))
+    .filter(Boolean);
+};
+
 const buildPromptState = (overrides = {}) => ({
   promptId: '',
   focus: '',
@@ -228,6 +268,9 @@ const appendPdfLogoIfPresent = (formData, logo) => {
 };
 
 const resolvePdfLogoLabel = (logo) => {
+  if (typeof logo === 'string') {
+    return logo || 'default';
+  }
   if (!isFileLike(logo)) {
     return 'default';
   }
@@ -632,6 +675,8 @@ function AppContent(){
       return { workspaceId: '', projectId: '', projectName: '', status: '' };
     }
   });
+  const [workspaceProfileSelection, setWorkspaceProfileSelection] = useState({ workspaceId: '', profileId: '' });
+  const [workspaceProfileLocked, setWorkspaceProfileLocked] = useState(false);
   const [savedWorkspaceFilters, setSavedWorkspaceFilters] = useState(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -1143,7 +1188,11 @@ function AppContent(){
       try {
         const result = await fetchBodyWithAuth(`${normalized}/api/workspaces`, { method: 'GET' });
         if (result.ok && Array.isArray(result.data?.workspaces)) {
-          setWorkspaces(result.data.workspaces);
+          const sanitized = result.data.workspaces.map((workspace) => ({
+            ...workspace,
+            profiles: normalizeWorkspaceProfiles(workspace),
+          }));
+          setWorkspaces(sanitized);
         } else if (!result.ok && !options?.silent) {
           const message = result.data?.message || result.raw || 'Impossibile caricare i workspace.';
           pushLogs([`⚠️ API workspace: ${message}`]);
@@ -1211,7 +1260,13 @@ function AppContent(){
           return { ok: false, message };
         }
         if (payload?.workspace) {
-          setWorkspaces((prev) => [...prev, payload.workspace]);
+          setWorkspaces((prev) => [
+            ...prev,
+            {
+              ...payload.workspace,
+              profiles: normalizeWorkspaceProfiles(payload.workspace),
+            },
+          ]);
           pushLogs([`✅ Workspace creato: ${payload.workspace.name}`]);
           if (!workspaceSelection.workspaceId) {
             setWorkspaceSelection({ workspaceId: payload.workspace.id, projectId: '', projectName: '', status: '' });
@@ -1326,7 +1381,12 @@ function AppContent(){
           return { ok: false, message };
         }
         if (payload?.workspace) {
-          setWorkspaces((prev) => prev.map((ws) => (ws.id === workspaceId ? payload.workspace : ws)));
+          setWorkspaces((prev) => prev.map((ws) => (ws.id === workspaceId
+            ? {
+                ...payload.workspace,
+                profiles: normalizeWorkspaceProfiles(payload.workspace),
+              }
+            : ws)));
         }
         return { ok: true, workspace: payload.workspace || targetWorkspace, updated: true };
       } catch (error) {
@@ -1459,6 +1519,260 @@ function AppContent(){
     fetchWorkspaces({ silent: false });
   }, [fetchWorkspaces]);
 
+  const createWorkspaceProfile = useCallback(
+    async (workspaceId, profile) => {
+      const targetWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
+      if (!targetWorkspaceId) {
+        const message = 'Seleziona un workspace valido prima di creare un profilo.';
+        pushLogs([`⚠️ ${message}`]);
+        return { ok: false, message };
+      }
+
+      const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+      if (!normalizedBackend) {
+        const message = 'Configura un backend valido per creare profili.';
+        pushLogs([`⚠️ ${message}`]);
+        return { ok: false, message };
+      }
+
+      try {
+        const formData = new FormData();
+        formData.set('label', String(profile?.label || '').trim());
+        formData.set('slug', String(profile?.slug || '').trim());
+        formData.set('destDir', String(profile?.destDir || '').trim());
+        formData.set('promptId', String(profile?.promptId || '').trim());
+        formData.set('pdfTemplate', String(profile?.pdfTemplate || '').trim());
+        if (profile?.pdfLogo instanceof File || profile?.pdfLogo instanceof Blob) {
+          const file = profile.pdfLogo;
+          const fileName = typeof file.name === 'string' && file.name ? file.name : 'logo.pdf';
+          formData.set('pdfLogo', file, fileName);
+        }
+
+        const response = await fetchWithAuth(
+          `${normalizedBackend}/api/workspaces/${targetWorkspaceId}/profiles`,
+          {
+            method: 'POST',
+            body: formData,
+          }
+        );
+
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch {
+          payload = {};
+        }
+
+        if (!response.ok) {
+          const message = payload?.message || `Creazione profilo fallita (HTTP ${response.status})`;
+          const details = Array.isArray(payload?.details) ? payload.details : [];
+          pushLogs([`❌ ${message}`].concat(details));
+          return { ok: false, message, details };
+        }
+
+        const normalizedProfile = normalizeWorkspaceProfile(targetWorkspaceId, payload?.profile);
+        if (!normalizedProfile) {
+          const message = 'Il profilo restituito dal backend non è valido.';
+          pushLogs([`❌ ${message}`]);
+          return { ok: false, message };
+        }
+
+        setWorkspaces((prev) =>
+          prev.map((workspace) => {
+            if (workspace.id !== targetWorkspaceId) {
+              return workspace;
+            }
+            const baseProfiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
+            const withoutProfile = baseProfiles.filter((item) => item.id !== normalizedProfile.id);
+            return {
+              ...workspace,
+              profiles: sortWorkspaceProfiles([...withoutProfile, normalizedProfile]),
+            };
+          })
+        );
+
+        pushLogs([`✅ Profilo creato: ${normalizedProfile.label}`]);
+        return { ok: true, profile: normalizedProfile };
+      } catch (error) {
+        const message = error?.message || 'Errore durante la creazione del profilo';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+    },
+    [backendUrl, fetchWithAuth, pushLogs]
+  );
+
+  const updateWorkspaceProfile = useCallback(
+    async (workspaceId, profileId, profile) => {
+      const targetWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
+      const targetProfileId = typeof profileId === 'string' ? profileId.trim() : '';
+      if (!targetWorkspaceId || !targetProfileId) {
+        const message = 'Workspace o profilo non valido per l\'aggiornamento.';
+        pushLogs([`⚠️ ${message}`]);
+        return { ok: false, message };
+      }
+
+      const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+      if (!normalizedBackend) {
+        const message = 'Configura un backend valido per aggiornare i profili.';
+        pushLogs([`⚠️ ${message}`]);
+        return { ok: false, message };
+      }
+
+      try {
+        const formData = new FormData();
+        formData.set('label', String(profile?.label || '').trim());
+        formData.set('slug', String(profile?.slug || '').trim());
+        formData.set('destDir', String(profile?.destDir || '').trim());
+        formData.set('promptId', String(profile?.promptId || '').trim());
+        formData.set('pdfTemplate', String(profile?.pdfTemplate || '').trim());
+        if (profile?.removePdfLogo) {
+          formData.set('removePdfLogo', '1');
+        }
+        if (profile?.pdfLogo instanceof File || profile?.pdfLogo instanceof Blob) {
+          const file = profile.pdfLogo;
+          const fileName = typeof file.name === 'string' && file.name ? file.name : 'logo.pdf';
+          formData.set('pdfLogo', file, fileName);
+        }
+
+        const response = await fetchWithAuth(
+          `${normalizedBackend}/api/workspaces/${targetWorkspaceId}/profiles/${targetProfileId}`,
+          {
+            method: 'PUT',
+            body: formData,
+          }
+        );
+
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch {
+          payload = {};
+        }
+
+        if (!response.ok) {
+          const message = payload?.message || `Aggiornamento profilo fallito (HTTP ${response.status})`;
+          const details = Array.isArray(payload?.details) ? payload.details : [];
+          pushLogs([`❌ ${message}`].concat(details));
+          return { ok: false, message, details };
+        }
+
+        const normalizedProfile = normalizeWorkspaceProfile(targetWorkspaceId, payload?.profile);
+        if (!normalizedProfile) {
+          const message = 'Il profilo aggiornato non è valido.';
+          pushLogs([`❌ ${message}`]);
+          return { ok: false, message };
+        }
+
+        setWorkspaces((prev) =>
+          prev.map((workspace) => {
+            if (workspace.id !== targetWorkspaceId) {
+              return workspace;
+            }
+            const baseProfiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
+            const nextProfiles = baseProfiles.map((item) =>
+              item.id === normalizedProfile.id ? normalizedProfile : item
+            );
+            return {
+              ...workspace,
+              profiles: sortWorkspaceProfiles(nextProfiles),
+            };
+          })
+        );
+
+        pushLogs([`✅ Profilo aggiornato: ${normalizedProfile.label}`]);
+        return { ok: true, profile: normalizedProfile };
+      } catch (error) {
+        const message = error?.message || 'Errore durante l\'aggiornamento del profilo';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+    },
+    [backendUrl, fetchWithAuth, pushLogs]
+  );
+
+  const deleteWorkspaceProfile = useCallback(
+    async (workspaceId, profileId) => {
+      const targetWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
+      const targetProfileId = typeof profileId === 'string' ? profileId.trim() : '';
+      if (!targetWorkspaceId || !targetProfileId) {
+        const message = 'Workspace o profilo non valido per la rimozione.';
+        pushLogs([`⚠️ ${message}`]);
+        return { ok: false, message };
+      }
+
+      const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+      if (!normalizedBackend) {
+        const message = 'Configura un backend valido per eliminare i profili.';
+        pushLogs([`⚠️ ${message}`]);
+        return { ok: false, message };
+      }
+
+      try {
+        const response = await fetchWithAuth(
+          `${normalizedBackend}/api/workspaces/${targetWorkspaceId}/profiles/${targetProfileId}`,
+          {
+            method: 'DELETE',
+          }
+        );
+
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch {
+          payload = {};
+        }
+
+        if (!response.ok) {
+          const message = payload?.message || `Eliminazione profilo fallita (HTTP ${response.status})`;
+          pushLogs([`❌ ${message}`]);
+          return { ok: false, message };
+        }
+
+        setWorkspaces((prev) =>
+          prev.map((workspace) => {
+            if (workspace.id !== targetWorkspaceId) {
+              return workspace;
+            }
+            const baseProfiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
+            return {
+              ...workspace,
+              profiles: sortWorkspaceProfiles(
+                baseProfiles.filter((profile) => profile.id !== targetProfileId)
+              ),
+            };
+          })
+        );
+
+        if (
+          workspaceProfileSelection.workspaceId === targetWorkspaceId &&
+          workspaceProfileSelection.profileId === targetProfileId
+        ) {
+          setWorkspaceProfileSelection({ workspaceId: targetWorkspaceId, profileId: '' });
+          setWorkspaceProfileLocked(false);
+          setCustomPdfLogo(null);
+        }
+
+        pushLogs([`🗑️ Profilo eliminato: ${targetProfileId}`]);
+        return { ok: true };
+      } catch (error) {
+        const message = error?.message || 'Errore durante la rimozione del profilo';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+    },
+    [
+      backendUrl,
+      fetchWithAuth,
+      pushLogs,
+      workspaceProfileSelection.workspaceId,
+      workspaceProfileSelection.profileId,
+      setWorkspaceProfileSelection,
+      setWorkspaceProfileLocked,
+      setCustomPdfLogo,
+    ]
+  );
+
   const handleSelectPromptTemplate = useCallback((prompt) => {
     if (!prompt || !prompt.id) {
       setPromptState(buildPromptState());
@@ -1562,11 +1876,15 @@ function AppContent(){
       setStatusCreationMode(false);
       setProjectDraft('');
       setStatusDraft('');
+      setWorkspaceProfileSelection({ workspaceId: '', profileId: '' });
+      setWorkspaceProfileLocked(false);
       return;
     }
     const workspace = workspaces.find((ws) => ws.id === navigatorSelection.workspaceId);
     if (!workspace) {
       setWorkspaceSelection({ workspaceId: '', projectId: '', projectName: '', status: '' });
+      setWorkspaceProfileSelection({ workspaceId: '', profileId: '' });
+      setWorkspaceProfileLocked(false);
       return;
     }
     const workspaceProjectsArray = Array.isArray(workspace.projects) ? workspace.projects : [];
@@ -1594,6 +1912,8 @@ function AppContent(){
       projectName: matchedProject ? '' : navigatorSelection.projectName || '',
       status: normalizedStatus,
     });
+    setWorkspaceProfileSelection({ workspaceId: workspace.id, profileId: '' });
+    setWorkspaceProfileLocked(false);
     setProjectCreationMode(false);
     setStatusCreationMode(false);
     setProjectDraft('');
@@ -1615,6 +1935,20 @@ function AppContent(){
     [workspaceProjects, workspaceSelection.projectId]
   );
 
+  const activeWorkspaceProfiles = useMemo(
+    () => (Array.isArray(activeWorkspace?.profiles) ? activeWorkspace.profiles : []),
+    [activeWorkspace]
+  );
+
+  const activeWorkspaceProfile = useMemo(() => {
+    if (!workspaceProfileSelection.profileId) {
+      return null;
+    }
+    return (
+      activeWorkspaceProfiles.find((profile) => profile.id === workspaceProfileSelection.profileId) || null
+    );
+  }, [activeWorkspaceProfiles, workspaceProfileSelection.profileId]);
+
   const availableStatuses = useMemo(() => {
     const candidate = (activeProject && Array.isArray(activeProject.statuses) && activeProject.statuses.length
       ? activeProject.statuses
@@ -1633,6 +1967,8 @@ function AppContent(){
         setStatusCreationMode(false);
         setProjectDraft('');
         setStatusDraft('');
+        setWorkspaceProfileSelection({ workspaceId: '', profileId: '' });
+        setWorkspaceProfileLocked(false);
         return;
       }
       const workspace = workspaces.find((ws) => ws.id === workspaceId);
@@ -1648,12 +1984,17 @@ function AppContent(){
         projectName: '',
         status: statuses[0] || '',
       });
+      setWorkspaceProfileSelection({ workspaceId, profileId: '' });
+      setWorkspaceProfileLocked(false);
+      if (workspaceProfileLocked) {
+        setCustomPdfLogo(null);
+      }
       setProjectCreationMode(false);
       setStatusCreationMode(false);
       setProjectDraft('');
       setStatusDraft('');
     },
-    [workspaces]
+    [workspaces, workspaceProfileLocked]
   );
 
   const handleSelectProjectForPipeline = useCallback(
@@ -1693,6 +2034,64 @@ function AppContent(){
     setStatusCreationMode(false);
     setWorkspaceSelection((prev) => ({ ...prev, status: value || '' }));
   }, []);
+
+  useEffect(() => {
+    if (!workspaceSelection.workspaceId) {
+      setWorkspaceProfileSelection({ workspaceId: '', profileId: '' });
+      setWorkspaceProfileLocked(false);
+      return;
+    }
+    if (workspaceProfileSelection.workspaceId !== workspaceSelection.workspaceId) {
+      setWorkspaceProfileSelection({ workspaceId: workspaceSelection.workspaceId, profileId: '' });
+      setWorkspaceProfileLocked(false);
+    }
+  }, [workspaceSelection.workspaceId, workspaceProfileSelection.workspaceId]);
+
+  const applyWorkspaceProfile = useCallback(
+    (profileId, options = {}) => {
+      const targetWorkspaceId = options.workspaceId || workspaceSelection.workspaceId;
+      if (!targetWorkspaceId || !profileId) {
+        return { ok: false, message: 'Workspace o profilo non selezionato' };
+      }
+      const workspace = workspaces.find((ws) => ws.id === targetWorkspaceId) || null;
+      if (!workspace) {
+        return { ok: false, message: 'Workspace non disponibile' };
+      }
+      const profiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
+      const profile = profiles.find((item) => item.id === profileId) || null;
+      if (!profile) {
+        return { ok: false, message: 'Profilo non trovato' };
+      }
+      if (profile.destDir) {
+        setDestDir(profile.destDir);
+      }
+      if (profile.slug) {
+        setSlug(profile.slug);
+      }
+      if (profile.promptId) {
+        setPromptState(buildPromptState({ promptId: profile.promptId }));
+      }
+      if (profile.pdfLogoPath) {
+        const logoLabel = profile.pdfLogo?.originalName || profile.label || profile.id;
+        setCustomPdfLogo(logoLabel);
+      } else {
+        setCustomPdfLogo(null);
+      }
+      setWorkspaceProfileSelection({ workspaceId: targetWorkspaceId, profileId: profile.id });
+      setWorkspaceProfileLocked(true);
+      return { ok: true, profile };
+    },
+    [workspaces, workspaceSelection.workspaceId, setDestDir, setSlug, setPromptState, setCustomPdfLogo]
+  );
+
+  const clearWorkspaceProfile = useCallback(() => {
+    setWorkspaceProfileSelection((prev) => ({
+      workspaceId: prev.workspaceId || workspaceSelection.workspaceId || '',
+      profileId: '',
+    }));
+    setWorkspaceProfileLocked(false);
+    setCustomPdfLogo(null);
+  }, [workspaceSelection.workspaceId, setCustomPdfLogo]);
 
   const handleCreateProjectFromDraft = useCallback(async () => {
     const name = projectDraft.trim();
@@ -1811,6 +2210,15 @@ function AppContent(){
         }
         if (workspaceSelection.status) {
           fd.append('workspaceStatus', workspaceSelection.status);
+        }
+        if (
+          workspaceProfileSelection.profileId &&
+          workspaceProfileSelection.workspaceId === workspaceSelection.workspaceId
+        ) {
+          fd.append('workspaceProfileId', workspaceProfileSelection.profileId);
+          if (activeWorkspaceProfile?.pdfTemplate) {
+            fd.append('workspaceProfileTemplate', activeWorkspaceProfile.pdfTemplate);
+          }
         }
       }
       if (promptState.promptId) {
@@ -3130,6 +3538,9 @@ function AppContent(){
     secondsCap,
     setSecondsCap,
     handleRefreshWorkspaces,
+    createWorkspaceProfile,
+    updateWorkspaceProfile,
+    deleteWorkspaceProfile,
     workspaceLoading,
     setWorkspaceBuilderOpen,
     workspaceBuilderOpen,
@@ -3138,6 +3549,12 @@ function AppContent(){
     handleWorkspaceBuilderSubmit,
     handleSelectWorkspaceForPipeline,
     workspaceSelection,
+    workspaceProfileSelection,
+    workspaceProfileLocked,
+    activeWorkspaceProfiles,
+    activeWorkspaceProfile,
+    applyWorkspaceProfile,
+    clearWorkspaceProfile,
     workspaces,
     activeWorkspace,
     projectCreationMode,
