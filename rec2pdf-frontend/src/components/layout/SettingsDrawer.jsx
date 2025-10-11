@@ -6,6 +6,7 @@ import {
   Bug,
   CheckCircle2,
   Cpu,
+  Folder,
   Info,
   LinkIcon,
   Mic,
@@ -20,10 +21,12 @@ import { classNames } from "../../utils/classNames";
 import logoAsset from "../../assets/logo.svg";
 import { Button, Select } from "../ui";
 import PermissionBanner from "../PermissionBanner";
+import WorkspaceProfilesManager from "../workspaces/WorkspaceProfilesManager";
 
 const sectionNav = [
   { key: "recording", label: "Registrazione", icon: Mic },
   { key: "diagnostics", label: "Diagnostics", icon: Bug },
+  { key: "workspace", label: "Workspace", icon: Folder },
   { key: "branding", label: "Branding", icon: Palette },
   { key: "advanced", label: "Advanced", icon: Cpu },
   { key: "account", label: "Account", icon: Users },
@@ -282,6 +285,7 @@ export default function SettingsDrawer({ open, onClose }) {
           </div>
         </div>
       ),
+      workspace: <WorkspaceProfilesManager />,
       branding: (
         <div className="space-y-5 text-sm text-zinc-200">
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-4">
