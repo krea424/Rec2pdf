@@ -191,6 +191,46 @@ const sanitizeDestDirInput = (value) => {
   return raw;
 };
 
+const normalizeLocalFilePathInput = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  let input = value.trim();
+  if (!input) {
+    return '';
+  }
+
+  if (/^file:\/\//i.test(input)) {
+    try {
+      const url = new URL(input);
+      input = decodeURIComponent(url.pathname || '');
+      if (process.platform === 'win32' && input.startsWith('/')) {
+        input = input.slice(1);
+      }
+    } catch {
+      return '';
+    }
+  }
+
+  if (input === '~') {
+    input = os.homedir();
+  } else if (input.startsWith('~/') || input.startsWith('~\\')) {
+    input = path.join(os.homedir(), input.slice(2));
+  } else if (input.startsWith('~')) {
+    return '';
+  }
+
+  const unifiedSeparators = input.replace(/[\\/]+/g, path.sep);
+  const normalized = path.normalize(unifiedSeparators);
+
+  if (path.isAbsolute(normalized)) {
+    return normalized;
+  }
+
+  return '';
+};
+
 const resolveDestinationDirectory = async (rawDest) => {
   const sanitized = sanitizeDestDirInput(rawDest);
   const targetDir = sanitized ? path.resolve(sanitized) : DEFAULT_DEST_DIR;
@@ -1842,8 +1882,8 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
       customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
     );
 
-    const resolvedLocalPdfPath = path.isAbsolute(localPdfPathRaw) ? localPdfPathRaw : '';
-    const resolvedLocalMdPath = path.isAbsolute(localMdPathRaw) ? localMdPathRaw : '';
+    const resolvedLocalPdfPath = normalizeLocalFilePathInput(localPdfPathRaw);
+    const resolvedLocalMdPath = normalizeLocalFilePathInput(localMdPathRaw);
 
     const copySupabaseArtifactsLocally = async (pdfSourcePath, mdSourcePath) => {
       let localPdfPath = '';
