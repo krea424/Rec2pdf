@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Mic, Square, Settings, Folder, FileText, FileCode, Cpu, Download, TimerIcon, Waves, CheckCircle2, AlertCircle, LinkIcon, Upload, RefreshCw, Bug, XCircle, Info, Maximize, Sparkles, Plus, Users } from "./components/icons";
 import AppShell from "./components/layout/AppShell";
 import CreatePage from "./pages/Create";
@@ -61,6 +61,8 @@ const EMPTY_EDITOR_STATE = {
   saving: false,
   error: '',
   success: '',
+  lastAction: 'idle',
+  originPath: '/library',
 };
 
 const normalizeBackendUrlValue = (url) => {
@@ -456,6 +458,7 @@ function AppContent(){
   const [mdPath, setMdPath] = useState("");
 
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     let isMounted = true;
@@ -2541,6 +2544,8 @@ function AppContent(){
         return;
       }
 
+      const currentPath = location?.pathname || '/library';
+
       setMdEditor({
         ...EMPTY_EDITOR_STATE,
         open: true,
@@ -2548,6 +2553,8 @@ function AppContent(){
         path: mdPathResolved,
         backendUrl: normalizedBackend,
         loading: true,
+        lastAction: 'opening',
+        originPath: currentPath === '/editor' ? '/library' : currentPath,
       });
       pushLogs([`✏️ Apertura editor Markdown (${mdPathResolved})`]);
 
@@ -2584,6 +2591,7 @@ function AppContent(){
             originalContent: content,
             error: '',
             success: '',
+            lastAction: 'loaded',
           };
         });
         setHistory((prev) =>
@@ -2604,11 +2612,25 @@ function AppContent(){
           if (prev.path !== mdPathResolved) {
             return prev;
           }
-          return { ...prev, loading: false, error: message };
+          return {
+            ...prev,
+            loading: false,
+            error: message,
+            lastAction: 'error',
+          };
         });
       }
     },
-    [fetchWithAuth, normalizedBackendUrl, openSignedFileInNewTab, pushLogs, setErrorBanner, setHistory]
+    [
+      fetchWithAuth,
+      location,
+      navigate,
+      normalizedBackendUrl,
+      openSignedFileInNewTab,
+      pushLogs,
+      setErrorBanner,
+      setHistory,
+    ]
   );
 
   const handleOpenMdInNewTab = useCallback(() => {
@@ -2681,6 +2703,17 @@ function AppContent(){
 
     setBusy(true);
     setErrorBanner(null);
+    setMdEditor((prev) => {
+      if (!prev.open || prev.path !== mdPathResolved) {
+        return prev;
+      }
+      return {
+        ...prev,
+        lastAction: 'republishing',
+        success: '',
+        error: '',
+      };
+    });
     pushLogs([`♻️ Rigenerazione PDF da Markdown (${entry.title || entry.slug || mdPathResolved})`]);
 
     try {
@@ -2710,6 +2743,17 @@ function AppContent(){
         const message = payload?.message || `Rigenerazione fallita (HTTP ${response.status || 0})`;
         pushLogs([`❌ ${message}`]);
         setErrorBanner({ title: 'Rigenerazione PDF fallita', details: message });
+        setMdEditor((prev) => {
+          if (!prev.open || prev.path !== mdPathResolved) {
+            return prev;
+          }
+          return {
+            ...prev,
+            error: message,
+            success: '',
+            lastAction: 'error',
+          };
+        });
         return;
       }
 
@@ -2733,16 +2777,39 @@ function AppContent(){
         },
       }) : item));
 
+      setMdEditor((prev) => {
+        if (!prev.open || prev.path !== mdPathResolved) {
+          return prev;
+        }
+        return {
+          ...prev,
+          success:
+            'PDF rigenerato. Chiudi l\'editor per tornare alla libreria e utilizza "Apri PDF" sul documento per verificarne l\'aggiornamento.',
+          error: '',
+          lastAction: 'republished',
+        };
+      });
       pushLogs([`✅ PDF rigenerato: ${payload.pdfPath}`]);
       setActivePanel('doc');
     } catch (err) {
       const message = err?.message || String(err);
       pushLogs([`❌ ${message}`]);
       setErrorBanner({ title: 'Rigenerazione PDF fallita', details: message });
+      setMdEditor((prev) => {
+        if (!prev.open || prev.path !== mdPathResolved) {
+          return prev;
+        }
+        return {
+          ...prev,
+          error: message,
+          success: '',
+          lastAction: 'error',
+        };
+      });
     } finally {
       setBusy(false);
     }
-  }, [busy, customPdfLogo, fetchWithAuth, normalizedBackendUrl, pushLogs, setActivePanel, setBusy, setErrorBanner, setHistory, setMdPath, setPdfPath]);
+  }, [busy, customPdfLogo, fetchWithAuth, normalizedBackendUrl, pushLogs, setActivePanel, setBusy, setErrorBanner, setHistory, setMdEditor, setMdPath, setPdfPath]);
 
   const handleMdEditorChange = useCallback((nextValue) => {
     setMdEditor((prev) => ({
@@ -2750,12 +2817,18 @@ function AppContent(){
       content: nextValue,
       error: '',
       success: '',
+      lastAction: 'editing',
     }));
   }, []);
 
+  const originPath = mdEditor?.originPath;
+
   const handleMdEditorClose = useCallback(() => {
+    const targetPath = originPath && originPath !== '/editor' ? originPath : '/library';
+
+    navigate(targetPath);
     setMdEditor(() => ({ ...EMPTY_EDITOR_STATE }));
-  }, []);
+  }, [navigate, originPath]);
 
   const handleMdEditorSave = useCallback(async (nextContent) => {
     const targetPath = mdEditor?.path;
@@ -2767,7 +2840,13 @@ function AppContent(){
       return;
     }
 
-    setMdEditor((prev) => ({ ...prev, saving: true, error: '', success: '' }));
+    setMdEditor((prev) => ({
+      ...prev,
+      saving: true,
+      error: '',
+      success: '',
+      lastAction: 'saving',
+    }));
     try {
       const response = await fetchWithAuth(`${backendTarget}/api/markdown`, {
         method: 'PUT',
@@ -2798,6 +2877,7 @@ function AppContent(){
           originalContent: nextContent,
           success: 'Markdown salvato con successo',
           error: '',
+          lastAction: 'saved',
         };
       });
       setHistory((prev) =>
@@ -2820,7 +2900,13 @@ function AppContent(){
         if (prev.path !== targetPath) {
           return prev;
         }
-        return { ...prev, saving: false, error: message, success: '' };
+        return {
+          ...prev,
+          saving: false,
+          error: message,
+          success: '',
+          lastAction: 'error',
+        };
       });
     }
   }, [fetchWithAuth, mdEditor, pushLogs, setHistory]);

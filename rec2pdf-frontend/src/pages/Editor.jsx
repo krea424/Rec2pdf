@@ -22,6 +22,7 @@ const EditorPage = () => {
       hasUnsavedChanges={context.mdEditorDirty}
       onOpenInNewTab={context.handleOpenMdInNewTab}
       busy={context.busy}
+      lastAction={context.mdEditor.lastAction}
       themeStyles={themes[theme]}
     />
   );
