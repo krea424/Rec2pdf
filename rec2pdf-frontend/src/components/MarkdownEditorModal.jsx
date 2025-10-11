@@ -1,6 +1,14 @@
 import React from "react";
 import { classNames } from "../utils/classNames";
-import { FileCode, Save, RefreshCw, ExternalLink, XCircle } from "./icons";
+import {
+  FileCode,
+  Save,
+  RefreshCw,
+  ExternalLink,
+  XCircle,
+  ChevronLeft,
+  CheckCircle2,
+} from "./icons";
 import { Button, IconButton } from "./ui/Button";
 import { TextArea } from "./ui/Input";
 import { Toast } from "./ui/Toast";
@@ -23,6 +31,7 @@ export default function MarkdownEditorModal({
   onOpenInNewTab,
   busy,
   themeStyles,
+  lastAction,
 }) {
   if (!open) return null;
 
@@ -37,6 +46,105 @@ export default function MarkdownEditorModal({
     }
     onClose?.();
   };
+
+  const stepContainerClasses = {
+    pending: "border-surface-800/80 bg-surface-900/60",
+    "in-progress": "border-sky-500/40 bg-sky-500/10",
+    done: "border-emerald-500/40 bg-emerald-500/10",
+  };
+
+  const stepTitleClasses = {
+    pending: "text-surface-200",
+    "in-progress": "text-sky-50",
+    done: "text-emerald-50",
+  };
+
+  const stepDescriptionClasses = {
+    pending: "text-surface-400",
+    "in-progress": "text-sky-200",
+    done: "text-emerald-200",
+  };
+
+  const stepBadgeClasses = {
+    pending: "bg-surface-800 text-surface-200",
+    "in-progress": "bg-sky-500/20 text-sky-100",
+    done: "bg-emerald-500/20 text-emerald-100",
+  };
+
+  const stepStatusLabels = {
+    pending: "Da completare",
+    "in-progress": "In corso",
+    done: "Completato",
+  };
+
+  const normalizedLastAction = lastAction || "idle";
+  const stepOneStatus = hasUnsavedChanges || normalizedLastAction === "editing"
+    ? "in-progress"
+    : ["saved", "republished"].includes(normalizedLastAction)
+      ? "done"
+      : "pending";
+  const stepTwoStatus = saving
+    ? "in-progress"
+    : hasUnsavedChanges
+      ? "pending"
+      : ["saved", "republished"].includes(normalizedLastAction)
+        ? "done"
+        : "pending";
+  const isRepublishing = busy || normalizedLastAction === "republishing";
+  const stepThreeStatus = isRepublishing
+    ? "in-progress"
+    : normalizedLastAction === "republished"
+      ? "done"
+      : "pending";
+
+  const stepOneDescription = hasUnsavedChanges
+    ? "Apporta le correzioni direttamente nel testo Markdown. Hai modifiche non ancora salvate."
+    : "Apporta le correzioni direttamente nel testo Markdown prima di procedere.";
+
+  const stepTwoDescription = hasUnsavedChanges
+    ? "Salva per rendere disponibili le modifiche alla rigenerazione."
+    : ["saved", "republished"].includes(normalizedLastAction)
+      ? "Markdown salvato correttamente: puoi passare alla rigenerazione."
+      : "Quando hai terminato, salva il Markdown aggiornato.";
+
+  const stepThreeDescription = normalizedLastAction === "republished"
+    ? "Chiudi l'editor, torna alla libreria e usa \"Apri PDF\" sul documento per verificare la versione aggiornata."
+    : "Dopo il salvataggio, rigenera il PDF e poi aprilo dalla libreria per verificarlo.";
+
+  const renderStep = (index, title, description, status) => (
+    <li
+      key={index}
+      className={classNames(
+        "flex items-start gap-3 rounded-2xl border px-4 py-3",
+        stepContainerClasses[status]
+      )}
+    >
+      <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-sm font-semibold text-white/80">
+        {index}
+      </span>
+      <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className={classNames("flex items-center gap-2 text-sm font-semibold", stepTitleClasses[status])}>
+            <span>{title}</span>
+            {status === "done" ? (
+              <CheckCircle2 className="h-4 w-4" />
+            ) : status === "in-progress" ? (
+              <RefreshCw className="h-4 w-4 animate-spin" />
+            ) : null}
+          </div>
+          <p className={classNames("mt-1 text-xs leading-relaxed", stepDescriptionClasses[status])}>{description}</p>
+        </div>
+        <span
+          className={classNames(
+            "inline-flex min-w-[120px] justify-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide",
+            stepBadgeClasses[status]
+          )}
+        >
+          {stepStatusLabels[status]}
+        </span>
+      </div>
+    </li>
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur">
@@ -92,9 +200,38 @@ export default function MarkdownEditorModal({
               <Toast tone="warning" description="Modifiche non salvate" className="text-xs" />
             ) : null}
           </div>
+          <div className="mt-6 rounded-3xl border border-surface-800/80 bg-surface-950/40 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-surface-400">
+              Percorso guidato
+            </p>
+            <ol className="mt-3 space-y-3 text-sm">
+              {renderStep(1, "Modifica il Markdown", stepOneDescription, stepOneStatus)}
+              {renderStep(2, "Salva le modifiche", stepTwoDescription, stepTwoStatus)}
+              {renderStep(3, "Rigenera e verifica il PDF", stepThreeDescription, stepThreeStatus)}
+            </ol>
+            {isRepublishing ? (
+              <p className="mt-3 rounded-2xl border border-sky-500/40 bg-sky-500/10 p-3 text-xs text-sky-100">
+                Rigenerazione in corso. Puoi seguire l'avanzamento dal pannello principale.
+              </p>
+            ) : normalizedLastAction === "republished" ? (
+              <p className="mt-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+                PDF rigenerato con successo. Chiudi l'editor, torna alla libreria e seleziona "Apri PDF" per visualizzare la versione aggiornata.
+              </p>
+            ) : null}
+          </div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-surface-800 bg-surface-900/60 px-6 py-4 text-xs">
-          <div className="flex items-center gap-2 text-surface-300">
+          <div className="flex flex-wrap items-center gap-2 text-surface-300">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={handleClose}
+              leadingIcon={ChevronLeft}
+              disabled={busy}
+            >
+              Torna alla libreria
+            </Button>
             {typeof onOpenInNewTab === "function" && (
               <Button
                 type="button"
@@ -103,7 +240,7 @@ export default function MarkdownEditorModal({
                 onClick={() => onOpenInNewTab?.()}
                 leadingIcon={ExternalLink}
               >
-                Apri in nuova scheda
+                Apri Markdown in nuova scheda
               </Button>
             )}
           </div>
