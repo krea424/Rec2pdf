@@ -120,6 +120,8 @@ app.use('/api', (req, res, next) => {
 const DATA_DIR = path.join(os.homedir(), '.rec2pdf');
 const WORKSPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
 const PROMPTS_FILE = path.join(DATA_DIR, 'prompts.json');
+const PROFILE_LOGO_ROOT = path.join(DATA_DIR, 'logos');
+const PROFILE_TEMPLATE_CACHE = path.join(DATA_DIR, 'templates');
 const DEFAULT_STATUSES = ['Bozza', 'In lavorazione', 'Da revisionare', 'Completato'];
 
 const run = (cmd, args, opts = {}) => new Promise((resolve) => {
@@ -543,7 +545,15 @@ const readWorkspaces = async () => {
     const raw = await fsp.readFile(WORKSPACES_FILE, 'utf8');
     const parsed = JSON.parse(raw);
     if (parsed && Array.isArray(parsed.workspaces)) {
-      return parsed.workspaces;
+      return parsed.workspaces.map((workspace) => {
+        if (!workspace || typeof workspace !== 'object') {
+          return workspace;
+        }
+        if (Array.isArray(workspace.profiles)) {
+          return workspace;
+        }
+        return { ...workspace, profiles: [] };
+      });
     }
   } catch (error) {
     console.warn('Impossibile leggere workspaces.json:', error.message || error);
@@ -592,6 +602,67 @@ const sanitizeStorageFileName = (value, fallback = 'file') => {
   const safeName = sanitizeSlug(namePart || fallback, fallback);
   const safeExt = ext.replace(/[^a-zA-Z0-9.]/g, '');
   return `${safeName}${safeExt}`;
+};
+
+const resolveDataRelativePath = (candidate, { allowAbsolute = false } = {}) => {
+  if (!candidate) return '';
+  const raw = String(candidate).trim();
+  if (!raw) return '';
+  if (path.isAbsolute(raw)) {
+    if (!allowAbsolute) {
+      return '';
+    }
+    return raw;
+  }
+  return raw.replace(/\\+/g, '/');
+};
+
+const resolveProfileLogoAbsolutePath = (storedPath) => {
+  const rel = resolveDataRelativePath(storedPath, { allowAbsolute: true });
+  if (!rel) return '';
+  const base = path.isAbsolute(rel) ? rel : path.join(DATA_DIR, rel);
+  const normalized = path.normalize(base);
+  if (!normalized.startsWith(path.normalize(DATA_DIR + path.sep)) && normalized !== path.normalize(DATA_DIR)) {
+    return '';
+  }
+  return normalized;
+};
+
+const storeProfileLogo = async ({ workspaceId, profileId, tmpPath, originalName }) => {
+  if (!workspaceId || !profileId || !tmpPath) {
+    return null;
+  }
+  const safeWorkspace = sanitizeSlug(workspaceId, 'workspace');
+  const safeProfile = sanitizeSlug(profileId, 'profile');
+  const fileLabel = sanitizeStorageFileName(originalName || 'logo.pdf', 'logo.pdf');
+  const targetDir = path.join(PROFILE_LOGO_ROOT, safeWorkspace, safeProfile);
+  try {
+    await fsp.rm(targetDir, { recursive: true, force: true });
+  } catch {}
+  await fsp.mkdir(targetDir, { recursive: true });
+  const destination = path.join(targetDir, fileLabel);
+  await fsp.rename(tmpPath, destination);
+  const relativePath = path.relative(DATA_DIR, destination).replace(/\\+/g, '/');
+  return {
+    absolutePath: destination,
+    relativePath,
+    fileName: fileLabel,
+  };
+};
+
+const removeStoredProfileLogo = async (storedPath) => {
+  const absolutePath = resolveProfileLogoAbsolutePath(storedPath);
+  if (!absolutePath) {
+    return;
+  }
+  const targetDir = path.dirname(absolutePath);
+  try {
+    await fsp.rm(targetDir, { recursive: true, force: true });
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      console.warn(`⚠️  Impossibile rimuovere il logo profilo ${targetDir}: ${error.message || error}`);
+    }
+  }
 };
 
 const normalizeWorkspaceProfiles = (profiles, { existingProfiles } = {}) => {
@@ -648,6 +719,19 @@ const normalizeWorkspaceProfiles = (profiles, { existingProfiles } = {}) => {
         : typeof previous.pdfLogoPath === 'string'
           ? previous.pdfLogoPath
           : '';
+      const pdfLogo = profile.pdfLogo && typeof profile.pdfLogo === 'object'
+        ? {
+            fileName: sanitizeStorageFileName(profile.pdfLogo.fileName || profile.pdfLogoPath || previous?.pdfLogo?.fileName || 'logo.pdf', 'logo.pdf'),
+            originalName: String(profile.pdfLogo.originalName || profile.pdfLogo.fileName || previous?.pdfLogo?.originalName || '').trim(),
+            updatedAt: Number.isFinite(profile.pdfLogo.updatedAt)
+              ? Number(profile.pdfLogo.updatedAt)
+              : Number.isFinite(previous?.pdfLogo?.updatedAt)
+                ? Number(previous.pdfLogo.updatedAt)
+                : now,
+          }
+        : previous?.pdfLogo && typeof previous.pdfLogo === 'object'
+          ? { ...previous.pdfLogo }
+          : null;
 
       const createdAt = Number.isFinite(previous.createdAt) ? previous.createdAt : now;
 
@@ -661,10 +745,121 @@ const normalizeWorkspaceProfiles = (profiles, { existingProfiles } = {}) => {
         promptId,
         pdfTemplate,
         pdfLogoPath,
+        pdfLogo,
         createdAt,
         updatedAt: now,
       };
     })
+    .filter(Boolean);
+};
+
+const validateWorkspaceProfiles = async (profiles, { prompts } = {}) => {
+  if (!Array.isArray(profiles) || !profiles.length) {
+    return [];
+  }
+  const errors = [];
+  const promptIds = new Set(
+    Array.isArray(prompts)
+      ? prompts.map((prompt) => (prompt && typeof prompt === 'object' ? String(prompt.id || '').trim() : '')).filter(Boolean)
+      : []
+  );
+
+  for (const profile of profiles) {
+    if (!profile || typeof profile !== 'object') continue;
+    const label = profile.label || profile.id;
+    if (profile.destDir) {
+      try {
+        const stats = await fsp.stat(profile.destDir);
+        if (!stats.isDirectory()) {
+          errors.push(`La cartella di destinazione per il profilo "${label}" non è una directory valida.`);
+        } else {
+          await fsp.access(profile.destDir, fs.constants.W_OK);
+        }
+      } catch (error) {
+        errors.push(
+          `La cartella di destinazione per il profilo "${label}" non è accessibile: ${error?.message || error}`
+        );
+      }
+    }
+
+    if (profile.promptId) {
+      const normalizedPromptId = String(profile.promptId).trim();
+      if (normalizedPromptId && !promptIds.has(normalizedPromptId)) {
+        errors.push(`Il prompt selezionato per il profilo "${label}" non è valido.`);
+      }
+    }
+
+    if (profile.pdfTemplate) {
+      const templatePath = path.join(TEMPLATES_DIR, profile.pdfTemplate);
+      try {
+        const stats = await fsp.stat(templatePath);
+        if (!stats.isFile()) {
+          errors.push(`Il template PDF per il profilo "${label}" non è un file valido.`);
+        }
+      } catch (error) {
+        errors.push(`Il template PDF per il profilo "${label}" non esiste: ${error?.message || error}`);
+      }
+    }
+  }
+
+  return errors;
+};
+
+const parseBooleanFlag = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return ['1', 'true', 'yes', 'y', 'on'].includes(normalized);
+  }
+  return false;
+};
+
+const extractProfilePayload = (body = {}) => {
+  if (!body || typeof body !== 'object') {
+    return {};
+  }
+  return {
+    id: typeof body.id === 'string' ? body.id.trim() : undefined,
+    label: typeof body.label === 'string' ? body.label.trim() : typeof body.name === 'string' ? body.name.trim() : '',
+    slug: typeof body.slug === 'string' ? body.slug.trim() : '',
+    destDir:
+      typeof body.destDir === 'string'
+        ? body.destDir.trim()
+        : typeof body.destination === 'string'
+          ? body.destination.trim()
+          : '',
+    promptId: typeof body.promptId === 'string' ? body.promptId.trim() : typeof body.prompt === 'string' ? body.prompt.trim() : '',
+    pdfTemplate:
+      typeof body.pdfTemplate === 'string'
+        ? body.pdfTemplate.trim()
+        : typeof body.template === 'string'
+          ? body.template.trim()
+          : '',
+    pdfLogoPath: typeof body.pdfLogoPath === 'string' ? body.pdfLogoPath.trim() : '',
+    removePdfLogo: parseBooleanFlag(body.removePdfLogo || body.clearPdfLogo),
+  };
+};
+
+const profileForResponse = (workspaceId, profile) => {
+  if (!profile || typeof profile !== 'object') {
+    return null;
+  }
+  const logoDownloadPath = profile.pdfLogoPath
+    ? `/api/workspaces/${workspaceId}/profiles/${profile.id}/logo`
+    : '';
+  return {
+    ...profile,
+    logoDownloadPath,
+  };
+};
+
+const profilesForResponse = (workspaceId, profiles = []) => {
+  if (!Array.isArray(profiles)) {
+    return [];
+  }
+  return profiles
+    .map((profile) => profileForResponse(workspaceId, profile))
     .filter(Boolean);
 };
 
@@ -846,6 +1041,14 @@ const UP_BASE = path.join(os.tmpdir(), 'rec2pdf_uploads');
 if (!fs.existsSync(UP_BASE)) fs.mkdirSync(UP_BASE, { recursive: true });
 
 const uploadMiddleware = multer({ dest: UP_BASE });
+const profileUpload = uploadMiddleware.single('pdfLogo');
+const optionalProfileUpload = (req, res, next) => {
+  const contentType = String(req.headers['content-type'] || '').toLowerCase();
+  if (contentType.includes('multipart/form-data')) {
+    return profileUpload(req, res, next);
+  }
+  return next();
+};
 
 const VALID_LOGO_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.svg']);
 
@@ -1213,6 +1416,18 @@ const ensureDataStore = async () => {
       JSON.stringify({ prompts, updatedAt: Date.now() }, null, 2)
     );
   }
+
+  try {
+    await fsp.mkdir(PROFILE_LOGO_ROOT, { recursive: true });
+  } catch (error) {
+    console.warn('Impossibile creare la cartella per i loghi profilo:', error.message || error);
+  }
+
+  try {
+    await fsp.mkdir(PROFILE_TEMPLATE_CACHE, { recursive: true });
+  } catch (error) {
+    console.warn('Impossibile creare la cartella template profilo:', error.message || error);
+  }
 };
 
 const readPrompts = async () => {
@@ -1303,6 +1518,12 @@ app.post('/api/workspaces', async (req, res) => {
     }
 
     const workspaces = await readWorkspaces();
+    const prompts = await readPrompts();
+    const normalizedProfiles = normalizeWorkspaceProfiles(req.body?.profiles);
+    const profileErrors = await validateWorkspaceProfiles(normalizedProfiles, { prompts });
+    if (profileErrors.length) {
+      return res.status(400).json({ ok: false, message: 'Profilo non valido', details: profileErrors });
+    }
     const workspaceId = generateId('ws');
     const workspace = {
       id: workspaceId,
@@ -1332,7 +1553,7 @@ app.post('/api/workspaces', async (req, res) => {
           updatedAt: Date.now(),
         }))
         : [],
-      profiles: normalizeWorkspaceProfiles(req.body?.profiles) || [],
+      profiles: normalizedProfiles || [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -1353,7 +1574,12 @@ app.put('/api/workspaces/:id', async (req, res) => {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
 
+    const prompts = await readPrompts();
     const merged = mergeWorkspaceUpdate(workspaces[index], req.body || {});
+    const profileErrors = await validateWorkspaceProfiles(merged.profiles, { prompts });
+    if (profileErrors.length) {
+      return res.status(400).json({ ok: false, message: 'Profilo non valido', details: profileErrors });
+    }
     workspaces[index] = merged;
     await writeWorkspaces(workspaces);
     res.json({ ok: true, workspace: merged });
@@ -1375,6 +1601,246 @@ app.delete('/api/workspaces/:id', async (req, res) => {
     res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
   }
 });
+
+const workspaceProfilesRouter = express.Router({ mergeParams: true });
+
+workspaceProfilesRouter.get('/', async (req, res) => {
+  try {
+    const workspaces = await readWorkspaces();
+    const workspace = findWorkspaceById(workspaces, req.params.workspaceId);
+    if (!workspace) {
+      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
+    }
+    res.json({ ok: true, profiles: profilesForResponse(workspace.id, workspace.profiles || []) });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+workspaceProfilesRouter.post('/', optionalProfileUpload, async (req, res) => {
+  let uploadedPath = '';
+  try {
+    const workspaces = await readWorkspaces();
+    const index = workspaces.findIndex((workspace) => workspace.id === req.params.workspaceId);
+    if (index === -1) {
+      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
+    }
+
+    const prompts = await readPrompts();
+    const workspace = { ...workspaces[index] };
+    const payload = extractProfilePayload(req.body);
+    const profileId = payload.id || generateId('profile');
+    const baseProfiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
+    const withoutProfile = baseProfiles.filter((profile) => profile.id !== profileId);
+
+    const candidateProfiles = normalizeWorkspaceProfiles(
+      [...withoutProfile, { ...payload, id: profileId }],
+      { existingProfiles: baseProfiles }
+    );
+    const createdIndex = candidateProfiles.findIndex((profile) => profile.id === profileId);
+    if (createdIndex === -1) {
+      return res.status(400).json({ ok: false, message: 'Impossibile creare il profilo' });
+    }
+    const createdProfile = { ...candidateProfiles[createdIndex] };
+
+    if (req.file) {
+      await ensureTempFileHasExtension(req.file);
+      const stored = await storeProfileLogo({
+        workspaceId: workspace.id,
+        profileId: createdProfile.id,
+        tmpPath: req.file.path,
+        originalName: req.file.originalname,
+      });
+      if (stored) {
+        uploadedPath = stored.relativePath;
+        createdProfile.pdfLogoPath = stored.relativePath;
+        createdProfile.pdfLogo = {
+          fileName: stored.fileName,
+          originalName: req.file.originalname || stored.fileName,
+          updatedAt: Date.now(),
+        };
+      }
+    }
+
+    const validationErrors = await validateWorkspaceProfiles([createdProfile], { prompts });
+    if (validationErrors.length) {
+      if (uploadedPath) {
+        await removeStoredProfileLogo(uploadedPath);
+      }
+      return res.status(400).json({ ok: false, message: 'Profilo non valido', details: validationErrors });
+    }
+
+    candidateProfiles[createdIndex] = createdProfile;
+    const nextWorkspace = {
+      ...workspace,
+      profiles: candidateProfiles,
+      updatedAt: Date.now(),
+    };
+    workspaces[index] = nextWorkspace;
+    await writeWorkspaces(workspaces);
+
+    res.status(201).json({ ok: true, profile: profileForResponse(nextWorkspace.id, createdProfile) });
+  } catch (error) {
+    if (uploadedPath) {
+      await removeStoredProfileLogo(uploadedPath);
+    }
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  } finally {
+    if (req.file?.path) {
+      await safeUnlink(req.file.path);
+    }
+  }
+});
+
+workspaceProfilesRouter.put('/:profileId', optionalProfileUpload, async (req, res) => {
+  let uploadedPath = '';
+  try {
+    const workspaces = await readWorkspaces();
+    const index = workspaces.findIndex((workspace) => workspace.id === req.params.workspaceId);
+    if (index === -1) {
+      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
+    }
+
+    const workspace = { ...workspaces[index] };
+    const baseProfiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
+    const existingIndex = baseProfiles.findIndex((profile) => profile.id === req.params.profileId);
+    if (existingIndex === -1) {
+      return res.status(404).json({ ok: false, message: 'Profilo non trovato' });
+    }
+
+    const prompts = await readPrompts();
+    const payload = extractProfilePayload(req.body);
+    payload.id = req.params.profileId;
+
+    const withoutProfile = baseProfiles.filter((profile) => profile.id !== req.params.profileId);
+    const normalizedProfiles = normalizeWorkspaceProfiles(
+      [...withoutProfile, { ...baseProfiles[existingIndex], ...payload }],
+      { existingProfiles: baseProfiles }
+    );
+    const updatedIndex = normalizedProfiles.findIndex((profile) => profile.id === req.params.profileId);
+    if (updatedIndex === -1) {
+      return res.status(400).json({ ok: false, message: 'Impossibile aggiornare il profilo' });
+    }
+    const updatedProfile = { ...normalizedProfiles[updatedIndex] };
+
+    if (payload.removePdfLogo && updatedProfile.pdfLogoPath) {
+      await removeStoredProfileLogo(updatedProfile.pdfLogoPath);
+      updatedProfile.pdfLogoPath = '';
+      updatedProfile.pdfLogo = null;
+    }
+
+    if (req.file) {
+      await ensureTempFileHasExtension(req.file);
+      await removeStoredProfileLogo(updatedProfile.pdfLogoPath);
+      const stored = await storeProfileLogo({
+        workspaceId: workspace.id,
+        profileId: updatedProfile.id,
+        tmpPath: req.file.path,
+        originalName: req.file.originalname,
+      });
+      if (stored) {
+        uploadedPath = stored.relativePath;
+        updatedProfile.pdfLogoPath = stored.relativePath;
+        updatedProfile.pdfLogo = {
+          fileName: stored.fileName,
+          originalName: req.file.originalname || stored.fileName,
+          updatedAt: Date.now(),
+        };
+      }
+    }
+
+    const validationErrors = await validateWorkspaceProfiles([updatedProfile], { prompts });
+    if (validationErrors.length) {
+      if (uploadedPath) {
+        await removeStoredProfileLogo(uploadedPath);
+      }
+      return res.status(400).json({ ok: false, message: 'Profilo non valido', details: validationErrors });
+    }
+
+    normalizedProfiles[updatedIndex] = updatedProfile;
+    const nextWorkspace = {
+      ...workspace,
+      profiles: normalizedProfiles,
+      updatedAt: Date.now(),
+    };
+    workspaces[index] = nextWorkspace;
+    await writeWorkspaces(workspaces);
+
+    res.json({ ok: true, profile: profileForResponse(nextWorkspace.id, updatedProfile) });
+  } catch (error) {
+    if (uploadedPath) {
+      await removeStoredProfileLogo(uploadedPath);
+    }
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  } finally {
+    if (req.file?.path) {
+      await safeUnlink(req.file.path);
+    }
+  }
+});
+
+workspaceProfilesRouter.delete('/:profileId', async (req, res) => {
+  try {
+    const workspaces = await readWorkspaces();
+    const index = workspaces.findIndex((workspace) => workspace.id === req.params.workspaceId);
+    if (index === -1) {
+      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
+    }
+    const workspace = { ...workspaces[index] };
+    const baseProfiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
+    const existing = baseProfiles.find((profile) => profile.id === req.params.profileId);
+    if (!existing) {
+      return res.status(404).json({ ok: false, message: 'Profilo non trovato' });
+    }
+
+    if (existing.pdfLogoPath) {
+      await removeStoredProfileLogo(existing.pdfLogoPath);
+    }
+
+    const nextWorkspace = {
+      ...workspace,
+      profiles: baseProfiles.filter((profile) => profile.id !== req.params.profileId),
+      updatedAt: Date.now(),
+    };
+    workspaces[index] = nextWorkspace;
+    await writeWorkspaces(workspaces);
+
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+workspaceProfilesRouter.get('/:profileId/logo', async (req, res) => {
+  try {
+    const workspaces = await readWorkspaces();
+    const workspace = findWorkspaceById(workspaces, req.params.workspaceId);
+    if (!workspace) {
+      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
+    }
+    const profile = Array.isArray(workspace.profiles)
+      ? workspace.profiles.find((item) => item.id === req.params.profileId)
+      : null;
+    if (!profile || !profile.pdfLogoPath) {
+      return res.status(404).json({ ok: false, message: 'Logo non disponibile' });
+    }
+
+    const absolutePath = resolveProfileLogoAbsolutePath(profile.pdfLogoPath);
+    if (!absolutePath) {
+      return res.status(404).json({ ok: false, message: 'Logo non trovato' });
+    }
+    try {
+      await fsp.access(absolutePath, fs.constants.R_OK);
+    } catch {
+      return res.status(404).json({ ok: false, message: 'Logo non accessibile' });
+    }
+    res.sendFile(absolutePath);
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.use('/api/workspaces/:workspaceId/profiles', workspaceProfilesRouter);
 
 app.get('/api/prompts', async (req, res) => {
   try {
@@ -1571,13 +2037,15 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       return res.status(400).json({ ok: false, message: 'Nessun file audio', logs, stageEvents });
     }
 
-    const slug = sanitizeSlug(req.body.slug || 'meeting', 'meeting');
+    let slugInput = String(req.body?.slug || '').trim();
     const workspaceId = String(req.body?.workspaceId || '').trim();
     const workspaceProjectId = String(req.body?.workspaceProjectId || '').trim();
     const workspaceProjectName = String(
       req.body?.workspaceProjectName || req.body?.workspaceProject || ''
     ).trim();
     const workspaceStatus = String(req.body?.workspaceStatus || '').trim();
+    const workspaceProfileId = String(req.body?.workspaceProfileId || '').trim();
+    const workspaceProfileTemplate = String(req.body?.workspaceProfileTemplate || '').trim();
     promptFocus = String(req.body?.promptFocus || '').trim();
     promptNotes = String(req.body?.promptNotes || '').trim();
     promptCuesCompleted = [];
@@ -1595,7 +2063,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       }
     }
 
-    const promptId = String(req.body?.promptId || '').trim();
+    let promptId = String(req.body?.promptId || '').trim();
     if (promptId) {
       const prompts = await readPrompts();
       selectedPrompt = findPromptById(prompts, promptId);
@@ -1616,6 +2084,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
 
     let workspaceMeta = null;
     let workspaceProject = null;
+    let workspaceProfile = null;
     if (workspaceId) {
       const workspaces = await readWorkspaces();
       const foundWorkspace = findWorkspaceById(workspaces, workspaceId);
@@ -1629,6 +2098,15 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         });
         workspaceMeta = updatedWorkspace;
         workspaceProject = project;
+        if (workspaceProfileId) {
+          const profiles = Array.isArray(updatedWorkspace.profiles) ? updatedWorkspace.profiles : [];
+          workspaceProfile = profiles.find((profile) => profile.id === workspaceProfileId) || null;
+          if (!workspaceProfile) {
+            out(`⚠️ Profilo ${workspaceProfileId} non trovato nel workspace ${updatedWorkspace.name}`, 'upload', 'info');
+          } else {
+            out(`✨ Profilo applicato: ${workspaceProfile.label || workspaceProfile.id}`, 'upload', 'info');
+          }
+        }
         if (changed) {
           const next = workspaces.map((ws) => (ws.id === updatedWorkspace.id ? updatedWorkspace : ws));
           await writeWorkspaces(next);
@@ -1641,10 +2119,36 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       }
     }
 
+    if (!workspaceMeta && workspaceProfileId && !workspaceProfile) {
+      const workspaces = await readWorkspaces();
+      const fallbackWorkspace = workspaces.find((ws) =>
+        Array.isArray(ws.profiles) && ws.profiles.some((profile) => profile.id === workspaceProfileId)
+      );
+      if (fallbackWorkspace) {
+        workspaceMeta = fallbackWorkspace;
+        workspaceProfile = fallbackWorkspace.profiles.find((profile) => profile.id === workspaceProfileId) || null;
+        if (workspaceProfile) {
+          out(
+            `✨ Profilo applicato da workspace ${fallbackWorkspace.name}: ${workspaceProfile.label || workspaceProfile.id}`,
+            'upload',
+            'info'
+          );
+        }
+      }
+    }
+
+    if (!slugInput && workspaceProfile?.slug) {
+      slugInput = String(workspaceProfile.slug || '').trim();
+    }
+    if (!promptId && workspaceProfile?.promptId) {
+      promptId = String(workspaceProfile.promptId || '').trim();
+    }
+
     let destDir = DEFAULT_DEST_DIR;
     let destIsCustom = false;
     try {
-      const destConfig = await resolveDestinationDirectory(req.body?.dest);
+      const destSource = req.body?.dest ? req.body.dest : workspaceProfile?.destDir;
+      const destConfig = await resolveDestinationDirectory(destSource);
       destDir = destConfig.dir;
       destIsCustom = destConfig.isCustom;
       out(
@@ -1691,6 +2195,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     );
     out(`📦 Upload ricevuto: ${path.basename(originalAudioName)}`, 'upload', 'completed');
     out('☁️ File caricato su Supabase Storage', 'upload', 'info');
+
+    const slug = sanitizeSlug(slugInput || 'meeting', 'meeting');
 
     const baseName = workspaceMeta
       ? await buildWorkspaceBaseName(workspaceMeta, destDir, slug)
@@ -1810,15 +2316,42 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     }
 
     out('📄 Pubblicazione PDF con publish.sh…', 'publish', 'running');
-    const customLogoPath = req.files.pdfLogo
-      ? await ensureTempFileHasExtension(req.files.pdfLogo[0])
-      : null;
-    if (customLogoPath) {
-      out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
+    let customLogoPath = null;
+    if (req.files.pdfLogo) {
+      customLogoPath = await ensureTempFileHasExtension(req.files.pdfLogo[0]);
+      if (customLogoPath) {
+        out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
+      }
+    } else if (workspaceProfile?.pdfLogoPath) {
+      const profileLogo = resolveProfileLogoAbsolutePath(workspaceProfile.pdfLogoPath);
+      if (profileLogo) {
+        try {
+          await fsp.access(profileLogo, fs.constants.R_OK);
+          customLogoPath = profileLogo;
+          out(`🎨 Logo da profilo: ${path.basename(profileLogo)}`, 'publish', 'info');
+        } catch (logoError) {
+          out(`⚠️ Logo profilo non accessibile: ${logoError?.message || logoError}`, 'publish', 'warning');
+        }
+      }
     }
+
+    const profileTemplateCandidate = workspaceProfile?.pdfTemplate || workspaceProfileTemplate || '';
+    let profileTemplatePath = '';
+    if (profileTemplateCandidate) {
+      const candidatePath = path.join(TEMPLATES_DIR, profileTemplateCandidate);
+      try {
+        await fsp.access(candidatePath, fs.constants.R_OK);
+        profileTemplatePath = candidatePath;
+        out(`📄 Template profilo: ${path.basename(candidatePath)}`, 'publish', 'info');
+      } catch (templateError) {
+        out(`⚠️ Template profilo non accessibile: ${templateError?.message || templateError}`, 'publish', 'warning');
+      }
+    }
+
     const publishEnv = buildEnvOptions(
       promptEnv,
-      customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
+      customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null,
+      profileTemplatePath ? { WORKSPACE_PROFILE_TEMPLATE: profileTemplatePath } : null
     );
 
     let mdLocalForPublish = '';
@@ -1890,6 +2423,10 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     }
 
     const workspaceAssignment = workspaceAssignmentForResponse(workspaceMeta, workspaceProject, workspaceStatus);
+    if (workspaceAssignment && workspaceProfile) {
+      workspaceAssignment.profileId = workspaceProfile.id;
+      workspaceAssignment.profileLabel = workspaceProfile.label || workspaceProfile.id;
+    }
     const promptAssignment = promptAssignmentForResponse(selectedPrompt, {
       focus: promptFocus,
       notes: promptNotes,
