@@ -80,7 +80,6 @@ const CreatePage = () => {
   const [openInfo, setOpenInfo] = useState(null);
   const [showCompletionHighlight, setShowCompletionHighlight] = useState(false);
   const pdfLogoInputRef = useRef(null);
-
   const toggleInfo = (section) => {
     setOpenInfo((prev) => (prev === section ? null : section));
   };
