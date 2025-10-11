@@ -2211,14 +2211,12 @@ function AppContent(){
         if (workspaceSelection.status) {
           fd.append('workspaceStatus', workspaceSelection.status);
         }
-        if (
-          workspaceProfileSelection.profileId &&
-          workspaceProfileSelection.workspaceId === workspaceSelection.workspaceId
-        ) {
-          fd.append('workspaceProfileId', workspaceProfileSelection.profileId);
-          if (activeWorkspaceProfile?.pdfTemplate) {
-            fd.append('workspaceProfileTemplate', activeWorkspaceProfile.pdfTemplate);
-          }
+      }
+      if (workspaceProfileSelection.profileId) {
+        fd.append('workspaceProfileId', workspaceProfileSelection.profileId);
+        const profileTemplate = String(activeWorkspaceProfile?.pdfTemplate || '').trim();
+        if (profileTemplate) {
+          fd.append('workspaceProfileTemplate', profileTemplate);
         }
       }
       if (promptState.promptId) {
@@ -2393,6 +2391,13 @@ function AppContent(){
         }
         if (workspaceSelection.status) {
           fd.append('workspaceStatus', workspaceSelection.status);
+        }
+      }
+      if (workspaceProfileSelection.profileId) {
+        fd.append('workspaceProfileId', workspaceProfileSelection.profileId);
+        const profileTemplate = String(activeWorkspaceProfile?.pdfTemplate || '').trim();
+        if (profileTemplate) {
+          fd.append('workspaceProfileTemplate', profileTemplate);
         }
       }
       if (promptState.promptId) {
