@@ -174,6 +174,19 @@ npm run preview  # serve statico su http://localhost:4173
 7. Revisiona il Markdown nell'editor modale, salva le modifiche su Supabase e rigenera il PDF direttamente dal browser.【F:rec2pdf-backend/server.js†L2435-L2520】【F:rec2pdf-frontend/src/components/MarkdownEditorModal.jsx†L9-L133】
 8. Condividi o scarica gli artefatti dalla Cloud Library, utilizzando i link firmati generati dal backend.【F:rec2pdf-backend/server.js†L2352-L2513】【F:rec2pdf-frontend/src/components/CloudLibraryPanel.jsx†L75-L198】
 
+## QA & non-regression
+### Test automatizzati
+- **Unit test**: `npm run test:unit` (frontend) – coprono AppShell e WorkspaceNavigator, assicurando che navigazione, banner di onboarding e azioni principali del navigator restino stabili.【F:rec2pdf-frontend/src/components/layout/__tests__/AppShell.test.jsx†L1-L65】【F:rec2pdf-frontend/src/components/__tests__/WorkspaceNavigator.test.jsx†L1-L69】
+- **End-to-end**: `npm run test:e2e` avvia Playwright con mock delle API `/api/rec2pdf` e `/api/workspaces` per validare il flusso audio→PDF senza dipendenze esterne.【F:rec2pdf-frontend/tests/e2e/audio-to-pdf.spec.js†L1-L87】【F:rec2pdf-frontend/playwright.config.js†L1-L20】
+- **Continuous feedback**: abilitare `npm run test:ui` durante lo sviluppo per monitorare regressioni visive nei componenti chiave.
+
+### Checklist non-regression
+1. **Pipeline audio**: caricamento clip, abilitazione CTA "Avvia pipeline" e ricezione evento `Pipeline completata` devono funzionare con backend mockato o reale (verificato dall'E2E).【F:rec2pdf-frontend/src/pages/Create.jsx†L1086-L1145】【F:rec2pdf-frontend/tests/e2e/audio-to-pdf.spec.js†L33-L87】
+2. **Workspace Navigator**: filtri, anteprima e azioni principali (Aggiorna, ricerca) non devono produrre errori console; unit test garantisce callbacks di base.
+3. **Editor Markdown**: apertura modale da `/editor`, salvataggio (`handleMdEditorSave`) e repubblicazione (`handleRepublishFromEditor`) devono rimanere disponibili dopo refactor del contesto.【F:rec2pdf-frontend/src/pages/Editor.jsx†L1-L27】【F:rec2pdf-frontend/src/App.jsx†L3360-L3508】
+4. **Diagnostica**: `useBackendDiagnostics` deve continuare a riportare stato health/diag senza bloccare l'onboarding; monitorare `diagnostics.status` nel banner.
+5. **Accessibilità**: verificare periodicamente la checklist in `docs/ACCESSIBILITY_CHECKLIST.md` (focus visibile, label) dopo modifiche UI.
+
 ## Personalizzazione template PDF
 La cartella [`Templates/`](Templates) contiene i file LaTeX usati da `publish.sh`:
 - `default.tex`: layout principale.
