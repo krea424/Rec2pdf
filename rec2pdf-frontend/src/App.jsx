@@ -61,6 +61,7 @@ const EMPTY_EDITOR_STATE = {
   saving: false,
   error: '',
   success: '',
+  lastAction: 'idle',
 };
 
 const normalizeBackendUrlValue = (url) => {
@@ -2548,6 +2549,7 @@ function AppContent(){
         path: mdPathResolved,
         backendUrl: normalizedBackend,
         loading: true,
+        lastAction: 'opening',
       });
       pushLogs([`✏️ Apertura editor Markdown (${mdPathResolved})`]);
 
@@ -2584,6 +2586,7 @@ function AppContent(){
             originalContent: content,
             error: '',
             success: '',
+            lastAction: 'loaded',
           };
         });
         setHistory((prev) =>
@@ -2604,7 +2607,12 @@ function AppContent(){
           if (prev.path !== mdPathResolved) {
             return prev;
           }
-          return { ...prev, loading: false, error: message };
+          return {
+            ...prev,
+            loading: false,
+            error: message,
+            lastAction: 'error',
+          };
         });
       }
     },
@@ -2681,6 +2689,17 @@ function AppContent(){
 
     setBusy(true);
     setErrorBanner(null);
+    setMdEditor((prev) => {
+      if (!prev.open || prev.path !== mdPathResolved) {
+        return prev;
+      }
+      return {
+        ...prev,
+        lastAction: 'republishing',
+        success: '',
+        error: '',
+      };
+    });
     pushLogs([`♻️ Rigenerazione PDF da Markdown (${entry.title || entry.slug || mdPathResolved})`]);
 
     try {
@@ -2710,6 +2729,17 @@ function AppContent(){
         const message = payload?.message || `Rigenerazione fallita (HTTP ${response.status || 0})`;
         pushLogs([`❌ ${message}`]);
         setErrorBanner({ title: 'Rigenerazione PDF fallita', details: message });
+        setMdEditor((prev) => {
+          if (!prev.open || prev.path !== mdPathResolved) {
+            return prev;
+          }
+          return {
+            ...prev,
+            error: message,
+            success: '',
+            lastAction: 'error',
+          };
+        });
         return;
       }
 
@@ -2733,16 +2763,39 @@ function AppContent(){
         },
       }) : item));
 
+      setMdEditor((prev) => {
+        if (!prev.open || prev.path !== mdPathResolved) {
+          return prev;
+        }
+        return {
+          ...prev,
+          success:
+            'PDF rigenerato. Chiudi l\'editor per tornare alla libreria e utilizza "Apri PDF" sul documento per verificarne l\'aggiornamento.',
+          error: '',
+          lastAction: 'republished',
+        };
+      });
       pushLogs([`✅ PDF rigenerato: ${payload.pdfPath}`]);
       setActivePanel('doc');
     } catch (err) {
       const message = err?.message || String(err);
       pushLogs([`❌ ${message}`]);
       setErrorBanner({ title: 'Rigenerazione PDF fallita', details: message });
+      setMdEditor((prev) => {
+        if (!prev.open || prev.path !== mdPathResolved) {
+          return prev;
+        }
+        return {
+          ...prev,
+          error: message,
+          success: '',
+          lastAction: 'error',
+        };
+      });
     } finally {
       setBusy(false);
     }
-  }, [busy, customPdfLogo, fetchWithAuth, normalizedBackendUrl, pushLogs, setActivePanel, setBusy, setErrorBanner, setHistory, setMdPath, setPdfPath]);
+  }, [busy, customPdfLogo, fetchWithAuth, normalizedBackendUrl, pushLogs, setActivePanel, setBusy, setErrorBanner, setHistory, setMdEditor, setMdPath, setPdfPath]);
 
   const handleMdEditorChange = useCallback((nextValue) => {
     setMdEditor((prev) => ({
@@ -2750,6 +2803,7 @@ function AppContent(){
       content: nextValue,
       error: '',
       success: '',
+      lastAction: 'editing',
     }));
   }, []);
 
@@ -2767,7 +2821,13 @@ function AppContent(){
       return;
     }
 
-    setMdEditor((prev) => ({ ...prev, saving: true, error: '', success: '' }));
+    setMdEditor((prev) => ({
+      ...prev,
+      saving: true,
+      error: '',
+      success: '',
+      lastAction: 'saving',
+    }));
     try {
       const response = await fetchWithAuth(`${backendTarget}/api/markdown`, {
         method: 'PUT',
@@ -2798,6 +2858,7 @@ function AppContent(){
           originalContent: nextContent,
           success: 'Markdown salvato con successo',
           error: '',
+          lastAction: 'saved',
         };
       });
       setHistory((prev) =>
@@ -2820,7 +2881,13 @@ function AppContent(){
         if (prev.path !== targetPath) {
           return prev;
         }
-        return { ...prev, saving: false, error: message, success: '' };
+        return {
+          ...prev,
+          saving: false,
+          error: message,
+          success: '',
+          lastAction: 'error',
+        };
       });
     }
   }, [fetchWithAuth, mdEditor, pushLogs, setHistory]);
