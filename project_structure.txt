@@ -1,0 +1,100 @@
+.
+├── Brand_Vision_and_Creative_Brief.md
+├── BusinessCase.md
+├── CHANGELOG.md
+├── LICENSE
+├── Manuale utente – Workspace Navigator mul.md
+├── README.md
+├── Scripts
+│   └── publish.sh
+├── Templates
+│   ├── cover.tex
+│   ├── default.tex
+│   └── header_footer.tex
+├── artefatti
+│   ├── analisi_mercato_rec2pdf.pdf
+│   ├── sviluppo_web_app_rec2pdf_AIStudio.md
+│   ├── sviluppo_web_app_rec2pdf_Codex copy.md
+│   └── sviluppo_web_app_rec2pdf_Codex.md
+├── assets
+│   ├── BLD_LOGO_Primary_Horizontal_RGB.pdf
+│   ├── BiteTheHand2.png
+│   ├── HelloKitty.png
+│   ├── logo-thinkdoc-flow-v1 2.svg
+│   ├── logo-thinkdoc-flow-v1.pdf
+│   ├── logo-thinkdoc-flow-v1.svg
+│   ├── logo-thinkdoc_sfondo_scuro.svg
+│   ├── logo3.png
+│   ├── logo_PM.png
+│   ├── logo_thinkDOC.svg
+│   ├── thinkDOC 2.svg
+│   ├── thinkDOC 3.svg
+│   ├── thinkDOC copy.pdf
+│   ├── thinkDOC copy.svg
+│   ├── thinkDOC.pdf
+│   └── thinkDOC.svg
+├── docs
+│   └── UI.md
+├── logo_thinkDOC.svg
+├── project_structure.txt
+├── rec2pdf-backend
+│   ├── Dockerfile
+│   ├── package-lock.json
+│   ├── package.json
+│   └── server.js
+└── rec2pdf-frontend
+    ├── README.md
+    ├── index.html
+    ├── logo-thinkdoc-flow-v1.svg
+    ├── package-lock.json
+    ├── package.json
+    ├── postcss.config.js
+    ├── src
+    │   ├── App.jsx
+    │   ├── assets
+    │   │   ├── BiteTheHand.png
+    │   │   ├── BrightLedger.png
+    │   │   ├── logo.svg
+    │   │   └── thinkDOC.svg
+    │   ├── components
+    │   │   ├── CloudLibraryPanel.jsx
+    │   │   ├── LibraryPanel.jsx
+    │   │   ├── LoginPage.jsx
+    │   │   ├── MarkdownEditorModal.jsx
+    │   │   ├── PermissionBanner.jsx
+    │   │   ├── PromptLibrary.jsx
+    │   │   ├── SetupAssistant.jsx
+    │   │   ├── WorkspaceNavigator.jsx
+    │   │   ├── icons.jsx
+    │   │   ├── layout
+    │   │   │   ├── AppShell.jsx
+    │   │   │   └── SettingsDrawer.jsx
+    │   │   └── ui
+    │   │       ├── Badge.jsx
+    │   │       ├── Button.jsx
+    │   │       ├── Drawer.jsx
+    │   │       ├── EmptyState.jsx
+    │   │       ├── Input.jsx
+    │   │       ├── Select.jsx
+    │   │       ├── Skeleton.jsx
+    │   │       ├── Tabs.jsx
+    │   │       ├── Toast.jsx
+    │   │       └── index.js
+    │   ├── hooks
+    │   │   ├── useAppContext.jsx
+    │   │   ├── useBackendDiagnostics.js
+    │   │   └── useMicrophoneAccess.js
+    │   ├── index.css
+    │   ├── main.jsx
+    │   ├── pages
+    │   │   ├── Create.jsx
+    │   │   ├── Editor.jsx
+    │   │   └── Library.jsx
+    │   ├── supabaseClient.js
+    │   └── utils
+    │       ├── classNames.js
+    │       └── media.js
+    ├── tailwind.config.js
+    └── vite.config.js
+
+16 directories, 82 files

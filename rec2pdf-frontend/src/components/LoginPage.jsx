@@ -4,6 +4,8 @@ import logo from '../assets/logo.svg';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Toast } from './ui/Toast';
+import GoogleIcon from './icons/GoogleIcon';
+import GitHubIcon from './icons/GitHubIcon';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -100,7 +102,7 @@ export default function LoginPage() {
           <div>
             <h1 className="text-2xl font-semibold text-surface-25">Accedi a ThinkDoc</h1>
             <p className="mt-1 text-sm text-surface-300">
-              Usa il tuo indirizzo email per ricevere un magic link oppure accedi con GitHub.
+              Usa il tuo indirizzo email per ricevere un magic link oppure accedi con GitHub o Google.
             </p>
           </div>
         </div>
@@ -140,6 +142,7 @@ export default function LoginPage() {
           className="w-full"
           onClick={handleGithubLogin}
           disabled={loading}
+          leadingIcon={GitHubIcon}
         >
           Accedi con GitHub
         </Button>
@@ -150,6 +153,7 @@ export default function LoginPage() {
           className="w-full"
           onClick={signInWithGoogle}
           disabled={loading}
+          leadingIcon={GoogleIcon}
         >
           Accedi con Google
         </Button>
