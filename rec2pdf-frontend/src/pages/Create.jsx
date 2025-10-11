@@ -22,6 +22,20 @@ import { useAppContext } from "../hooks/useAppContext";
 import { classNames } from "../utils/classNames";
 import { Button, Toast } from "../components/ui";
 
+const truncateText = (value, limit = 80) => {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed.length <= limit) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, limit)}…`;
+};
+
 const ErrorBanner = () => {
   const { errorBanner, setErrorBanner } = useAppContext();
 
@@ -165,6 +179,134 @@ const CreatePage = () => {
   const shouldNeutralizePipelineStages =
     context.pipelineComplete && !showCompletionHighlight;
 
+  const activeProject = useMemo(
+    () =>
+      context.workspaceProjects.find(
+        (project) => project.id === context.workspaceSelection.projectId
+      ) || null,
+    [context.workspaceProjects, context.workspaceSelection.projectId]
+  );
+
+  const workspaceName = context.activeWorkspace?.name || "Workspace non selezionato";
+  const workspaceClient = context.activeWorkspace?.client || "—";
+  const projectLabel =
+    activeProject?.name || context.workspaceSelection.projectName || "Nessun progetto";
+  const stageKey = context.failedStage?.key || context.activeStageKey;
+  const currentStage =
+    context.PIPELINE_STAGES.find((stage) => stage.key === stageKey) || null;
+  const stageStatus = stageKey
+    ? context.pipelineStatus[stageKey] || (context.pipelineComplete ? "done" : "idle")
+    : context.pipelineComplete
+      ? "done"
+      : "idle";
+  const stageLabel = context.pipelineComplete
+    ? "Pipeline completata"
+    : currentStage?.label || "In attesa di avvio";
+  const stageDescription = context.pipelineComplete
+    ? "Sessione elaborata e disponibile nella Library."
+    : currentStage?.description || "Carica o registra una clip per iniziare.";
+  const stageStyleBadge = isBoardroom
+    ? boardroomStageStyles[stageStatus] || boardroomStageStyles.idle
+    : context.STAGE_STATUS_STYLES[stageStatus] || context.STAGE_STATUS_STYLES.idle;
+  const canStartPipeline =
+    Boolean(context.audioBlob) && !context.busy && context.backendUp !== false;
+  const highlightSurface = isBoardroom ? boardroomSecondarySurface : themes[theme].input;
+  const mutedTextClass = isBoardroom ? "text-white/60" : "text-zinc-500";
+  const heroTitleClass = isBoardroom ? "text-white" : "text-zinc-100";
+  const heroSubtitleClass = isBoardroom ? "text-white/70" : "text-zinc-400";
+  const labelToneClass = isBoardroom ? "text-white/55" : "text-zinc-500";
+  const heroSteps = useMemo(
+    () => [
+      {
+        key: "setup",
+        label: "Setup",
+        description: "Workspace, progetto e prompt",
+      },
+      {
+        key: "record",
+        label: "Rec / Upload",
+        description: "Registra o importa la sessione",
+      },
+      {
+        key: "deliver",
+        label: "PDF Wow",
+        description: "Report strutturato in pochi secondi",
+      },
+    ],
+    []
+  );
+
+  const highlightCards = useMemo(() => {
+    const promptTitle = typeof context.activePrompt?.title === "string"
+      ? context.activePrompt.title
+      : "";
+    const focusNotes =
+      typeof context.promptState?.focus === "string" && context.promptState.focus.trim()
+        ? truncateText(context.promptState.focus, 72)
+        : null;
+    const persona =
+      typeof context.activePrompt?.persona === "string" && context.activePrompt.persona
+        ? context.activePrompt.persona
+        : null;
+
+    return [
+      {
+        key: "workspace",
+        label: "Workspace",
+        value: workspaceName,
+        meta:
+          workspaceClient && workspaceClient !== "—"
+            ? `Cliente · ${workspaceClient}`
+            : "Scegli il contesto operativo per allineare automazioni e permessi.",
+        icon: Users,
+      },
+      {
+        key: "project",
+        label: "Progetto",
+        value: projectLabel,
+        meta: context.workspaceSelection.status
+          ? `Stato · ${context.workspaceSelection.status}`
+          : "Definisci lo stato per monitorare milestone e priorità.",
+        icon: FileText,
+      },
+      {
+        key: "prompt",
+        label: "Prompt guida",
+        value: promptTitle || "Nessun template attivo",
+        meta:
+          focusNotes || persona
+            ? focusNotes || `Persona · ${persona}`
+            : "Attiva un prompt dalla libreria per orchestrare tono e struttura.",
+        icon: Sparkles,
+      },
+      {
+        key: "audio",
+        label: "Input sessione",
+        value: context.audioBlob ? "Audio pronto" : "In attesa di input",
+        meta: context.audioBlob
+          ? `${context.mime || "Formato sconosciuto"} · ${context.fmtBytes(
+              context.audioBlob.size
+            )}`
+          : "Registra o carica una clip per sbloccare la pipeline automatizzata.",
+        icon: Mic,
+        emphasis: Boolean(context.audioBlob),
+      },
+    ];
+  }, [
+    context.activePrompt?.persona,
+    context.activePrompt?.title,
+    context.audioBlob,
+    context.mime,
+    context.promptState?.focus,
+    context.workspaceSelection.status,
+    context.workspaceSelection.projectId,
+    context.workspaceSelection.projectName,
+    context.fmtBytes,
+    workspaceClient,
+    workspaceName,
+    projectLabel,
+  ]);
+
   return (
     <div>
       {!context.secureOK && (
@@ -175,7 +317,156 @@ const CreatePage = () => {
 
       <ErrorBanner />
 
-      <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-3">
+      <section className="mt-6 space-y-4">
+        <div
+          className={classNames(
+            "rounded-3xl border p-6 md:p-7 shadow-xl transition-all",
+            isBoardroom ? boardroomPrimarySurface : themes[theme].card,
+            "grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
+          )}
+        >
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <p
+                className={classNames(
+                  "text-xs font-semibold uppercase tracking-[0.32em]",
+                  labelToneClass
+                )}
+              >
+                Executive create hub
+              </p>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <h1
+                  className={classNames(
+                    "text-2xl font-semibold tracking-tight md:text-[28px]",
+                    heroTitleClass
+                  )}
+                >
+                  Orchestrazione end-to-end in un pannello essenziale.
+                </h1>
+                <span
+                  className={classNames(
+                    "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide",
+                    stageStyleBadge,
+                    "shadow-sm"
+                  )}
+                >
+                  <HeaderIcon className="h-4 w-4" />
+                  {context.pipelineComplete
+                    ? "Completata"
+                    : context.STAGE_STATUS_LABELS[stageStatus] || stageStatus}
+                </span>
+              </div>
+              <p className={classNames("text-sm leading-relaxed md:text-base", heroSubtitleClass)}>
+                Imposta il contesto, registra o carica la sessione e lascia che l&apos;AI generi un PDF
+                executive con effetto wow.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {heroSteps.map((step) => (
+                <div
+                  key={step.key}
+                  className={classNames(
+                    "rounded-2xl border px-4 py-3 text-sm transition-all",
+                    highlightSurface,
+                    "hover:border-emerald-400/40 hover:shadow-[0_18px_45px_-28px_rgba(16,185,129,0.55)]"
+                  )}
+                >
+                  <p className={classNames("text-[11px] font-semibold uppercase tracking-[0.32em]", labelToneClass)}>
+                    {step.label}
+                  </p>
+                  <p className={classNames("mt-2 text-sm leading-snug", heroSubtitleClass)}>
+                    {step.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-4">
+            <div className={classNames("rounded-2xl border p-4", highlightSurface)}>
+              <div className="flex items-center justify-between">
+                <div
+                  className={classNames(
+                    "text-[11px] font-semibold uppercase tracking-[0.3em]",
+                    labelToneClass
+                  )}
+                >
+                  Pipeline
+                </div>
+                <div className={classNames("text-xs font-semibold", heroSubtitleClass)}>
+                  {context.progressPercent}%
+                </div>
+              </div>
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                <div
+                  className={classNames(
+                    "h-full rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-violet-500 transition-all",
+                    context.progressPercent ? "shadow-[0_0_16px_-4px_rgba(96,165,250,0.45)]" : ""
+                  )}
+                  style={{ width: `${Math.min(100, Math.max(0, context.progressPercent))}%` }}
+                />
+              </div>
+              <div className="mt-4 space-y-1">
+                <div className={classNames("text-base font-semibold", heroTitleClass)}>{stageLabel}</div>
+                <p className={classNames("text-xs leading-relaxed", heroSubtitleClass)}>
+                  {stageDescription}
+                </p>
+              </div>
+            </div>
+            <Button
+              size="lg"
+              variant="primary"
+              leadingIcon={Cpu}
+              onClick={() => context.processViaBackend()}
+              disabled={!canStartPipeline}
+              className="w-full justify-center"
+            >
+              Avvia pipeline executive
+            </Button>
+            {!canStartPipeline && (
+              <p className={classNames("text-xs", mutedTextClass)}>
+                Registra o carica un audio per attivare l&apos;esecuzione.
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {highlightCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <div
+                key={card.key}
+                className={classNames(
+                  "rounded-2xl border p-5 transition-all",
+                  highlightSurface,
+                  card.emphasis &&
+                    "border-emerald-400/40 shadow-[0_24px_60px_-35px_rgba(16,185,129,0.65)]"
+                )}
+              >
+                <div
+                  className={classNames(
+                    "flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em]",
+                    labelToneClass
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {card.label}
+                </div>
+                <div className={classNames("mt-3 text-lg font-semibold leading-tight", heroTitleClass)}>
+                  {card.value}
+                </div>
+                {card.meta ? (
+                  <p className={classNames("mt-2 text-sm leading-relaxed", mutedTextClass)}>
+                    {card.meta}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
         <div
           className={classNames(
             "md:col-span-2 rounded-2xl border p-6 shadow-lg",
@@ -808,21 +1099,14 @@ const CreatePage = () => {
               <button
                 type="button"
                 onClick={() => context.processViaBackend()}
-                disabled={
-                  !context.audioBlob ||
-                  context.busy ||
-                  context.backendUp === false
-                }
+                disabled={!canStartPipeline}
                 className={classNames(
                   "flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0",
                   isBoardroom
                     ? "shadow-[0_26px_60px_-32px_rgba(61,176,255,0.85)] focus-visible:ring-sky-200/70 hover:shadow-[0_34px_80px_-36px_rgba(61,176,255,0.95)]"
                     : "text-white shadow-sm focus-visible:ring-indigo-300 hover:shadow",
                   themes[theme].button,
-                  (!context.audioBlob ||
-                    context.busy ||
-                    context.backendUp === false) &&
-                    "cursor-not-allowed opacity-60",
+                  !canStartPipeline && "cursor-not-allowed opacity-60",
                 )}
               >
                 <Cpu className="h-4 w-4" /> Avvia pipeline
