@@ -14,6 +14,7 @@ import { AppProvider } from "./hooks/useAppContext";
 
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
 const DEFAULT_DEST_DIR = '/Users/';
+const BYPASS_AUTH = import.meta.env.MODE === 'test' || import.meta.env.VITE_BYPASS_AUTH === 'true';
 
 const isDestDirPlaceholder = (value) => {
   const sanitized = (value ?? '').trim();
@@ -596,6 +597,12 @@ function AppContent(){
   const location = useLocation();
 
   useEffect(() => {
+    if (BYPASS_AUTH) {
+      setSession({ user: { id: 'test-user' }, access_token: 'test-access-token' });
+      setSessionChecked(true);
+      return;
+    }
+
     let isMounted = true;
 
     const initializeSession = async () => {
