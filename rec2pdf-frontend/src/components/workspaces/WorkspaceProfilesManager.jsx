@@ -28,7 +28,7 @@ const WorkspaceProfilesManager = () => {
   );
   const [formState, setFormState] = useState(emptyForm);
   const [logoFile, setLogoFile] = useState(null);
-  const [removeLogo, setRemoveLogo] = useState(false);
+  const [removePdfLogo, setRemovePdfLogo] = useState(false);
   const [editingProfileId, setEditingProfileId] = useState("");
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState({ success: "", error: "", details: [] });
@@ -37,7 +37,7 @@ const WorkspaceProfilesManager = () => {
   const resetForm = useCallback(() => {
     setFormState(emptyForm);
     setLogoFile(null);
-    setRemoveLogo(false);
+    setRemovePdfLogo(false);
     setEditingProfileId("");
     setFeedback({ success: "", error: "", details: [] });
     if (logoInputRef.current) {
@@ -97,7 +97,7 @@ const WorkspaceProfilesManager = () => {
     const file = event.target.files?.[0] || null;
     setLogoFile(file);
     if (file) {
-      setRemoveLogo(false);
+      setRemovePdfLogo(false);
     }
   }, []);
 
@@ -113,7 +113,7 @@ const WorkspaceProfilesManager = () => {
         pdfTemplate: profile.pdfTemplate || "",
       });
       setLogoFile(null);
-      setRemoveLogo(false);
+      setRemovePdfLogo(false);
       setFeedback({ success: "", error: "", details: [] });
     },
     []
@@ -185,7 +185,7 @@ const WorkspaceProfilesManager = () => {
             pdfTemplate: updated.pdfTemplate || "",
           });
           setLogoFile(null);
-          setRemoveLogo(false);
+          setRemovePdfLogo(false);
           if (logoInputRef.current) {
             logoInputRef.current.value = "";
           }
@@ -213,7 +213,7 @@ const WorkspaceProfilesManager = () => {
       editingProfileId,
       formState,
       logoFile,
-      removeLogo,
+      removePdfLogo,
       resetForm,
       selectedWorkspaceId,
       updateWorkspaceProfile,
@@ -427,7 +427,7 @@ const WorkspaceProfilesManager = () => {
                   {logoFile && (
                     <span className="text-xs text-surface-300">{logoFile.name}</span>
                   )}
-                  {!logoFile && currentLogoLabel && !removeLogo && (
+                  {!logoFile && currentLogoLabel && !removePdfLogo && (
                     <span className="text-xs text-surface-300">{currentLogoLabel}</span>
                   )}
                   <Button
@@ -449,8 +449,8 @@ const WorkspaceProfilesManager = () => {
                   <label className="flex items-center gap-2 text-xs text-surface-300">
                     <input
                       type="checkbox"
-                      checked={removeLogo}
-                      onChange={(event) => setRemoveLogo(event.target.checked)}
+                      checked={removePdfLogo}
+                      onChange={(event) => setRemovePdfLogo(event.target.checked)}
                       disabled={pending}
                     />
                     Rimuovi il logo salvato
