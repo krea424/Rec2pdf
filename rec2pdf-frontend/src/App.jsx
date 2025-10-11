@@ -2828,6 +2828,15 @@ function AppContent(){
     }));
   }, []);
 
+  const originPath = mdEditor?.originPath;
+
+  const handleMdEditorClose = useCallback(() => {
+    const targetPath = originPath && originPath !== '/editor' ? originPath : '/library';
+
+    navigate(targetPath);
+    setMdEditor(() => ({ ...EMPTY_EDITOR_STATE }));
+  }, [navigate, originPath]);
+
   const handleMdEditorViewPdf = useCallback(async () => {
     const entry = mdEditor?.entry;
     if (!entry?.pdfPath) {
@@ -2847,15 +2856,6 @@ function AppContent(){
       handleMdEditorClose();
     }
   }, [handleMdEditorClose, handleOpenHistoryPdf, mdEditor, normalizedBackendUrl]);
-
-  const originPath = mdEditor?.originPath;
-
-  const handleMdEditorClose = useCallback(() => {
-    const targetPath = originPath && originPath !== '/editor' ? originPath : '/library';
-
-    navigate(targetPath);
-    setMdEditor(() => ({ ...EMPTY_EDITOR_STATE }));
-  }, [navigate, originPath]);
 
   const handleMdEditorSave = useCallback(async (nextContent) => {
     const targetPath = mdEditor?.path;
