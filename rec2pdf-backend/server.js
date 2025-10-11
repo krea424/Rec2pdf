@@ -191,6 +191,46 @@ const sanitizeDestDirInput = (value) => {
   return raw;
 };
 
+const normalizeLocalFilePathInput = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  let input = value.trim();
+  if (!input) {
+    return '';
+  }
+
+  if (/^file:\/\//i.test(input)) {
+    try {
+      const url = new URL(input);
+      input = decodeURIComponent(url.pathname || '');
+      if (process.platform === 'win32' && input.startsWith('/')) {
+        input = input.slice(1);
+      }
+    } catch {
+      return '';
+    }
+  }
+
+  if (input === '~') {
+    input = os.homedir();
+  } else if (input.startsWith('~/') || input.startsWith('~\\')) {
+    input = path.join(os.homedir(), input.slice(2));
+  } else if (input.startsWith('~')) {
+    return '';
+  }
+
+  const unifiedSeparators = input.replace(/[\\/]+/g, path.sep);
+  const normalized = path.normalize(unifiedSeparators);
+
+  if (path.isAbsolute(normalized)) {
+    return normalized;
+  }
+
+  return '';
+};
+
 const resolveDestinationDirectory = async (rawDest) => {
   const sanitized = sanitizeDestDirInput(rawDest);
   const targetDir = sanitized ? path.resolve(sanitized) : DEFAULT_DEST_DIR;
@@ -1814,6 +1854,8 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
   let workDir = '';
   const cleanupFiles = new Set();
   let usedSupabaseFlow = false;
+  const localPdfPathRaw = typeof req.body?.localPdfPath === 'string' ? req.body.localPdfPath.trim() : '';
+  const localMdPathRaw = typeof req.body?.localMdPath === 'string' ? req.body.localMdPath.trim() : '';
 
   try {
     const mdPathRaw = String(req.body?.mdPath || '').trim();
@@ -1839,6 +1881,42 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
     const publishEnv = buildEnvOptions(
       customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
     );
+
+    const resolvedLocalPdfPath = normalizeLocalFilePathInput(localPdfPathRaw);
+    const resolvedLocalMdPath = normalizeLocalFilePathInput(localMdPathRaw);
+
+    const copySupabaseArtifactsLocally = async (pdfSourcePath, mdSourcePath) => {
+      let localPdfPath = '';
+      let localMdPath = '';
+
+      if (resolvedLocalMdPath) {
+        const targetDir = path.dirname(resolvedLocalMdPath);
+        const writable = await ensureWritableDirectory(targetDir);
+        if (!writable.ok) {
+          throw new Error(
+            `Cartella locale non scrivibile per il Markdown: ${writable.error?.message || 'percorso non valido'}`
+          );
+        }
+        await fsp.copyFile(mdSourcePath, resolvedLocalMdPath);
+        localMdPath = resolvedLocalMdPath;
+        out(`📁 Markdown aggiornato in locale: ${resolvedLocalMdPath}`);
+      }
+
+      if (resolvedLocalPdfPath) {
+        const targetDir = path.dirname(resolvedLocalPdfPath);
+        const writable = await ensureWritableDirectory(targetDir);
+        if (!writable.ok) {
+          throw new Error(
+            `Cartella locale non scrivibile per il PDF: ${writable.error?.message || 'percorso non valido'}`
+          );
+        }
+        await fsp.copyFile(pdfSourcePath, resolvedLocalPdfPath);
+        localPdfPath = resolvedLocalPdfPath;
+        out(`📁 PDF aggiornato in locale: ${resolvedLocalPdfPath}`);
+      }
+
+      return { localPdfPath, localMdPath };
+    };
 
     if (looksLikeStoragePath) {
       let bucket;
@@ -1887,17 +1965,36 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
         out('✅ PDF creato tramite fallback pandoc');
       }
 
-      await uploadFileToBucket(
-        bucket,
-        pdfObjectPath,
-        await fsp.readFile(pdfLocalPath),
-        'application/pdf'
-      );
+      await uploadFileToBucket(bucket, pdfObjectPath, await fsp.readFile(pdfLocalPath), 'application/pdf');
       out(`☁️ PDF aggiornato su Supabase: ${pdfObjectPath}`);
+
+      let localPdfPath = '';
+      let localMdPath = '';
+      if (resolvedLocalPdfPath || resolvedLocalMdPath) {
+        try {
+          const copied = await copySupabaseArtifactsLocally(pdfLocalPath, mdLocalPath);
+          localPdfPath = copied.localPdfPath;
+          localMdPath = copied.localMdPath;
+        } catch (copyError) {
+          out(`❌ Aggiornamento locale fallito: ${copyError.message}`);
+          return res.status(500).json({
+            ok: false,
+            message: copyError.message,
+            logs,
+          });
+        }
+      }
 
       const normalizedMdPath = `${bucket}/${objectPath}`;
       const normalizedPdfPath = `${bucket}/${pdfObjectPath}`;
-      return res.json({ ok: true, pdfPath: normalizedPdfPath, mdPath: normalizedMdPath, logs });
+      return res.json({
+        ok: true,
+        pdfPath: normalizedPdfPath,
+        mdPath: normalizedMdPath,
+        localPdfPath,
+        localMdPath,
+        logs,
+      });
     }
 
     const mdPath = path.resolve(mdPathRaw);
@@ -1934,7 +2031,7 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
     }
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`);
-    return res.json({ ok: true, pdfPath, mdPath, logs });
+    return res.json({ ok: true, pdfPath, mdPath, localPdfPath: pdfPath, localMdPath: mdPath, logs });
   } catch (err) {
     out('❌ Errore durante la rigenerazione');
     out(String(err && err.message ? err.message : err));
