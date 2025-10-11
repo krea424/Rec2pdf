@@ -49,3 +49,11 @@ Extend workspace records with a `profiles` array. Each profile keeps only projec
 - Allow manual overrides with a “Scollega profilo” action, reverting the form to standalone mode.
 - Log profile usage (telemetry) to quantify the reduction in setup time per pipeline run.
 
+## Development Plan
+1. **Persist profile data in workspaces**: Extend the backend workspace model so create/update flows accept a `profiles` array, normalize its fields, and keep legacy data backward-compatible.
+2. **Handle profile assets on the backend**: Introduce storage helpers for PDF logos and template references, validating destination folders and prompt references when profiles are saved.
+3. **Expose profile management APIs**: Add dedicated CRUD routes for profiles (JSON + multipart uploads) and a download endpoint for retrieving stored PDF logos.
+4. **Hydrate profiles in the frontend context**: Load profiles alongside workspaces, add an `applyWorkspaceProfile` helper, and wire profile data into pipeline state management.
+5. **Create UI for selection and editing**: Update the Create form with a preset selector and add management dialogs in workspace settings for authoring profiles, including validation and preview states.
+6. **Regression and UX validation**: Cover the new flows with automated/API tests where feasible and perform manual QA on preset selection, override handling, and persistence.
+
