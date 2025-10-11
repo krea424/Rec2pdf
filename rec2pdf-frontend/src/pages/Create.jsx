@@ -46,7 +46,16 @@ const ErrorBanner = () => {
 
 const CreatePage = () => {
   const context = useAppContext();
-  const { theme, themes } = context;
+  const {
+    theme,
+    themes,
+    activeWorkspaceProfiles = [],
+    activeWorkspaceProfile,
+    workspaceProfileSelection,
+    workspaceProfileLocked,
+    applyWorkspaceProfile,
+    clearWorkspaceProfile,
+  } = context;
   const isBoardroom = theme === "boardroom";
   const boardroomPrimarySurface =
     "border-white/18 bg-white/[0.02] backdrop-blur-2xl shadow-[0_28px_80px_-40px_rgba(6,20,40,0.85)]";
@@ -100,6 +109,22 @@ const CreatePage = () => {
     }
     return context.customPdfLogo.name || "Logo personalizzato";
   }, [context.customPdfLogo]);
+
+  const hasWorkspaceProfiles = activeWorkspaceProfiles.length > 0;
+
+  const handleWorkspaceProfileSelect = (event) => {
+    const value = event.target.value;
+    if (!value) {
+      clearWorkspaceProfile();
+      return;
+    }
+    const result = applyWorkspaceProfile(value);
+    if (!result.ok && result.message) {
+      context.setErrorBanner({ title: "Profilo non applicabile", details: result.message });
+    } else if (result.ok) {
+      context.setErrorBanner(null);
+    }
+  };
 
   const audioDownloadExtension = useMemo(() => {
     const mime = context.mime || "";
@@ -219,6 +244,64 @@ const CreatePage = () => {
             >
               <div className="flex items-center justify-between">
                 <label className="flex items-center gap-2 text-sm text-zinc-400">
+                  <Sparkles className="h-4 w-4" /> Profilo preconfigurato
+                </label>
+                {workspaceProfileLocked && (
+                  <button
+                    type="button"
+                    onClick={() => clearWorkspaceProfile()}
+                    className="rounded-lg border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100"
+                  >
+                    Scollega
+                  </button>
+                )}
+              </div>
+              <select
+                className={classNames(
+                  "mt-3 w-full rounded-lg border px-3 py-2 text-sm outline-none",
+                  themes[theme].input,
+                  !hasWorkspaceProfiles || !context.workspaceSelection.workspaceId ? 'opacity-60' : ''
+                )}
+                value={workspaceProfileSelection?.profileId || ''}
+                onChange={handleWorkspaceProfileSelect}
+                disabled={!context.workspaceSelection.workspaceId || !hasWorkspaceProfiles}
+              >
+                <option value="">Nessun profilo</option>
+                {activeWorkspaceProfiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.label || profile.id}
+                  </option>
+                ))}
+              </select>
+              {!context.workspaceSelection.workspaceId && (
+                <div className="mt-2 text-xs text-zinc-500">
+                  Seleziona un workspace per visualizzare i profili salvati.
+                </div>
+              )}
+              {context.workspaceSelection.workspaceId && !hasWorkspaceProfiles && (
+                <div className="mt-2 text-xs text-zinc-500">
+                  Nessun profilo configurato per questo workspace.
+                </div>
+              )}
+              {workspaceProfileLocked && activeWorkspaceProfile && (
+                <div className="mt-3 space-y-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+                  <div className="text-sm font-medium text-emerald-200">
+                    Profilo attivo: {activeWorkspaceProfile.label || activeWorkspaceProfile.id}
+                  </div>
+                  <div>Cartella: {activeWorkspaceProfile.destDir || '—'}</div>
+                  <div>Slug: {activeWorkspaceProfile.slug || '—'}</div>
+                  <div>Prompt: {activeWorkspaceProfile.promptId || '—'}</div>
+                </div>
+              )}
+            </div>
+            <div
+              className={classNames(
+                "rounded-2xl border p-4 transition-all",
+                isBoardroom ? boardroomSecondarySurface : themes[theme].input,
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-sm text-zinc-400">
                   <FileText className="h-4 w-4" /> Cartella
                 </label>
                 <div className="flex items-center gap-2">
@@ -229,7 +312,9 @@ const CreatePage = () => {
                       "rounded-lg border px-2 py-1 text-xs",
                       themes[theme].input,
                       themes[theme].input_hover,
+                      workspaceProfileLocked && "cursor-not-allowed opacity-50",
                     )}
+                    disabled={workspaceProfileLocked}
                   >
                     Reimposta
                   </button>
@@ -257,6 +342,7 @@ const CreatePage = () => {
                 type="text"
                 autoComplete="off"
                 spellCheck={false}
+                disabled={workspaceProfileLocked}
               />
               {context.showDestDetails && (
                 <div
@@ -291,6 +377,7 @@ const CreatePage = () => {
                 value={context.slug}
                 onChange={(event) => context.setSlug(event.target.value)}
                 placeholder="meeting"
+                disabled={workspaceProfileLocked}
               />
             </div>
 
@@ -324,7 +411,9 @@ const CreatePage = () => {
                   className={classNames(
                     "rounded-lg px-3 py-1.5 text-xs font-medium",
                     themes[theme].button,
+                    workspaceProfileLocked && "cursor-not-allowed opacity-50",
                   )}
+                  disabled={workspaceProfileLocked}
                 >
                   Carica
                 </button>
@@ -333,6 +422,7 @@ const CreatePage = () => {
                     type="button"
                     onClick={() => context.setCustomPdfLogo(null)}
                     className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rose-500"
+                    disabled={workspaceProfileLocked}
                   >
                     Rimuovi
                   </button>
