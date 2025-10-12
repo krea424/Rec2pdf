@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from "react";
 import type { PostgrestError, Session } from "@supabase/supabase-js";
 import supabase from "../supabaseClient";
+import { useAnalytics } from "./AnalyticsContext";
 
 type Mode = "base" | "advanced";
 
@@ -141,6 +142,7 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
   const sessionId = session?.user?.id ?? null;
   const [flags, setFlags] = useState<Set<string>>(() => extractFlags(session));
   const [remoteSyncOverrideDisabled, setRemoteSyncOverrideDisabled] = useState<boolean>(false);
+  const { trackEvent, trackToggleEvent } = useAnalytics();
 
   const remoteSyncDisabled = useMemo(
     () => !syncWithSupabase || remoteSyncOverrideDisabled,
@@ -399,15 +401,38 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
     void persistPreference(mode);
   }, [availableModes, hydrated, mode, persistPreference, remoteSyncDisabled, sessionId]);
 
+  const emitModeAnalytics = useCallback(
+    (previousMode: Mode, nextMode: Mode, trigger: "explicit" | "cycle") => {
+      trackToggleEvent("mode.toggle", nextMode === "advanced", {
+        previousMode,
+        nextMode,
+        trigger,
+      });
+      trackEvent("mode.changed", {
+        previousMode,
+        nextMode,
+        trigger,
+      });
+    },
+    [trackEvent, trackToggleEvent],
+  );
+
   const handleSetMode = useCallback(
     (nextMode: Mode) => {
       if (!availableModes.includes(nextMode)) {
         return;
       }
 
-      setModeState((current) => (current === nextMode ? current : nextMode));
+      setModeState((current) => {
+        if (current === nextMode) {
+          return current;
+        }
+
+        emitModeAnalytics(current, nextMode, "explicit");
+        return nextMode;
+      });
     },
-    [availableModes],
+    [availableModes, emitModeAnalytics],
   );
 
   const toggleMode = useCallback(() => {
@@ -418,9 +443,16 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
     setModeState((current) => {
       const currentIndex = availableModes.indexOf(current);
       const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % availableModes.length;
-      return availableModes[nextIndex];
+      const nextMode = availableModes[nextIndex];
+
+      if (nextMode === current) {
+        return current;
+      }
+
+      emitModeAnalytics(current, nextMode, "cycle");
+      return nextMode;
     });
-  }, [availableModes]);
+  }, [availableModes, emitModeAnalytics]);
 
   const hasFlag = useCallback((flag: string) => flags.has(flag), [flags]);
 

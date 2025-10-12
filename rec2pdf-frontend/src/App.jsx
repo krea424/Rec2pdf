@@ -12,6 +12,7 @@ import LoginPage from "./components/LoginPage";
 import supabase from "./supabaseClient";
 import { AppProvider } from "./hooks/useAppContext";
 import { ModeProvider, useMode } from "./context/ModeContext";
+import { useAnalytics } from "./context/AnalyticsContext";
 
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
 const DEFAULT_DEST_DIR = '/Users/';
@@ -683,6 +684,7 @@ function AppContent(){
 
   const navigate = useNavigate();
   const location = useLocation();
+  const { trackEvent } = useAnalytics();
 
   useEffect(() => {
     if (BYPASS_AUTH) {
@@ -1106,6 +1108,12 @@ function AppContent(){
     const normalizedStatus = normalizeStageStatus(event.status);
     const normalizedEvent = { ...event, status: normalizedStatus };
     setPipelineStatus((prev) => updateStatusWithEvent(prev, normalizedEvent));
+    if (normalizedStatus === 'failed') {
+      trackEvent('pipeline.stage_failed', {
+        stage: event.stage,
+        message: typeof event.message === 'string' ? event.message : '',
+      });
+    }
     let messageToStore = typeof event.message === 'string' ? event.message.trim() : '';
     if (event.stage === 'complete' && normalizedStatus === 'done') {
       const libraryHint = 'Trovi il documento generato nella Library.';
@@ -1129,7 +1137,7 @@ function AppContent(){
       }
       return prev;
     });
-  }, []);
+  }, [trackEvent]);
 
   const handlePipelineEvents = useCallback((events = [], options = {}) => {
     const eventArray = Array.isArray(events) ? events : [];

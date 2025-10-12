@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { Cpu, Download, FileText, Sparkles } from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
+import { useAnalytics } from "../../context/AnalyticsContext";
 import { classNames } from "../../utils/classNames";
 
 const statusTone = {
@@ -13,6 +14,7 @@ const statusTone = {
 
 const PipelinePanel = ({ latestEntry }) => {
   const context = useAppContext();
+  const { trackEvent } = useAnalytics();
   const {
     PIPELINE_STAGES,
     pipelineStatus,
@@ -35,22 +37,34 @@ const PipelinePanel = ({ latestEntry }) => {
     if (!canPublish) {
       return;
     }
+    trackEvent("pipeline.publish_requested", {
+      hasAudio: Boolean(audioBlob),
+      backendReachable: backendUp !== false,
+    });
     processViaBackend();
-  }, [canPublish, processViaBackend]);
+  }, [audioBlob, backendUp, canPublish, processViaBackend, trackEvent]);
 
   const handleDownload = useCallback(() => {
     if (!latestEntry?.pdfPath) {
       return;
     }
+    trackEvent("pipeline.export_pdf", {
+      entryId: latestEntry?.id || null,
+      path: latestEntry.pdfPath,
+    });
     handleOpenHistoryPdf(latestEntry);
-  }, [handleOpenHistoryPdf, latestEntry]);
+  }, [handleOpenHistoryPdf, latestEntry, trackEvent]);
 
   const handleOpenMarkdown = useCallback(() => {
     if (!latestEntry) {
       return;
     }
+    trackEvent("pipeline.export_markdown", {
+      entryId: latestEntry?.id || null,
+      path: latestEntry?.mdPath || "",
+    });
     handleOpenHistoryMd(latestEntry);
-  }, [handleOpenHistoryMd, latestEntry]);
+  }, [handleOpenHistoryMd, latestEntry, trackEvent]);
 
   const stages = useMemo(
     () =>
@@ -159,7 +173,12 @@ const PipelinePanel = ({ latestEntry }) => {
       </div>
 
       {logsPreview.length ? (
-        <div className="mt-auto rounded-2xl border border-white/10 bg-black/30 p-4">
+        <div
+          className="mt-auto rounded-2xl border border-white/10 bg-black/30 p-4"
+          role="status"
+          aria-live="polite"
+          aria-relevant="additions text"
+        >
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">Log recenti</p>
           <ul className="mt-2 space-y-1 text-[11px] text-white/70">
             {logsPreview.map((entry, index) => (
