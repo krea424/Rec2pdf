@@ -168,50 +168,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
 
   const StatusIcon = activeStageDefinition?.icon || Sparkles;
 
-  const publishButtonClass = classNames(
-    "flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-base font-semibold",
-    "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-    focusPublish
-      ? busy
-        ? "bg-indigo-500/50 text-indigo-50 shadow-[0_18px_60px_-30px_rgba(99,102,241,0.65)]"
-        : canPublish
-          ? "bg-indigo-400 text-slate-950 shadow-[0_20px_60px_-35px_rgba(99,102,241,0.9)] hover:bg-indigo-300"
-          : "bg-indigo-500/30 text-indigo-100"
-      : canPublish
-        ? "border border-white/15 bg-white/5 text-white/75 hover:border-white/25 hover:bg-white/10"
-        : "border border-white/10 bg-white/5 text-white/50",
-    focusDownload ? "opacity-50" : null,
-    !canPublish && "cursor-not-allowed"
-  );
-
-  const downloadButtonClass = classNames(
-    "flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-    focusDownload
-      ? "bg-emerald-400 text-slate-950 shadow-[0_18px_60px_-30px_rgba(16,185,129,0.9)] hover:bg-emerald-300"
-      : hasDownloaded
-        ? "border border-emerald-300/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20"
-        : "border border-emerald-300/50 bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30"
-  );
-
-  const modifyButtonClass = classNames(
-    "flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-    hasDownloaded
-      ? "bg-indigo-400 text-slate-950 shadow-[0_18px_60px_-30px_rgba(99,102,241,0.8)] hover:bg-indigo-300"
-      : "border border-white/15 bg-white/5 text-white/75 hover:border-white/25 hover:bg-white/10"
-  );
-
-  const newSessionButtonClass = classNames(
-    "flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-    hasDownloaded
-      ? "bg-emerald-400 text-slate-950 shadow-[0_18px_60px_-30px_rgba(16,185,129,0.9)] hover:bg-emerald-300"
-      : "border border-white/15 bg-white/5 text-white/70 hover:border-white/25 hover:bg-white/10",
-    busy ? "cursor-not-allowed opacity-60" : null
-  );
-
-  const showDownloadActions = pipelineComplete && latestEntry?.pdfPath;
-  const showNextSteps = showDownloadActions && hasDownloaded;
-
-  const publishButtonClass = classNames(
+  const publishCtaClassName = classNames(
     "flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-base font-semibold",
     "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
     focusPublish
@@ -270,7 +227,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
           type="button"
           onClick={handlePublish}
           disabled={!canPublish}
-          className={publishButtonClass}
+          className={publishCtaClassName}
         >
           <Cpu className="h-5 w-5" /> Pubblica
         </button>
