@@ -150,7 +150,7 @@ which ppubr
    EOF
    npm run dev   # interfaccia web su http://localhost:5173 (Vite adatta automaticamente la porta se occupata)
    ```
-   L'opzione `VITE_BYPASS_AUTH` attiva il bypass login per demo locali, mentre i flag di default rendono disponibili entrambe le modalità fin dal primo avvio.【F:rec2pdf-frontend/src/App.jsx†L17-L195】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L21-L198】
+   L'opzione `VITE_BYPASS_AUTH` attiva il bypass login per demo locali, mentre i flag di default rendono disponibili entrambe le modalità fin dal primo avvio. Se dimentichi di impostare `VITE_DEFAULT_MODE_FLAGS`, il frontend usa automaticamente `MODE_BASE,MODE_ADVANCED` per evitare che il toggle sparisca; per limitare l'accesso puoi specificare esplicitamente solo `MODE_BASE` e affidarti a Supabase per abilitare l'advanced agli utenti selezionati.【F:rec2pdf-frontend/src/App.jsx†L17-L195】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L21-L205】
 4. Apri il browser sull'URL servito da Vite, configura se necessario l'endpoint backend (`http://localhost:7788` è il default) e lancia la diagnostica dall'onboarding banner.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L16-L53】【F:rec2pdf-frontend/src/hooks/useBackendDiagnostics.js†L1-L86】
 5. Cambia modalità direttamente dal toggle in header o dalla command palette per testare base e advanced senza ricaricare la pagina.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L56-L156】【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L59-L190】
 

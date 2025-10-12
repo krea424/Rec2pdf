@@ -3,7 +3,7 @@
 La modalità **Advanced** estende Rec2PDF con una control room boardroom che unifica destinazioni, branding, prompt, diagnostica e sperimentazioni in un'unica vista. Questa guida riassume come abilitarla, quali moduli presidia e come presentarla agli stakeholder.
 
 ## Abilitazione e flag
-- Il flag richiesto è `MODE_ADVANCED`; può essere pre-popolato tramite `VITE_DEFAULT_MODE_FLAGS` oppure assegnato da Supabase ai profili team. Il contesto `ModeContext` fonde i flag locali con quelli remoti e persiste la scelta in `localStorage` e nelle preferenze Supabase quando disponibili.【F:rec2pdf-frontend/.env.example†L1-L4】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L21-L258】
+- Il flag richiesto è `MODE_ADVANCED`; può essere pre-popolato tramite `VITE_DEFAULT_MODE_FLAGS` (che ora ricade automaticamente su `MODE_BASE,MODE_ADVANCED` se non valorizzato) oppure assegnato da Supabase ai profili team. Il contesto `ModeContext` fonde i flag locali con quelli remoti e persiste la scelta in `localStorage` e nelle preferenze Supabase quando disponibili.【F:rec2pdf-frontend/.env.example†L1-L4】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L21-L205】
 - In ambienti demo abilita `VITE_BYPASS_AUTH=true` per saltare il login e mostrare subito il selettore modalità; Vite userà comunque le chiavi Supabase di default per caricare librerie e assets.【F:rec2pdf-frontend/src/App.jsx†L17-L195】
 - I placeholder opzionali (`VITE_ENABLE_FS_INTEGRATION_PLACEHOLDER`, `VITE_ENABLE_RAG_PLACEHOLDER`) permettono di visualizzare idee di roadmap nella tab Context Packs senza introdurre feature incomplete nel codice di produzione.【F:rec2pdf-frontend/src/features/advanced/AdvancedDashboard.tsx†L18-L109】
 
