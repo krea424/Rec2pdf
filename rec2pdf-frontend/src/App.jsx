@@ -3680,7 +3680,7 @@ function AppContent(){
     return <LoginPage />;
   }
 
-  const contextValue = {
+  const baseContextValue = {
     DEFAULT_BACKEND_URL,
     DEFAULT_DEST_DIR,
     theme,
