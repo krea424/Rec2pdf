@@ -53,8 +53,9 @@ const ConnectionGuard = () => {
 
 const BaseHome = () => {
   const context = useAppContext();
-  const { pipelineComplete, history, audioBlob, busy } = context;
+  const { pipelineComplete, history, audioBlob, busy, baseJourneyVisibility } = context;
   const latestEntry = history?.[0] || null;
+  const publishPanelVisible = baseJourneyVisibility?.publish ?? false;
 
   const completionHint = useMemo(() => {
     if (!pipelineComplete || !latestEntry?.pdfPath) {
@@ -83,11 +84,8 @@ const BaseHome = () => {
     if (pipelineComplete || busy) {
       return true;
     }
-    if (latestEntry?.pdfPath || latestEntry?.mdPath) {
-      return true;
-    }
-    return Boolean(audioBlob);
-  }, [audioBlob, busy, latestEntry, pipelineComplete]);
+    return publishPanelVisible;
+  }, [busy, pipelineComplete, publishPanelVisible]);
 
   return (
     <div className="space-y-6">

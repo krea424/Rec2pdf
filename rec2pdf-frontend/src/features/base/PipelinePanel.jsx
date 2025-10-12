@@ -30,12 +30,15 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     handleOpenHistoryPdf,
     handleOpenHistoryMd,
     resetAll,
+    baseJourneyVisibility,
+    revealPipelinePanel,
   } = context;
 
   const canPublish = Boolean(audioBlob) && !busy && backendUp !== false;
   const focusPublish = journeyStage === "publish" && !pipelineComplete;
   const [hasDownloaded, setHasDownloaded] = useState(false);
-  const [hasLaunchedPipeline, setHasLaunchedPipeline] = useState(false);
+  const pipelineRevealState = baseJourneyVisibility?.pipeline ?? false;
+  const [hasLaunchedPipeline, setHasLaunchedPipeline] = useState(() => pipelineRevealState);
   const focusDownload =
     journeyStage === "download" && pipelineComplete && latestEntry?.pdfPath && !hasDownloaded;
 
@@ -54,6 +57,14 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     }
   }, [entryPdfPath, pipelineComplete]);
 
+  useEffect(() => {
+    if (pipelineRevealState) {
+      setHasLaunchedPipeline(true);
+      return;
+    }
+    setHasLaunchedPipeline(false);
+  }, [pipelineRevealState]);
+
   const handlePublish = useCallback(() => {
     if (!canPublish) {
       return;
@@ -62,9 +73,10 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
       hasAudio: Boolean(audioBlob),
       backendReachable: backendUp !== false,
     });
+    revealPipelinePanel();
     setHasLaunchedPipeline(true);
     processViaBackend();
-  }, [audioBlob, backendUp, canPublish, processViaBackend, trackEvent]);
+  }, [audioBlob, backendUp, canPublish, processViaBackend, revealPipelinePanel, trackEvent]);
 
   const handleDownload = useCallback(() => {
     if (!latestEntry?.pdfPath) {
