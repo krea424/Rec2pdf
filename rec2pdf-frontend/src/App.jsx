@@ -11,6 +11,7 @@ import { pickBestMime } from "./utils/media";
 import LoginPage from "./components/LoginPage";
 import supabase from "./supabaseClient";
 import { AppProvider } from "./hooks/useAppContext";
+import { ModeProvider, useMode } from "./context/ModeContext";
 
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
 const DEFAULT_DEST_DIR = '/Users/';
@@ -199,6 +200,93 @@ const normalizePromptEntry = (prompt) => {
     builtIn: Boolean(prompt.builtIn),
   };
 };
+
+function AppContextComposer({ baseValue, children }) {
+  const {
+    mode,
+    setMode,
+    toggleMode,
+    availableModes,
+    isSelectionVisible,
+    isPersisting,
+    isHydrated,
+    flags,
+    hasFlag,
+  } = useMode();
+
+  useEffect(() => {
+    if (!isSelectionVisible) {
+      return undefined;
+    }
+
+    const isEditableElement = (target) => {
+      if (!target || typeof target !== 'object') {
+        return false;
+      }
+
+      const element = target;
+      const tagName = typeof element.tagName === 'string' ? element.tagName.toLowerCase() : '';
+
+      if (element.isContentEditable) {
+        return true;
+      }
+
+      return tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+    };
+
+    const handleKeydown = (event) => {
+      if (!event || typeof event !== 'object') {
+        return;
+      }
+
+      if (event.defaultPrevented) {
+        return;
+      }
+
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+
+      if (isEditableElement(event.target)) {
+        return;
+      }
+
+      const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
+
+      if (key === 'b' && availableModes.includes('base')) {
+        event.preventDefault();
+        setMode('base');
+        return;
+      }
+
+      if (key === 'a' && availableModes.includes('advanced')) {
+        event.preventDefault();
+        setMode('advanced');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeydown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeydown);
+    };
+  }, [availableModes, isSelectionVisible, setMode]);
+
+  const contextValue = {
+    ...baseValue,
+    mode,
+    setMode,
+    toggleMode,
+    availableModes,
+    isModeSelectionVisible: isSelectionVisible,
+    isModePersisting: isPersisting,
+    isModeHydrated: isHydrated,
+    modeFlags: Array.from(flags),
+    hasModeFlag: hasFlag,
+  };
+
+  return <AppProvider value={contextValue}>{children}</AppProvider>;
+}
 
 const normalizeWorkspaceProfile = (workspaceId, profile) => {
   if (!profile || typeof profile !== 'object') {
@@ -3592,7 +3680,7 @@ function AppContent(){
     return <LoginPage />;
   }
 
-  const contextValue = {
+  const baseContextValue = {
     DEFAULT_BACKEND_URL,
     DEFAULT_DEST_DIR,
     theme,
@@ -3763,17 +3851,19 @@ function AppContent(){
   };
 
   return (
-    <AppProvider value={contextValue}>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route index element={<Navigate to="/create" replace />} />
-          <Route path="/create" element={<CreatePage />} />
-          <Route path="/library" element={<LibraryPage />} />
-          <Route path="/editor" element={<EditorPage />} />
-          <Route path="*" element={<Navigate to="/create" replace />} />
-        </Route>
-      </Routes>
-    </AppProvider>
+    <ModeProvider session={session}>
+      <AppContextComposer baseValue={baseContextValue}>
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route index element={<Navigate to="/create" replace />} />
+            <Route path="/create" element={<CreatePage />} />
+            <Route path="/library" element={<LibraryPage />} />
+            <Route path="/editor" element={<EditorPage />} />
+            <Route path="*" element={<Navigate to="/create" replace />} />
+          </Route>
+        </Routes>
+      </AppContextComposer>
+    </ModeProvider>
   );
 }
 
