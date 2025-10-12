@@ -58,6 +58,7 @@ Keyboard accelerators non sono ancora attivi. Quando li introdurrai:
 ## Telemetria & Feature Flags
 - Strumenta le interazioni significative tramite `trackEvent`/`trackToggleEvent`. Il sink preferenziale è `window.analytics.track`, con fallback a `dataLayer`; in sviluppo logga su console.【F:rec2pdf-frontend/src/utils/analytics.ts†L1-L49】
 - Gli eventi chiave includono apertura sezioni impostazioni (`settings.section_opened`), run diagnostica e tab del pannello avanzato. Evita payload sensibili inviando solo booleani/contatori.【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L57-L104】【F:rec2pdf-frontend/src/features/advanced/AdvancedDashboard.tsx†L22-L180】
-- I placeholder “File system integration” e “Context packs per RAG” si attivano con `VITE_ENABLE_FS_INTEGRATION_PLACEHOLDER` e `VITE_ENABLE_RAG_PLACEHOLDER` nel file `.env` (`true`/`1`/`yes`).【F:rec2pdf-frontend/.env.example†L1-L3】【F:rec2pdf-frontend/src/features/advanced/AdvancedDashboard.tsx†L17-L65】
+- Usa i flag `MODE_BASE`/`MODE_ADVANCED` per controllare l’accesso ai moduli: in locale puoi popolare `VITE_DEFAULT_MODE_FLAGS` con `MODE_ADVANCED` (oltre a `MODE_BASE`) per rendere visibile la control room senza dover configurare Supabase.【F:rec2pdf-frontend/.env.example†L1-L4】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L24-L121】
+- I placeholder “File system integration” e “Context packs per RAG” si attivano con `VITE_ENABLE_FS_INTEGRATION_PLACEHOLDER` e `VITE_ENABLE_RAG_PLACEHOLDER` nel file `.env` (`true`/`1`/`yes`).【F:rec2pdf-frontend/.env.example†L1-L4】【F:rec2pdf-frontend/src/features/advanced/AdvancedDashboard.tsx†L17-L65】
 
 Following these standards keeps the Rec2PDF interface cohesive as new pipeline capabilities ship.

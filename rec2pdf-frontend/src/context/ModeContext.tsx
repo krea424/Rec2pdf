@@ -24,6 +24,12 @@ const MODE_FLAGS: Record<Mode, string> = {
   advanced: "MODE_ADVANCED",
 };
 
+const DEFAULT_FLAG_TOKENS = String(import.meta.env.VITE_DEFAULT_MODE_FLAGS || "")
+  .split(",")
+  .map((token) => token.trim())
+  .filter((token) => token.length > 0);
+const DEFAULT_FLAG_SET = new Set(DEFAULT_FLAG_TOKENS);
+
 const ModeContext = createContext<ModeContextValue | undefined>(undefined);
 
 const MODE_TABLE_CANDIDATES = ["profiles", "public_profiles"] as const;
@@ -53,7 +59,7 @@ const readStoredMode = (): Mode => {
 };
 
 const extractFlags = (session: Session | null): Set<string> => {
-  const flags = new Set<string>();
+  const flags = new Set<string>(DEFAULT_FLAG_SET);
   const metadata = session?.user?.app_metadata ?? {};
   const profileFlags = (metadata as Record<string, unknown>).feature_flags;
 
