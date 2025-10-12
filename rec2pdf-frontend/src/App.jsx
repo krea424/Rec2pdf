@@ -1220,9 +1220,39 @@ function AppContent(){
     }
   }, [session]);
 
+  const refreshSessionIfNeeded = useCallback(async () => {
+    if (BYPASS_AUTH) {
+      return session;
+    }
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) {
+        console.warn('Session refresh failed', error);
+        return null;
+      }
+      if (data?.session) {
+        setSession(data.session);
+        return data.session;
+      }
+      if (data?.user) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session) {
+          setSession(sessionData.session);
+          return sessionData.session;
+        }
+      }
+    } catch (error) {
+      console.warn('Session refresh threw', error);
+    }
+    if (session) {
+      setSession(null);
+    }
+    return null;
+  }, [session, setSession]);
+
   const applyAuthToOptions = useCallback(
-    async (options = {}) => {
-      const token = session?.access_token || (await getSessionToken());
+    async (options = {}, tokenOverride = null) => {
+      const token = tokenOverride || session?.access_token || (await getSessionToken());
       if (!token) {
         return { ...options };
       }
@@ -1230,25 +1260,45 @@ function AppContent(){
       if (!headers.has('Authorization')) {
         headers.set('Authorization', `Bearer ${token}`);
       }
-      return { ...options, headers };
+      const normalizedOptions = { ...options, headers };
+      if (!normalizedOptions.credentials) {
+        normalizedOptions.credentials = 'include';
+      }
+      return normalizedOptions;
     },
     [getSessionToken, session?.access_token]
   );
 
   const fetchBodyWithAuth = useCallback(
     async (url, options = {}) => {
-      const optsWithAuth = await applyAuthToOptions(options);
-      return fetchBody(url, optsWithAuth);
+      let optsWithAuth = await applyAuthToOptions(options);
+      let result = await fetchBody(url, optsWithAuth);
+      if (result.status === 401 && !BYPASS_AUTH) {
+        const refreshed = await refreshSessionIfNeeded();
+        if (refreshed?.access_token) {
+          optsWithAuth = await applyAuthToOptions(options, refreshed.access_token);
+          result = await fetchBody(url, optsWithAuth);
+        }
+      }
+      return result;
     },
-    [applyAuthToOptions, fetchBody]
+    [applyAuthToOptions, fetchBody, refreshSessionIfNeeded]
   );
 
   const fetchWithAuth = useCallback(
     async (url, options = {}) => {
-      const optsWithAuth = await applyAuthToOptions(options);
-      return fetch(url, optsWithAuth);
+      let optsWithAuth = await applyAuthToOptions(options);
+      let response = await fetch(url, optsWithAuth);
+      if (response.status === 401 && !BYPASS_AUTH) {
+        const refreshed = await refreshSessionIfNeeded();
+        if (refreshed?.access_token) {
+          optsWithAuth = await applyAuthToOptions(options, refreshed.access_token);
+          response = await fetch(url, optsWithAuth);
+        }
+      }
+      return response;
     },
-    [applyAuthToOptions]
+    [applyAuthToOptions, refreshSessionIfNeeded]
   );
 
   const requestSignedFileUrl = useCallback(
