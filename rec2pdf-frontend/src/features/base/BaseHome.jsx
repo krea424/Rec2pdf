@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { AlertCircle, CheckCircle2 } from "../../components/icons";
+import { AlertCircle } from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
 import { Toast } from "../../components/ui";
@@ -53,7 +53,7 @@ const ConnectionGuard = () => {
 
 const BaseHome = () => {
   const context = useAppContext();
-  const { headerStatus, theme, themes, pipelineComplete, history } = context;
+  const { theme, themes, pipelineComplete, history, audioBlob, busy } = context;
   const latestEntry = history?.[0] || null;
 
   const completionHint = useMemo(() => {
@@ -68,6 +68,16 @@ const BaseHome = () => {
 
     return `PDF pronto da ${workspaceName} · ${timestamp}`;
   }, [latestEntry, pipelineComplete]);
+
+  const journeyStage = useMemo(() => {
+    if (pipelineComplete && latestEntry?.pdfPath) {
+      return "download";
+    }
+    if ((audioBlob || busy) && !pipelineComplete) {
+      return "publish";
+    }
+    return "record";
+  }, [audioBlob, busy, latestEntry, pipelineComplete]);
 
   return (
     <div className="space-y-6">
@@ -86,39 +96,28 @@ const BaseHome = () => {
               Executive pipeline
             </p>
             <h1 className="mt-2 text-2xl font-semibold text-white md:text-3xl">
-              REC → Publish → Download senza attriti.
+              Registra-Pubblica-Scarica PDF
             </h1>
             <p className="mt-2 max-w-xl text-sm text-white/70">
-              Registra o carica la sessione, avvia la pubblicazione e scarica il PDF wow direttamente da qui.
+              Segui il flusso base: registra o carica una sessione, pubblica con un clic e scarica subito il PDF finale.
             </p>
-          </div>
-          <div
-            className={classNames(
-              "flex min-w-[220px] flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white",
-              "shadow-[0_20px_60px_-40px_rgba(129,140,248,0.7)]"
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <headerStatus.icon className="h-4 w-4" />
-              <span className="font-semibold">{headerStatus.text}</span>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/60">
+              <span className="rounded-full border border-white/10 px-3 py-1">1. Registra o carica</span>
+              <span className="rounded-full border border-white/10 px-3 py-1">2. Pubblica la sessione</span>
+              <span className="rounded-full border border-white/10 px-3 py-1">3. Scarica il PDF</span>
             </div>
-            {completionHint ? (
-              <div className="flex items-start gap-2 text-xs text-white/80">
-                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-none text-emerald-300" />
-                <span>{completionHint}</span>
-              </div>
-            ) : (
-              <p className="text-xs text-white/70">
-                Il pannello segue in tempo reale gli step della pipeline automatizzata.
-              </p>
-            )}
           </div>
+          {completionHint ? (
+            <p className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100">
+              {completionHint}
+            </p>
+          ) : null}
         </div>
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-        <UploadCard />
-        <PipelinePanel latestEntry={latestEntry} />
+        <UploadCard journeyStage={journeyStage} />
+        <PipelinePanel latestEntry={latestEntry} journeyStage={journeyStage} />
       </section>
     </div>
   );
