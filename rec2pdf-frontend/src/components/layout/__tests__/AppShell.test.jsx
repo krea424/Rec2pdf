@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import AppShell from '../AppShell'
 import { AppProvider } from '../../../hooks/useAppContext'
+import { ModeProvider } from '../../../context/ModeContext'
 
 const baseThemes = {
   boardroom: {
@@ -33,16 +34,18 @@ const renderWithContext = (contextOverrides = {}, initialEntries = ['/create']) 
   const value = { ...defaultContext, ...contextOverrides }
 
   const view = render(
-    <AppProvider value={value}>
-      <MemoryRouter initialEntries={initialEntries}>
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route path="/create" element={<div>Create view</div>} />
-            <Route path="/library" element={<div>Library view</div>} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
-    </AppProvider>
+    <ModeProvider session={null}>
+      <AppProvider value={value}>
+        <MemoryRouter initialEntries={initialEntries}>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route path="/create" element={<div>Create view</div>} />
+              <Route path="/library" element={<div>Library view</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </AppProvider>
+    </ModeProvider>
   )
 
   return { ...view, context: value }
