@@ -53,7 +53,7 @@ const ConnectionGuard = () => {
 
 const BaseHome = () => {
   const context = useAppContext();
-  const { headerStatus, theme, themes, pipelineComplete, history } = context;
+  const { headerStatus, theme, themes, pipelineComplete, history, audioBlob, busy } = context;
   const latestEntry = history?.[0] || null;
 
   const completionHint = useMemo(() => {
@@ -68,6 +68,16 @@ const BaseHome = () => {
 
     return `PDF pronto da ${workspaceName} · ${timestamp}`;
   }, [latestEntry, pipelineComplete]);
+
+  const journeyStage = useMemo(() => {
+    if (pipelineComplete && latestEntry?.pdfPath) {
+      return "download";
+    }
+    if ((audioBlob || busy) && !pipelineComplete) {
+      return "publish";
+    }
+    return "record";
+  }, [audioBlob, busy, latestEntry, pipelineComplete]);
 
   return (
     <div className="space-y-6">
@@ -86,11 +96,16 @@ const BaseHome = () => {
               Executive pipeline
             </p>
             <h1 className="mt-2 text-2xl font-semibold text-white md:text-3xl">
-              REC → Publish → Download senza attriti.
+              Registra-Pubblica-Scarica PDF
             </h1>
             <p className="mt-2 max-w-xl text-sm text-white/70">
-              Registra o carica la sessione, avvia la pubblicazione e scarica il PDF wow direttamente da qui.
+              Segui il flusso base: registra o carica una sessione, pubblica con un clic e scarica subito il PDF finale.
             </p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/60">
+              <span className="rounded-full border border-white/10 px-3 py-1">1. Registra o carica</span>
+              <span className="rounded-full border border-white/10 px-3 py-1">2. Pubblica la sessione</span>
+              <span className="rounded-full border border-white/10 px-3 py-1">3. Scarica il PDF</span>
+            </div>
           </div>
           <div
             className={classNames(
@@ -117,8 +132,8 @@ const BaseHome = () => {
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-        <UploadCard />
-        <PipelinePanel latestEntry={latestEntry} />
+        <UploadCard journeyStage={journeyStage} />
+        <PipelinePanel latestEntry={latestEntry} journeyStage={journeyStage} />
       </section>
     </div>
   );
