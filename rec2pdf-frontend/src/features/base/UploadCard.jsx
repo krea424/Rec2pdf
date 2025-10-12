@@ -3,7 +3,7 @@ import { Mic, Square, Upload } from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
 
-const UploadCard = () => {
+const UploadCard = ({ journeyStage = "record" }) => {
   const context = useAppContext();
   const {
     recording,
@@ -62,6 +62,19 @@ const UploadCard = () => {
     return [name, sizeLabel, mimeLabel].filter(Boolean).join(" • ");
   }, [audioBlob, fmtBytes, mime]);
 
+  const recordState = recording ? "recording" : journeyStage;
+  const recordButtonClass = classNames(
+    "relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl px-4 py-5 text-lg font-semibold",
+    "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+    recording
+      ? "bg-rose-500/90 text-white shadow-[0_18px_60px_-30px_rgba(244,63,94,0.9)]"
+      : recordState === "record"
+        ? "bg-emerald-400/90 text-slate-950 shadow-[0_20px_60px_-35px_rgba(16,185,129,0.9)] hover:bg-emerald-300"
+        : "border border-white/15 bg-white/5 text-white/70 hover:border-white/25 hover:bg-white/10",
+    recordState === "download" && !recording ? "opacity-50" : null,
+    !canRecord && "cursor-not-allowed opacity-60"
+  );
+
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-subtle">
       <div className="flex items-center justify-between">
@@ -76,14 +89,7 @@ const UploadCard = () => {
           type="button"
           onClick={handleToggleRecording}
           disabled={!canRecord}
-          className={classNames(
-            "relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl px-4 py-5 text-lg font-semibold",
-            "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-9",
-            recording
-              ? "bg-rose-500/90 text-white shadow-[0_18px_60px_-30px_rgba(244,63,94,0.9)]"
-              : "bg-emerald-500/80 text-white shadow-[0_18px_60px_-30px_rgba(16,185,129,0.8)] hover:bg-emerald-400/90",
-            !canRecord && "cursor-not-allowed opacity-60"
-          )}
+          className={recordButtonClass}
           title={micStatusLabel}
         >
           {recording ? <Square className="h-5 w-5" /> : <Mic className="h-5 w-5" />}

@@ -12,7 +12,7 @@ const statusTone = {
   failed: "text-rose-200",
 };
 
-const PipelinePanel = ({ latestEntry }) => {
+const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   const context = useAppContext();
   const { trackEvent } = useAnalytics();
   const {
@@ -32,6 +32,8 @@ const PipelinePanel = ({ latestEntry }) => {
   } = context;
 
   const canPublish = Boolean(audioBlob) && !busy && backendUp !== false;
+  const focusPublish = journeyStage === "publish" && !pipelineComplete;
+  const focusDownload = journeyStage === "download" && pipelineComplete && latestEntry?.pdfPath;
 
   const handlePublish = useCallback(() => {
     if (!canPublish) {
@@ -85,6 +87,29 @@ const PipelinePanel = ({ latestEntry }) => {
 
   const logsPreview = useMemo(() => logs.slice(-3), [logs]);
 
+  const publishButtonClass = classNames(
+    "flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-base font-semibold",
+    "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+    focusPublish
+      ? busy
+        ? "bg-indigo-500/50 text-indigo-50 shadow-[0_18px_60px_-30px_rgba(99,102,241,0.65)]"
+        : canPublish
+          ? "bg-indigo-400 text-slate-950 shadow-[0_20px_60px_-35px_rgba(99,102,241,0.9)] hover:bg-indigo-300"
+          : "bg-indigo-500/30 text-indigo-100"
+      : canPublish
+        ? "border border-white/15 bg-white/5 text-white/75 hover:border-white/25 hover:bg-white/10"
+        : "border border-white/10 bg-white/5 text-white/50",
+    focusDownload ? "opacity-50" : null,
+    !canPublish && "cursor-not-allowed"
+  );
+
+  const downloadButtonClass = classNames(
+    "flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+    focusDownload
+      ? "bg-emerald-400 text-slate-950 shadow-[0_18px_60px_-30px_rgba(16,185,129,0.9)] hover:bg-emerald-300"
+      : "border border-emerald-300/50 bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30"
+  );
+
   return (
     <div className="flex h-full flex-col gap-5 rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-subtle">
       <div>
@@ -101,11 +126,7 @@ const PipelinePanel = ({ latestEntry }) => {
           type="button"
           onClick={handlePublish}
           disabled={!canPublish}
-          className={classNames(
-            "flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-500/80 px-4 py-3 text-base font-semibold text-white",
-            "transition hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
-            !canPublish && "cursor-not-allowed opacity-60"
-          )}
+          className={publishButtonClass}
         >
           <Cpu className="h-5 w-5" /> Pubblica
         </button>
@@ -118,7 +139,7 @@ const PipelinePanel = ({ latestEntry }) => {
             <button
               type="button"
               onClick={handleDownload}
-              className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-emerald-300/50 bg-emerald-400/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/30"
+              className={downloadButtonClass}
             >
               <Download className="h-4 w-4" /> Scarica PDF
             </button>

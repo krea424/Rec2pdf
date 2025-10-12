@@ -53,7 +53,7 @@ const ConnectionGuard = () => {
 
 const BaseHome = () => {
   const context = useAppContext();
-  const { headerStatus, theme, themes, pipelineComplete, history } = context;
+  const { headerStatus, theme, themes, pipelineComplete, history, audioBlob, busy } = context;
   const latestEntry = history?.[0] || null;
 
   const completionHint = useMemo(() => {
@@ -68,6 +68,16 @@ const BaseHome = () => {
 
     return `PDF pronto da ${workspaceName} · ${timestamp}`;
   }, [latestEntry, pipelineComplete]);
+
+  const journeyStage = useMemo(() => {
+    if (pipelineComplete && latestEntry?.pdfPath) {
+      return "download";
+    }
+    if ((audioBlob || busy) && !pipelineComplete) {
+      return "publish";
+    }
+    return "record";
+  }, [audioBlob, busy, latestEntry, pipelineComplete]);
 
   return (
     <div className="space-y-6">
@@ -122,8 +132,8 @@ const BaseHome = () => {
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-        <UploadCard />
-        <PipelinePanel latestEntry={latestEntry} />
+        <UploadCard journeyStage={journeyStage} />
+        <PipelinePanel latestEntry={latestEntry} journeyStage={journeyStage} />
       </section>
     </div>
   );
