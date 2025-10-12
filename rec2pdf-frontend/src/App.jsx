@@ -908,7 +908,6 @@ function AppContent(){
   const [historyTab, setHistoryTab] = useState('history');
   const [activePanel, setActivePanel] = useState('doc');
   const [mdEditor, setMdEditor] = useState(() => ({ ...EMPTY_EDITOR_STATE }));
-  const [sessionToken, setSessionToken] = useState('');
   const {
     secureOK,
     mediaSupported,
@@ -1203,8 +1202,15 @@ function AppContent(){
   const resetAll=()=>{ setAudioBlob(null); setAudioUrl(""); setMime(""); setElapsed(0); setLogs([]); setPdfPath(""); setMdPath(""); setPermissionMessage(""); setErrorBanner(null); resetPipelineProgress(false); setShowRawLogs(false); setLastMarkdownUpload(null); };
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
+  const canCallAuthenticatedApis = useMemo(
+    () => BYPASS_AUTH || !!session?.access_token,
+    [session?.access_token],
+  );
 
   const getSessionToken = useCallback(async () => {
+    if (session?.access_token) {
+      return session.access_token;
+    }
     try {
       const { data } = await supabase.auth.getSession();
       return data?.session?.access_token || null;
@@ -1212,19 +1218,21 @@ function AppContent(){
       console.warn('Unable to retrieve session token', error);
       return null;
     }
-  }, []);
+  }, [session]);
 
   const applyAuthToOptions = useCallback(
     async (options = {}) => {
-      const token = await getSessionToken();
+      const token = session?.access_token || (await getSessionToken());
       if (!token) {
         return { ...options };
       }
       const headers = new Headers(options.headers || {});
-      headers.set('Authorization', `Bearer ${token}`);
+      if (!headers.has('Authorization')) {
+        headers.set('Authorization', `Bearer ${token}`);
+      }
       return { ...options, headers };
     },
-    [getSessionToken]
+    [getSessionToken, session?.access_token]
   );
 
   const fetchBodyWithAuth = useCallback(
@@ -1254,7 +1262,7 @@ function AppContent(){
         throw new Error('Percorso file non disponibile.');
       }
 
-      const token = sessionToken || (await getSessionToken()) || '';
+      const token = (await getSessionToken()) || '';
       const target = buildFileUrl(normalizedBackend, trimmedPath, token ? { token } : undefined);
       const response = await fetchWithAuth(target, {
         method: 'GET',
@@ -1280,7 +1288,7 @@ function AppContent(){
 
       return signedUrl;
     },
-    [fetchWithAuth, getSessionToken, sessionToken]
+    [fetchWithAuth, getSessionToken]
   );
 
   const openSignedFileInNewTab = useCallback(
@@ -1363,8 +1371,11 @@ function AppContent(){
       setPrompts([]);
       return;
     }
+    if (!canCallAuthenticatedApis) {
+      return;
+    }
     fetchPrompts({ silent: true });
-  }, [backendUrl, fetchPrompts, sessionChecked]);
+  }, [backendUrl, canCallAuthenticatedApis, fetchPrompts, sessionChecked]);
 
   const fetchWorkspaces = useCallback(
     async (options = {}) => {
@@ -1403,8 +1414,12 @@ function AppContent(){
 
   useEffect(() => {
     if (!sessionChecked) return;
+    if (!canCallAuthenticatedApis) {
+      setWorkspaces([]);
+      return;
+    }
     fetchWorkspaces({ silent: true });
-  }, [fetchWorkspaces, sessionChecked]);
+  }, [canCallAuthenticatedApis, fetchWorkspaces, sessionChecked]);
 
   const handleCreateWorkspace = useCallback(
     async ({ name, client, color, statuses }) => {
@@ -3039,38 +3054,6 @@ function AppContent(){
   const normalizedBackendUrl = useMemo(() => normalizeBackendUrlValue(backendUrl), [backendUrl]);
 
   const mdEditorDirty = useMemo(() => mdEditor.content !== mdEditor.originalContent, [mdEditor.content, mdEditor.originalContent]);
-
-  useEffect(() => {
-    let isActive = true;
-    const syncToken = async () => {
-      const token = await getSessionToken();
-      if (isActive) {
-        setSessionToken(token || '');
-      }
-    };
-    syncToken();
-
-    let subscription = null;
-    if (supabase?.auth?.onAuthStateChange) {
-      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-        if (isActive) {
-          setSessionToken(session?.access_token || '');
-        }
-      });
-      subscription = data?.subscription || data || null;
-    }
-
-    return () => {
-      isActive = false;
-      if (subscription) {
-        if (typeof subscription.unsubscribe === 'function') {
-          subscription.unsubscribe();
-        } else if (typeof subscription === 'function') {
-          subscription();
-        }
-      }
-    };
-  }, [getSessionToken]);
 
   const handleOpenHistoryPdf = useCallback(
     async (entry) => {
