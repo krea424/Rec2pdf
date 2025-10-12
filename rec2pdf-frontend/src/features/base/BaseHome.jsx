@@ -96,6 +96,11 @@ const BaseHome = () => {
             <span className="rounded-full border border-white/10 px-3 py-1">2. Pubblica la sessione</span>
             <span className="rounded-full border border-white/10 px-3 py-1">3. Scarica il PDF</span>
           </div>
+          {completionHint ? (
+            <p className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100">
+              {completionHint}
+            </p>
+          ) : null}
         </div>
         {completionHint ? (
           <p className="self-start rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100 md:self-center">
