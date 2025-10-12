@@ -142,6 +142,27 @@ const AppShell = () => {
               />
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+              <nav
+                aria-label="Sezioni applicazione"
+                className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 shadow-subtle backdrop-blur"
+              >
+                {NAV_ITEMS.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      cx(
+                        "rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition",
+                        isActive
+                          ? "bg-indigo-500/70 text-white shadow-sm"
+                          : "text-white/60 hover:bg-white/10 hover:text-white/85",
+                      )
+                    }
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </nav>
               <ModeSegmentedControl />
               <Button
                 type="button"
@@ -172,24 +193,6 @@ const AppShell = () => {
               </IconButton>
             </div>
           </div>
-          <nav className="flex flex-wrap items-center gap-2">
-            {NAV_ITEMS.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  cx(
-                    "rounded-lg px-3 py-1.5 text-sm font-medium transition",
-                    isActive
-                      ? "border border-indigo-400/60 bg-indigo-500/20 text-indigo-100"
-                      : "border border-white/10 bg-transparent text-white/60 hover:border-white/15 hover:bg-white/5 hover:text-white/85",
-                  )
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
         </header>
 
         <div className="mt-6 space-y-6">
