@@ -17,6 +17,7 @@ import {
   Palette,
   XCircle,
 } from "./icons";
+import { EmptyState, Skeleton } from "./ui";
 
 const DEFAULT_STATUSES = ["Bozza", "In lavorazione", "Da revisionare", "Completato"];
 const UNASSIGNED_KEY = "__unassigned__";
@@ -297,10 +298,16 @@ export default function WorkspaceNavigator({
           </div>
 
           <div className="mt-4 space-y-2">
-            {baseEntries.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/15 bg-black/20 px-4 py-6 text-center text-sm text-white/60">
-                Nessun documento disponibile.
-              </div>
+            {loading ? (
+              Array.from({ length: 3 }).map((_, index) => (
+                <Skeleton key={`base-skeleton-${index}`} className="h-20 w-full rounded-2xl" />
+              ))
+            ) : baseEntries.length === 0 ? (
+              <EmptyState
+                title="Nessun documento disponibile"
+                description="Quando carichi o generi un PDF lo troverai qui."
+                className="border-white/15 bg-black/20 text-white/70"
+              />
             ) : (
               baseEntries.map((entry, index) => {
                 const entryKey = entry?.id || entry?.slug || `entry-${index}`;
@@ -313,7 +320,7 @@ export default function WorkspaceNavigator({
                     key={entryKey}
                     onClick={() => handleBaseEntrySelect(entry)}
                     className={classNames(
-                      "w-full rounded-2xl border px-4 py-3 text-left text-sm transition",
+                      "w-full rounded-2xl border px-4 py-3 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
                       isActive
                         ? "border-indigo-400/60 bg-indigo-500/15 text-white shadow-[0_12px_40px_-30px_rgba(129,140,248,0.9)]"
                         : "border-white/10 bg-white/5 text-white/80 hover:border-indigo-400/40 hover:bg-indigo-500/10"
@@ -1204,7 +1211,7 @@ export default function WorkspaceNavigator({
                         key={status.label}
                         onClick={() => handleStatusSelect(status.label)}
                         className={classNames(
-                          "rounded-full border px-3 py-1 text-xs",
+                          "rounded-full border px-3 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
                           themeStyles?.input,
                           isActive && "border-indigo-400/70 text-indigo-200"
                         )}
@@ -1240,76 +1247,83 @@ export default function WorkspaceNavigator({
           >
             <div className="rounded-xl border px-3 py-3">
               <div className="max-h-[320px] space-y-2 overflow-auto pr-1">
-                {filteredEntries.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-zinc-700/60 p-4 text-sm text-zinc-500">
-                    Nessun documento corrispondente ai filtri selezionati.
-                  </div>
-                )}
-                {filteredEntries.map((entry) => {
-                  const isActive = selectedEntry?.id === entry.id;
-                  const completeness = formatCompleteness(entry?.completenessScore);
-                  const entryProjectKey = computeProjectKey(entry?.workspace?.projectId, entry?.workspace?.projectName);
-                  return (
-                    <button
-                      type="button"
-                      key={entry.id}
-                      onClick={() => setSelectedEntryId(entry.id)}
-                      className={classNames(
-                        "w-full rounded-xl border px-4 py-3 text-left text-sm transition",
-                        themeStyles?.input,
-                        isActive && "border-indigo-400/70 ring-2 ring-indigo-400/30"
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 text-zinc-200">
-                            <FileText className="h-4 w-4" />
-                            <span className="font-medium">{entry?.title || entry?.slug || "Documento"}</span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-                            <span>{formatTimestamp(entry?.timestamp)}</span>
-                            {entryProjectKey && (
-                              <span className="rounded-lg bg-zinc-800/70 px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                                {entry?.workspace?.projectName || entry?.workspace?.projectId || "Progetto"}
-                              </span>
-                            )}
-                            {entry?.workspace?.status && (
-                              <span className="rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-200">
-                                {entry.workspace.status}
-                              </span>
-                            )}
-                            {entry?.prompt?.title && (
-                              <span className="flex items-center gap-1 rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-200">
-                                <Sparkles className="h-3 w-3" />
-                                {entry.prompt.title}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right text-xs text-zinc-400">
-                          {Number.isFinite(completeness) ? (
-                            <div>
-                              <div className="text-sm font-semibold text-indigo-200">{completeness}%</div>
-                              <div>completezza</div>
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, index) => (
+                    <Skeleton key={`navigator-entry-skeleton-${index}`} className="h-24 w-full rounded-xl" />
+                  ))
+                ) : filteredEntries.length === 0 ? (
+                  <EmptyState
+                    title="Nessun risultato"
+                    description="Aggiorna i filtri di workspace o ricerca per mostrare i documenti disponibili."
+                    className="border-zinc-700/60 bg-black/20 text-zinc-400"
+                  />
+                ) : (
+                  filteredEntries.map((entry) => {
+                    const isActive = selectedEntry?.id === entry.id;
+                    const completeness = formatCompleteness(entry?.completenessScore);
+                    const entryProjectKey = computeProjectKey(entry?.workspace?.projectId, entry?.workspace?.projectName);
+                    return (
+                      <button
+                        type="button"
+                        key={entry.id}
+                        onClick={() => setSelectedEntryId(entry.id)}
+                        className={classNames(
+                          "w-full rounded-xl border px-4 py-3 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+                          themeStyles?.input,
+                          isActive && "border-indigo-400/70 ring-2 ring-indigo-400/30"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 text-zinc-200">
+                              <FileText className="h-4 w-4" />
+                              <span className="font-medium">{entry?.title || entry?.slug || "Documento"}</span>
                             </div>
-                          ) : (
-                            <div className="text-zinc-600">—</div>
-                          )}
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                              <span>{formatTimestamp(entry?.timestamp)}</span>
+                              {entryProjectKey && (
+                                <span className="rounded-lg bg-zinc-800/70 px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                                  {entry?.workspace?.projectName || entry?.workspace?.projectId || "Progetto"}
+                                </span>
+                              )}
+                              {entry?.workspace?.status && (
+                                <span className="rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-200">
+                                  {entry.workspace.status}
+                                </span>
+                              )}
+                              {entry?.prompt?.title && (
+                                <span className="flex items-center gap-1 rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-200">
+                                  <Sparkles className="h-3 w-3" />
+                                  {entry.prompt.title}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right text-xs text-zinc-400">
+                            {Number.isFinite(completeness) ? (
+                              <div>
+                                <div className="text-sm font-semibold text-indigo-200">{completeness}%</div>
+                                <div>completezza</div>
+                              </div>
+                            ) : (
+                              <div className="text-zinc-600">—</div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      {Array.isArray(entry?.structure?.missingSections) && entry.structure.missingSections.length > 0 && (
-                        <div className="mt-2 text-xs text-amber-300">
-                          Manca: {entry.structure.missingSections.join(", ")}
-                        </div>
-                      )}
-                      {entry?.structure?.promptChecklist?.missing?.length > 0 && (
-                        <div className="mt-1 text-xs text-amber-300">
-                          Gap template: {entry.structure.promptChecklist.missing.join(", ")}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
+                        {Array.isArray(entry?.structure?.missingSections) && entry.structure.missingSections.length > 0 && (
+                          <div className="mt-2 text-xs text-amber-300">
+                            Manca: {entry.structure.missingSections.join(", ")}
+                          </div>
+                        )}
+                        {entry?.structure?.promptChecklist?.missing?.length > 0 && (
+                          <div className="mt-1 text-xs text-amber-300">
+                            Gap template: {entry.structure.promptChecklist.missing.join(", ")}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
 

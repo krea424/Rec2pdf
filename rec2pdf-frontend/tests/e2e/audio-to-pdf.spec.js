@@ -50,7 +50,7 @@ const pipelineResponse = {
 }
 
 test.describe('Audio to PDF flow', () => {
-  test('uploads audio and completes pipeline with mocked APIs', async ({ page }) => {
+  test.beforeEach(async ({ page }) => {
     await page.route('**/api/*', async (route) => {
       const url = new URL(route.request().url())
       const { pathname } = url
@@ -96,7 +96,9 @@ test.describe('Audio to PDF flow', () => {
         headers: { 'content-type': 'application/json' },
       })
     })
+  })
 
+  test('uploads audio and completes pipeline with mocked APIs', async ({ page }) => {
     await page.goto('/create')
 
     const fakeAudioFile = {
@@ -113,5 +115,15 @@ test.describe('Audio to PDF flow', () => {
 
     const downloadButton = page.getByRole('button', { name: 'Scarica PDF', exact: true })
     await expect(downloadButton).toBeVisible()
+  })
+
+  test('renders advanced control room tabs for context packs', async ({ page }) => {
+    await page.goto('/create')
+
+    await expect(page.getByRole('heading', { name: /Control room/i })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Context Packs' }).click()
+
+    await expect(page.getByText(/Nessun placeholder attivo/i)).toBeVisible()
   })
 })

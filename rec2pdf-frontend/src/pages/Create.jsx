@@ -22,6 +22,7 @@ import { useAppContext } from "../hooks/useAppContext";
 import { classNames } from "../utils/classNames";
 import { Button, Toast } from "../components/ui";
 import BaseHome from "../features/base/BaseHome";
+import { useAnalytics } from "../context/AnalyticsContext";
 
 const AdvancedDashboard = lazy(() => import("../features/advanced/AdvancedDashboard"));
 
@@ -63,6 +64,7 @@ const ErrorBanner = () => {
 
 const CreatePage = () => {
   const context = useAppContext();
+  const { trackEvent } = useAnalytics();
 
   const hasAdvancedAccess =
     typeof context.hasModeFlag === "function" ? context.hasModeFlag("MODE_ADVANCED") : false;
@@ -1158,6 +1160,16 @@ const CreatePage = () => {
                   themes[theme].button,
                   !context.audioUrl && "pointer-events-none opacity-50",
                 )}
+                onClick={() => {
+                  if (!context.audioUrl) {
+                    return;
+                  }
+                  trackEvent("pipeline.export_audio", {
+                    mime: context.mime || "",
+                    size: context.audioBlob?.size ?? 0,
+                    extension: audioDownloadExtension,
+                  });
+                }}
               >
                 <Download className="h-4 w-4" /> Scarica audio
               </a>
