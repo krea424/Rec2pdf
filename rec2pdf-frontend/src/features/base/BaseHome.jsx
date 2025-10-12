@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import { AlertCircle } from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
-import { classNames } from "../../utils/classNames";
 import { Toast } from "../../components/ui";
 import PipelinePanel from "./PipelinePanel";
 import UploadCard from "./UploadCard";
@@ -53,7 +52,7 @@ const ConnectionGuard = () => {
 
 const BaseHome = () => {
   const context = useAppContext();
-  const { theme, themes, pipelineComplete, history, audioBlob, busy } = context;
+  const { pipelineComplete, history, audioBlob, busy } = context;
   const latestEntry = history?.[0] || null;
 
   const completionHint = useMemo(() => {
@@ -84,28 +83,18 @@ const BaseHome = () => {
       <ConnectionGuard />
       <ErrorBanner />
 
-      <section
-        className={classNames(
-          "rounded-3xl border border-white/5 bg-white/[0.02] p-6 shadow-[0_30px_120px_-80px_rgba(15,118,110,0.65)] backdrop-blur",
-          themes[theme]?.card || "bg-zinc-900/60"
-        )}
-      >
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-white/60">
-              Executive pipeline
-            </p>
-            <h1 className="mt-2 text-2xl font-semibold text-white md:text-3xl">
-              Registra-Pubblica-Scarica PDF
-            </h1>
-            <p className="mt-2 max-w-xl text-sm text-white/70">
-              Segui il flusso base: registra o carica una sessione, pubblica con un clic e scarica subito il PDF finale.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/60">
-              <span className="rounded-full border border-white/10 px-3 py-1">1. Registra o carica</span>
-              <span className="rounded-full border border-white/10 px-3 py-1">2. Pubblica la sessione</span>
-              <span className="rounded-full border border-white/10 px-3 py-1">3. Scarica il PDF</span>
-            </div>
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold text-white md:text-3xl">
+            Registra-Pubblica-Scarica PDF
+          </h1>
+          <p className="max-w-xl text-sm text-white/70">
+            Tre mosse essenziali: registra (o carica) la sessione, pubblica quando sei pronto e scarica il PDF finale senza passaggi superflui.
+          </p>
+          <div className="flex flex-wrap gap-2 text-xs text-white/60">
+            <span className="rounded-full border border-white/10 px-3 py-1">1. Registra o carica</span>
+            <span className="rounded-full border border-white/10 px-3 py-1">2. Pubblica la sessione</span>
+            <span className="rounded-full border border-white/10 px-3 py-1">3. Scarica il PDF</span>
           </div>
           {completionHint ? (
             <p className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100">
@@ -113,7 +102,12 @@ const BaseHome = () => {
             </p>
           ) : null}
         </div>
-      </section>
+        {completionHint ? (
+          <p className="self-start rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100 md:self-center">
+            {completionHint}
+          </p>
+        ) : null}
+      </header>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
         <UploadCard journeyStage={journeyStage} />
