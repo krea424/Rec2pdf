@@ -59,11 +59,11 @@ const MODE_OPTIONS = [
 ];
 
 const ModeSegmentedControl = () => {
-  const { mode, setMode, availableModes, isModeSelectionVisible, isModePersisting } = useMode();
+  const { mode, setMode, availableModes, isSelectionVisible, isPersisting } = useMode();
 
   const options = MODE_OPTIONS.filter((option) => availableModes.includes(option.value));
 
-  if (!isModeSelectionVisible || options.length < 2) {
+  if (!isSelectionVisible || options.length < 2) {
     return null;
   }
 
@@ -77,7 +77,7 @@ const ModeSegmentedControl = () => {
       data-current-mode={mode}
     >
       <span className="sr-only" aria-live="polite">
-        {isModePersisting ? "Salvataggio preferenza modalità in corso" : `Modalità ${mode}`}
+        {isPersisting ? "Salvataggio preferenza modalità in corso" : `Modalità ${mode}`}
       </span>
       {options.map((option) => {
         const isActive = mode === option.value;
@@ -95,7 +95,7 @@ const ModeSegmentedControl = () => {
             aria-label={`Modalità ${option.label}`}
             title={`Modalità ${option.label} (scorciatoia ${option.shortcut})`}
             onClick={() => setMode(option.value)}
-            disabled={isModePersisting}
+            disabled={isPersisting}
           >
             <span>{option.label}</span>
             <span className="hidden text-[10px] font-medium text-zinc-300 sm:inline" aria-hidden="true">

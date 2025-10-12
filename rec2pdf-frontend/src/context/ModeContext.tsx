@@ -25,8 +25,13 @@ const MODE_FLAGS: Record<Mode, string> = {
   advanced: "MODE_ADVANCED",
 };
 
-const DEFAULT_FLAG_TOKENS = String(import.meta.env.VITE_DEFAULT_MODE_FLAGS || "")
-  .split(",")
+const DEFAULT_MODE_FLAGS_SOURCE =
+  typeof import.meta.env.VITE_DEFAULT_MODE_FLAGS === "string" &&
+  import.meta.env.VITE_DEFAULT_MODE_FLAGS.trim().length > 0
+    ? import.meta.env.VITE_DEFAULT_MODE_FLAGS
+    : "MODE_BASE,MODE_ADVANCED";
+
+const DEFAULT_FLAG_TOKENS = DEFAULT_MODE_FLAGS_SOURCE.split(",")
   .map((token) => token.trim())
   .filter((token) => token.length > 0);
 const DEFAULT_FLAG_SET = new Set(DEFAULT_FLAG_TOKENS);
