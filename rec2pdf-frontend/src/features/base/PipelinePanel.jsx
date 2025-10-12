@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from "react";
-import { Cpu, Download, FileText, Sparkles } from "../../components/icons";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Cpu, Download, FileText, RefreshCw, Sparkles } from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
 import { useAnalytics } from "../../context/AnalyticsContext";
 import { classNames } from "../../utils/classNames";
@@ -12,7 +12,7 @@ const statusTone = {
   failed: "text-rose-200",
 };
 
-const PipelinePanel = ({ latestEntry }) => {
+const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   const context = useAppContext();
   const { trackEvent } = useAnalytics();
   const {
@@ -26,12 +26,33 @@ const PipelinePanel = ({ latestEntry }) => {
     backendUp,
     busy,
     pipelineComplete,
+    activeStageKey,
     logs,
     handleOpenHistoryPdf,
     handleOpenHistoryMd,
+    resetAll,
   } = context;
 
   const canPublish = Boolean(audioBlob) && !busy && backendUp !== false;
+  const focusPublish = journeyStage === "publish" && !pipelineComplete;
+  const [hasDownloaded, setHasDownloaded] = useState(false);
+  const focusDownload =
+    journeyStage === "download" && pipelineComplete && latestEntry?.pdfPath && !hasDownloaded;
+
+  const pipelineInFlight = busy && !pipelineComplete;
+
+  const entryId = latestEntry?.id ?? null;
+  const entryPdfPath = latestEntry?.pdfPath ?? null;
+
+  useEffect(() => {
+    setHasDownloaded(false);
+  }, [entryId]);
+
+  useEffect(() => {
+    if (!pipelineComplete || !entryPdfPath) {
+      setHasDownloaded(false);
+    }
+  }, [entryPdfPath, pipelineComplete]);
 
   const handlePublish = useCallback(() => {
     if (!canPublish) {
@@ -53,9 +74,10 @@ const PipelinePanel = ({ latestEntry }) => {
       path: latestEntry.pdfPath,
     });
     handleOpenHistoryPdf(latestEntry);
+    setHasDownloaded(true);
   }, [handleOpenHistoryPdf, latestEntry, trackEvent]);
 
-  const handleOpenMarkdown = useCallback(() => {
+  const handleModifyPdf = useCallback(() => {
     if (!latestEntry) {
       return;
     }
@@ -64,7 +86,17 @@ const PipelinePanel = ({ latestEntry }) => {
       path: latestEntry?.mdPath || "",
     });
     handleOpenHistoryMd(latestEntry);
+    setHasDownloaded(true);
   }, [handleOpenHistoryMd, latestEntry, trackEvent]);
+
+  const handleResetSession = useCallback(() => {
+    trackEvent("pipeline.reset_session", {
+      fromDownload: pipelineComplete,
+      hadAudio: Boolean(audioBlob),
+    });
+    setHasDownloaded(false);
+    resetAll();
+  }, [audioBlob, pipelineComplete, resetAll, trackEvent]);
 
   const stages = useMemo(
     () =>
@@ -83,16 +115,113 @@ const PipelinePanel = ({ latestEntry }) => {
     [PIPELINE_STAGES, STAGE_STATUS_LABELS, pipelineStatus, stageMessages]
   );
 
+  const activeStageDefinition = useMemo(
+    () => stages.find((stage) => stage.key === activeStageKey),
+    [stages, activeStageKey]
+  );
+
+  const nextStageDefinition = useMemo(() => {
+    if (!activeStageKey) {
+      return null;
+    }
+    const activeIndex = stages.findIndex((stage) => stage.key === activeStageKey);
+    if (activeIndex === -1) {
+      return null;
+    }
+    return stages.slice(activeIndex + 1).find((stage) => stage.status !== "done") || null;
+  }, [activeStageKey, stages]);
+
+  const activeStageMessage = useMemo(() => {
+    if (pipelineComplete) {
+      return "Pipeline completata. Scarica il PDF per continuare.";
+    }
+    if (!pipelineInFlight) {
+      return "Tutto pronto. Pubblica per avviare la pipeline automatica.";
+    }
+    if (activeStageDefinition) {
+      return (
+        stageMessages[activeStageDefinition.key] ||
+        activeStageDefinition.description ||
+        "Pipeline avviata, stiamo preparando il risultato."
+      );
+    }
+    return "Pipeline avviata, stiamo preparando il risultato.";
+  }, [activeStageDefinition, pipelineComplete, pipelineInFlight, stageMessages]);
+
+  const activeStageTitle = useMemo(() => {
+    if (pipelineComplete) {
+      return "Pronto al download";
+    }
+    if (!pipelineInFlight) {
+      return "In attesa di pubblicazione";
+    }
+    if (activeStageDefinition) {
+      return `${activeStageDefinition.label}: in corso`;
+    }
+    return "Pipeline in corso";
+  }, [activeStageDefinition, pipelineComplete, pipelineInFlight]);
+
+  const pipelineStatusAccent = pipelineComplete
+    ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-100"
+    : pipelineInFlight
+      ? "border-indigo-400/40 bg-indigo-500/10 text-indigo-100"
+      : "border-white/10 bg-white/5 text-white/80";
+
+  const StatusIcon = activeStageDefinition?.icon || Sparkles;
+
   const logsPreview = useMemo(() => logs.slice(-3), [logs]);
+
+  const publishButtonClass = classNames(
+    "flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-base font-semibold",
+    "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+    focusPublish
+      ? busy
+        ? "bg-indigo-500/50 text-indigo-50 shadow-[0_18px_60px_-30px_rgba(99,102,241,0.65)]"
+        : canPublish
+          ? "bg-indigo-400 text-slate-950 shadow-[0_20px_60px_-35px_rgba(99,102,241,0.9)] hover:bg-indigo-300"
+          : "bg-indigo-500/30 text-indigo-100"
+      : canPublish
+        ? "border border-white/15 bg-white/5 text-white/75 hover:border-white/25 hover:bg-white/10"
+        : "border border-white/10 bg-white/5 text-white/50",
+    focusDownload ? "opacity-50" : null,
+    !canPublish && "cursor-not-allowed"
+  );
+
+  const downloadButtonClass = classNames(
+    "flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+    focusDownload
+      ? "bg-emerald-400 text-slate-950 shadow-[0_18px_60px_-30px_rgba(16,185,129,0.9)] hover:bg-emerald-300"
+      : hasDownloaded
+        ? "border border-emerald-300/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20"
+        : "border border-emerald-300/50 bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30"
+  );
+
+  const modifyButtonClass = classNames(
+    "flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+    hasDownloaded
+      ? "bg-indigo-400 text-slate-950 shadow-[0_18px_60px_-30px_rgba(99,102,241,0.8)] hover:bg-indigo-300"
+      : "border border-white/15 bg-white/5 text-white/75 hover:border-white/25 hover:bg-white/10"
+  );
+
+  const newSessionButtonClass = classNames(
+    "flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+    hasDownloaded
+      ? "bg-emerald-400 text-slate-950 shadow-[0_18px_60px_-30px_rgba(16,185,129,0.9)] hover:bg-emerald-300"
+      : "border border-white/15 bg-white/5 text-white/70 hover:border-white/25 hover:bg-white/10",
+    busy ? "cursor-not-allowed opacity-60" : null
+  );
+
+  const showDownloadActions = pipelineComplete && latestEntry?.pdfPath;
+  const showNextSteps = showDownloadActions && hasDownloaded;
 
   return (
     <div className="flex h-full flex-col gap-5 rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-subtle">
       <div>
         <h2 className="flex items-center gap-2 text-lg font-semibold uppercase tracking-[0.32em] text-white/70">
-          <Sparkles className="h-4 w-4" /> Publish
+          <Sparkles className="h-4 w-4" /> Pubblica
         </h2>
         <p className="mt-1 text-sm text-white/70">
-          Avvia la pipeline executive e scarica il PDF appena pronto.
+          Avvia la pipeline automatizzata e ricevi il PDF pronto da condividere.
         </p>
       </div>
 
@@ -101,38 +230,98 @@ const PipelinePanel = ({ latestEntry }) => {
           type="button"
           onClick={handlePublish}
           disabled={!canPublish}
-          className={classNames(
-            "flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-500/80 px-4 py-3 text-base font-semibold text-white",
-            "transition hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
-            !canPublish && "cursor-not-allowed opacity-60"
-          )}
+          className={publishButtonClass}
         >
-          <Cpu className="h-5 w-5" /> Pubblica PDF
+          <Cpu className="h-5 w-5" /> Pubblica
         </button>
         {!canPublish ? (
           <p className="text-xs text-white/50">Carica o registra un audio per pubblicare.</p>
         ) : null}
 
-        {pipelineComplete && latestEntry?.pdfPath ? (
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleDownload}
-              className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-emerald-300/50 bg-emerald-400/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/30"
-            >
-              <Download className="h-4 w-4" /> Scarica PDF
-            </button>
-            {latestEntry?.mdPath ? (
+        {showDownloadActions ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={handleOpenMarkdown}
-                className="flex items-center gap-2 rounded-2xl border border-white/20 bg-white/5 px-4 py-2 text-sm text-white/80 transition hover:bg-white/10"
+                onClick={handleDownload}
+                className={downloadButtonClass}
               >
-                <FileText className="h-4 w-4" /> Markdown
+                <Download className="h-4 w-4" /> Scarica PDF
               </button>
+              {latestEntry?.mdPath && !showNextSteps ? (
+                <button
+                  type="button"
+                  onClick={handleModifyPdf}
+                  className={modifyButtonClass}
+                >
+                  <FileText className="h-4 w-4" /> Modifica PDF
+                </button>
+              ) : null}
+            </div>
+            {showNextSteps ? (
+              <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-4 text-xs text-white/70">
+                <p className="text-sm font-semibold text-white">Prossimi passi</p>
+                <p className="mt-1">
+                  Puoi rifinire il documento nel markdown editor oppure avviare una nuova sessione di registrazione.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {latestEntry?.mdPath ? (
+                    <button
+                      type="button"
+                      onClick={handleModifyPdf}
+                      className={modifyButtonClass}
+                    >
+                      <FileText className="h-4 w-4" /> Modifica PDF
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={handleResetSession}
+                    disabled={busy}
+                    className={newSessionButtonClass}
+                  >
+                    <RefreshCw className="h-4 w-4" /> Nuova sessione
+                  </button>
+                </div>
+              </div>
             ) : null}
           </div>
         ) : null}
+      </div>
+
+      <div
+        className={classNames(
+          "rounded-2xl border px-4 py-4 text-sm transition-all",
+          pipelineStatusAccent
+        )}
+        role="status"
+        aria-live="polite"
+      >
+        <div className="flex items-start gap-3">
+          <div className="relative flex h-11 w-11 flex-none items-center justify-center">
+            {pipelineInFlight ? (
+              <span className="absolute h-11 w-11 animate-ping rounded-full bg-indigo-300/20" aria-hidden="true" />
+            ) : null}
+            <span className="absolute inset-0 rounded-full bg-white/5" aria-hidden="true" />
+            <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-black/20">
+              <StatusIcon className="h-4 w-4" />
+            </span>
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-white">{activeStageTitle}</p>
+            <p className="text-xs leading-relaxed text-white/75">{activeStageMessage}</p>
+            {pipelineInFlight && nextStageDefinition ? (
+              <p className="text-[11px] text-white/60">
+                Prossimo step: {nextStageDefinition.label.toLowerCase()}.
+              </p>
+            ) : null}
+            {pipelineComplete ? (
+              <p className="text-[11px] text-emerald-200/90">
+                Scarica il PDF o modifica il documento per rifinire il risultato.
+              </p>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -141,9 +330,16 @@ const PipelinePanel = ({ latestEntry }) => {
             <span>Progress</span>
             <span>{progressPercent}%</span>
           </div>
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
+          <div className="relative mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-violet-500"
+              className={classNames(
+                "absolute inset-0 opacity-0 transition-opacity",
+                pipelineInFlight && progressPercent < 15 ? "progress-bar-animated opacity-60" : null
+              )}
+              aria-hidden="true"
+            />
+            <div
+              className="relative h-full rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-violet-500 transition-[width] duration-500 ease-out"
               style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }}
             />
           </div>
@@ -152,20 +348,44 @@ const PipelinePanel = ({ latestEntry }) => {
         <ul className="space-y-3">
           {stages.map((stage) => {
             const Icon = stage.icon;
+            const status = stage.status;
+            const isActive = status === "running";
+            const isCompleted = status === "done";
+            const isFailed = status === "failed";
             return (
               <li
                 key={stage.key}
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                className={classNames(
+                  "rounded-2xl border px-4 py-3 transition-all",
+                  isActive
+                    ? "border-indigo-400/50 bg-indigo-500/15 shadow-[0_12px_40px_-28px_rgba(99,102,241,0.9)]"
+                    : isCompleted
+                      ? "border-emerald-400/40 bg-emerald-500/10"
+                      : isFailed
+                        ? "border-rose-500/50 bg-rose-500/10"
+                        : "border-white/10 bg-white/5"
+                )}
+                aria-current={isActive ? "step" : undefined}
               >
                 <div className="flex items-center justify-between text-sm font-semibold">
                   <span className="flex items-center gap-2 text-white/90">
                     <Icon className="h-4 w-4" /> {stage.label}
                   </span>
-                  <span className={classNames("text-xs font-semibold", statusTone[stage.status] || "text-white/60")}> 
+                  <span className={classNames(
+                    "text-xs font-semibold",
+                    statusTone[stage.status] || "text-white/60"
+                  )}>
                     {stage.statusLabel}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-white/70">{stage.description}</p>
+                <p
+                  className={classNames(
+                    "mt-1 text-xs leading-relaxed",
+                    isActive ? "text-white/80" : "text-white/70"
+                  )}
+                >
+                  {stage.description}
+                </p>
               </li>
             );
           })}
