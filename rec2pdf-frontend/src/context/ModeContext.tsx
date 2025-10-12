@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { Session } from "@supabase/supabase-js";
+import type { PostgrestError, Session } from "@supabase/supabase-js";
 import supabase from "../supabaseClient";
 
 type Mode = "base" | "advanced";
@@ -25,6 +25,9 @@ const MODE_FLAGS: Record<Mode, string> = {
 };
 
 const ModeContext = createContext<ModeContextValue | undefined>(undefined);
+
+const MODE_TABLE_CANDIDATES = ["profiles", "public_profiles"] as const;
+type ModeTableName = (typeof MODE_TABLE_CANDIDATES)[number];
 
 type ModeProviderProps = {
   children: ReactNode;
@@ -87,12 +90,46 @@ const sanitizeMode = (candidate: string | null | undefined, fallback: Mode, allo
   return fallback;
 };
 
+const isMissingTableError = (error: unknown): error is PostgrestError => {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const postgrestError = error as PostgrestError;
+  const code = postgrestError.code ?? "";
+  const message = postgrestError.message ?? "";
+  const details = postgrestError.details ?? "";
+
+  if (code === "PGRST302" || code === "42P01") {
+    return true;
+  }
+
+  return (
+    /does not exist/i.test(message) ||
+    /relation .* does not exist/i.test(message) ||
+    /does not exist/i.test(details)
+  );
+};
+
+const isNoRowError = (error: PostgrestError | null, status?: number) => {
+  if (!error) {
+    return false;
+  }
+
+  if (status === 406) {
+    return true;
+  }
+
+  return error.code === "PGRST116" || /Results contain 0 rows/i.test(error.message ?? "");
+};
+
 export const ModeProvider = ({ children, session, syncWithSupabase = true }: ModeProviderProps) => {
   const [mode, setModeState] = useState<Mode>(() => readStoredMode());
   const [hydrated, setHydrated] = useState<boolean>(false);
   const [persisting, setPersisting] = useState<boolean>(false);
   const preferencesRef = useRef<Record<string, unknown>>({});
   const lastSyncedModeRef = useRef<Mode | null>(null);
+  const modeTableRef = useRef<ModeTableName | null>(null);
   const sessionId = session?.user?.id ?? null;
   const [flags, setFlags] = useState<Set<string>>(() => extractFlags(session));
   const [remoteSyncDisabled, setRemoteSyncDisabled] = useState<boolean>(!syncWithSupabase);
@@ -144,6 +181,7 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
       setHydrated(true);
       preferencesRef.current = {};
       lastSyncedModeRef.current = null;
+      modeTableRef.current = null;
       return () => undefined;
     }
 
@@ -152,6 +190,7 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
     if (!sessionId) {
       preferencesRef.current = {};
       lastSyncedModeRef.current = null;
+      modeTableRef.current = null;
       setHydrated(true);
       return () => {
         isActive = false;
@@ -161,49 +200,87 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
     setHydrated(false);
 
     const fetchPreferences = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("preferences")
-          .eq("id", sessionId)
-          .single();
+      const tablesToTry = modeTableRef.current
+        ? [modeTableRef.current, ...MODE_TABLE_CANDIDATES.filter((table) => table !== modeTableRef.current)]
+        : [...MODE_TABLE_CANDIDATES];
 
-        if (!isActive) {
+      for (const tableName of tablesToTry) {
+        try {
+          const { data, error, status } = await supabase
+            .from(tableName)
+            .select("preferences")
+            .eq("id", sessionId)
+            .single();
+
+          if (!isActive) {
+            return;
+          }
+
+          if (error) {
+            if (isMissingTableError(error)) {
+              continue;
+            }
+
+            if (isNoRowError(error, status)) {
+              preferencesRef.current = {};
+              lastSyncedModeRef.current = null;
+              modeTableRef.current = tableName;
+              return;
+            }
+
+            console.warn("Impossibile recuperare le preferenze dal profilo Supabase:", error);
+            preferencesRef.current = {};
+            lastSyncedModeRef.current = null;
+            modeTableRef.current = null;
+            setRemoteSyncDisabled(true);
+            return;
+          }
+
+          const nextPreferences =
+            data && typeof data.preferences === "object" && data.preferences !== null
+              ? (data.preferences as Record<string, unknown>)
+              : {};
+
+          preferencesRef.current = nextPreferences;
+          const remoteMode = sanitizeMode(nextPreferences?.mode as string | null | undefined, DEFAULT_MODE, availableModes);
+          lastSyncedModeRef.current = remoteMode;
+          modeTableRef.current = tableName;
+          setModeState(remoteMode);
           return;
-        }
+        } catch (error) {
+          if (!isActive) {
+            return;
+          }
 
-        if (error) {
-          console.warn("Impossibile recuperare le preferenze dal profilo Supabase:", error);
-          preferencesRef.current = {};
-          lastSyncedModeRef.current = null;
-          setRemoteSyncDisabled(true);
-          return;
-        }
+          if (isMissingTableError(error)) {
+            continue;
+          }
 
-        const nextPreferences =
-          data && typeof data.preferences === "object" && data.preferences !== null
-            ? (data.preferences as Record<string, unknown>)
-            : {};
-
-        preferencesRef.current = nextPreferences;
-        const remoteMode = sanitizeMode(nextPreferences?.mode as string | null | undefined, DEFAULT_MODE, availableModes);
-        lastSyncedModeRef.current = remoteMode;
-        setModeState(remoteMode);
-      } catch (error) {
-        if (isActive) {
           console.warn("Errore inatteso nel recupero delle preferenze utente:", error);
           preferencesRef.current = {};
           lastSyncedModeRef.current = null;
+          modeTableRef.current = null;
           setRemoteSyncDisabled(true);
+          return;
         }
-      } finally {
-        if (isActive) {
-          setHydrated(true);
-        }
+      }
+
+      if (isActive) {
+        console.warn(
+          "Nessuna tabella Supabase valida trovata per le preferenze della modalità, disabilito la sincronizzazione remota.",
+        );
+        preferencesRef.current = {};
+        lastSyncedModeRef.current = null;
+        modeTableRef.current = null;
+        setRemoteSyncDisabled(true);
       }
     };
 
-    fetchPreferences();
+    fetchPreferences().finally(() => {
+      if (isActive) {
+        setHydrated(true);
+      }
+    });
 
     return () => {
       isActive = false;
@@ -219,29 +296,65 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
       setPersisting(true);
       const nextPreferences = { ...preferencesRef.current, mode: nextMode };
 
+      let saved = false;
+      let encounteredUnexpectedError = false;
+
       try {
-        const { data, error } = await supabase
-          .from("profiles")
-          .upsert({ id: sessionId, preferences: nextPreferences }, { onConflict: "id" })
-          .select("preferences")
-          .single();
+        const tablesToTry = modeTableRef.current
+          ? [modeTableRef.current, ...MODE_TABLE_CANDIDATES.filter((table) => table !== modeTableRef.current)]
+          : [...MODE_TABLE_CANDIDATES];
 
-        if (error) {
-          throw error;
+        for (const tableName of tablesToTry) {
+          const { data, error, status } = await supabase
+            .from(tableName)
+            .upsert({ id: sessionId, preferences: nextPreferences }, { onConflict: "id" })
+            .select("preferences")
+            .single();
+
+          if (error) {
+            if (isMissingTableError(error)) {
+              continue;
+            }
+
+            if (isNoRowError(error, status)) {
+              preferencesRef.current = nextPreferences;
+              lastSyncedModeRef.current = nextMode;
+              modeTableRef.current = tableName;
+              saved = true;
+              break;
+            }
+
+            encounteredUnexpectedError = true;
+            throw error;
+          }
+
+          const stored =
+            data && typeof data.preferences === "object" && data.preferences !== null
+              ? (data.preferences as Record<string, unknown>)
+              : nextPreferences;
+
+          preferencesRef.current = stored;
+          lastSyncedModeRef.current = nextMode;
+          modeTableRef.current = tableName;
+          saved = true;
+          break;
         }
-
-        const stored =
-          data && typeof data.preferences === "object" && data.preferences !== null
-            ? (data.preferences as Record<string, unknown>)
-            : nextPreferences;
-
-        preferencesRef.current = stored;
-        lastSyncedModeRef.current = nextMode;
       } catch (error) {
+        encounteredUnexpectedError = true;
         console.warn("Impossibile salvare la modalità preferita su Supabase:", error);
-        setRemoteSyncDisabled(true);
       } finally {
         setPersisting(false);
+      }
+
+      if (!saved) {
+        if (!encounteredUnexpectedError) {
+          console.warn(
+            "Nessuna tabella Supabase valida trovata per salvare le preferenze della modalità, disabilito la sincronizzazione remota.",
+          );
+        }
+
+        modeTableRef.current = null;
+        setRemoteSyncDisabled(true);
       }
     },
     [remoteSyncDisabled, sessionId],
