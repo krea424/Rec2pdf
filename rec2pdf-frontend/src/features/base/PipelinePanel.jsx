@@ -162,7 +162,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   }, [activeStageDefinition, pipelineComplete, pipelineInFlight]);
 
   const pipelineStatusAccent = pipelineComplete
-    ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-100"
+    ? "border-white/10 bg-white/5 text-white/80"
     : pipelineInFlight
       ? "border-indigo-400/40 bg-indigo-500/10 text-indigo-100"
       : "border-white/10 bg-white/5 text-white/80";
@@ -352,18 +352,29 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
             const isActive = status === "running";
             const isCompleted = status === "done";
             const isFailed = status === "failed";
+            const stageSurfaceClass = pipelineComplete
+              ? "border-white/10 bg-white/5"
+              : isActive
+                ? "border-indigo-400/50 bg-indigo-500/15 shadow-[0_12px_40px_-28px_rgba(99,102,241,0.9)]"
+                : isCompleted
+                  ? "border-emerald-400/40 bg-emerald-500/10"
+                  : isFailed
+                    ? "border-rose-500/50 bg-rose-500/10"
+                    : "border-white/10 bg-white/5";
+            const statusLabelClass = pipelineComplete
+              ? "text-white/60"
+              : statusTone[stage.status] || "text-white/60";
+            const descriptionTone = pipelineComplete
+              ? "text-white/60"
+              : isActive
+                ? "text-white/80"
+                : "text-white/70";
             return (
               <li
                 key={stage.key}
                 className={classNames(
                   "rounded-2xl border px-4 py-3 transition-all",
-                  isActive
-                    ? "border-indigo-400/50 bg-indigo-500/15 shadow-[0_12px_40px_-28px_rgba(99,102,241,0.9)]"
-                    : isCompleted
-                      ? "border-emerald-400/40 bg-emerald-500/10"
-                      : isFailed
-                        ? "border-rose-500/50 bg-rose-500/10"
-                        : "border-white/10 bg-white/5"
+                  stageSurfaceClass
                 )}
                 aria-current={isActive ? "step" : undefined}
               >
@@ -371,19 +382,11 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
                   <span className="flex items-center gap-2 text-white/90">
                     <Icon className="h-4 w-4" /> {stage.label}
                   </span>
-                  <span className={classNames(
-                    "text-xs font-semibold",
-                    statusTone[stage.status] || "text-white/60"
-                  )}>
+                  <span className={classNames("text-xs font-semibold", statusLabelClass)}>
                     {stage.statusLabel}
                   </span>
                 </div>
-                <p
-                  className={classNames(
-                    "mt-1 text-xs leading-relaxed",
-                    isActive ? "text-white/80" : "text-white/70"
-                  )}
-                >
+                <p className={classNames("mt-1 text-xs leading-relaxed", descriptionTone)}>
                   {stage.description}
                 </p>
               </li>
