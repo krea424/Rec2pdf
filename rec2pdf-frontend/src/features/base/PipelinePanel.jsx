@@ -26,6 +26,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     backendUp,
     busy,
     pipelineComplete,
+    activeStageKey,
     logs,
     handleOpenHistoryPdf,
     handleOpenHistoryMd,
@@ -37,6 +38,8 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   const [hasDownloaded, setHasDownloaded] = useState(false);
   const focusDownload =
     journeyStage === "download" && pipelineComplete && latestEntry?.pdfPath && !hasDownloaded;
+
+  const pipelineInFlight = busy && !pipelineComplete;
 
   const entryId = latestEntry?.id ?? null;
   const entryPdfPath = latestEntry?.pdfPath ?? null;
@@ -111,6 +114,60 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
       }),
     [PIPELINE_STAGES, STAGE_STATUS_LABELS, pipelineStatus, stageMessages]
   );
+
+  const activeStageDefinition = useMemo(
+    () => stages.find((stage) => stage.key === activeStageKey),
+    [stages, activeStageKey]
+  );
+
+  const nextStageDefinition = useMemo(() => {
+    if (!activeStageKey) {
+      return null;
+    }
+    const activeIndex = stages.findIndex((stage) => stage.key === activeStageKey);
+    if (activeIndex === -1) {
+      return null;
+    }
+    return stages.slice(activeIndex + 1).find((stage) => stage.status !== "done") || null;
+  }, [activeStageKey, stages]);
+
+  const activeStageMessage = useMemo(() => {
+    if (pipelineComplete) {
+      return "Pipeline completata. Scarica il PDF per continuare.";
+    }
+    if (!pipelineInFlight) {
+      return "Tutto pronto. Pubblica per avviare la pipeline automatica.";
+    }
+    if (activeStageDefinition) {
+      return (
+        stageMessages[activeStageDefinition.key] ||
+        activeStageDefinition.description ||
+        "Pipeline avviata, stiamo preparando il risultato."
+      );
+    }
+    return "Pipeline avviata, stiamo preparando il risultato.";
+  }, [activeStageDefinition, pipelineComplete, pipelineInFlight, stageMessages]);
+
+  const activeStageTitle = useMemo(() => {
+    if (pipelineComplete) {
+      return "Pronto al download";
+    }
+    if (!pipelineInFlight) {
+      return "In attesa di pubblicazione";
+    }
+    if (activeStageDefinition) {
+      return `${activeStageDefinition.label}: in corso`;
+    }
+    return "Pipeline in corso";
+  }, [activeStageDefinition, pipelineComplete, pipelineInFlight]);
+
+  const pipelineStatusAccent = pipelineComplete
+    ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-100"
+    : pipelineInFlight
+      ? "border-indigo-400/40 bg-indigo-500/10 text-indigo-100"
+      : "border-white/10 bg-white/5 text-white/80";
+
+  const StatusIcon = activeStageDefinition?.icon || Sparkles;
 
   const logsPreview = useMemo(() => logs.slice(-3), [logs]);
 
@@ -232,15 +289,57 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
         ) : null}
       </div>
 
+      <div
+        className={classNames(
+          "rounded-2xl border px-4 py-4 text-sm transition-all",
+          pipelineStatusAccent
+        )}
+        role="status"
+        aria-live="polite"
+      >
+        <div className="flex items-start gap-3">
+          <div className="relative flex h-11 w-11 flex-none items-center justify-center">
+            {pipelineInFlight ? (
+              <span className="absolute h-11 w-11 animate-ping rounded-full bg-indigo-300/20" aria-hidden="true" />
+            ) : null}
+            <span className="absolute inset-0 rounded-full bg-white/5" aria-hidden="true" />
+            <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-black/20">
+              <StatusIcon className="h-4 w-4" />
+            </span>
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-white">{activeStageTitle}</p>
+            <p className="text-xs leading-relaxed text-white/75">{activeStageMessage}</p>
+            {pipelineInFlight && nextStageDefinition ? (
+              <p className="text-[11px] text-white/60">
+                Prossimo step: {nextStageDefinition.label.toLowerCase()}.
+              </p>
+            ) : null}
+            {pipelineComplete ? (
+              <p className="text-[11px] text-emerald-200/90">
+                Scarica il PDF o modifica il documento per rifinire il risultato.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
       <div className="space-y-4">
         <div>
           <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-white/60">
             <span>Progress</span>
             <span>{progressPercent}%</span>
           </div>
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
+          <div className="relative mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-violet-500"
+              className={classNames(
+                "absolute inset-0 opacity-0 transition-opacity",
+                pipelineInFlight && progressPercent < 15 ? "progress-bar-animated opacity-60" : null
+              )}
+              aria-hidden="true"
+            />
+            <div
+              className="relative h-full rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-violet-500 transition-[width] duration-500 ease-out"
               style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }}
             />
           </div>
@@ -249,20 +348,44 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
         <ul className="space-y-3">
           {stages.map((stage) => {
             const Icon = stage.icon;
+            const status = stage.status;
+            const isActive = status === "running";
+            const isCompleted = status === "done";
+            const isFailed = status === "failed";
             return (
               <li
                 key={stage.key}
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                className={classNames(
+                  "rounded-2xl border px-4 py-3 transition-all",
+                  isActive
+                    ? "border-indigo-400/50 bg-indigo-500/15 shadow-[0_12px_40px_-28px_rgba(99,102,241,0.9)]"
+                    : isCompleted
+                      ? "border-emerald-400/40 bg-emerald-500/10"
+                      : isFailed
+                        ? "border-rose-500/50 bg-rose-500/10"
+                        : "border-white/10 bg-white/5"
+                )}
+                aria-current={isActive ? "step" : undefined}
               >
                 <div className="flex items-center justify-between text-sm font-semibold">
                   <span className="flex items-center gap-2 text-white/90">
                     <Icon className="h-4 w-4" /> {stage.label}
                   </span>
-                  <span className={classNames("text-xs font-semibold", statusTone[stage.status] || "text-white/60")}> 
+                  <span className={classNames(
+                    "text-xs font-semibold",
+                    statusTone[stage.status] || "text-white/60"
+                  )}>
                     {stage.statusLabel}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-white/70">{stage.description}</p>
+                <p
+                  className={classNames(
+                    "mt-1 text-xs leading-relaxed",
+                    isActive ? "text-white/80" : "text-white/70"
+                  )}
+                >
+                  {stage.description}
+                </p>
               </li>
             );
           })}
