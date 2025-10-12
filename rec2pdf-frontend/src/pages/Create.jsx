@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
   Bug,
@@ -22,6 +22,8 @@ import { useAppContext } from "../hooks/useAppContext";
 import { classNames } from "../utils/classNames";
 import { Button, Toast } from "../components/ui";
 import BaseHome from "../features/base/BaseHome";
+
+const AdvancedDashboard = lazy(() => import("../features/advanced/AdvancedDashboard"));
 
 const truncateText = (value, limit = 80) => {
   if (typeof value !== "string") {
@@ -62,8 +64,27 @@ const ErrorBanner = () => {
 const CreatePage = () => {
   const context = useAppContext();
 
+  const hasAdvancedAccess =
+    typeof context.hasModeFlag === "function" ? context.hasModeFlag("MODE_ADVANCED") : false;
+
   if (context.mode === "base") {
     return <BaseHome />;
+  }
+
+  if (!hasAdvancedAccess) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-4 p-6 text-sm text-zinc-300">
+        <div className="rounded-3xl border border-amber-500/40 bg-amber-500/10 p-6">
+          <h2 className="text-lg font-semibold text-amber-100">Modalità avanzata non disponibile</h2>
+          <p className="mt-2 text-amber-100/80">
+            Il tuo account non ha ancora accesso alla control room avanzata. Contatta l'amministratore per abilitare il flag
+            <code className="mx-1 rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-xs">MODE_ADVANCED</code> oppure torna
+            alla modalità base.
+          </p>
+        </div>
+        <BaseHome />
+      </div>
+    );
   }
 
   const {
@@ -322,6 +343,16 @@ const CreatePage = () => {
       )}
 
       <ErrorBanner />
+
+      <Suspense
+        fallback={
+          <div className="mt-6 rounded-3xl border border-dashed border-zinc-800 bg-zinc-950/30 p-6 text-sm text-zinc-400">
+            Caricamento control room…
+          </div>
+        }
+      >
+        <AdvancedDashboard />
+      </Suspense>
 
       <section className="mt-6 space-y-4">
         <div
@@ -1055,27 +1086,29 @@ const CreatePage = () => {
             </div>
           </div>
 
-          <PromptLibrary
-            prompts={context.prompts}
-            loading={context.promptLoading}
-            selection={context.promptState}
-            onSelectPrompt={context.handleSelectPromptTemplate}
-            onClearSelection={context.handleClearPromptSelection}
-            favorites={context.promptFavorites}
-            onToggleFavorite={context.handleTogglePromptFavorite}
-            onRefresh={context.handleRefreshPrompts}
-            themeStyles={themes[theme]}
-            themeName={theme}
-            activePrompt={context.activePrompt}
-            focusValue={context.promptState.focus}
-            onFocusChange={context.handlePromptFocusChange}
-            notesValue={context.promptState.notes}
-            onNotesChange={context.handlePromptNotesChange}
-            cueProgress={context.promptState.cueProgress || {}}
-            onCueToggle={context.handleTogglePromptCue}
-            onCreatePrompt={context.handleCreatePrompt}
-            onDeletePrompt={context.handleDeletePrompt}
-          />
+          <div id="prompt-library">
+            <PromptLibrary
+              prompts={context.prompts}
+              loading={context.promptLoading}
+              selection={context.promptState}
+              onSelectPrompt={context.handleSelectPromptTemplate}
+              onClearSelection={context.handleClearPromptSelection}
+              favorites={context.promptFavorites}
+              onToggleFavorite={context.handleTogglePromptFavorite}
+              onRefresh={context.handleRefreshPrompts}
+              themeStyles={themes[theme]}
+              themeName={theme}
+              activePrompt={context.activePrompt}
+              focusValue={context.promptState.focus}
+              onFocusChange={context.handlePromptFocusChange}
+              notesValue={context.promptState.notes}
+              onNotesChange={context.handlePromptNotesChange}
+              cueProgress={context.promptState.cueProgress || {}}
+              onCueToggle={context.handleTogglePromptCue}
+              onCreatePrompt={context.handleCreatePrompt}
+              onDeletePrompt={context.handleDeletePrompt}
+            />
+          </div>
 
           <div
             className={classNames(
