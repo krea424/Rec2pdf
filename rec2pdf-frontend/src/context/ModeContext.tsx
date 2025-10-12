@@ -107,7 +107,9 @@ const isMissingTableError = (error: unknown): error is PostgrestError => {
   return (
     /does not exist/i.test(message) ||
     /relation .* does not exist/i.test(message) ||
-    /does not exist/i.test(details)
+    /does not exist/i.test(details) ||
+    /could not find the table/i.test(message) ||
+    /schema cache/i.test(message)
   );
 };
 
@@ -132,15 +134,26 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
   const modeTableRef = useRef<ModeTableName | null>(null);
   const sessionId = session?.user?.id ?? null;
   const [flags, setFlags] = useState<Set<string>>(() => extractFlags(session));
-  const [remoteSyncDisabled, setRemoteSyncDisabled] = useState<boolean>(!syncWithSupabase);
+  const [remoteSyncOverrideDisabled, setRemoteSyncOverrideDisabled] = useState<boolean>(false);
+
+  const remoteSyncDisabled = useMemo(
+    () => !syncWithSupabase || remoteSyncOverrideDisabled,
+    [remoteSyncOverrideDisabled, syncWithSupabase],
+  );
 
   useEffect(() => {
     setFlags(extractFlags(session));
   }, [session]);
 
   useEffect(() => {
-    setRemoteSyncDisabled(!syncWithSupabase);
+    if (!syncWithSupabase) {
+      setRemoteSyncOverrideDisabled(false);
+    }
   }, [syncWithSupabase]);
+
+  useEffect(() => {
+    setRemoteSyncOverrideDisabled(false);
+  }, [sessionId]);
 
   const availableModes = useMemo<Mode[]>(() => {
     const enabled = (Object.keys(MODE_FLAGS) as Mode[]).filter((candidate) => {
@@ -232,7 +245,7 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
             preferencesRef.current = {};
             lastSyncedModeRef.current = null;
             modeTableRef.current = null;
-            setRemoteSyncDisabled(true);
+            setRemoteSyncOverrideDisabled(true);
             return;
           }
 
@@ -260,7 +273,7 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
           preferencesRef.current = {};
           lastSyncedModeRef.current = null;
           modeTableRef.current = null;
-          setRemoteSyncDisabled(true);
+          setRemoteSyncOverrideDisabled(true);
           return;
         }
       }
@@ -272,7 +285,7 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
         preferencesRef.current = {};
         lastSyncedModeRef.current = null;
         modeTableRef.current = null;
-        setRemoteSyncDisabled(true);
+        setRemoteSyncOverrideDisabled(true);
       }
     };
 
@@ -354,7 +367,7 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
         }
 
         modeTableRef.current = null;
-        setRemoteSyncDisabled(true);
+        setRemoteSyncOverrideDisabled(true);
       }
     },
     [remoteSyncDisabled, sessionId],
