@@ -35,6 +35,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   const canPublish = Boolean(audioBlob) && !busy && backendUp !== false;
   const focusPublish = journeyStage === "publish" && !pipelineComplete;
   const [hasDownloaded, setHasDownloaded] = useState(false);
+  const [hasLaunchedPipeline, setHasLaunchedPipeline] = useState(false);
   const focusDownload =
     journeyStage === "download" && pipelineComplete && latestEntry?.pdfPath && !hasDownloaded;
 
@@ -61,6 +62,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
       hasAudio: Boolean(audioBlob),
       backendReachable: backendUp !== false,
     });
+    setHasLaunchedPipeline(true);
     processViaBackend();
   }, [audioBlob, backendUp, canPublish, processViaBackend, trackEvent]);
 
@@ -94,6 +96,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
       hadAudio: Boolean(audioBlob),
     });
     setHasDownloaded(false);
+    setHasLaunchedPipeline(false);
     resetAll();
   }, [audioBlob, pipelineComplete, resetAll, trackEvent]);
 
@@ -210,6 +213,8 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
 
   const showDownloadActions = pipelineComplete && latestEntry?.pdfPath;
   const showNextSteps = showDownloadActions && hasDownloaded;
+  const showPipelineDetails =
+    hasLaunchedPipeline || pipelineInFlight || pipelineComplete || showDownloadActions;
 
   return (
     <div className="flex h-full flex-col gap-5 rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-subtle">
@@ -286,111 +291,119 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
         ) : null}
       </div>
 
-      <div
-        className={classNames(
-          "rounded-2xl border px-4 py-4 text-sm transition-all",
-          pipelineStatusAccent
-        )}
-        role="status"
-        aria-live="polite"
-      >
-        <div className="flex items-start gap-3">
-          <div className="relative flex h-11 w-11 flex-none items-center justify-center">
-            {pipelineInFlight ? (
-              <span className="absolute h-11 w-11 animate-ping rounded-full bg-indigo-300/20" aria-hidden="true" />
-            ) : null}
-            <span className="absolute inset-0 rounded-full bg-white/5" aria-hidden="true" />
-            <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-black/20">
-              <StatusIcon className="h-4 w-4" />
-            </span>
+      {showPipelineDetails ? (
+        <>
+          <div
+            className={classNames(
+              "rounded-2xl border px-4 py-4 text-sm transition-all",
+              pipelineStatusAccent
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex items-start gap-3">
+              <div className="relative flex h-11 w-11 flex-none items-center justify-center">
+                {pipelineInFlight ? (
+                  <span className="absolute h-11 w-11 animate-ping rounded-full bg-indigo-300/20" aria-hidden="true" />
+                ) : null}
+                <span className="absolute inset-0 rounded-full bg-white/5" aria-hidden="true" />
+                <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-black/20">
+                  <StatusIcon className="h-4 w-4" />
+                </span>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-white">{activeStageTitle}</p>
+                <p className="text-xs leading-relaxed text-white/75">{activeStageMessage}</p>
+                {pipelineInFlight && nextStageDefinition ? (
+                  <p className="text-[11px] text-white/60">
+                    Prossimo step: {nextStageDefinition.label.toLowerCase()}.
+                  </p>
+                ) : null}
+                {pipelineComplete ? (
+                  <p className="text-[11px] text-emerald-200/90">
+                    Scarica il PDF o modifica il documento per rifinire il risultato.
+                  </p>
+                ) : null}
+              </div>
+            </div>
           </div>
-          <div className="space-y-1">
-            <p className="text-sm font-semibold text-white">{activeStageTitle}</p>
-            <p className="text-xs leading-relaxed text-white/75">{activeStageMessage}</p>
-            {pipelineInFlight && nextStageDefinition ? (
-              <p className="text-[11px] text-white/60">
-                Prossimo step: {nextStageDefinition.label.toLowerCase()}.
-              </p>
-            ) : null}
-            {pipelineComplete ? (
-              <p className="text-[11px] text-emerald-200/90">
-                Scarica il PDF o modifica il documento per rifinire il risultato.
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </div>
 
-      <div className="space-y-4">
-        <div>
-          <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-white/60">
-            <span>Progress</span>
-            <span>{progressPercent}%</span>
-          </div>
-          <div className="relative mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
-            <div
-              className={classNames(
-                "absolute inset-0 opacity-0 transition-opacity",
-                pipelineInFlight && progressPercent < 15 ? "progress-bar-animated opacity-60" : null
-              )}
-              aria-hidden="true"
-            />
-            <div
-              className="relative h-full rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-violet-500 transition-[width] duration-500 ease-out"
-              style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }}
-            />
-          </div>
-        </div>
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-white/60">
+                <span>Progress</span>
+                <span>{progressPercent}%</span>
+              </div>
+              <div className="relative mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                <div
+                  className={classNames(
+                    "absolute inset-0 opacity-0 transition-opacity",
+                    pipelineInFlight && progressPercent < 15 ? "progress-bar-animated opacity-60" : null
+                  )}
+                  aria-hidden="true"
+                />
+                <div
+                  className="relative h-full rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-violet-500 transition-[width] duration-500 ease-out"
+                  style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }}
+                />
+              </div>
+            </div>
 
-        <ul className="space-y-3">
-          {stages.map((stage) => {
-            const Icon = stage.icon;
-            const status = stage.status;
-            const isActive = status === "running";
-            const isCompleted = status === "done";
-            const isFailed = status === "failed";
-            const stageSurfaceClass = pipelineComplete
-              ? "border-white/10 bg-white/5"
-              : isActive
-                ? "border-indigo-400/50 bg-indigo-500/15 shadow-[0_12px_40px_-28px_rgba(99,102,241,0.9)]"
-                : isCompleted
-                  ? "border-emerald-400/40 bg-emerald-500/10"
-                  : isFailed
-                    ? "border-rose-500/50 bg-rose-500/10"
-                    : "border-white/10 bg-white/5";
-            const statusLabelClass = pipelineComplete
-              ? "text-white/60"
-              : statusTone[stage.status] || "text-white/60";
-            const descriptionTone = pipelineComplete
-              ? "text-white/60"
-              : isActive
-                ? "text-white/80"
-                : "text-white/70";
-            return (
-              <li
-                key={stage.key}
-                className={classNames(
-                  "rounded-2xl border px-4 py-3 transition-all",
-                  stageSurfaceClass
-                )}
-                aria-current={isActive ? "step" : undefined}
-              >
-                <div className="flex items-center justify-between text-sm font-semibold">
-                  <span className="flex items-center gap-2 text-white/90">
-                    <Icon className="h-4 w-4" /> {stage.label}
-                  </span>
-                  <span className={classNames("text-xs font-semibold", statusLabelClass)}>
-                    {stage.statusLabel}
-                  </span>
-                </div>
-                <p className={classNames("mt-1 text-xs leading-relaxed", descriptionTone)}>
-                  {stage.description}
-                </p>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+            <ul className="space-y-3">
+              {stages.map((stage) => {
+                const Icon = stage.icon;
+                const status = stage.status;
+                const isActive = status === "running";
+                const isCompleted = status === "done";
+                const isFailed = status === "failed";
+                const stageSurfaceClass = pipelineComplete
+                  ? "border-white/10 bg-white/5"
+                  : isActive
+                    ? "border-indigo-400/50 bg-indigo-500/15 shadow-[0_12px_40px_-28px_rgba(99,102,241,0.9)]"
+                    : isCompleted
+                      ? "border-emerald-400/40 bg-emerald-500/10"
+                      : isFailed
+                        ? "border-rose-500/50 bg-rose-500/10"
+                        : "border-white/10 bg-white/5";
+                const statusLabelClass = pipelineComplete
+                  ? "text-white/60"
+                  : statusTone[stage.status] || "text-white/60";
+                const descriptionTone = pipelineComplete
+                  ? "text-white/60"
+                  : isActive
+                    ? "text-white/80"
+                    : "text-white/70";
+                return (
+                  <li
+                    key={stage.key}
+                    className={classNames(
+                      "rounded-2xl border px-4 py-3 transition-all",
+                      stageSurfaceClass
+                    )}
+                    aria-current={isActive ? "step" : undefined}
+                  >
+                    <div className="flex items-center justify-between text-sm font-semibold">
+                      <span className="flex items-center gap-2 text-white/90">
+                        <Icon className="h-4 w-4" /> {stage.label}
+                      </span>
+                      <span className={classNames("text-xs font-semibold", statusLabelClass)}>
+                        {stage.statusLabel}
+                      </span>
+                    </div>
+                    <p className={classNames("mt-1 text-xs leading-relaxed", descriptionTone)}>
+                      {stage.description}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-6 text-sm text-white/60">
+          Pubblica per seguire qui lo stato della pipeline e vedere avanzamento e fasi.
+        </div>
+      )}
 
     </div>
   );
