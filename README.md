@@ -8,13 +8,16 @@ Rec2PDF automatizza il flusso **voce → trascrizione → documento editoriale**
 
 ## Sommario
 - [Panoramica](#panoramica)
+- [Modalità Base](#modalità-base)
+- [Modalità Advanced](#modalità-advanced)
 - [Caratteristiche principali](#caratteristiche-principali)
 - [Architettura](#architettura)
 - [Prerequisiti](#prerequisiti)
 - [Autenticazione & Supabase](#autenticazione--supabase)
-- [Avvio rapido](#avvio-rapido)
+- [Quick start](#quick-start)
 - [Backend HTTP](#backend-http)
 - [Interfaccia web](#interfaccia-web)
+- [Scorciatoie da tastiera](#scorciatoie-da-tastiera)
 - [Workflow tipico](#workflow-tipico)
 - [Personalizzazione template PDF](#personalizzazione-template-pdf)
 - [Struttura del repository](#struttura-del-repository)
@@ -36,6 +39,20 @@ Rec2PDF nasce per supportare team editoriali e professionisti che necessitano di
 5. archiviazione su Supabase Storage e analisi strutturale del documento.
 
 La componente frontend guida l'utente con login (magic link o GitHub), diagnostica delle dipendenze, gestione di workspace/progetti, revisione del contenuto generato e accesso alla libreria cloud sincronizzata con Supabase.
+
+## Modalità Base
+La modalità **Base** è attiva per impostazione predefinita e offre un pannello essenziale incentrato sulla pipeline voce → PDF, accessibile a qualsiasi account abilitato al flag `MODE_BASE`. Il routing della pagina Create monta automaticamente questa modalità quando il contesto `ModeContext` restituisce `base` o quando l'utente non possiede il flag avanzato.【F:rec2pdf-frontend/src/pages/Create.jsx†L65-L90】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L7-L177】
+
+- **Executive pipeline con stato immediato**: hero, banner di completamento e guard-rail di connettività guidano l'utente attraverso lo stato corrente della pipeline e invitano a completare l'onboarding quando necessario.【F:rec2pdf-frontend/src/features/base/BaseHome.jsx†L10-L108】
+- **Card REC unica**: registrazione e caricamento file sono unificati in una singola card che verifica permessi microfono, formato audio e livello d'ingresso prima di consentire la pubblicazione.【F:rec2pdf-frontend/src/features/base/UploadCard.jsx†L6-L138】
+- **Pannello Publish**: progress bar, lista degli stadi (`Upload`, `Transcodifica`, `Whisper`, `Sintesi`, `Impaginazione`, `Conclusione`) e azioni rapide per download PDF/Markdown sono disponibili senza lasciare la vista principale.【F:rec2pdf-frontend/src/features/base/PipelinePanel.jsx†L15-L191】
+
+## Modalità Advanced
+La modalità **Advanced** abilita la “control room” boardroom experience. È disponibile agli utenti con il flag `MODE_ADVANCED` (persistito su Supabase e unito ai flag di default) e può essere affiancata alla modalità base per un’esperienza bimodale.【F:rec2pdf-frontend/src/pages/Create.jsx†L69-L187】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L21-L258】
+
+- **Control room modulare**: tab Destinazioni, Branding, Prompt, Diagnostica e Context Packs sono caricati lazy e strumentati con `trackEvent` per monitorare engagement su workspace, profili e libreria prompt.【F:rec2pdf-frontend/src/features/advanced/AdvancedDashboard.tsx†L1-L209】【F:rec2pdf-frontend/src/utils/analytics.ts†L29-L60】
+- **Esperienza boardroom**: superfici, badge e highlight dinamici riprendono il tema `boardroom`, estendendo i controlli della pipeline con wizard workspace/progetto, upload logo PDF e gestione slug direttamente dalla dashboard.【F:rec2pdf-frontend/src/pages/Create.jsx†L92-L210】
+- **Roadmap guidata da placeholder**: variabili d'ambiente `VITE_ENABLE_FS_INTEGRATION_PLACEHOLDER` e `VITE_ENABLE_RAG_PLACEHOLDER` mostrano card contestuali per preview funzionalità future e raccolta feedback degli stakeholder.【F:rec2pdf-frontend/src/features/advanced/AdvancedDashboard.tsx†L18-L109】
 
 ## Caratteristiche principali
 - **Autenticazione centralizzata**: Supabase gestisce login (magic link e GitHub) e protegge tutte le rotte `/api` con bearer token automatici nel frontend.【F:rec2pdf-backend/server.js†L13-L105】【F:rec2pdf-frontend/src/App.jsx†L385-L439】【F:rec2pdf-frontend/src/components/LoginPage.jsx†L1-L82】
@@ -107,7 +124,7 @@ which ppubr
 4. **Configura i provider di autenticazione** in Supabase (email OTP e GitHub OAuth) e aggiorna gli URL di redirect verso l'origin del frontend (es. `http://localhost:5173`).【F:rec2pdf-frontend/src/components/LoginPage.jsx†L11-L66】
 5. **Permessi locali e file di configurazione**: il backend continua a salvare workspaces e prompt sotto `~/.rec2pdf`, ma tutti gli artefatti (audio, trascrizioni, Markdown, PDF) vengono sincronizzati su Supabase Storage una volta completata la pipeline.【F:rec2pdf-backend/server.js†L448-L676】【F:rec2pdf-backend/server.js†L1312-L1669】【F:rec2pdf-backend/server.js†L2003-L2055】
 
-## Avvio rapido
+## Quick start
 1. **Clona il repository**
    ```bash
    git clone https://github.com/krea424/Rec2pdf.git
@@ -120,15 +137,22 @@ which ppubr
    # crea un file .env con SUPABASE_URL e SUPABASE_SERVICE_KEY (vedi sezione dedicata)
    npm run dev   # espone le API su http://localhost:7788
    ```
-   Nel file `.env` puoi anche impostare `PORT`, `PROJECT_ROOT`, `PUBLISH_SCRIPT`, `TEMPLATES_DIR`, `ASSETS_DIR`.
+   Il server Express usa `PORT`, `PROJECT_ROOT`, `PUBLISH_SCRIPT`, `TEMPLATES_DIR` e `ASSETS_DIR` se presenti nel `.env` ed esegue il publish script `Scripts/publish.sh` quando richiesto.【F:rec2pdf-backend/package.json†L1-L17】【F:rec2pdf-backend/server.js†L13-L83】
 3. **Frontend** (nuovo terminale)
    ```bash
    cd rec2pdf-frontend
    npm install
-   # crea .env.local con VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY
-   npm run dev   # interfaccia web su http://localhost:5173
+   cat <<'EOF' > .env.local
+   VITE_SUPABASE_URL=https://dvbijjzltpfjggkimqsg.supabase.co
+   VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR2YmlqanpsdHBmamdna2ltcXNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3NjIyMzEsImV4cCI6MjA3NTMzODIzMX0.WTGFXu7FwlSMFOMtz6ULkhgFlEK_Cvl1bSz_jwWJvGw
+   VITE_DEFAULT_MODE_FLAGS=MODE_BASE,MODE_ADVANCED
+   VITE_BYPASS_AUTH=true
+   EOF
+   npm run dev   # interfaccia web su http://localhost:5173 (Vite adatta automaticamente la porta se occupata)
    ```
-4. Apri il browser su `http://localhost:5173`, imposta l'URL backend se differente e lancia la diagnostica iniziale.
+   L'opzione `VITE_BYPASS_AUTH` attiva il bypass login per demo locali, mentre i flag di default rendono disponibili entrambe le modalità fin dal primo avvio.【F:rec2pdf-frontend/src/App.jsx†L17-L195】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L21-L198】
+4. Apri il browser sull'URL servito da Vite, configura se necessario l'endpoint backend (`http://localhost:7788` è il default) e lancia la diagnostica dall'onboarding banner.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L16-L53】【F:rec2pdf-frontend/src/hooks/useBackendDiagnostics.js†L1-L86】
+5. Cambia modalità direttamente dal toggle in header o dalla command palette per testare base e advanced senza ricaricare la pagina.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L56-L156】【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L59-L190】
 
 ## Backend HTTP
 - **Server principale**: `rec2pdf-backend/server.js`.
@@ -163,6 +187,12 @@ Costruzione produzione:
 npm run build
 npm run preview  # serve statico su http://localhost:4173
 ```
+
+## Scorciatoie da tastiera
+- `⌘/Ctrl + K` apre e richiude la **command palette** globale finché il focus non è su un campo di input, consentendo di lanciare comandi senza cambiare vista.【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L133-L208】
+- Con la palette aperta premi `R` per avviare/fermare la registrazione, `U` per aprire il selettore file audio, `E` per navigare all'editor e `K` per passare alla libreria.【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L59-L112】
+- Le lettere `B` e `A` passano rispettivamente alla modalità Base e Advanced sia dalla palette sia dal toggle in header, che mostra lo stato corrente e salva la preferenza in tempo reale.【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L88-L190】【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L56-L107】
+- Usa `Esc`, `Tab` e `Shift+Tab` per navigare e chiudere la palette, mantenendo il focus sul contesto iniziale senza perdere l'operazione in corso.【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L132-L190】
 
 ## Workflow tipico
 1. Avvia backend e frontend, esegui login con Supabase e verifica lo stato delle dipendenze dalla diagnostica integrata.【F:rec2pdf-frontend/src/App.jsx†L385-L439】【F:rec2pdf-frontend/src/hooks/useBackendDiagnostics.js†L1-L85】
