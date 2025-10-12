@@ -4,6 +4,7 @@ import { useAppContext } from "../../hooks/useAppContext";
 import { Toast } from "../../components/ui";
 import PipelinePanel from "./PipelinePanel";
 import UploadCard from "./UploadCard";
+import { classNames } from "../../utils/classNames";
 
 const ErrorBanner = () => {
   const { errorBanner, setErrorBanner } = useAppContext();
@@ -78,6 +79,16 @@ const BaseHome = () => {
     return "record";
   }, [audioBlob, busy, latestEntry, pipelineComplete]);
 
+  const shouldShowPublishPanel = useMemo(() => {
+    if (pipelineComplete || busy) {
+      return true;
+    }
+    if (latestEntry?.pdfPath || latestEntry?.mdPath) {
+      return true;
+    }
+    return Boolean(audioBlob);
+  }, [audioBlob, busy, latestEntry, pipelineComplete]);
+
   return (
     <div className="space-y-6">
       <ConnectionGuard />
@@ -91,9 +102,18 @@ const BaseHome = () => {
         </div>
       ) : null}
 
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+      <section
+        className={classNames(
+          "grid gap-6",
+          shouldShowPublishPanel
+            ? "lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]"
+            : "max-w-3xl mx-auto"
+        )}
+      >
         <UploadCard journeyStage={journeyStage} />
-        <PipelinePanel latestEntry={latestEntry} journeyStage={journeyStage} />
+        {shouldShowPublishPanel ? (
+          <PipelinePanel latestEntry={latestEntry} journeyStage={journeyStage} />
+        ) : null}
       </section>
     </div>
   );
