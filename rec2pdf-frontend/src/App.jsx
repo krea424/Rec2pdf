@@ -3851,7 +3851,7 @@ function AppContent(){
   };
 
   return (
-    <ModeProvider session={session}>
+    <ModeProvider session={session} syncWithSupabase={!BYPASS_AUTH}>
       <AppContextComposer baseValue={baseContextValue}>
         <Routes>
           <Route element={<AppShell />}>

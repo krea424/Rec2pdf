@@ -29,6 +29,7 @@ const ModeContext = createContext<ModeContextValue | undefined>(undefined);
 type ModeProviderProps = {
   children: ReactNode;
   session: Session | null;
+  syncWithSupabase?: boolean;
 };
 
 const readStoredMode = (): Mode => {
@@ -86,7 +87,7 @@ const sanitizeMode = (candidate: string | null | undefined, fallback: Mode, allo
   return fallback;
 };
 
-export const ModeProvider = ({ children, session }: ModeProviderProps) => {
+export const ModeProvider = ({ children, session, syncWithSupabase = true }: ModeProviderProps) => {
   const [mode, setModeState] = useState<Mode>(() => readStoredMode());
   const [hydrated, setHydrated] = useState<boolean>(false);
   const [persisting, setPersisting] = useState<boolean>(false);
@@ -94,10 +95,15 @@ export const ModeProvider = ({ children, session }: ModeProviderProps) => {
   const lastSyncedModeRef = useRef<Mode | null>(null);
   const sessionId = session?.user?.id ?? null;
   const [flags, setFlags] = useState<Set<string>>(() => extractFlags(session));
+  const [remoteSyncDisabled, setRemoteSyncDisabled] = useState<boolean>(!syncWithSupabase);
 
   useEffect(() => {
     setFlags(extractFlags(session));
   }, [session]);
+
+  useEffect(() => {
+    setRemoteSyncDisabled(!syncWithSupabase);
+  }, [syncWithSupabase]);
 
   const availableModes = useMemo<Mode[]>(() => {
     const enabled = (Object.keys(MODE_FLAGS) as Mode[]).filter((candidate) => {
@@ -134,6 +140,13 @@ export const ModeProvider = ({ children, session }: ModeProviderProps) => {
   }, [mode]);
 
   useEffect(() => {
+    if (remoteSyncDisabled) {
+      setHydrated(true);
+      preferencesRef.current = {};
+      lastSyncedModeRef.current = null;
+      return () => undefined;
+    }
+
     let isActive = true;
 
     if (!sessionId) {
@@ -163,6 +176,7 @@ export const ModeProvider = ({ children, session }: ModeProviderProps) => {
           console.warn("Impossibile recuperare le preferenze dal profilo Supabase:", error);
           preferencesRef.current = {};
           lastSyncedModeRef.current = null;
+          setRemoteSyncDisabled(true);
           return;
         }
 
@@ -180,6 +194,7 @@ export const ModeProvider = ({ children, session }: ModeProviderProps) => {
           console.warn("Errore inatteso nel recupero delle preferenze utente:", error);
           preferencesRef.current = {};
           lastSyncedModeRef.current = null;
+          setRemoteSyncDisabled(true);
         }
       } finally {
         if (isActive) {
@@ -193,11 +208,11 @@ export const ModeProvider = ({ children, session }: ModeProviderProps) => {
     return () => {
       isActive = false;
     };
-  }, [availableModes, sessionId]);
+  }, [availableModes, remoteSyncDisabled, sessionId]);
 
   const persistPreference = useCallback(
     async (nextMode: Mode) => {
-      if (!sessionId) {
+      if (!sessionId || remoteSyncDisabled) {
         return;
       }
 
@@ -224,15 +239,16 @@ export const ModeProvider = ({ children, session }: ModeProviderProps) => {
         lastSyncedModeRef.current = nextMode;
       } catch (error) {
         console.warn("Impossibile salvare la modalità preferita su Supabase:", error);
+        setRemoteSyncDisabled(true);
       } finally {
         setPersisting(false);
       }
     },
-    [sessionId],
+    [remoteSyncDisabled, sessionId],
   );
 
   useEffect(() => {
-    if (!sessionId) {
+    if (!sessionId || remoteSyncDisabled) {
       return;
     }
 
@@ -249,7 +265,7 @@ export const ModeProvider = ({ children, session }: ModeProviderProps) => {
     }
 
     void persistPreference(mode);
-  }, [availableModes, hydrated, mode, persistPreference, sessionId]);
+  }, [availableModes, hydrated, mode, persistPreference, remoteSyncDisabled, sessionId]);
 
   const handleSetMode = useCallback(
     (nextMode: Mode) => {
@@ -283,12 +299,12 @@ export const ModeProvider = ({ children, session }: ModeProviderProps) => {
       setMode: handleSetMode,
       toggleMode,
       isHydrated: hydrated,
-      isPersisting: persisting,
+      isPersisting: persisting && !remoteSyncDisabled,
       isSelectionVisible: hydrated && availableModes.length > 1,
       flags,
       hasFlag,
     }),
-    [availableModes, flags, handleSetMode, hasFlag, hydrated, mode, persisting, toggleMode],
+    [availableModes, flags, handleSetMode, hasFlag, hydrated, mode, persisting, remoteSyncDisabled, toggleMode],
   );
 
   return <ModeContext.Provider value={value}>{children}</ModeContext.Provider>;
