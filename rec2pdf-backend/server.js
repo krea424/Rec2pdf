@@ -124,6 +124,9 @@ const PROFILE_LOGO_ROOT = path.join(DATA_DIR, 'logos');
 const PROFILE_TEMPLATE_CACHE = path.join(DATA_DIR, 'templates');
 const DEFAULT_STATUSES = ['Bozza', 'In lavorazione', 'Da revisionare', 'Completato'];
 
+const sleep = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, Number.isFinite(ms) && ms > 0 ? ms : 0));
+
 const run = (cmd, args, opts = {}) => new Promise((resolve) => {
   const child = execFile(cmd, args, opts, (err, stdout, stderr) => {
     resolve({
@@ -1116,16 +1119,76 @@ const uploadFileToBucket = async (bucket, objectPath, buffer, contentType) => {
   }
 };
 
-const downloadFileFromBucket = async (bucket, objectPath) => {
+const DEFAULT_SUPABASE_DOWNLOAD_ATTEMPTS = 3;
+const DEFAULT_SUPABASE_DOWNLOAD_DELAY = 250;
+
+const isRetryableSupabaseDownloadError = (status, message) => {
+  if (status === 404) {
+    return true;
+  }
+  if (status >= 500 && status < 600) {
+    return true;
+  }
+  if (!status) {
+    const normalized = String(message || '').toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    return (
+      normalized.includes('fetch failed') ||
+      normalized.includes('network') ||
+      normalized.includes('timeout') ||
+      normalized.includes('econn') ||
+      normalized.includes('etimedout') ||
+      normalized.includes('enotfound')
+    );
+  }
+  return false;
+};
+
+const downloadFileFromBucket = async (bucket, objectPath, options = {}) => {
   if (!supabase) {
     throw new Error('Supabase client is not configured');
   }
-  const { data, error } = await supabase.storage.from(bucket).download(objectPath);
-  if (error) {
-    throw new Error(`Download fallito da Supabase (${bucket}/${objectPath}): ${error.message}`);
+  const attempts = Math.max(1, Number(options.attempts) || DEFAULT_SUPABASE_DOWNLOAD_ATTEMPTS);
+  const initialDelay = Number(options.initialDelayMs) || DEFAULT_SUPABASE_DOWNLOAD_DELAY;
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const { data, error } = await supabase.storage.from(bucket).download(objectPath);
+    if (!error && data) {
+      const arrayBuffer = await data.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    }
+
+    lastError = error || new Error('Download sconosciuto fallito');
+    const status = Number(error?.status || error?.statusCode) || 0;
+    const message = error?.message || error?.error || error?.name || '';
+    const shouldRetry = attempt < attempts && isRetryableSupabaseDownloadError(status, message);
+
+    if (!shouldRetry) {
+      const failure = new Error(
+        `Download fallito da Supabase (${bucket}/${objectPath}): ${message || 'errore sconosciuto'}`
+      );
+      if (status) {
+        failure.statusCode = status;
+      }
+      throw failure;
+    }
+
+    const delayMs = initialDelay * 2 ** (attempt - 1);
+    await sleep(delayMs);
   }
-  const arrayBuffer = await data.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+
+  const message = lastError?.message || lastError?.error || 'errore sconosciuto';
+  const fallbackError = new Error(
+    `Download fallito da Supabase (${bucket}/${objectPath}): ${message}`
+  );
+  const status = Number(lastError?.status || lastError?.statusCode) || 0;
+  if (status) {
+    fallbackError.statusCode = status;
+  }
+  throw fallbackError;
 };
 
 const normalizeStoragePrefix = (value) => {
