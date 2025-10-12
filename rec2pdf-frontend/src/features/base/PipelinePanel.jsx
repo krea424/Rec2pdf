@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from "react";
-import { Cpu, Download, FileText, Sparkles } from "../../components/icons";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Cpu, Download, FileText, RefreshCw, Sparkles } from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
 import { useAnalytics } from "../../context/AnalyticsContext";
 import { classNames } from "../../utils/classNames";
@@ -29,11 +29,27 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     logs,
     handleOpenHistoryPdf,
     handleOpenHistoryMd,
+    resetAll,
   } = context;
 
   const canPublish = Boolean(audioBlob) && !busy && backendUp !== false;
   const focusPublish = journeyStage === "publish" && !pipelineComplete;
-  const focusDownload = journeyStage === "download" && pipelineComplete && latestEntry?.pdfPath;
+  const [hasDownloaded, setHasDownloaded] = useState(false);
+  const focusDownload =
+    journeyStage === "download" && pipelineComplete && latestEntry?.pdfPath && !hasDownloaded;
+
+  const entryId = latestEntry?.id ?? null;
+  const entryPdfPath = latestEntry?.pdfPath ?? null;
+
+  useEffect(() => {
+    setHasDownloaded(false);
+  }, [entryId]);
+
+  useEffect(() => {
+    if (!pipelineComplete || !entryPdfPath) {
+      setHasDownloaded(false);
+    }
+  }, [entryPdfPath, pipelineComplete]);
 
   const handlePublish = useCallback(() => {
     if (!canPublish) {
@@ -55,9 +71,10 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
       path: latestEntry.pdfPath,
     });
     handleOpenHistoryPdf(latestEntry);
+    setHasDownloaded(true);
   }, [handleOpenHistoryPdf, latestEntry, trackEvent]);
 
-  const handleOpenMarkdown = useCallback(() => {
+  const handleModifyPdf = useCallback(() => {
     if (!latestEntry) {
       return;
     }
@@ -66,7 +83,17 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
       path: latestEntry?.mdPath || "",
     });
     handleOpenHistoryMd(latestEntry);
+    setHasDownloaded(true);
   }, [handleOpenHistoryMd, latestEntry, trackEvent]);
+
+  const handleResetSession = useCallback(() => {
+    trackEvent("pipeline.reset_session", {
+      fromDownload: pipelineComplete,
+      hadAudio: Boolean(audioBlob),
+    });
+    setHasDownloaded(false);
+    resetAll();
+  }, [audioBlob, pipelineComplete, resetAll, trackEvent]);
 
   const stages = useMemo(
     () =>
@@ -107,8 +134,28 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     "flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
     focusDownload
       ? "bg-emerald-400 text-slate-950 shadow-[0_18px_60px_-30px_rgba(16,185,129,0.9)] hover:bg-emerald-300"
-      : "border border-emerald-300/50 bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30"
+      : hasDownloaded
+        ? "border border-emerald-300/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20"
+        : "border border-emerald-300/50 bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/30"
   );
+
+  const modifyButtonClass = classNames(
+    "flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+    hasDownloaded
+      ? "bg-indigo-400 text-slate-950 shadow-[0_18px_60px_-30px_rgba(99,102,241,0.8)] hover:bg-indigo-300"
+      : "border border-white/15 bg-white/5 text-white/75 hover:border-white/25 hover:bg-white/10"
+  );
+
+  const newSessionButtonClass = classNames(
+    "flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+    hasDownloaded
+      ? "bg-emerald-400 text-slate-950 shadow-[0_18px_60px_-30px_rgba(16,185,129,0.9)] hover:bg-emerald-300"
+      : "border border-white/15 bg-white/5 text-white/70 hover:border-white/25 hover:bg-white/10",
+    busy ? "cursor-not-allowed opacity-60" : null
+  );
+
+  const showDownloadActions = pipelineComplete && latestEntry?.pdfPath;
+  const showNextSteps = showDownloadActions && hasDownloaded;
 
   return (
     <div className="flex h-full flex-col gap-5 rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-subtle">
@@ -134,23 +181,52 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
           <p className="text-xs text-white/50">Carica o registra un audio per pubblicare.</p>
         ) : null}
 
-        {pipelineComplete && latestEntry?.pdfPath ? (
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleDownload}
-              className={downloadButtonClass}
-            >
-              <Download className="h-4 w-4" /> Scarica PDF
-            </button>
-            {latestEntry?.mdPath ? (
+        {showDownloadActions ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={handleOpenMarkdown}
-                className="flex items-center gap-2 rounded-2xl border border-white/20 bg-white/5 px-4 py-2 text-sm text-white/80 transition hover:bg-white/10"
+                onClick={handleDownload}
+                className={downloadButtonClass}
               >
-                <FileText className="h-4 w-4" /> Markdown
+                <Download className="h-4 w-4" /> Scarica PDF
               </button>
+              {latestEntry?.mdPath && !showNextSteps ? (
+                <button
+                  type="button"
+                  onClick={handleModifyPdf}
+                  className={modifyButtonClass}
+                >
+                  <FileText className="h-4 w-4" /> Modifica PDF
+                </button>
+              ) : null}
+            </div>
+            {showNextSteps ? (
+              <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-4 text-xs text-white/70">
+                <p className="text-sm font-semibold text-white">Prossimi passi</p>
+                <p className="mt-1">
+                  Puoi rifinire il documento nel markdown editor oppure avviare una nuova sessione di registrazione.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {latestEntry?.mdPath ? (
+                    <button
+                      type="button"
+                      onClick={handleModifyPdf}
+                      className={modifyButtonClass}
+                    >
+                      <FileText className="h-4 w-4" /> Modifica PDF
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={handleResetSession}
+                    disabled={busy}
+                    className={newSessionButtonClass}
+                  >
+                    <RefreshCw className="h-4 w-4" /> Nuova sessione
+                  </button>
+                </div>
+              </div>
             ) : null}
           </div>
         ) : null}
