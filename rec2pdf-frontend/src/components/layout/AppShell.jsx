@@ -73,7 +73,7 @@ const ModeSegmentedControl = () => {
     <div
       role="group"
       aria-label="Seleziona la modalità applicazione"
-      className="flex items-center gap-1 rounded-full border border-zinc-700/60 bg-zinc-900/70 p-1 text-xs font-semibold uppercase tracking-wide shadow-subtle"
+      className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-xs font-semibold uppercase tracking-wide shadow-subtle backdrop-blur"
       data-current-mode={mode}
     >
       <span className="sr-only" aria-live="polite">
@@ -86,10 +86,10 @@ const ModeSegmentedControl = () => {
             key={option.value}
             type="button"
             className={cx(
-              "flex items-center gap-1 rounded-full px-3 py-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950",
+              "flex items-center gap-1 rounded-full px-3 py-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950",
               isActive
-                ? "bg-indigo-500 text-white shadow-sm"
-                : "text-zinc-300 hover:bg-zinc-800/70",
+                ? "bg-indigo-500/60 text-white shadow-sm"
+                : "text-white/60 hover:bg-white/10 hover:text-white/80",
             )}
             aria-pressed={isActive}
             aria-label={`Modalità ${option.label}`}
@@ -142,6 +142,27 @@ const AppShell = () => {
               />
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+              <nav
+                aria-label="Sezioni applicazione"
+                className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 shadow-subtle backdrop-blur"
+              >
+                {NAV_ITEMS.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      cx(
+                        "rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition",
+                        isActive
+                          ? "bg-indigo-500/70 text-white shadow-sm"
+                          : "text-white/60 hover:bg-white/10 hover:text-white/85",
+                      )
+                    }
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </nav>
               <ModeSegmentedControl />
               <Button
                 type="button"
@@ -172,24 +193,6 @@ const AppShell = () => {
               </IconButton>
             </div>
           </div>
-          <nav className="flex flex-wrap items-center gap-2">
-            {NAV_ITEMS.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  cx(
-                    "rounded-lg px-3 py-1.5 text-sm font-medium transition",
-                    isActive
-                      ? "bg-indigo-500/20 text-indigo-100 border border-indigo-400/60"
-                      : cx("border", themes[theme].button),
-                  )
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
         </header>
 
         <div className="mt-6 space-y-6">
