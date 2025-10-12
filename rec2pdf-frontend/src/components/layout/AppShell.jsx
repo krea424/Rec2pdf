@@ -3,6 +3,7 @@ import { AlertCircle, LogOut, Maximize, Sparkles } from "../../components/icons"
 import logoAsset from "../../assets/logo.svg";
 import { classNames } from "../../utils/classNames";
 import { useAppContext } from "../../hooks/useAppContext";
+import { useMode } from "../../context/ModeContext";
 import { Button, IconButton } from "../ui";
 import SettingsDrawer from "./SettingsDrawer";
 
@@ -51,6 +52,61 @@ const OnboardingBanner = () => {
   );
 };
 
+const MODE_OPTIONS = [
+  { value: "base", label: "Base", shortcut: "B" },
+  { value: "advanced", label: "Advanced", shortcut: "A" },
+];
+
+const ModeSegmentedControl = () => {
+  const { mode, setMode, availableModes, isModeSelectionVisible, isModePersisting } = useMode();
+
+  const options = MODE_OPTIONS.filter((option) => availableModes.includes(option.value));
+
+  if (!isModeSelectionVisible || options.length < 2) {
+    return null;
+  }
+
+  const cx = classNames;
+
+  return (
+    <div
+      role="group"
+      aria-label="Seleziona la modalità applicazione"
+      className="flex items-center gap-1 rounded-full border border-zinc-700/60 bg-zinc-900/70 p-1 text-xs font-semibold uppercase tracking-wide shadow-subtle"
+      data-current-mode={mode}
+    >
+      <span className="sr-only" aria-live="polite">
+        {isModePersisting ? "Salvataggio preferenza modalità in corso" : `Modalità ${mode}`}
+      </span>
+      {options.map((option) => {
+        const isActive = mode === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={cx(
+              "flex items-center gap-1 rounded-full px-3 py-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950",
+              isActive
+                ? "bg-indigo-500 text-white shadow-sm"
+                : "text-zinc-300 hover:bg-zinc-800/70",
+            )}
+            aria-pressed={isActive}
+            aria-label={`Modalità ${option.label}`}
+            title={`Modalità ${option.label} (scorciatoia ${option.shortcut})`}
+            onClick={() => setMode(option.value)}
+            disabled={isModePersisting}
+          >
+            <span>{option.label}</span>
+            <span className="hidden text-[10px] font-medium text-zinc-300 sm:inline" aria-hidden="true">
+              {option.shortcut}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
 const AppShell = () => {
   const {
     customLogo,
@@ -85,6 +141,7 @@ const AppShell = () => {
               />
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+              <ModeSegmentedControl />
               <Button
                 type="button"
                 variant="ghost"
