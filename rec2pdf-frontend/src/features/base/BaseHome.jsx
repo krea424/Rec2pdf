@@ -83,31 +83,13 @@ const BaseHome = () => {
       <ConnectionGuard />
       <ErrorBanner />
 
-      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-2">
-          <h1 className="text-2xl font-semibold text-white md:text-3xl">
-            Registra-Pubblica-Scarica PDF
-          </h1>
-          <p className="max-w-xl text-sm text-white/70">
-            Tre mosse essenziali: registra (o carica) la sessione, pubblica quando sei pronto e scarica il PDF finale senza passaggi superflui.
-          </p>
-          <div className="flex flex-wrap gap-2 text-xs text-white/60">
-            <span className="rounded-full border border-white/10 px-3 py-1">1. Registra o carica</span>
-            <span className="rounded-full border border-white/10 px-3 py-1">2. Pubblica la sessione</span>
-            <span className="rounded-full border border-white/10 px-3 py-1">3. Scarica il PDF</span>
-          </div>
-          {completionHint ? (
-            <p className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100">
-              {completionHint}
-            </p>
-          ) : null}
-        </div>
-        {completionHint ? (
-          <p className="self-start rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100 md:self-center">
+      {completionHint ? (
+        <div className="flex justify-end">
+          <p className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100">
             {completionHint}
           </p>
-        ) : null}
-      </header>
+        </div>
+      ) : null}
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
         <UploadCard journeyStage={journeyStage} />
