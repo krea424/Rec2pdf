@@ -11,9 +11,25 @@ export function useBackendDiagnostics(backendUrl, session) {
   });
 
   const fetchBody = useCallback(async (url, options = {}) => {
-    const headers = { ...options.headers };
-    if (session?.access_token) {
-      headers['Authorization'] = `Bearer ${session.access_token}`;
+    const normalizeHeaders = (input) => {
+      if (!input) {
+        return {};
+      }
+      if (typeof Headers !== "undefined" && input instanceof Headers) {
+        return Object.fromEntries(input.entries());
+      }
+      if (Array.isArray(input)) {
+        return Object.fromEntries(input);
+      }
+      return { ...input };
+    };
+
+    const headers = normalizeHeaders(options.headers);
+    const hasAuthHeader = Object.keys(headers).some(
+      (key) => key.toLowerCase() === "authorization",
+    );
+    if (!hasAuthHeader && session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
     }
 
     try {
