@@ -66,7 +66,7 @@ const UploadCard = () => {
     <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-subtle">
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-lg font-semibold uppercase tracking-[0.32em] text-white/70">
-          <Mic className="h-4 w-4" /> REC
+          <Mic className="h-4 w-4" /> Registra
         </h2>
         <span className="text-sm font-mono text-white/80">{fmtTime(elapsed)}</span>
       </div>
@@ -87,7 +87,7 @@ const UploadCard = () => {
           title={micStatusLabel}
         >
           {recording ? <Square className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-          {recording ? "Stop" : "Avvia REC"}
+          {recording ? "Stop" : "Registra"}
         </button>
 
         <div className="space-y-3">
@@ -116,7 +116,7 @@ const UploadCard = () => {
               {audioDetails}
             </div>
           ) : (
-            <p className="text-xs text-white/50">Carica un file o registra per attivare la pipeline.</p>
+            <p className="text-xs text-white/50">Carica un file o registra per attivare la pipeline, poi passa a Pubblica.</p>
           )}
         </div>
 

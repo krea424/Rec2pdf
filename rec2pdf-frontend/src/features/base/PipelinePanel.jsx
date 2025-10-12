@@ -89,10 +89,10 @@ const PipelinePanel = ({ latestEntry }) => {
     <div className="flex h-full flex-col gap-5 rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-subtle">
       <div>
         <h2 className="flex items-center gap-2 text-lg font-semibold uppercase tracking-[0.32em] text-white/70">
-          <Sparkles className="h-4 w-4" /> Publish
+          <Sparkles className="h-4 w-4" /> Pubblica
         </h2>
         <p className="mt-1 text-sm text-white/70">
-          Avvia la pipeline executive e scarica il PDF appena pronto.
+          Avvia la pipeline automatizzata e ricevi il PDF pronto da condividere.
         </p>
       </div>
 
@@ -107,7 +107,7 @@ const PipelinePanel = ({ latestEntry }) => {
             !canPublish && "cursor-not-allowed opacity-60"
           )}
         >
-          <Cpu className="h-5 w-5" /> Pubblica PDF
+          <Cpu className="h-5 w-5" /> Pubblica
         </button>
         {!canPublish ? (
           <p className="text-xs text-white/50">Carica o registra un audio per pubblicare.</p>
