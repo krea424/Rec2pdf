@@ -21,6 +21,7 @@ import PromptLibrary from "../components/PromptLibrary";
 import { useAppContext } from "../hooks/useAppContext";
 import { classNames } from "../utils/classNames";
 import { Button, Toast } from "../components/ui";
+import BaseHome from "../features/base/BaseHome";
 
 const truncateText = (value, limit = 80) => {
   if (typeof value !== "string") {
@@ -60,6 +61,11 @@ const ErrorBanner = () => {
 
 const CreatePage = () => {
   const context = useAppContext();
+
+  if (context.mode === "base") {
+    return <BaseHome />;
+  }
+
   const {
     theme,
     themes,

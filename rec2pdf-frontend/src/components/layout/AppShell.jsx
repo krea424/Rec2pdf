@@ -6,6 +6,7 @@ import { useAppContext } from "../../hooks/useAppContext";
 import { useMode } from "../../context/ModeContext";
 import { Button, IconButton } from "../ui";
 import SettingsDrawer from "./SettingsDrawer";
+import CommandPalette from "../CommandPalette";
 
 const NAV_ITEMS = [
   { to: "/create", label: "Create" },
@@ -200,6 +201,7 @@ const AppShell = () => {
         </div>
       </div>
 
+      <CommandPalette />
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
