@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import WorkspaceNavigator from '../WorkspaceNavigator'
+import { AppContext } from '../../hooks/useAppContext.jsx'
 
 const themeStyles = {
   button: 'btn',
@@ -62,29 +63,31 @@ describe('WorkspaceNavigator', () => {
     const onSearchChange = vi.fn()
 
     render(
-      <WorkspaceNavigator
-        entries={sampleEntries}
-        workspaces={sampleWorkspaces}
-        selection={{ workspaceId: 'ws-1', projectId: '', projectName: '', status: '' }}
-        onSelectionChange={vi.fn()}
-        savedFilters={[{ id: 'filter-1', name: 'Recenti' }]}
+      <AppContext.Provider value={{ mode: 'advanced', hasModeFlag: () => false }}>
+        <WorkspaceNavigator
+          entries={sampleEntries}
+          workspaces={sampleWorkspaces}
+          selection={{ workspaceId: 'ws-1', projectId: '', projectName: '', status: '' }}
+          onSelectionChange={vi.fn()}
+          savedFilters={[{ id: 'filter-1', name: 'Recenti' }]}
 
-        onSaveFilter={vi.fn()}
-        onDeleteFilter={vi.fn()}
-        onApplyFilter={vi.fn()}
-        searchTerm=""
-        onSearchChange={onSearchChange}
-        fetchPreview={vi.fn()}
-        onOpenPdf={vi.fn()}
-        onOpenMd={vi.fn()}
-        onRepublish={vi.fn()}
-        onShowLogs={vi.fn()}
-        onAssignWorkspace={vi.fn()}
-        themeStyles={themeStyles}
-        loading={false}
-        onRefresh={onRefresh}
-        pipelineSelection={null}
-      />
+          onSaveFilter={vi.fn()}
+          onDeleteFilter={vi.fn()}
+          onApplyFilter={vi.fn()}
+          searchTerm=""
+          onSearchChange={onSearchChange}
+          fetchPreview={vi.fn()}
+          onOpenPdf={vi.fn()}
+          onOpenMd={vi.fn()}
+          onRepublish={vi.fn()}
+          onShowLogs={vi.fn()}
+          onAssignWorkspace={vi.fn()}
+          themeStyles={themeStyles}
+          loading={false}
+          onRefresh={onRefresh}
+          pipelineSelection={null}
+        />
+      </AppContext.Provider>
     )
 
     const entryButton = screen.getByRole('button', { name: /Sintesi kickoff/i })
