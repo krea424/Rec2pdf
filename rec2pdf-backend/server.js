@@ -167,6 +167,8 @@ const computeAllowedHeaders = (req) => {
         }
       });
   }
+  return { allowed: false, normalizedOrigin: parsed.origin, host: parsed.host };
+};
 
   return Array.from(headerSet).sort((a, b) => a.localeCompare(b));
 };
