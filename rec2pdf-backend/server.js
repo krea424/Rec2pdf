@@ -36,14 +36,28 @@ const isAuthEnabled = !!supabase;
 if (!isAuthEnabled) {
   console.warn('⚠️  Supabase non configurato: il backend è avviato senza autenticazione (MODALITÀ SVILUPPO).');
 }
-// ===== Configurazione Path =====
-// Il PROJECT_ROOT è la cartella che CONTIENE le cartelle 'rec2pdf-backend', 'Scripts', etc.
-// Dato che server.js è in 'rec2pdf-backend', dobbiamo salire di un livello.
-const PROJECT_ROOT = path.resolve(__dirname, '..');
-const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT || path.join(PROJECT_ROOT, 'Scripts', 'publish.sh');
-const TEMPLATES_DIR = process.env.TEMPLATES_DIR || path.join(PROJECT_ROOT, 'Templates');
-const ASSETS_DIR = process.env.ASSETS_DIR || path.join(PROJECT_ROOT, 'rec2pdf-frontend', 'src', 'assets');
+// ===== Configurazione Path (Versione Robusta per Render) =====
 
+// __dirname è il percorso della cartella corrente, che su Render, 
+// grazie a "Root Directory", è /app/rec2pdf-backend.
+// Dobbiamo salire di un livello per trovare la root del monorepo.
+const MONOREPO_ROOT = path.join(__dirname, '..');
+
+const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT || path.join(MONOREPO_ROOT, 'Scripts', 'publish.sh');
+const TEMPLATES_DIR = process.env.TEMPLATES_DIR || path.join(MONOREPO_ROOT, 'Templates');
+// NOTA: ASSETS_DIR probabilmente non è necessario nel backend, ma lo manteniamo per coerenza.
+const ASSETS_DIR = process.env.ASSETS_DIR || path.join(MONOREPO_ROOT, 'assets');
+
+// Rinominiamo PROJECT_ROOT per chiarezza, anche se non usato direttamente sotto.
+const PROJECT_ROOT = MONOREPO_ROOT; 
+
+console.log('📁 Percorsi backend configurati (Modalità Robusta):');
+console.log(`   MONOREPO_ROOT:  ${MONOREPO_ROOT}`);
+console.log(`   __dirname:      ${__dirname}`);
+console.log(`   PUBLISH_SCRIPT: ${PUBLISH_SCRIPT}`);
+console.log(`   TEMPLATES_DIR:  ${TEMPLATES_DIR}`);
+
+// ... il resto del codice ...
 console.log('📁 Percorsi backend configurati:');
 console.log(`   PROJECT_ROOT:   ${PROJECT_ROOT}`);
 console.log(`   PUBLISH_SCRIPT: ${PUBLISH_SCRIPT}`);
