@@ -36,29 +36,20 @@ const isAuthEnabled = !!supabase;
 if (!isAuthEnabled) {
   console.warn('⚠️  Supabase non configurato: il backend è avviato senza autenticazione (MODALITÀ SVILUPPO).');
 }
-// ===== Configurazione Path (Versione Robusta per Render) =====
+// ===== Configurazione Path (Versione Finale per Render) =====
 
-// __dirname è il percorso della cartella corrente, che su Render, 
-// grazie a "Root Directory", è /app/rec2pdf-backend.
-// Dobbiamo salire di un livello per trovare la root del monorepo.
-const MONOREPO_ROOT = path.join(__dirname, '..');
+// Dato che la "Root Directory" su Render è impostata su 'rec2pdf-backend',
+// la directory di lavoro corrente (__dirname) è /app.
+// I percorsi agli altri file del monorepo sono RELATIVI a questa posizione.
+// NON usiamo più '..' per salire.
 
-const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT || path.join(MONOREPO_ROOT, 'Scripts', 'publish.sh');
-const TEMPLATES_DIR = process.env.TEMPLATES_DIR || path.join(MONOREPO_ROOT, 'Templates');
-// NOTA: ASSETS_DIR probabilmente non è necessario nel backend, ma lo manteniamo per coerenza.
-const ASSETS_DIR = process.env.ASSETS_DIR || path.join(MONOREPO_ROOT, 'assets');
+const PROJECT_ROOT = '/app'; // Impostiamo un valore fisso che sappiamo essere corretto per Render
 
-// Rinominiamo PROJECT_ROOT per chiarezza, anche se non usato direttamente sotto.
-const PROJECT_ROOT = MONOREPO_ROOT; 
+const PUBLISH_SCRIPT = path.join(PROJECT_ROOT, 'Scripts', 'publish.sh');
+const TEMPLATES_DIR = path.join(PROJECT_ROOT, 'Templates');
+const ASSETS_DIR = path.join(PROJECT_ROOT, 'assets');
 
-console.log('📁 Percorsi backend configurati (Modalità Robusta):');
-console.log(`   MONOREPO_ROOT:  ${MONOREPO_ROOT}`);
-console.log(`   __dirname:      ${__dirname}`);
-console.log(`   PUBLISH_SCRIPT: ${PUBLISH_SCRIPT}`);
-console.log(`   TEMPLATES_DIR:  ${TEMPLATES_DIR}`);
-
-// ... il resto del codice ...
-console.log('📁 Percorsi backend configurati:');
+console.log('📁 Percorsi backend configurati (Versione Finale):');
 console.log(`   PROJECT_ROOT:   ${PROJECT_ROOT}`);
 console.log(`   PUBLISH_SCRIPT: ${PUBLISH_SCRIPT}`);
 console.log(`   TEMPLATES_DIR:  ${TEMPLATES_DIR}`);
@@ -70,7 +61,6 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
 } else {
   console.log(`✅ Script publish.sh trovato: ${PUBLISH_SCRIPT}`);
 }
-
 app.use(cors({
   origin: [
     'http://localhost:5173',
