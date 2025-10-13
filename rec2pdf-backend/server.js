@@ -3572,8 +3572,17 @@ app.use((req, res, next) => {
   return next();
 });
 
+// NUOVO BLOCCO DA INCOLLARE
+
 app.listen(PORT, HOST, () => {
-  const hostLabel = HOST === '0.0.0.0' ? '0.0.0.0' : HOST;
-  console.log(`rec2pdf backend in ascolto su http://${hostLabel}:${PORT}`);
+  console.log('---');
+  console.log(`✅ Server avviato e pronto.`);
+  if (process.env.PORT) {
+    console.log(`   Ambiente: Produzione (rilevata variabile PORT)`);
+    console.log(`   In ascolto su: ${HOST}:${PORT}`);
+  } else {
+    console.log(`   Ambiente: Sviluppo Locale (nessuna variabile PORT)`);
+    console.log(`   In ascolto su: http://${HOST}:${PORT}`);
+  }
+  console.log('---');
 });
-;
