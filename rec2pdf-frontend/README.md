@@ -11,7 +11,7 @@ Refer to the [interface guidelines](../docs/UI.md) for the detailed layout grid,
 
 ## Requirements
 - Node.js >= 18
-- Backend available at `http://localhost:7788` (see `rec2pdf-backend` project)
+- Backend available at the URL specified in `VITE_API_BASE_URL` in the `.env.example` file (see `rec2pdf-backend` project)
 - `.env.local` containing Supabase keys (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`)
 
 ## Local Development

@@ -14,7 +14,7 @@ import { AppProvider } from "./hooks/useAppContext";
 import { ModeProvider, useMode } from "./context/ModeContext";
 import { useAnalytics } from "./context/AnalyticsContext";
 
-const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
+const DEFAULT_BACKEND_URL = import.meta.env.VITE_API_BASE_URL;
 const DEFAULT_DEST_DIR = '/Users/';
 const BYPASS_AUTH = import.meta.env.MODE === 'test' || import.meta.env.VITE_BYPASS_AUTH === 'true';
 
