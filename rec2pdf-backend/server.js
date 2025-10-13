@@ -66,6 +66,15 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// === INIZIO MODIFICA: HEALTH CHECK PER RENDER ===
+
+// Questa rotta risponde alla root (/) ed è usata da Render per verificare
+// che il servizio sia attivo e in salute. Deve essere pubblica.
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// === FINE MODIFICA ===
 
 const extractAuthToken = (req) => {
   const authHeader = req.headers.authorization || '';
