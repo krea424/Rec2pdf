@@ -4,6 +4,7 @@
 ├── CHANGELOG.md
 ├── LICENSE
 ├── Manuale utente – Workspace Navigator mul.md
+├── README copy.txt
 ├── README.md
 ├── Scripts
 │   └── publish.sh
@@ -26,6 +27,8 @@
 │   ├── logo-thinkdoc_sfondo_scuro.svg
 │   ├── logo3.png
 │   ├── logo_PM.png
+│   ├── logo_github.png
+│   ├── logo_google.svg
 │   ├── logo_thinkDOC.svg
 │   ├── thinkDOC 2.svg
 │   ├── thinkDOC 3.svg
@@ -34,7 +37,15 @@
 │   ├── thinkDOC.pdf
 │   └── thinkDOC.svg
 ├── docs
-│   └── UI.md
+│   ├── ACCESSIBILITY_CHECKLIST.md
+│   ├── ADVANCED_GUIDE copy.txt
+│   ├── ADVANCED_GUIDE.md
+│   ├── RELEASE_NOTES.md
+│   ├── SITEMAP.md
+│   ├── UI.md
+│   ├── UI_AUDIT.md
+│   ├── USER_JOURNEYS.md
+│   └── project_profiles.md
 ├── logo_thinkDOC.svg
 ├── project_structure.txt
 ├── rec2pdf-backend
@@ -48,16 +59,20 @@
     ├── logo-thinkdoc-flow-v1.svg
     ├── package-lock.json
     ├── package.json
+    ├── playwright.config.js
     ├── postcss.config.js
     ├── src
     │   ├── App.jsx
     │   ├── assets
     │   │   ├── BiteTheHand.png
     │   │   ├── BrightLedger.png
+    │   │   ├── github-mark-white.png
+    │   │   ├── google_logo.svg
     │   │   ├── logo.svg
     │   │   └── thinkDOC.svg
     │   ├── components
     │   │   ├── CloudLibraryPanel.jsx
+    │   │   ├── CommandPalette.jsx
     │   │   ├── LibraryPanel.jsx
     │   │   ├── LoginPage.jsx
     │   │   ├── MarkdownEditorModal.jsx
@@ -65,21 +80,51 @@
     │   │   ├── PromptLibrary.jsx
     │   │   ├── SetupAssistant.jsx
     │   │   ├── WorkspaceNavigator.jsx
+    │   │   ├── __tests__
+    │   │   │   ├── CommandPalette.test.jsx
+    │   │   │   └── WorkspaceNavigator.test.jsx
+    │   │   ├── icons
+    │   │   │   ├── GitHubIcon.jsx
+    │   │   │   └── GoogleIcon.jsx
     │   │   ├── icons.jsx
     │   │   ├── layout
     │   │   │   ├── AppShell.jsx
-    │   │   │   └── SettingsDrawer.jsx
-    │   │   └── ui
-    │   │       ├── Badge.jsx
-    │   │       ├── Button.jsx
-    │   │       ├── Drawer.jsx
-    │   │       ├── EmptyState.jsx
-    │   │       ├── Input.jsx
-    │   │       ├── Select.jsx
-    │   │       ├── Skeleton.jsx
-    │   │       ├── Tabs.jsx
-    │   │       ├── Toast.jsx
-    │   │       └── index.js
+    │   │   │   ├── SettingsDrawer.jsx
+    │   │   │   └── __tests__
+    │   │   │       └── AppShell.test.jsx
+    │   │   ├── ui
+    │   │   │   ├── Badge.jsx
+    │   │   │   ├── Button.jsx
+    │   │   │   ├── Drawer.jsx
+    │   │   │   ├── EmptyState.jsx
+    │   │   │   ├── Input.jsx
+    │   │   │   ├── Select.jsx
+    │   │   │   ├── Skeleton.jsx
+    │   │   │   ├── Tabs.jsx
+    │   │   │   ├── Toast.jsx
+    │   │   │   └── index.js
+    │   │   └── workspaces
+    │   │       └── WorkspaceProfilesManager.jsx
+    │   ├── context
+    │   │   ├── AnalyticsContext.tsx
+    │   │   ├── ModeContext.tsx
+    │   │   └── __tests__
+    │   │       └── ModeContext.test.tsx
+    │   ├── features
+    │   │   ├── advanced
+    │   │   │   └── AdvancedDashboard.tsx
+    │   │   ├── base
+    │   │   │   ├── BaseHome.jsx
+    │   │   │   ├── PipelinePanel.jsx
+    │   │   │   └── UploadCard.jsx
+    │   │   └── settings
+    │   │       └── sections
+    │   │           ├── AccountSection.tsx
+    │   │           ├── AdvancedBackendSection.tsx
+    │   │           ├── BrandingSection.tsx
+    │   │           ├── DiagnosticsSection.tsx
+    │   │           ├── RecordingSection.tsx
+    │   │           └── WorkspaceSection.tsx
     │   ├── hooks
     │   │   ├── useAppContext.jsx
     │   │   ├── useBackendDiagnostics.js
@@ -90,11 +135,16 @@
     │   │   ├── Create.jsx
     │   │   ├── Editor.jsx
     │   │   └── Library.jsx
+    │   ├── setupTests.js
     │   ├── supabaseClient.js
     │   └── utils
+    │       ├── analytics.ts
     │       ├── classNames.js
     │       └── media.js
     ├── tailwind.config.js
+    ├── tests
+    │   └── e2e
+    │       └── audio-to-pdf.spec.js
     └── vite.config.js
 
-16 directories, 82 files
+29 directories, 119 files
