@@ -4,7 +4,6 @@
 ├── CHANGELOG.md
 ├── LICENSE
 ├── Manuale utente – Workspace Navigator mul.md
-├── README copy.txt
 ├── README.md
 ├── Scripts
 │   └── publish.sh
@@ -38,7 +37,6 @@
 │   └── thinkDOC.svg
 ├── docs
 │   ├── ACCESSIBILITY_CHECKLIST.md
-│   ├── ADVANCED_GUIDE copy.txt
 │   ├── ADVANCED_GUIDE.md
 │   ├── RELEASE_NOTES.md
 │   ├── SITEMAP.md
@@ -147,4 +145,4 @@
     │       └── audio-to-pdf.spec.js
     └── vite.config.js
 
-29 directories, 119 files
+29 directories, 117 files

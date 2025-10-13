@@ -1,34 +1,33 @@
-# Use official Node.js image as base
-FROM node:20
+# NUOVO Dockerfile per Monorepo
 
-# Install system dependencies
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ffmpeg \
-        pandoc \
-        texlive-latex-extra \
-        python3 \
-        python3-pip \
-        git \
-        build-essential \
-        rustc \
-    && rm -rf /var/lib/apt/lists/*
+# Fase 1: Build
+FROM node:18-alpine AS builder
 
-# Install Whisper via pip
-RUN pip3 install --no-cache-dir --break-system-packages openai-whisper
-
-# Set working directory
+# Imposta la directory di lavoro alla root del monorepo
 WORKDIR /app
 
-# Copy package files and install dependencies
-COPY package*.json ./
-RUN npm install
+# Copia i file package.json e package-lock.json del backend
+COPY rec2pdf-backend/package*.json ./rec2pdf-backend/
 
-# Copy rest of the backend source
+# Entra nella cartella del backend e installa le dipendenze
+RUN cd rec2pdf-backend && npm install --production
+
+# Fase 2: Produzione
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copia le dipendenze installate dalla fase di build
+COPY --from=builder /app/rec2pdf-backend/node_modules ./rec2pdf-backend/node_modules
+
+# Copia l'intero codice sorgente del monorepo
 COPY . .
 
-# Expose default port (optional depending on app)
-EXPOSE 3000
+# Imposta la directory di lavoro finale sulla cartella del backend
+WORKDIR /app/rec2pdf-backend
 
-# Set the default command
-CMD ["npm", "start"]
+# Esponi la porta che il server userà
+EXPOSE 10000
+
+# Il comando per avviare il server
+CMD ["node", "server.js"]
