@@ -148,16 +148,16 @@ const evaluateOrigin = (origin) => {
 };
 
 const validHeaderName = /^[!#$%&'*+.^_`|~0-9a-z-]+$/i;
+const baseAllowedHeaders = [
+  'Content-Type',
+  'Authorization',
+  'X-Requested-With',
+  'Accept',
+  'apikey',
+];
 
 const computeAllowedHeaders = (req) => {
-  const baseHeaders = [
-    'Content-Type',
-    'Authorization',
-    'X-Requested-With',
-    'Accept',
-    'apikey',
-  ];
-  const headerSet = new Set(baseHeaders);
+  const headerSet = new Set(baseAllowedHeaders);
   const requestHeaders = req?.headers?.['access-control-request-headers'];
 
   if (typeof requestHeaders === 'string' && requestHeaders.trim()) {
@@ -176,32 +176,39 @@ const computeAllowedHeaders = (req) => {
   return { allowed: false, normalizedOrigin: parsed.origin, host: parsed.host };
 };
 
-  return Array.from(headerSet).sort((a, b) => a.localeCompare(b));
+  return Array.from(headerSet)
+    .sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }))
+    .join(', ');
 };
 
-const corsOptions = {
-  origin(origin, callback) {
-    const evaluation = evaluateOrigin(origin);
-    if (evaluation.allowed) {
-      return callback(null, true);
-    }
+const corsOptionsDelegate = (req, callback) => {
+  const originHeader = req?.headers?.origin || '';
+  const evaluation = evaluateOrigin(originHeader);
 
-    const attemptedOrigin = evaluation.normalizedOrigin || origin || '<sconosciuto>';
+  if (!evaluation.allowed) {
+    const attemptedOrigin = evaluation.normalizedOrigin || originHeader || '<sconosciuto>';
     console.warn(`🚫 Richiesta bloccata da origine non autorizzata: ${attemptedOrigin}`);
-    return callback(new Error('Not allowed by CORS'));
-  },
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
-  allowedHeaders: (req, callback) => {
-    const headers = computeAllowedHeaders(req);
-    callback(null, headers);
-  },
-  exposedHeaders: ['Content-Disposition'],
-  credentials: true,
-  maxAge: 3600,
-  optionsSuccessStatus: 204,
+    return callback(new Error('Not allowed by CORS'), { origin: false });
+  }
+
+  const allowOriginValue = originHeader
+    ? evaluation.normalizedOrigin || originHeader
+    : true;
+
+  const options = {
+    origin: allowOriginValue,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+    allowedHeaders: computeAllowedHeaders(req),
+    exposedHeaders: ['Content-Disposition'],
+    credentials: true,
+    maxAge: 3600,
+    optionsSuccessStatus: 204,
+  };
+
+  return callback(null, options);
 };
 
-const corsMiddleware = cors(corsOptions);
+const corsMiddleware = cors(corsOptionsDelegate);
 
 // Applica il middleware CORS con le opzioni complete e intercetta eventuali errori
 app.use((req, res, next) => {
