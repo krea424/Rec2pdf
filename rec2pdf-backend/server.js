@@ -147,18 +147,30 @@ const evaluateOrigin = (origin) => {
   return { allowed: false, normalizedOrigin: parsed.origin, host: parsed.host };
 };
 
+const validHeaderName = /^[!#$%&'*+.^_`|~0-9a-z-]+$/i;
+
 const computeAllowedHeaders = (req) => {
   const baseHeaders = ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'];
   const headerSet = new Set(baseHeaders);
   const requestHeaders = req?.headers?.['access-control-request-headers'];
+
   if (typeof requestHeaders === 'string' && requestHeaders.trim()) {
     requestHeaders
       .split(',')
       .map((header) => header.trim())
       .filter(Boolean)
-      .forEach((header) => headerSet.add(header));
+      .forEach((header) => {
+        if (validHeaderName.test(header)) {
+          headerSet.add(header);
+        } else {
+          console.warn(`⚠️  Intestazione richiesta non valida ignorata: "${header}"`);
+        }
+      });
   }
-  return Array.from(headerSet);
+  return { allowed: false, normalizedOrigin: parsed.origin, host: parsed.host };
+};
+
+  return Array.from(headerSet).sort((a, b) => a.localeCompare(b));
 };
 
 const corsOptions = {
@@ -174,7 +186,8 @@ const corsOptions = {
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
   allowedHeaders: (req, callback) => {
-    callback(null, computeAllowedHeaders(req));
+    const headers = computeAllowedHeaders(req).join(', ');
+    callback(null, headers);
   },
   exposedHeaders: ['Content-Disposition'],
   credentials: true,
