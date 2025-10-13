@@ -172,6 +172,18 @@ const computeAllowedHeaders = (req) => {
         }
       });
   }
+  const parsed = parseOriginValue(origin);
+  if (!parsed) {
+    return { allowed: false, normalizedOrigin: '', host: '' };
+  }
+  if (allowedOriginSet.has(parsed.origin)) {
+    return { allowed: true, normalizedOrigin: parsed.origin, host: parsed.host };
+  }
+  if (wildcardOriginTests.some((pattern) => pattern.test(parsed.host))) {
+    return { allowed: true, normalizedOrigin: parsed.origin, host: parsed.host, wildcard: true };
+  }
+  return { allowed: false, normalizedOrigin: parsed.origin, host: parsed.host };
+};
 
   return Array.from(headerSet)
     .sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }))
@@ -182,6 +194,8 @@ const appendVaryHeader = (res, value) => {
   if (!value) {
     return;
   }
+  return { allowed: false, normalizedOrigin: parsed.origin, host: parsed.host };
+};
 
   const existing = res.getHeader('Vary');
   if (!existing) {
