@@ -58,8 +58,33 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
 }
 // === INIZIO CONFIGURAZIONE CORS COMPLETA ===
 
+const parseOriginValue = (value) => {
+  if (!value) {
+    return null;
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.toLowerCase() === 'null') {
+    return { origin: 'null', host: 'null' };
+  }
+  try {
+    const url = new URL(trimmed);
+    const host = url.host.toLowerCase();
+    const protocol = url.protocol.toLowerCase();
+    return { origin: `${protocol}//${host}`, host };
+  } catch (error) {
+    const sanitized = trimmed.replace(/\/+$/, '').toLowerCase();
+    if (!sanitized) {
+      return null;
+    }
+    return { origin: sanitized, host: sanitized };
+  }
+};
+
 const envAllowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
-  .split(',')
+  .split(/[\s,]+/)
   .map((origin) => origin.trim())
   .filter(Boolean);
 
@@ -73,43 +98,131 @@ const defaultAllowedOrigins = [
   'https://rec2pdf-frontend.vercel.app',
 ].filter(Boolean);
 
+const combinedAllowedOrigins = Array.from(
+  new Set([...defaultAllowedOrigins, ...envAllowedOrigins])
+);
+
+const parsedAllowedOrigins = combinedAllowedOrigins
+  .map((origin) => {
+    const parsed = parseOriginValue(origin);
+    if (!parsed) {
+      console.warn(`⚠️  Origine CORS non valida ignorata: ${origin}`);
+    }
+    return parsed;
+  })
+  .filter(Boolean);
+
+const allowedOriginSet = new Set(parsedAllowedOrigins.map((entry) => entry.origin));
+
 const wildcardOriginTests = [/\.vercel\.app$/i];
 
-const isOriginAllowed = (origin) => {
+if (parsedAllowedOrigins.length > 0) {
+  console.log('🌐 Origini CORS consentite:');
+  parsedAllowedOrigins.forEach((entry) => {
+    console.log(`   - ${entry.origin}`);
+  });
+  if (wildcardOriginTests.length) {
+    console.log(
+      `   - (wildcard) ${wildcardOriginTests.map((pattern) => pattern.toString()).join(', ')}`
+    );
+  }
+} else {
+  console.log('🌐 Nessuna origine CORS specificata: solo richieste senza Origin verranno accettate automaticamente.');
+}
+
+const evaluateOrigin = (origin) => {
   if (!origin) {
-    return true;
+    return { allowed: true, normalizedOrigin: '', host: '' };
   }
-
-  if (defaultAllowedOrigins.includes(origin) || envAllowedOrigins.includes(origin)) {
-    return true;
+  const parsed = parseOriginValue(origin);
+  if (!parsed) {
+    return { allowed: false, normalizedOrigin: '', host: '' };
   }
-
-  if (wildcardOriginTests.some((pattern) => pattern.test(origin))) {
-    return true;
+  if (allowedOriginSet.has(parsed.origin)) {
+    return { allowed: true, normalizedOrigin: parsed.origin, host: parsed.host };
   }
-
-  return false;
+  if (wildcardOriginTests.some((pattern) => pattern.test(parsed.host))) {
+    return { allowed: true, normalizedOrigin: parsed.origin, host: parsed.host, wildcard: true };
+  }
+  return { allowed: false, normalizedOrigin: parsed.origin, host: parsed.host };
 };
 
-const corsOptions = {
-  origin(origin, callback) {
-    if (isOriginAllowed(origin)) {
-      return callback(null, true);
+const validHeaderName = /^[!#$%&'*+.^_`|~0-9a-z-]+$/i;
+const baseAllowedHeaders = [
+  'Content-Type',
+  'Authorization',
+  'X-Requested-With',
+  'Accept',
+  'apikey',
+];
+
+const computeAllowedHeaders = (req) => {
+  const headerSet = new Set(baseAllowedHeaders);
+  const requestHeaders = req?.headers?.['access-control-request-headers'];
+
+  if (typeof requestHeaders === 'string' && requestHeaders.trim()) {
+    requestHeaders
+      .split(',')
+      .map((header) => header.trim())
+      .filter(Boolean)
+      .forEach((header) => {
+        if (validHeaderName.test(header)) {
+          headerSet.add(header);
+        } else {
+          console.warn(`⚠️  Intestazione richiesta non valida ignorata: "${header}"`);
+        }
+      });
+  }
+
+  return Array.from(headerSet)
+    .sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }))
+    .join(', ');
+};
+
+const corsOptionsDelegate = (req, callback) => {
+  const originHeader = req?.headers?.origin || '';
+  const evaluation = evaluateOrigin(originHeader);
+
+  if (!evaluation.allowed) {
+    const attemptedOrigin = evaluation.normalizedOrigin || originHeader || '<sconosciuto>';
+    console.warn(`🚫 Richiesta bloccata da origine non autorizzata: ${attemptedOrigin}`);
+    return callback(new Error('Not allowed by CORS'), { origin: false });
+  }
+
+  const allowOriginValue = originHeader
+    ? evaluation.normalizedOrigin || originHeader
+    : true;
+
+  const options = {
+    origin: allowOriginValue,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+    allowedHeaders: computeAllowedHeaders(req),
+    exposedHeaders: ['Content-Disposition'],
+    credentials: true,
+    maxAge: 3600,
+    optionsSuccessStatus: 204,
+  };
+
+  return callback(null, options);
+};
+
+const corsMiddleware = cors(corsOptionsDelegate);
+
+// Applica il middleware CORS con le opzioni complete e intercetta eventuali errori
+app.use((req, res, next) => {
+  corsMiddleware(req, res, (err) => {
+    if (err) {
+      if (err.message === 'Not allowed by CORS') {
+        return res.status(403).json({ ok: false, message: 'Origin non autorizzata dal backend.' });
+      }
+      return next(err);
     }
-
-    console.warn(`🚫 Richiesta bloccata da origine non autorizzata: ${origin}`);
-    return callback(new Error('Not allowed by CORS'));
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-};
-
-// Applica il middleware CORS con le opzioni complete
-app.use(cors(corsOptions));
+    return next();
+  });
+});
 
 // Gestisci esplicitamente le richieste preflight OPTIONS per tutte le rotte
-app.options('*', cors(corsOptions));
+app.options('*', corsMiddleware);
 
 // === FINE CONFIGURAZIONE CORS COMPLETA ===
 app.use(express.json());
