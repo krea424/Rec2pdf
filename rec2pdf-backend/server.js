@@ -57,7 +57,7 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
 }
 // === INIZIO CONFIGURAZIONE CORS COMPLETA ===
 
-const parseOriginValue = (value) => {
+function parseOriginValue(value) {
   if (!value) {
     return null;
   }
@@ -80,7 +80,7 @@ const parseOriginValue = (value) => {
     }
     return { origin: sanitized, host: sanitized };
   }
-};
+}
 
 const envAllowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
   .split(/[\s,]+/)
@@ -129,7 +129,7 @@ if (parsedAllowedOrigins.length > 0) {
   console.log('🌐 Nessuna origine CORS specificata: solo richieste senza Origin verranno accettate automaticamente.');
 }
 
-const evaluateOrigin = (origin) => {
+function evaluateOrigin(origin) {
   if (!origin) {
     return { allowed: true, normalizedOrigin: '', host: '' };
   }
@@ -144,7 +144,7 @@ const evaluateOrigin = (origin) => {
     return { allowed: true, normalizedOrigin: parsed.origin, host: parsed.host, wildcard: true };
   }
   return { allowed: false, normalizedOrigin: parsed.origin, host: parsed.host };
-};
+}
 
 const validHeaderName = /^[!#$%&'*+.^_`|~0-9a-z-]+$/i;
 const baseAllowedHeaders = [
@@ -155,7 +155,7 @@ const baseAllowedHeaders = [
   'apikey',
 ];
 
-const computeAllowedHeaders = (req) => {
+function computeAllowedHeaders(req) {
   const headerSet = new Set(baseAllowedHeaders);
   const requestHeaders = req?.headers?.['access-control-request-headers'];
 
@@ -172,13 +172,6 @@ const computeAllowedHeaders = (req) => {
         }
       });
   }
-  const parsed = parseOriginValue(origin);
-  if (!parsed) {
-    return { allowed: false, normalizedOrigin: '', host: '' };
-  }
-  if (allowedOriginSet.has(parsed.origin)) {
-    return { allowed: true, normalizedOrigin: parsed.origin, host: parsed.host };
-  }
   if (wildcardOriginTests.some((pattern) => pattern.test(parsed.host))) {
     return { allowed: true, normalizedOrigin: parsed.origin, host: parsed.host, wildcard: true };
   }
@@ -188,9 +181,9 @@ const computeAllowedHeaders = (req) => {
   return Array.from(headerSet)
     .sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }))
     .join(', ');
-};
+}
 
-const appendVaryHeader = (res, value) => {
+function appendVaryHeader(res, value) {
   if (!value) {
     return;
   }
@@ -213,11 +206,11 @@ const appendVaryHeader = (res, value) => {
     parts.push(value);
     res.setHeader('Vary', parts.join(', '));
   }
-};
+}
 
 const allowListedMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD';
 
-const applyCorsForRequest = (req, res, evaluation) => {
+function applyCorsForRequest(req, res, evaluation) {
   const originHeader = req?.headers?.origin || '';
 
   if (!originHeader || !evaluation.allowed) {
@@ -229,9 +222,9 @@ const applyCorsForRequest = (req, res, evaluation) => {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
   appendVaryHeader(res, 'Origin');
-};
+}
 
-const handlePreflight = (req, res, evaluation) => {
+function handlePreflight(req, res, evaluation) {
   const originHeader = req?.headers?.origin || '';
 
   if (originHeader && !evaluation.allowed) {
@@ -252,10 +245,10 @@ const handlePreflight = (req, res, evaluation) => {
   res.setHeader('Access-Control-Max-Age', '3600');
 
   return res.status(204).send();
-};
+}
 
 // Middleware CORS personalizzato per evitare problemi con Render
-app.use((req, res, next) => {
+app.use(function corsMiddleware(req, res, next) {
   const originHeader = req?.headers?.origin || '';
   const evaluation = evaluateOrigin(originHeader);
 
