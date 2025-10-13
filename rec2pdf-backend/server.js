@@ -11,6 +11,10 @@ const { execFile, exec } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
+const corsOptions = {
+  origin: 'https://rec2pdf-frontend.vercel.app', // <-- Specifica l'URL del tuo frontend
+  optionsSuccessStatus: 200 // Per browser legacy
+};
 const PORT = process.env.PORT || 7788;
 const HOST = process.env.HOST || '0.0.0.0';
 const SUPABASE_URL = process.env.SUPABASE_URL;
