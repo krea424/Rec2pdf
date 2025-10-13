@@ -11,10 +11,7 @@ const { execFile, exec } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-const corsOptions = {
-  origin: 'https://rec2pdf-frontend.vercel.app', // <-- Specifica l'URL del tuo frontend
-  optionsSuccessStatus: 200 // Per browser legacy
-};
+
 const PORT = process.env.PORT || 7788;
 const HOST = process.env.HOST || '0.0.0.0';
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -59,13 +56,34 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
 } else {
   console.log(`✅ Script publish.sh trovato: ${PUBLISH_SCRIPT}`);
 }
-app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'https://rec2pdf-frontend.vercel.app'
-  ],
+// === INIZIO CONFIGURAZIONE CORS COMPLETA ===
+
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://rec2pdf-frontend.vercel.app'
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permetti richieste senza 'origin' (es. Postman) o se l'origine è nella whitelist
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Specifica i metodi permessi
+  allowedHeaders: ['Content-Type', 'Authorization'], // Specifica gli header permessi
   credentials: true
-}));
+};
+
+// Applica il middleware CORS con le opzioni complete
+app.use(cors(corsOptions));
+
+// Gestisci esplicitamente le richieste preflight OPTIONS per tutte le rotte
+app.options('*', cors(corsOptions));
+
+// === FINE CONFIGURAZIONE CORS COMPLETA ===
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 // === INIZIO MODIFICA: HEALTH CHECK PER RENDER ===
