@@ -181,7 +181,7 @@ function computeAllowedHeaders(req) {
   return Array.from(headerSet)
     .sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }))
     .join(', ');
-}
+
 
 function appendVaryHeader(res, value) {
   if (!value) {
@@ -206,7 +206,7 @@ function appendVaryHeader(res, value) {
     parts.push(value);
     res.setHeader('Vary', parts.join(', '));
   }
-}
+
 
 const allowListedMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD';
 
