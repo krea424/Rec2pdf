@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
 const multer = require('multer');
 const fs = require('fs');
 const fsp = require('fs/promises');
@@ -173,6 +172,16 @@ const computeAllowedHeaders = (req) => {
         }
       });
   }
+  const parsed = parseOriginValue(origin);
+  if (!parsed) {
+    return { allowed: false, normalizedOrigin: '', host: '' };
+  }
+  if (allowedOriginSet.has(parsed.origin)) {
+    return { allowed: true, normalizedOrigin: parsed.origin, host: parsed.host };
+  }
+  if (wildcardOriginTests.some((pattern) => pattern.test(parsed.host))) {
+    return { allowed: true, normalizedOrigin: parsed.origin, host: parsed.host, wildcard: true };
+  }
   return { allowed: false, normalizedOrigin: parsed.origin, host: parsed.host };
 };
 
@@ -181,50 +190,88 @@ const computeAllowedHeaders = (req) => {
     .join(', ');
 };
 
-const corsOptionsDelegate = (req, callback) => {
+const appendVaryHeader = (res, value) => {
+  if (!value) {
+    return;
+  }
+  return { allowed: false, normalizedOrigin: parsed.origin, host: parsed.host };
+};
+
+  const existing = res.getHeader('Vary');
+  if (!existing) {
+    res.setHeader('Vary', value);
+    return;
+  }
+
+  const current = Array.isArray(existing) ? existing.join(',') : String(existing);
+  const parts = current
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (!parts.includes(value)) {
+    parts.push(value);
+    res.setHeader('Vary', parts.join(', '));
+  }
+};
+
+const allowListedMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD';
+
+const applyCorsForRequest = (req, res, evaluation) => {
+  const originHeader = req?.headers?.origin || '';
+
+  if (!originHeader || !evaluation.allowed) {
+    return;
+  }
+
+  const allowOriginValue = evaluation.normalizedOrigin || originHeader;
+  res.setHeader('Access-Control-Allow-Origin', allowOriginValue);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+  appendVaryHeader(res, 'Origin');
+};
+
+const handlePreflight = (req, res, evaluation) => {
+  const originHeader = req?.headers?.origin || '';
+
+  if (originHeader && !evaluation.allowed) {
+    const attemptedOrigin = evaluation.normalizedOrigin || originHeader || '<sconosciuto>';
+    console.warn(`🚫 Richiesta preflight bloccata da origine non autorizzata: ${attemptedOrigin}`);
+    return res.status(403).json({ ok: false, message: 'Origin non autorizzata dal backend.' });
+  }
+
+  if (originHeader && evaluation.allowed) {
+    const allowOriginValue = evaluation.normalizedOrigin || originHeader;
+    res.setHeader('Access-Control-Allow-Origin', allowOriginValue);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+
+  appendVaryHeader(res, 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', allowListedMethods);
+  res.setHeader('Access-Control-Allow-Headers', computeAllowedHeaders(req));
+  res.setHeader('Access-Control-Max-Age', '3600');
+
+  return res.status(204).send();
+};
+
+// Middleware CORS personalizzato per evitare problemi con Render
+app.use((req, res, next) => {
   const originHeader = req?.headers?.origin || '';
   const evaluation = evaluateOrigin(originHeader);
 
-  if (!evaluation.allowed) {
-    const attemptedOrigin = evaluation.normalizedOrigin || originHeader || '<sconosciuto>';
-    console.warn(`🚫 Richiesta bloccata da origine non autorizzata: ${attemptedOrigin}`);
-    return callback(new Error('Not allowed by CORS'), { origin: false });
+  if (req.method === 'OPTIONS') {
+    return handlePreflight(req, res, evaluation);
   }
 
-  const allowOriginValue = originHeader
-    ? evaluation.normalizedOrigin || originHeader
-    : true;
+  if (originHeader && !evaluation.allowed) {
+    const attemptedOrigin = evaluation.normalizedOrigin || originHeader || '<sconosciuto>';
+    console.warn(`🚫 Richiesta bloccata da origine non autorizzata: ${attemptedOrigin}`);
+    return res.status(403).json({ ok: false, message: 'Origin non autorizzata dal backend.' });
+  }
 
-  const options = {
-    origin: allowOriginValue,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
-    allowedHeaders: computeAllowedHeaders(req),
-    exposedHeaders: ['Content-Disposition'],
-    credentials: true,
-    maxAge: 3600,
-    optionsSuccessStatus: 204,
-  };
-
-  return callback(null, options);
-};
-
-const corsMiddleware = cors(corsOptionsDelegate);
-
-// Applica il middleware CORS con le opzioni complete e intercetta eventuali errori
-app.use((req, res, next) => {
-  corsMiddleware(req, res, (err) => {
-    if (err) {
-      if (err.message === 'Not allowed by CORS') {
-        return res.status(403).json({ ok: false, message: 'Origin non autorizzata dal backend.' });
-      }
-      return next(err);
-    }
-    return next();
-  });
+  applyCorsForRequest(req, res, evaluation);
+  return next();
 });
-
-// Gestisci esplicitamente le richieste preflight OPTIONS per tutte le rotte
-app.options('*', corsMiddleware);
 
 // === FINE CONFIGURAZIONE CORS COMPLETA ===
 app.use(express.json());
