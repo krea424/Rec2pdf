@@ -150,7 +150,13 @@ const evaluateOrigin = (origin) => {
 const validHeaderName = /^[!#$%&'*+.^_`|~0-9a-z-]+$/i;
 
 const computeAllowedHeaders = (req) => {
-  const baseHeaders = ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'];
+  const baseHeaders = [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'apikey',
+  ];
   const headerSet = new Set(baseHeaders);
   const requestHeaders = req?.headers?.['access-control-request-headers'];
 
@@ -186,7 +192,7 @@ const corsOptions = {
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
   allowedHeaders: (req, callback) => {
-    const headers = computeAllowedHeaders(req).join(', ');
+    const headers = computeAllowedHeaders(req);
     callback(null, headers);
   },
   exposedHeaders: ['Content-Disposition'],
