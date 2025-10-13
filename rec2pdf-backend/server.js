@@ -58,23 +58,51 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
 }
 // === INIZIO CONFIGURAZIONE CORS COMPLETA ===
 
-const allowedOrigins = [
+const envAllowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const defaultAllowedOrigins = [
   'http://localhost:5173',
-  'https://rec2pdf-frontend.vercel.app'
-];
+  'http://localhost:4173',
+  process.env.FRONTEND_URL,
+  process.env.PUBLIC_FRONTEND_URL,
+  process.env.RENDER_EXTERNAL_URL,
+  process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+  'https://rec2pdf-frontend.vercel.app',
+].filter(Boolean);
+
+const wildcardOriginTests = [/\.vercel\.app$/i];
+
+const isOriginAllowed = (origin) => {
+  if (!origin) {
+    return true;
+  }
+
+  if (defaultAllowedOrigins.includes(origin) || envAllowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  if (wildcardOriginTests.some((pattern) => pattern.test(origin))) {
+    return true;
+  }
+
+  return false;
+};
 
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Permetti richieste senza 'origin' (es. Postman) o se l'origine è nella whitelist
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+  origin(origin, callback) {
+    if (isOriginAllowed(origin)) {
+      return callback(null, true);
     }
+
+    console.warn(`🚫 Richiesta bloccata da origine non autorizzata: ${origin}`);
+    return callback(new Error('Not allowed by CORS'));
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Specifica i metodi permessi
-  allowedHeaders: ['Content-Type', 'Authorization'], // Specifica gli header permessi
-  credentials: true
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
 };
 
 // Applica il middleware CORS con le opzioni complete
@@ -144,7 +172,7 @@ const authenticateRequest = async (req, res, next) => {
 };
 
 app.use('/api', (req, res, next) => {
-  if (req.path === '/health') {
+  if (req.method === 'OPTIONS' || req.path === '/health') {
     return next();
   }
   return authenticateRequest(req, res, next);
