@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
 const multer = require('multer');
 const fs = require('fs');
 const fsp = require('fs/promises');
@@ -58,8 +57,33 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
 }
 // === INIZIO CONFIGURAZIONE CORS COMPLETA ===
 
+function parseOriginValue(value) {
+  if (!value) {
+    return null;
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.toLowerCase() === 'null') {
+    return { origin: 'null', host: 'null' };
+  }
+  try {
+    const url = new URL(trimmed);
+    const host = url.host.toLowerCase();
+    const protocol = url.protocol.toLowerCase();
+    return { origin: `${protocol}//${host}`, host };
+  } catch (error) {
+    const sanitized = trimmed.replace(/\/+$/, '').toLowerCase();
+    if (!sanitized) {
+      return null;
+    }
+    return { origin: sanitized, host: sanitized };
+  }
+}
+
 const envAllowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
-  .split(',')
+  .split(/[\s,]+/)
   .map((origin) => origin.trim())
   .filter(Boolean);
 
@@ -73,43 +97,167 @@ const defaultAllowedOrigins = [
   'https://rec2pdf-frontend.vercel.app',
 ].filter(Boolean);
 
+const combinedAllowedOrigins = Array.from(
+  new Set([...defaultAllowedOrigins, ...envAllowedOrigins])
+);
+
+const parsedAllowedOrigins = combinedAllowedOrigins
+  .map((origin) => {
+    const parsed = parseOriginValue(origin);
+    if (!parsed) {
+      console.warn(`⚠️  Origine CORS non valida ignorata: ${origin}`);
+    }
+    return parsed;
+  })
+  .filter(Boolean);
+
+const allowedOriginSet = new Set(parsedAllowedOrigins.map((entry) => entry.origin));
+
 const wildcardOriginTests = [/\.vercel\.app$/i];
 
-const isOriginAllowed = (origin) => {
+if (parsedAllowedOrigins.length > 0) {
+  console.log('🌐 Origini CORS consentite:');
+  parsedAllowedOrigins.forEach((entry) => {
+    console.log(`   - ${entry.origin}`);
+  });
+  if (wildcardOriginTests.length) {
+    console.log(
+      `   - (wildcard) ${wildcardOriginTests.map((pattern) => pattern.toString()).join(', ')}`
+    );
+  }
+} else {
+  console.log('🌐 Nessuna origine CORS specificata: solo richieste senza Origin verranno accettate automaticamente.');
+}
+
+function evaluateOrigin(origin) {
   if (!origin) {
-    return true;
+    return { allowed: true, normalizedOrigin: '', host: '' };
+  }
+  const parsed = parseOriginValue(origin);
+  if (!parsed) {
+    return { allowed: false, normalizedOrigin: '', host: '' };
+  }
+  if (allowedOriginSet.has(parsed.origin)) {
+    return { allowed: true, normalizedOrigin: parsed.origin, host: parsed.host };
+  }
+  if (wildcardOriginTests.some((pattern) => pattern.test(parsed.host))) {
+    return { allowed: true, normalizedOrigin: parsed.origin, host: parsed.host, wildcard: true };
+  }
+  return { allowed: false, normalizedOrigin: parsed.origin, host: parsed.host };
+}
+
+const validHeaderName = /^[!#$%&'*+.^_`|~0-9a-z-]+$/i;
+const baseAllowedHeaders = [
+  'Content-Type',
+  'Authorization',
+  'X-Requested-With',
+  'Accept',
+  'apikey',
+];
+
+function computeAllowedHeaders(req) {
+  const headerSet = new Set(baseAllowedHeaders);
+  const requestHeaders = req?.headers?.['access-control-request-headers'];
+
+  if (typeof requestHeaders === 'string' && requestHeaders.trim()) {
+    requestHeaders
+      .split(',')
+      .map((header) => header.trim())
+      .filter(Boolean)
+      .forEach((header) => {
+        if (validHeaderName.test(header)) {
+          headerSet.add(header);
+        } else {
+          console.warn(`⚠️  Intestazione richiesta non valida ignorata: "${header}"`);
+        }
+      });
   }
 
-  if (defaultAllowedOrigins.includes(origin) || envAllowedOrigins.includes(origin)) {
-    return true;
+  return Array.from(headerSet)
+    .sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }))
+    .join(', ');
+}
+
+function appendVaryHeader(res, value) {
+  if (!value) {
+    return;
   }
 
-  if (wildcardOriginTests.some((pattern) => pattern.test(origin))) {
-    return true;
+  const existing = res.getHeader('Vary');
+  if (!existing) {
+    res.setHeader('Vary', value);
+    return;
   }
 
-  return false;
-};
+  const current = Array.isArray(existing) ? existing.join(',') : String(existing);
+  const parts = current
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 
-const corsOptions = {
-  origin(origin, callback) {
-    if (isOriginAllowed(origin)) {
-      return callback(null, true);
-    }
+  if (!parts.includes(value)) {
+    parts.push(value);
+    res.setHeader('Vary', parts.join(', '));
+  }
+}
 
-    console.warn(`🚫 Richiesta bloccata da origine non autorizzata: ${origin}`);
-    return callback(new Error('Not allowed by CORS'));
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-};
+const allowListedMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD';
 
-// Applica il middleware CORS con le opzioni complete
-app.use(cors(corsOptions));
+function applyCorsForRequest(req, res, evaluation) {
+  const originHeader = req?.headers?.origin || '';
 
-// Gestisci esplicitamente le richieste preflight OPTIONS per tutte le rotte
-app.options('*', cors(corsOptions));
+  if (!originHeader || !evaluation.allowed) {
+    return;
+  }
+
+  const allowOriginValue = evaluation.normalizedOrigin || originHeader;
+  res.setHeader('Access-Control-Allow-Origin', allowOriginValue);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+  appendVaryHeader(res, 'Origin');
+}
+
+function handlePreflight(req, res, evaluation) {
+  const originHeader = req?.headers?.origin || '';
+
+  if (originHeader && !evaluation.allowed) {
+    const attemptedOrigin = evaluation.normalizedOrigin || originHeader || '<sconosciuto>';
+    console.warn(`🚫 Richiesta preflight bloccata da origine non autorizzata: ${attemptedOrigin}`);
+    return res.status(403).json({ ok: false, message: 'Origin non autorizzata dal backend.' });
+  }
+
+  if (originHeader && evaluation.allowed) {
+    const allowOriginValue = evaluation.normalizedOrigin || originHeader;
+    res.setHeader('Access-Control-Allow-Origin', allowOriginValue);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+
+  appendVaryHeader(res, 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', allowListedMethods);
+  res.setHeader('Access-Control-Allow-Headers', computeAllowedHeaders(req));
+  res.setHeader('Access-Control-Max-Age', '3600');
+
+  return res.status(204).send();
+}
+
+// Middleware CORS personalizzato per evitare problemi con Render
+app.use(function corsMiddleware(req, res, next) {
+  const originHeader = req?.headers?.origin || '';
+  const evaluation = evaluateOrigin(originHeader);
+
+  if (req.method === 'OPTIONS') {
+    return handlePreflight(req, res, evaluation);
+  }
+
+  if (originHeader && !evaluation.allowed) {
+    const attemptedOrigin = evaluation.normalizedOrigin || originHeader || '<sconosciuto>';
+    console.warn(`🚫 Richiesta bloccata da origine non autorizzata: ${attemptedOrigin}`);
+    return res.status(403).json({ ok: false, message: 'Origin non autorizzata dal backend.' });
+  }
+
+  applyCorsForRequest(req, res, evaluation);
+  return next();
+});
 
 // === FINE CONFIGURAZIONE CORS COMPLETA ===
 app.use(express.json());
