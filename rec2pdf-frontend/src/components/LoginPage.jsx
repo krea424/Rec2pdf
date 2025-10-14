@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import supabase from '../supabaseClient';
-import logo from '../assets/logo.svg';
+import logo from '../assets/logo-thinkdoc_sfondo_scuro.svg';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Toast } from './ui/Toast';

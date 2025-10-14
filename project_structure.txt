@@ -1,100 +1,163 @@
 .
-├── Brand_Vision_and_Creative_Brief.md
-├── BusinessCase.md
-├── CHANGELOG.md
-├── LICENSE
-├── Manuale utente – Workspace Navigator mul.md
-├── README.md
-├── Scripts
-│   └── publish.sh
-├── Templates
-│   ├── cover.tex
-│   ├── default.tex
-│   └── header_footer.tex
 ├── artefatti
 │   ├── analisi_mercato_rec2pdf.pdf
+│   ├── esempio_template_verbale_meeting.html
 │   ├── sviluppo_web_app_rec2pdf_AIStudio.md
 │   ├── sviluppo_web_app_rec2pdf_Codex copy.md
 │   └── sviluppo_web_app_rec2pdf_Codex.md
 ├── assets
-│   ├── BLD_LOGO_Primary_Horizontal_RGB.pdf
 │   ├── BiteTheHand2.png
+│   ├── BLD_LOGO_Primary_Horizontal_RGB.pdf
 │   ├── HelloKitty.png
+│   ├── logo_github.png
+│   ├── logo_google.svg
+│   ├── logo_PM.png
+│   ├── logo_thinkDOC.svg
+│   ├── logo-thinkdoc_sfondo_scuro copy.jpeg
+│   ├── logo-thinkdoc_sfondo_scuro copy.png
+│   ├── logo-thinkdoc_sfondo_scuro copy.svg
+│   ├── logo-thinkdoc_sfondo_scuro.svg
 │   ├── logo-thinkdoc-flow-v1 2.svg
 │   ├── logo-thinkdoc-flow-v1.pdf
 │   ├── logo-thinkdoc-flow-v1.svg
-│   ├── logo-thinkdoc_sfondo_scuro.svg
 │   ├── logo3.png
-│   ├── logo_PM.png
-│   ├── logo_thinkDOC.svg
 │   ├── thinkDOC 2.svg
 │   ├── thinkDOC 3.svg
 │   ├── thinkDOC copy.pdf
 │   ├── thinkDOC copy.svg
+│   ├── thinkdoc_logo (1).svg
+│   ├── thinkdoc_logo (2).svg
+│   ├── thinkdoc_logo (3).svg
+│   ├── thinkdoc_logo (4).svg
+│   ├── thinkdoc_logo (5).svg
+│   ├── thinkdoc_logo (6).svg
+│   ├── thinkdoc_logo (7).svg
+│   ├── thinkdoc_logo (8).svg
+│   ├── thinkdoc_logo.svg
 │   ├── thinkDOC.pdf
-│   └── thinkDOC.svg
+│   ├── thinkDOC.svg
+│   └── thinkDOC2.pdf
+├── Brand_Vision_and_Creative_Brief.md
+├── BusinessCase.md
+├── CHANGELOG.md
 ├── docs
-│   └── UI.md
+│   ├── ACCESSIBILITY_CHECKLIST.md
+│   ├── ADVANCED_GUIDE.md
+│   ├── project_profiles.md
+│   ├── RELEASE_NOTES.md
+│   ├── SITEMAP.md
+│   ├── UI_AUDIT.md
+│   ├── UI.md
+│   └── USER_JOURNEYS.md
+├── LICENSE
 ├── logo_thinkDOC.svg
+├── Manuale utente – Workspace Navigator mul.md
 ├── project_structure.txt
+├── README.md
 ├── rec2pdf-backend
 │   ├── Dockerfile
 │   ├── package-lock.json
 │   ├── package.json
 │   └── server.js
-└── rec2pdf-frontend
-    ├── README.md
-    ├── index.html
-    ├── logo-thinkdoc-flow-v1.svg
-    ├── package-lock.json
-    ├── package.json
-    ├── postcss.config.js
-    ├── src
-    │   ├── App.jsx
-    │   ├── assets
-    │   │   ├── BiteTheHand.png
-    │   │   ├── BrightLedger.png
-    │   │   ├── logo.svg
-    │   │   └── thinkDOC.svg
-    │   ├── components
-    │   │   ├── CloudLibraryPanel.jsx
-    │   │   ├── LibraryPanel.jsx
-    │   │   ├── LoginPage.jsx
-    │   │   ├── MarkdownEditorModal.jsx
-    │   │   ├── PermissionBanner.jsx
-    │   │   ├── PromptLibrary.jsx
-    │   │   ├── SetupAssistant.jsx
-    │   │   ├── WorkspaceNavigator.jsx
-    │   │   ├── icons.jsx
-    │   │   ├── layout
-    │   │   │   ├── AppShell.jsx
-    │   │   │   └── SettingsDrawer.jsx
-    │   │   └── ui
-    │   │       ├── Badge.jsx
-    │   │       ├── Button.jsx
-    │   │       ├── Drawer.jsx
-    │   │       ├── EmptyState.jsx
-    │   │       ├── Input.jsx
-    │   │       ├── Select.jsx
-    │   │       ├── Skeleton.jsx
-    │   │       ├── Tabs.jsx
-    │   │       ├── Toast.jsx
-    │   │       └── index.js
-    │   ├── hooks
-    │   │   ├── useAppContext.jsx
-    │   │   ├── useBackendDiagnostics.js
-    │   │   └── useMicrophoneAccess.js
-    │   ├── index.css
-    │   ├── main.jsx
-    │   ├── pages
-    │   │   ├── Create.jsx
-    │   │   ├── Editor.jsx
-    │   │   └── Library.jsx
-    │   ├── supabaseClient.js
-    │   └── utils
-    │       ├── classNames.js
-    │       └── media.js
-    ├── tailwind.config.js
-    └── vite.config.js
+├── rec2pdf-frontend
+│   ├── index.html
+│   ├── logo-thinkdoc-flow-v1.svg
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── playwright.config.js
+│   ├── postcss.config.js
+│   ├── README.md
+│   ├── src
+│   │   ├── App.jsx
+│   │   ├── assets
+│   │   │   ├── BiteTheHand.png
+│   │   │   ├── BrightLedger.png
+│   │   │   ├── github-mark-white.png
+│   │   │   ├── google_logo.svg
+│   │   │   ├── logo-thinkdoc_sfondo_scuro.svg
+│   │   │   ├── logo.svg
+│   │   │   └── thinkDOC.svg
+│   │   ├── components
+│   │   │   ├── __tests__
+│   │   │   │   ├── CommandPalette.test.jsx
+│   │   │   │   └── WorkspaceNavigator.test.jsx
+│   │   │   ├── CloudLibraryPanel.jsx
+│   │   │   ├── CommandPalette.jsx
+│   │   │   ├── icons
+│   │   │   │   ├── GitHubIcon.jsx
+│   │   │   │   └── GoogleIcon.jsx
+│   │   │   ├── icons.jsx
+│   │   │   ├── layout
+│   │   │   │   ├── __tests__
+│   │   │   │   │   └── AppShell.test.jsx
+│   │   │   │   ├── AppShell.jsx
+│   │   │   │   └── SettingsDrawer.jsx
+│   │   │   ├── LibraryPanel.jsx
+│   │   │   ├── LoginPage.jsx
+│   │   │   ├── MarkdownEditorModal.jsx
+│   │   │   ├── PermissionBanner.jsx
+│   │   │   ├── PromptLibrary.jsx
+│   │   │   ├── SetupAssistant.jsx
+│   │   │   ├── ui
+│   │   │   │   ├── Badge.jsx
+│   │   │   │   ├── Button.jsx
+│   │   │   │   ├── Drawer.jsx
+│   │   │   │   ├── EmptyState.jsx
+│   │   │   │   ├── index.js
+│   │   │   │   ├── Input.jsx
+│   │   │   │   ├── Select.jsx
+│   │   │   │   ├── Skeleton.jsx
+│   │   │   │   ├── Tabs.jsx
+│   │   │   │   └── Toast.jsx
+│   │   │   ├── WorkspaceNavigator.jsx
+│   │   │   └── workspaces
+│   │   │       └── WorkspaceProfilesManager.jsx
+│   │   ├── context
+│   │   │   ├── __tests__
+│   │   │   │   └── ModeContext.test.tsx
+│   │   │   ├── AnalyticsContext.tsx
+│   │   │   └── ModeContext.tsx
+│   │   ├── features
+│   │   │   ├── advanced
+│   │   │   │   └── AdvancedDashboard.tsx
+│   │   │   ├── base
+│   │   │   │   ├── BaseHome.jsx
+│   │   │   │   ├── PipelinePanel.jsx
+│   │   │   │   └── UploadCard.jsx
+│   │   │   └── settings
+│   │   │       └── sections
+│   │   │           ├── AccountSection.tsx
+│   │   │           ├── AdvancedBackendSection.tsx
+│   │   │           ├── BrandingSection.tsx
+│   │   │           ├── DiagnosticsSection.tsx
+│   │   │           ├── RecordingSection.tsx
+│   │   │           └── WorkspaceSection.tsx
+│   │   ├── hooks
+│   │   │   ├── useAppContext.jsx
+│   │   │   ├── useBackendDiagnostics.js
+│   │   │   └── useMicrophoneAccess.js
+│   │   ├── index.css
+│   │   ├── main.jsx
+│   │   ├── pages
+│   │   │   ├── Create.jsx
+│   │   │   ├── Editor.jsx
+│   │   │   └── Library.jsx
+│   │   ├── setupTests.js
+│   │   ├── supabaseClient.js
+│   │   └── utils
+│   │       ├── analytics.ts
+│   │       ├── classNames.js
+│   │       └── media.js
+│   ├── tailwind.config.js
+│   ├── tests
+│   │   └── e2e
+│   │       └── audio-to-pdf.spec.js
+│   └── vite.config.js
+├── Scripts
+│   └── publish.sh
+└── Templates
+    ├── cover.tex
+    ├── default.tex
+    └── header_footer.tex
 
-16 directories, 82 files
+29 directories, 132 files

@@ -1,0 +1,22 @@
+<svg viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg">
+  <!-- Sfondo trasparente -->
+  
+  <!-- Icona geometrica minimal -->
+  <g transform="translate(20, 20)">
+    <!-- Forma esagonale/badge -->
+    <path d="M 20 0 L 30 5 L 30 35 L 20 40 L 10 35 L 10 5 Z" fill="none" stroke="#0F172A" stroke-width="2.2" stroke-linejoin="round"/>
+    
+    <!-- Simbolo interno - documento + pensiero -->
+    <line x1="16" y1="14" x2="24" y2="14" stroke="#3B82F6" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="16" y1="20" x2="24" y2="20" stroke="#3B82F6" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="16" y1="26" x2="22" y2="26" stroke="#3B82F6" stroke-width="1.8" stroke-linecap="round"/>
+  </g>
+  
+  <!-- Testo "thinkdoc" unica parola -->
+  <text x="75" y="48" font-family="'Inter', 'SF Pro Display', system-ui, sans-serif" font-size="28" font-weight="500" fill="#0F172A" letter-spacing="-0.3">
+    thinkdoc
+  </text>
+  
+  <!-- Punto di accento -->
+  <circle cx="257" cy="45" r="2.5" fill="#3B82F6"/>
+</svg>

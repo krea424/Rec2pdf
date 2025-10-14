@@ -1,0 +1,29 @@
+<svg width="200" height="60" viewBox="0 0 200 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Logo Concept 3: "Organic to Geometric" - Forme organiche che diventano geometriche -->
+  <defs>
+    <linearGradient id="flowGradient3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#e2e8f0;stop-opacity:0.3" /> <!-- Lighter start color (slate-200) -->
+      <stop offset="100%" style="stop-color:#94a3b8;stop-opacity:1" /> <!-- Lighter end color (slate-400) -->
+    </linearGradient>
+  </defs>
+  
+  <!-- Forma organica (pensiero fluido) -->
+  <path d="M8 30 Q18 15, 28 30 Q38 45, 48 30 Q52 25, 56 30" 
+        fill="url(#flowGradient3)" 
+        opacity="0.8"/> <!-- Increased opacity for better visibility -->
+  
+  <!-- Transizione con particelle -->
+  <circle cx="60" cy="28" r="1.5" fill="#cbd5e1" opacity="0.0"/> <!-- Lighter color (slate-300) -->
+  <circle cx="63" cy="32" r="1.2" fill="#cbd5e1" opacity="0.0"/> <!-- Lighter color (slate-300) -->
+  <circle cx="66" cy="30" r="1" fill="#cbd5e1" opacity="0.0"/> <!-- Lighter color (slate-300) -->
+  
+  <!-- Struttura geometrica finale -->
+  <polygon points="70,25 75,20 80,25 80,35 75,40 70,35" fill="#f8fafc"/> <!-- Very light color (slate-50) -->
+  <rect x="72" y="27" width="6" height="1.5" fill="#1e293b" opacity="0.3"/> <!-- Darker fill for contrast -->
+  <rect x="72" y="30" width="6" height="1.5" fill="#1e293b" opacity="0.3"/> <!-- Darker fill for contrast -->
+  <rect x="72" y="33" width="6" height="1.5" fill="#1e293b" opacity="0.3"/> <!-- Darker fill for contrast -->
+  
+  <!-- Wordmark -->
+  <text x="95" y="25" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="700" fill="#f8fafc">Think</text> <!-- Very light color (slate-50) -->
+  <text x="95" y="42" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="400" fill="#94a3b8">Doc</text> <!-- Lighter color (slate-400) -->
+</svg>

@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Strategy 2025 - ParlaDOC</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #e5e5e5;
+            padding: 40px 20px;
+        }
+        
+        .pdf-container {
+            max-width: 210mm;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            padding: 25mm;
+            min-height: 297mm;
+        }
+        
+        /* Header */
+        .pdf-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #faf7f2;
+        }
+        
+        .logo {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a365d;
+            letter-spacing: -0.3px;
+        }
+        
+        .logo span {
+            color: #ff6b35;
+        }
+        
+        .watermark {
+            font-size: 10px;
+            color: #a0aec0;
+            text-align: right;
+        }
+        
+        /* Title Section */
+        .title-section {
+            margin-bottom: 40px;
+        }
+        
+        .doc-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a365d;
+            margin-bottom: 15px;
+            line-height: 1.3;
+            letter-spacing: -0.5px;
+        }
+        
+        .metadata {
+            display: flex;
+            gap: 30px;
+            font-size: 13px;
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+        
+        .metadata-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .metadata-label {
+            color: #a0aec0;
+            font-weight: 600;
+        }
+        
+        /* Summary Box */
+        .summary-box {
+            background: #faf7f2;
+            border-left: 4px solid #ff6b35;
+            padding: 25px;
+            margin-bottom: 40px;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .summary-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1a365d;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .summary-content {
+            font-size: 14px;
+            line-height: 1.8;
+            color: #2d3748;
+        }
+        
+        /* Action Items */
+        .action-items {
+            background: #fff;
+            border: 2px solid #00c896;
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 40px;
+        }
+        
+        .action-items-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1a365d;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .action-items-title::before {
+            content: "✓";
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            background: #00c896;
+            color: white;
+            border-radius: 4px;
+            text-align: center;
+            line-height: 24px;
+            font-size: 16px;
+        }
+        
+        .action-item {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #f7fafc;
+        }
+        
+        .action-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        
+        .action-checkbox {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #00c896;
+            border-radius: 3px;
+            flex-shrink: 0;
+            margin-top: 3px;
+        }
+        
+        .action-content {
+            flex: 1;
+        }
+        
+        .action-text {
+            font-size: 14px;
+            color: #2d3748;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        
+        .action-meta {
+            font-size: 12px;
+            color: #a0aec0;
+        }
+        
+        .action-assignee {
+            color: #ff6b35;
+            font-weight: 600;
+        }
+        
+        /* Transcript */
+        .transcript {
+            margin-bottom: 40px;
+        }
+        
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a365d;
+            margin-bottom: 25px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #faf7f2;
+        }
+        
+        .transcript-entry {
+            margin-bottom: 25px;
+        }
+        
+        .speaker-tag {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1a365d;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .timestamp {
+            font-size: 11px;
+            color: #a0aec0;
+            font-weight: 400;
+        }
+        
+        .speaker-text {
+            font-size: 14px;
+            line-height: 1.8;
+            color: #2d3748;
+            padding-left: 20px;
+        }
+        
+        /* Key Points */
+        .key-points {
+            background: #f7fafc;
+            padding: 25px;
+            border-radius: 8px;
+            margin-bottom: 40px;
+        }
+        
+        .key-points-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1a365d;
+            margin-bottom: 15px;
+        }
+        
+        .key-point {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .key-point::before {
+            content: "→";
+            color: #ff6b35;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        
+        /* Footer */
+        .pdf-footer {
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 1px solid #f7fafc;
+            text-align: center;
+            font-size: 11px;
+            color: #a0aec0;
+        }
+        
+        .footer-note {
+            margin-bottom: 8px;
+        }
+        
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            
+            .pdf-container {
+                box-shadow: none;
+                padding: 20mm;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="pdf-container">
+        <!-- Header -->
+        <div class="pdf-header">
+            <div class="logo">Parla<span>DOC</span></div>
+            <div class="watermark">
+                Generato da ParlaDOC<br>
+                parladoc.it
+            </div>
+        </div>
+        
+        <!-- Title Section -->
+        <div class="title-section">
+            <h1 class="doc-title">Meeting Strategia 2025 - Q1 Review</h1>
+            <div class="metadata">
+                <div class="metadata-item">
+                    <span class="metadata-label">Data:</span>
+                    <span>29 Settembre 2025</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Durata:</span>
+                    <span>48 minuti</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Partecipanti:</span>
+                    <span>4</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Summary -->
+        <div class="summary-box">
+            <h2 class="summary-title">Riassunto Esecutivo</h2>
+            <div class="summary-content">
+                <p>Il team ha discusso i risultati del Q1 2025 e definito le priorità strategiche per il Q2. I ricavi sono cresciuti del 23% rispetto al Q4 2024, superando le previsioni. Sono stati identificati tre pilastri strategici: espansione del team sales, lancio della nuova feature "Team Workspace", e ottimizzazione del funnel di conversione freemium-to-paid. Il budget approvato per il Q2 è di €180K, con focus principale sull'acquisizione clienti enterprise.</p>
+            </div>
+        </div>
+        
+        <!-- Action Items -->
+        <div class="action-items">
+            <h2 class="action-items-title">Action Items</h2>
+            
+            <div class="action-item">
+                <div class="action-checkbox"></div>
+                <div class="action-content">
+                    <div class="action-text">Preparare roadmap dettagliata feature "Team Workspace" con timeline e risorse necessarie</div>
+                    <div class="action-meta">
+                        Assegnato a: <span class="action-assignee">Marco (CTO)</span> | Scadenza: 6 Ottobre 2025
+                    </div>
+                </div>
+            </div>
+            
+            <div class="action-item">
+                <div class="action-checkbox"></div>
+                <div class="action-content">
+                    <div class="action-text">Avviare processo di recruiting per 2 nuovi Account Executive</div>
+                    <div class="action-meta">
+                        Assegnato a: <span class="action-assignee">Giulia (Head of Sales)</span> | Scadenza: 10 Ottobre 2025
+                    </div>
+                </div>
+            </div>
+            
+            <div class="action-item">
+                <div class="action-checkbox"></div>
+                <div class="action-content">
+                    <div class="action-text">Analizzare dati funnel conversione e proporre 3 esperimenti A/B test</div>
+                    <div class="action-meta">
+                        Assegnato a: <span class="action-assignee">Laura (Growth)</span> | Scadenza: 8 Ottobre 2025
+                    </div>
+                </div>
+            </div>
+            
+            <div class="action-item">
+                <div class="action-checkbox"></div>
+                <div class="action-content">
+                    <div class="action-text">Schedulare demo con i 5 prospect enterprise in pipeline</div>
+                    <div class="action-meta">
+                        Assegnato a: <span class="action-assignee">Giulia (Head of Sales)</span> | Scadenza: 4 Ottobre 2025
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Key Points -->
+        <div class="key-points">
+            <h3 class="key-points-title">Punti Chiave della Discussione</h3>
+            <div class="key-point">Ricavi Q1 2025: €420K (+23% vs Q4 2024, target era €380K)</div>
+            <div class="key-point">Tasso di conversione freemium-to-paid attuale: 8.2% (target Q2: 10%)</div>
+            <div class="key-point">Customer Acquisition Cost (CAC) sceso da €180 a €142</div>
+            <div class="key-point">Net Promoter Score (NPS): 72 (eccellente, in crescita)</div>
+            <div class="key-point">5 prospect enterprise in fase avanzata, valore totale potenziale €95K ARR</div>
+            <div class="key-point">Team attuale: 12 persone, obiettivo Q2: 15 persone</div>
+        </div>
+        
+        <!-- Transcript -->
+        <div class="transcript">
+            <h2 class="section-title">Trascrizione Completa</h2>
+            
+            <div class="transcript-entry">
+                <div class="speaker-tag">
+                    [ANDREA - CEO]
+                    <span class="timestamp">00:00:15</span>
+                </div>
+                <div class="speaker-text">
+                    Buongiorno a tutti. Grazie per essere qui. Oggi voglio che facciamo il punto sui risultati del primo trimestre e che definiamo insieme le priorità per il Q2. Ho già condiviso i numeri via email, ma li riassumo velocemente: abbiamo chiuso a 420K di ricavi, che significa un +23% rispetto al trimestre precedente. Questo è un risultato eccellente che supera le nostre previsioni.
+                </div>
+            </div>
+            
+            <div class="transcript-entry">
+                <div class="speaker-tag">
+                    [GIULIA - HEAD OF SALES]
+                    <span class="timestamp">00:01:02</span>
+                </div>
+                <div class="speaker-text">
+                    Confermo, Andrea. Da parte mia voglio aggiungere che abbiamo anche visto un miglioramento significativo nel CAC. Siamo scesi da 180 euro a 142 euro per cliente acquisito. Questo è dovuto principalmente all'ottimizzazione delle campagne e al fatto che il passaparola sta iniziando a funzionare molto bene.
+                </div>
+            </div>
+            
+            <div class="transcript-entry">
+                <div class="speaker-tag">
+                    [MARCO - CTO]
+                    <span class="timestamp">00:01:45</span>
+                </div>
+                <div class="speaker-text">
+                    Ottimo. Dal punto di vista prodotto, abbiamo rilasciato 12 nuove feature nel trimestre e risolto oltre 200 bug. La stabilità della piattaforma è migliorata tantissimo. L'uptime è al 99.8%. Però devo dire che la richiesta numero uno che riceviamo dai clienti enterprise è la possibilità di collaborare in team. Serve assolutamente una feature "Team Workspace" se vogliamo scalare sul segmento B2B.
+                </div>
+            </div>
+            
+            <div class="transcript-entry">
+                <div class="speaker-tag">
+                    [ANDREA - CEO]
+                    <span class="timestamp">00:02:28</span>
+                </div>
+                <div class="speaker-text">
+                    Sono d'accordo, Marco. Questa deve essere la priorità assoluta per il Q2. Ti chiedo di preparare una roadmap dettagliata entro la settimana prossima, con timeline realistiche e le risorse che ti servono. Budget non è un problema se la proposta è solida.
+                </div>
+            </div>
+            
+            <div class="transcript-entry">
+                <div class="speaker-tag">
+                    [LAURA - GROWTH]
+                    <span class="timestamp">00:03:05</span>
+                </div>
+                <div class="speaker-text">
+                    Posso aggiungere un dato interessante? Il nostro tasso di conversione da freemium a paid è attualmente all'8.2%, che è buono ma c'è margine di miglioramento. Ho analizzato il funnel e ho identificato tre punti di friction dove perdiamo utenti. Vorrei proporre alcuni esperimenti di A/B testing per ottimizzare questi passaggi. Secondo le mie stime, potremmo arrivare al 10% entro fine Q2.
+                </div>
+            </div>
+            
+            <div class="transcript-entry">
+                <div class="speaker-tag">
+                    [ANDREA - CEO]
+                    <span class="timestamp">00:03:52</span>
+                </div>
+                <div class="speaker-text">
+                    Perfetto Laura, vai avanti con questi esperimenti. Facciamo check-in settimanali per monitorare i progressi. Giulia, a che punto siamo con i prospect enterprise?
+                </div>
+            </div>
+            
+            <div class="transcript-entry">
+                <div class="speaker-tag">
+                    [GIULIA - HEAD OF SALES]
+                    <span class="timestamp">00:04:10</span>
+                </div>
+                <div class="speaker-text">
+                    Abbiamo cinque prospect molto caldi in pipeline. Due società di consulenza, due studi legali e una grande agenzia di comunicazione. Il valore potenziale totale è circa 95K di ARR. Il problema è che sono tutti in fase di valutazione e ci chiedono proprio quella feature di team collaboration di cui parlava Marco. Quindi se riusciamo a rilasciarla in tempi rapidi, possiamo chiudere questi deal.
+                </div>
+            </div>
+            
+            <div class="transcript-entry">
+                <div class="speaker-tag">
+                    [ANDREA - CEO]
+                    <span class="timestamp">00:05:00</span>
+                </div>
+                <div class="speaker-text">
+                    Ok, questo chiarisce ancora di più le priorità. Marco, quanto tempo pensi di aver bisogno per la feature Team Workspace? Anche una versione MVP va bene, basta che sia solida.
+                </div>
+            </div>
+            
+            <div class="transcript-entry">
+                <div class="speaker-tag">
+                    [MARCO - CTO]
+                    <span class="timestamp">00:05:20</span>
+                </div>
+                <div class="speaker-text">
+                    Con il team attuale, direi 6-8 settimane per un MVP funzionante. Se riesco ad assumere un altro sviluppatore senior, potremmo farcela in 4-5 settimane. Ovviamente parlo di una versione base: shared workspace, permessi utente, e gestione documentale condivisa.
+                </div>
+            </div>
+            
+            <div class="transcript-entry">
+                <div class="speaker-tag">
+                    [ANDREA - CEO]
+                    <span class="timestamp">00:05:55</span>
+                </div>
+                <div class="speaker-text">
+                    Perfetto. Facciamo così: budget approvato per una nuova assunzione tech. Marco, inizi subito il recruiting. Nel frattempo, Giulia, tu tieni caldi questi prospect e gli dai una timeline realistica. Diciamo fine ottobre per l'MVP. Vi sembra fattibile?
+                </div>
+            </div>
+            
+            <div class="transcript-entry">
+                <div class="speaker-tag">
+                    [TUTTI]
+                    <span class="timestamp">00:06:25</span>
+                </div>
+                <div class="speaker-text">
+                    [Consenso generale del team]
+                </div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="pdf-footer">
+            <div class="footer-note">
+                Documento generato automaticamente da ParlaDOC il 29 Settembre 2025 alle 15:42
+            </div>
+            <div class="footer-note">
+                Questo documento è stato creato utilizzando tecnologie di intelligenza artificiale per la trascrizione e l'analisi.
+            </div>
+            <div class="footer-note" style="margin-top: 12px; color: #1a365d; font-weight
