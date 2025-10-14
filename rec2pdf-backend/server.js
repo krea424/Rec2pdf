@@ -9,12 +9,15 @@ const os = require('os');
 const crypto = require('crypto');
 const { execFile, exec } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
+const { GoogleGenerativeAI } = require("@google/generative-ai"); // <-- AGGIUNGI QUESTA
 
 const app = express();
 const PORT = process.env.PORT || 7788;
 const HOST = process.env.HOST || '0.0.0.0';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // <-- AGGIUNGI QUESTA
+const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null; // <-- AGGIUNGI QUESTA
 
 const supabase =
   SUPABASE_URL && SUPABASE_SERVICE_KEY
@@ -475,9 +478,15 @@ const callPublishScript = async (mdPath, env = {}) => {
 };
 
 const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
+  if (!genAI) {
+    const errorMsg = "Chiave API di Gemini non configurata. Imposta la variabile d'ambiente GEMINI_API_KEY.";
+    console.error(`❌ Errore Critico: ${errorMsg}`);
+    return { code: -1, stdout: '', stderr: errorMsg };
+  }
+
   try {
     const transcript = await fsp.readFile(txtPath, 'utf8');
-
+    
     let promptLines = [
       "Sei un assistente AI specializzato nell'analisi di trascrizioni di riunioni.",
       "Il tuo compito è trasformare il testo grezzo in un documento Markdown ben strutturato, chiaro e utile.",
@@ -509,65 +518,25 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
     }
 
     promptLines.push("\nEcco la trascrizione da elaborare:\n---\n");
-    const prompt = promptLines.join('\n');
+    const systemPrompt = promptLines.join('\n');
+    const fullPrompt = `${systemPrompt}${transcript}`;
 
-    const fullPrompt = `${prompt}${transcript}`;
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    
+    const result = await model.generateContent(fullPrompt);
+    const response = await result.response;
+    const text = response.text();
 
-    // Using 'gemini' CLI tool. Assuming it's in the PATH.
-    // The command is constructed to prevent shell injection issues.
-    const result = await run('gemini', [fullPrompt]);
+    let cleanedContent = text.replace(/^```markdown\s*/i, '').replace(/\s*```\s*$/i, '');
+    await fsp.writeFile(mdFile, cleanedContent, 'utf8');
 
-    if (result.code !== 0) {
-      const stderr = result.stderr || 'Errore sconosciuto dal comando gemini';
-      // Check if gemini command is not found
-      if (/command not found/i.test(stderr) || result.code === 127 || result.code === -1) {
-        return { code: result.code, stdout: '', stderr: "Comando 'gemini' non trovato. Assicurati che sia installato e nel PATH." };
-      }
-      return { code: result.code, stdout: result.stdout, stderr: stderr };
-    }
-
-    // Post-processing: rimuovi wrapper markdown se presente
-let cleanedContent = result.stdout;
-
-// Rimuovi blocchi ```markdown all'inizio e ``` alla fine
-cleanedContent = cleanedContent.replace(/^```markdown\s*/i, '');
-cleanedContent = cleanedContent.replace(/\s*```\s*$/i, '');
-
-// Rimuovi anche eventuali backticks tripli interni che wrappano tutto il contenuto
-const lines = cleanedContent.split('\n');
-if (lines.length > 2 && lines[0].trim() === '```markdown' && lines[lines.length - 1].trim() === '```') {
-  cleanedContent = lines.slice(1, -1).join('\n');
-}
-
-await fsp.writeFile(mdFile, cleanedContent, 'utf8');
     return { code: 0, stdout: '', stderr: '' };
+
   } catch (error) {
+    console.error("❌ Errore durante la chiamata all'API di Gemini:", error);
     return { code: -1, stdout: '', stderr: error.message };
   }
 };
-
-const readWorkspaces = async () => {
-  await ensureDataStore();
-  try {
-    const raw = await fsp.readFile(WORKSPACES_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (parsed && Array.isArray(parsed.workspaces)) {
-      return parsed.workspaces.map((workspace) => {
-        if (!workspace || typeof workspace !== 'object') {
-          return workspace;
-        }
-        if (Array.isArray(workspace.profiles)) {
-          return workspace;
-        }
-        return { ...workspace, profiles: [] };
-      });
-    }
-  } catch (error) {
-    console.warn('Impossibile leggere workspaces.json:', error.message || error);
-  }
-  return [];
-};
-
 const writeWorkspaces = async (workspaces = []) => {
   await ensureDataStore();
   const payload = { workspaces, updatedAt: Date.now() };
@@ -2040,12 +2009,12 @@ app.get('/api/diag', async (req, res) => {
     const w = await run('bash', ['-lc', 'command -v whisper && whisper --version || true']);
     out(/whisper/.test(w.stdout) ? `✅ whisper: trovato` : '❌ whisper non trovato');
   } catch { out('❌ whisper non eseguibile'); }
-
+/* COMMENTA QUESTA PARTE
   try {
     const g = await run('bash', ['-lc', 'command -v gemini']);
     out(g.code === 0 ? '✅ gemini: trovato' : '❌ gemini non trovato. Necessario per la generazione Markdown.');
   } catch { out('❌ gemini non eseguibile'); }
-
+*/
   try {
     const ppub = await zsh('command -v ppubr >/dev/null || command -v PPUBR >/dev/null && echo OK || echo NO');
     out(ppub.stdout.includes('OK') ? `✅ ppubr/PPUBR: disponibile` : '❌ ppubr/PPUBR non trovato');
