@@ -1,34 +1,39 @@
-# Use official Node.js image as base
-FROM node:20
+# =================================================================
+# === Dockerfile Finale e Semplificato per Monorepo ===
+# =================================================================
 
-# Install system dependencies
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ffmpeg \
-        pandoc \
-        texlive-latex-extra \
-        python3 \
-        python3-pip \
-        git \
-        build-essential \
-        rustc \
+FROM node:20-slim
+
+# 1. Installazione delle dipendenze di sistema (ffmpeg, whisper, pandoc, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    pandoc \
+    texlive-latex-extra \
+    python3 \
+    python3-pip \
+    git \
+    build-essential \
+    rustc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Whisper via pip
+# 2. Installazione di Whisper
 RUN pip3 install --no-cache-dir --break-system-packages openai-whisper
 
-# Set working directory
+# 3. Imposta la directory di lavoro
 WORKDIR /app
 
-# Copy package files and install dependencies
-COPY package*.json ./
-RUN npm install
-
-# Copy rest of the backend source
+# 4. Copia l'intero monorepo nel container
+# Questo assicura che Scripts, Templates, e il backend siano tutti presenti
 COPY . .
 
-# Expose default port (optional depending on app)
-EXPOSE 3000
+# 5. Imposta la directory di lavoro sulla cartella del backend
+WORKDIR /app/rec2pdf-backend
 
-# Set the default command
-CMD ["npm", "start"]
+# 6. Installa le dipendenze di Node.js
+RUN npm install --production
+
+# 7. Esponi la porta che il server userà
+EXPOSE 10000
+
+# 8. Il comando per avviare il server
+CMD ["node", "server.js"]
