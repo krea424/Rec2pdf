@@ -2022,6 +2022,10 @@ app.delete('/api/prompts/:id', async (req, res) => {
   }
 });
 
+// 1. Health Check per Render (sulla root, deve rispondere 200 OK)
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'Backend is live' });
+});
 app.get('/api/health', (req, res) => { res.json({ ok: true, ts: Date.now() }); });
 
 app.get('/api/diag', async (req, res) => {
