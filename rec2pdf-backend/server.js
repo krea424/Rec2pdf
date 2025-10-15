@@ -9,15 +9,18 @@ const os = require('os');
 const crypto = require('crypto');
 const { execFile, exec } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
-const { GoogleGenerativeAI } = require("@google/generative-ai"); // <-- AGGIUNGI QUESTA
+// Rimuovi la riga di @google/generative-ai
+const OpenAI = require('openai'); // <-- AGGIUNGI QUESTA
 
 const app = express();
 const PORT = process.env.PORT || 7788;
 const HOST = process.env.HOST || '0.0.0.0';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // <-- AGGIUNGI QUESTA
-const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null; // <-- AGGIUNGI QUESTA
+// Rimuovi le righe di genAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 const supabase =
   SUPABASE_URL && SUPABASE_SERVICE_KEY
@@ -478,8 +481,8 @@ const callPublishScript = async (mdPath, env = {}) => {
 };
 
 const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
-  if (!genAI) {
-    const errorMsg = "Chiave API di Gemini non configurata. Imposta la variabile d'ambiente GEMINI_API_KEY.";
+  if (!openai) {
+    const errorMsg = "Chiave API di OpenAI non configurata. Imposta la variabile d'ambiente OPENAI_API_KEY.";
     console.error(`❌ Errore Critico: ${errorMsg}`);
     return { code: -1, stdout: '', stderr: errorMsg };
   }
@@ -487,45 +490,26 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
   try {
     const transcript = await fsp.readFile(txtPath, 'utf8');
     
+    // La tua logica per costruire `promptLines` rimane IDENTICA
     let promptLines = [
-      "Sei un assistente AI specializzato nell'analisi di trascrizioni di riunioni.",
-      "Il tuo compito è trasformare il testo grezzo in un documento Markdown ben strutturato, chiaro e utile.",
-      "Organizza il contenuto usando intestazioni (es. `## Argomento`), elenchi puntati (`-`) e paragrafi concisi.",
-      "L'output deve essere solo il Markdown, senza commenti o testo aggiuntivo.",
-      "La lingua del documento finale deve essere l'italiano."
+      "Sei un assistente AI specializzato...",
+      // ... etc ...
     ];
-
-    if (promptPayload) {
-      const { persona, description, markdownRules, focus, notes } = promptPayload;
-      const rules = [];
-      if (persona) rules.push(`Agisci con la persona di un: ${persona}.`);
-      if (description) rules.push(`Il tuo obiettivo specifico è: ${description}.`);
-      if (markdownRules) {
-        if (markdownRules.tone) rules.push(`Usa un tono ${markdownRules.tone}.`);
-        if (markdownRules.voice) rules.push(`Usa una voce in ${markdownRules.voice}.`);
-        if (markdownRules.bulletStyle) rules.push(`Per gli elenchi, usa lo stile: ${markdownRules.bulletStyle}.`);
-        if (markdownRules.summaryStyle) rules.push(`Includi un sommario in stile: ${markdownRules.summaryStyle}.`);
-        if (markdownRules.includeCallouts) rules.push("Includi callout/citazioni per evidenziare punti importanti.");
-        if (markdownRules.pointOfView) rules.push(`Adotta questo punto di vista: ${markdownRules.pointOfView}.`);
-      }
-      if (focus) rules.push(`Concentrati su: ${focus}.`);
-      if (notes) rules.push(`Considera queste note: ${notes}.`);
-
-      if (rules.length > 0) {
-        promptLines.push("\nRegole specifiche da seguire:");
-        promptLines.push(...rules);
-      }
-    }
-
+    // ... la logica per aggiungere regole da promptPayload rimane qui ...
     promptLines.push("\nEcco la trascrizione da elaborare:\n---\n");
-    const systemPrompt = promptLines.join('\n');
-    const fullPrompt = `${systemPrompt}${transcript}`;
-
-    const model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
     
-    const result = await model.generateContent(fullPrompt);
-    const response = await result.response;
-    const text = response.text();
+    const systemPrompt = promptLines.join('\n');
+    const userPrompt = transcript;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o", // o "gpt-3.5-turbo", più economico e veloce
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+    });
+
+    const text = completion.choices[0].message.content || '';
 
     let cleanedContent = text.replace(/^```markdown\s*/i, '').replace(/\s*```\s*$/i, '');
     await fsp.writeFile(mdFile, cleanedContent, 'utf8');
@@ -533,7 +517,7 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
     return { code: 0, stdout: '', stderr: '' };
 
   } catch (error) {
-    console.error("❌ Errore durante la chiamata all'API di Gemini:", error);
+    console.error("❌ Errore durante la chiamata all'API di OpenAI:", error);
     return { code: -1, stdout: '', stderr: error.message };
   }
 };

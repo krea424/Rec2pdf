@@ -9,11 +9,11 @@
         "dev": "NODE_ENV=development node server.js"
     },
     "dependencies": {
-        "@google/generative-ai": "^0.24.1",
         "@supabase/supabase-js": "^2.74.0",
         "cors": "^2.8.5",
         "dotenv": "^17.2.3",
         "express": "^4.19.2",
-        "multer": "^1.4.5-lts.1"
+        "multer": "^1.4.5-lts.1",
+        "openai": "^6.3.0"
     }
 }
