@@ -521,7 +521,7 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
     const systemPrompt = promptLines.join('\n');
     const fullPrompt = `${systemPrompt}${transcript}`;
 
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
     
     const result = await model.generateContent(fullPrompt);
     const response = await result.response;
