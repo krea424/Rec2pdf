@@ -53,13 +53,22 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
   console.log(`✅ Script publish.sh trovato: ${PUBLISH_SCRIPT}`);
 }
 
-app.use(cors({
-  origin: [
+const allowedOrigins = [
     'http://localhost:5173',
-    'https://rec2pdf-frontend.vercel.app'
-  ],
-  credentials: true
-}));
+     'https://rec2pdf-frontend.vercel.app',
+     'https://rec2pdf.vercel.app'
+   ];
+   
+   app.use(cors({
+     origin: function (origin, callback) {
+       if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true
+  }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
