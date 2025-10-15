@@ -27,11 +27,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip3 install --no-cache-dir --break-system-packages openai-whisper
 
 # 5. Installa le dipendenze di Node.js
-#    Specifichiamo esplicitamente la cartella con --prefix
-RUN cd rec2pdf-backend && npm install --production
+RUN npm install --production
 
 # 6. Esponi la porta
 EXPOSE 10000
 
-# 7. Comando di avvio con percorso assoluto
-CMD ["node", "rec2pdf-backend/server.js"]
+# 7. Comando di avvio
+CMD ["node", "server.js"]
