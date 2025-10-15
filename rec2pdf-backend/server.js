@@ -525,6 +525,22 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
     return { code: -1, stdout: '', stderr: error.message };
   }
 };
+
+const readWorkspaces = async () => {
+  await ensureDataStore();
+  try {
+    const raw = await fsp.readFile(WORKSPACES_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && Array.isArray(parsed.workspaces)) {
+      return parsed.workspaces;
+    }
+  } catch (error) {
+    console.warn('Impossibile leggere workspaces.json:', error.message || error);
+  }
+  await writeWorkspaces([]);
+  return [];
+};
+
 const writeWorkspaces = async (workspaces = []) => {
   await ensureDataStore();
   const payload = { workspaces, updatedAt: Date.now() };
