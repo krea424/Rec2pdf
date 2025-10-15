@@ -128,7 +128,7 @@ app.use('/api', (req, res, next) => {
 });
 
 // NUOVA RIGA (CORRETTA PER LOCALE E PRODUZIONE)
-const DATA_DIR = process.env.NODE_ENV === 'production' 
+const DATA_DIR = (process.env.NODE_ENV === 'production' || process.env.RENDER)
   ? path.join(os.tmpdir(), '.rec2pdf') 
   : path.join(os.homedir(), '.rec2pdf');
 const WORKSPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
