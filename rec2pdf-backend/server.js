@@ -66,7 +66,8 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
 app.use(cors({
   origin: [
     'http://localhost:5173',
-    'https://rec2pdf-frontend.vercel.app'
+    'https://rec2pdf-frontend.vercel.app',
+    'https://rec2pdf.vercel.app'
   ],
   credentials: true
 }));
