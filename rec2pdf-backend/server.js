@@ -127,7 +127,10 @@ app.use('/api', (req, res, next) => {
   return authenticateRequest(req, res, next);
 });
 
-const DATA_DIR = path.join(os.homedir(), '.rec2pdf');
+// NUOVA RIGA (CORRETTA PER LOCALE E PRODUZIONE)
+const DATA_DIR = process.env.NODE_ENV === 'production' 
+  ? path.join(os.tmpdir(), '.rec2pdf') 
+  : path.join(os.homedir(), '.rec2pdf');
 const WORKSPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
 const PROMPTS_FILE = path.join(DATA_DIR, 'prompts.json');
 const PROFILE_LOGO_ROOT = path.join(DATA_DIR, 'logos');
