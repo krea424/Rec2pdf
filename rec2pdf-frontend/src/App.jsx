@@ -1265,11 +1265,7 @@ function AppContent(){
       if (!headers.has('Authorization')) {
         headers.set('Authorization', `Bearer ${token}`);
       }
-      const normalizedOptions = { ...options, headers };
-      if (!normalizedOptions.credentials) {
-        normalizedOptions.credentials = 'include';
-      }
-      return normalizedOptions;
+      return { ...options, headers };
     },
     [getSessionToken, session?.access_token]
   );

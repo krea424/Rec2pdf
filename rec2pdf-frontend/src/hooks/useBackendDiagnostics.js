@@ -33,11 +33,12 @@ export function useBackendDiagnostics(backendUrl, session) {
     }
 
     try {
-      const response = await fetch(url, {
-        ...options,
-        headers,
-        credentials: options.credentials || 'include',
-      });
+      const requestInit = { ...options, headers };
+      if (typeof options.credentials === "undefined") {
+        delete requestInit.credentials;
+      }
+
+      const response = await fetch(url, requestInit);
       const contentType = response.headers.get("content-type") || "";
       const raw = await response.text();
       let data = null;
