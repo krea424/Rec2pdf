@@ -2342,7 +2342,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       await safeUnlink(wavLocalPath);
     }
 
-    const whisperModel = process.env.WHISPER_MODEL || 'small';
+    const whisperModel =
+      process.env.WHISPER_MODEL || (process.env.K_SERVICE ? 'tiny' : 'small');
     out('🎧 Trascrizione con Whisper…', 'transcribe', 'running');
     const wavLocalForTranscribe = registerTempFile(path.join(pipelineDir, `${baseName}.wav`));
     let transcriptLocalPath = '';
