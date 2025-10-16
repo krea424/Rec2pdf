@@ -1,17 +1,13 @@
 # =================================================================
-# === Dockerfile Finale e Semplificato per Monorepo (v2) ===
+# === Dockerfile backend Rec2PDF (monorepo aware)               ===
 # =================================================================
 
 FROM node:20-slim
 
-# 1. Imposta la directory di lavoro principale
+# 1. Directory di lavoro dell'applicazione
 WORKDIR /app
 
-# 2. Copia l'intero monorepo nel container
-COPY . .
-
-# 3. Installazione delle dipendenze di sistema
-#    Aggiungiamo '&&' per unire i comandi e migliorare la cache
+# 2. Dipendenze di sistema richieste dalla toolchain audio + PDF
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     pandoc \
@@ -23,14 +19,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rustc \
     && rm -rf /var/lib/apt/lists/*
 
-# 4. Installazione di Whisper
-RUN pip3 install --no-cache-dir --break-system-packages openai-whisper
-
-# 5. Installa le dipendenze di Node.js
+# 3. Installa le dipendenze Node.js (solo runtime)
+COPY rec2pdf-backend/package*.json ./
 RUN npm install --production
 
-# 6. Esponi la porta
+# 4. Copia il codice backend e il bundle professionale di publishing
+COPY rec2pdf-backend/. ./
+ENV PUBLISH_BUNDLE_ROOT="/app/publish-bundle"
+
+# 5. Installa Whisper via pip (richiede python3/pip già presenti)
+RUN pip3 install --no-cache-dir --break-system-packages openai-whisper
+
+# 6. Porta esposta dal server Express
 EXPOSE 10000
 
-# 7. Comando di avvio
+# 7. Comando di avvio del backend
 CMD ["node", "server.js"]

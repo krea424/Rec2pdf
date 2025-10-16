@@ -5,38 +5,6 @@
 │   ├── sviluppo_web_app_rec2pdf_AIStudio.md
 │   ├── sviluppo_web_app_rec2pdf_Codex copy.md
 │   └── sviluppo_web_app_rec2pdf_Codex.md
-├── assets
-│   ├── BiteTheHand2.png
-│   ├── BLD_LOGO_Primary_Horizontal_RGB.pdf
-│   ├── HelloKitty.png
-│   ├── logo_github.png
-│   ├── logo_google.svg
-│   ├── logo_PM.png
-│   ├── logo_thinkDOC.svg
-│   ├── logo-thinkdoc_sfondo_scuro copy.jpeg
-│   ├── logo-thinkdoc_sfondo_scuro copy.png
-│   ├── logo-thinkdoc_sfondo_scuro copy.svg
-│   ├── logo-thinkdoc_sfondo_scuro.svg
-│   ├── logo-thinkdoc-flow-v1 2.svg
-│   ├── logo-thinkdoc-flow-v1.pdf
-│   ├── logo-thinkdoc-flow-v1.svg
-│   ├── logo3.png
-│   ├── thinkDOC 2.svg
-│   ├── thinkDOC 3.svg
-│   ├── thinkDOC copy.pdf
-│   ├── thinkDOC copy.svg
-│   ├── thinkdoc_logo (1).svg
-│   ├── thinkdoc_logo (2).svg
-│   ├── thinkdoc_logo (3).svg
-│   ├── thinkdoc_logo (4).svg
-│   ├── thinkdoc_logo (5).svg
-│   ├── thinkdoc_logo (6).svg
-│   ├── thinkdoc_logo (7).svg
-│   ├── thinkdoc_logo (8).svg
-│   ├── thinkdoc_logo.svg
-│   ├── thinkDOC.pdf
-│   ├── thinkDOC.svg
-│   └── thinkDOC2.pdf
 ├── Brand_Vision_and_Creative_Brief.md
 ├── BusinessCase.md
 ├── CHANGELOG.md
@@ -58,6 +26,46 @@
 │   ├── Dockerfile
 │   ├── package-lock.json
 │   ├── package.json
+│   ├── publish-bundle
+│   │   ├── Scripts
+│   │   │   └── publish.sh
+│   │   ├── Templates
+│   │   │   ├── cover.tex
+│   │   │   ├── default.tex
+│   │   │   ├── header_footer.tex
+│   │   │   └── pandoc_fallback.tex
+│   │   └── assets
+│   │       ├── BiteTheHand2.png
+│   │       ├── BLD_LOGO_Primary_Horizontal_RGB.pdf
+│   │       ├── HelloKitty.png
+│   │       ├── logo_github.png
+│   │       ├── logo_google.svg
+│   │       ├── logo_PM.png
+│   │       ├── logo_thinkDOC.svg
+│   │       ├── logo-thinkdoc-flow-v1 2.svg
+│   │       ├── logo-thinkdoc-flow-v1.pdf
+│   │       ├── logo-thinkdoc-flow-v1.svg
+│   │       ├── logo-thinkdoc_sfondo_scuro copy.jpeg
+│   │       ├── logo-thinkdoc_sfondo_scuro copy.png
+│   │       ├── logo-thinkdoc_sfondo_scuro copy.svg
+│   │       ├── logo-thinkdoc_sfondo_scuro.svg
+│   │       ├── logo3.png
+│   │       ├── thinkDOC 2.svg
+│   │       ├── thinkDOC 3.svg
+│   │       ├── thinkDOC copy.pdf
+│   │       ├── thinkDOC copy.svg
+│   │       ├── thinkDOC.pdf
+│   │       ├── thinkDOC.svg
+│   │       ├── thinkDOC2.pdf
+│   │       ├── thinkdoc_logo (1).svg
+│   │       ├── thinkdoc_logo (2).svg
+│   │       ├── thinkdoc_logo (3).svg
+│   │       ├── thinkdoc_logo (4).svg
+│   │       ├── thinkdoc_logo (5).svg
+│   │       ├── thinkdoc_logo (6).svg
+│   │       ├── thinkdoc_logo (7).svg
+│   │       ├── thinkdoc_logo (8).svg
+│   │       └── thinkdoc_logo.svg
 │   └── server.js
 ├── rec2pdf-frontend
 │   ├── index.html
@@ -153,11 +161,6 @@
 │   │   └── e2e
 │   │       └── audio-to-pdf.spec.js
 │   └── vite.config.js
-├── Scripts
-│   └── publish.sh
-└── Templates
-    ├── cover.tex
-    ├── default.tex
-    └── header_footer.tex
+└── rec2pdf-backend/publish-bundle già conteggiato sopra
 
-29 directories, 132 files
+31 directories, 132 files

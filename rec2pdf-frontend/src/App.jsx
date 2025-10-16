@@ -2454,8 +2454,6 @@ function AppContent(){
       const isPlaceholder=isDestDirPlaceholder(destDir);
       if (!isPlaceholder) {
         fd.append('dest',destDir);
-      } else {
-        appendLogs(["ℹ️ Cartella destinazione non specificata o segnaposto: il backend userà la sua cartella predefinita."]);
       }
       fd.append('slug',slug||'meeting');
       if (workspaceSelection.workspaceId) {
@@ -2622,9 +2620,6 @@ function AppContent(){
       setLogs(ls=>ls.concat(sanitized));
     };
     const isPlaceholder=isDestDirPlaceholder(destDir);
-    if(isPlaceholder){
-      appendLogs(["ℹ️ Cartella destinazione non specificata o segnaposto: il backend userà la sua cartella predefinita."]); 
-    }
     appendLogs([startMessage]);
     try{
       const fd=new FormData();

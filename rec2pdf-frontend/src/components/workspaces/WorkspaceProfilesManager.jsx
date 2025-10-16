@@ -21,6 +21,7 @@ const WorkspaceProfilesManager = () => {
     createWorkspaceProfile,
     updateWorkspaceProfile,
     deleteWorkspaceProfile,
+    DEFAULT_DEST_DIR,
   } = useAppContext();
 
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(
@@ -92,6 +93,15 @@ const WorkspaceProfilesManager = () => {
     const value = event.target.value;
     setFormState((prev) => ({ ...prev, [field]: value }));
   }, []);
+
+  const defaultDestDir = useMemo(() => String(DEFAULT_DEST_DIR || '').trim(), [DEFAULT_DEST_DIR]);
+
+  const destinationHelperText = useMemo(() => {
+    if (defaultDestDir) {
+      return `Cartella sul backend dove salvare PDF e Markdown. Lascia il campo vuoto o "${defaultDestDir}" per usare la cartella predefinita.`;
+    }
+    return 'Cartella sul backend dove salvare PDF e Markdown. Lascia il campo vuoto per usare la cartella predefinita.';
+  }, [defaultDestDir]);
 
   const handleLogoChange = useCallback((event) => {
     const file = event.target.files?.[0] || null;
@@ -379,7 +389,7 @@ const WorkspaceProfilesManager = () => {
                 value={formState.destDir}
                 onChange={handleFieldChange("destDir")}
                 placeholder="/Users/nomeutente/Documenti"
-                helperText="Cartella sul backend dove salvare PDF e Markdown"
+                helperText={destinationHelperText}
               />
               <Select
                 label="Prompt"
