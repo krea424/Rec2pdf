@@ -73,7 +73,108 @@ const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT
   : defaultPublishScript;
 const TEMPLATES_DIR = process.env.TEMPLATES_DIR || path.join(PROJECT_ROOT, 'Templates');
 const ASSETS_DIR = process.env.ASSETS_DIR || path.join(PROJECT_ROOT, 'assets'); // <-- RIGA CORRETTA
-const PANDOC_FALLBACK_TEMPLATE = path.join(TEMPLATES_DIR, 'pandoc_fallback.tex');
+const PANDOC_FALLBACK_TEMPLATE_NAME = 'pandoc_fallback.tex';
+const DEFAULT_PANDOC_FALLBACK_TEMPLATE = path.join(
+  TEMPLATES_DIR,
+  PANDOC_FALLBACK_TEMPLATE_NAME
+);
+
+const EMBEDDED_PANDOC_FALLBACK_TEMPLATE = String.raw`
+% pandoc_fallback.tex — Minimal template that avoids hard dependency on lmodern
+\documentclass[11pt]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{amssymb}
+\usepackage{microtype}
+\IfFileExists{lmodern.sty}{\usepackage{lmodern}}{}
+
+\definecolor{FallbackBlue}{HTML}{0A4E8A}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=FallbackBlue,
+  urlcolor=FallbackBlue,
+  citecolor=FallbackBlue
+}
+
+\setlength{\parskip}{6pt}
+\setlength{\parindent}{0pt}
+\setlist[itemize]{topsep=4pt,itemsep=2pt}
+\setlist[enumerate]{topsep=4pt,itemsep=2pt}
+
+\titleformat{\section}{\Large\bfseries\sffamily\color{black}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily\color{FallbackBlue}}{\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily\color{FallbackBlue}}{\thesubsubsection}{0.8em}{}
+\titlespacing*{\section}{0pt}{3.0ex}{1.4ex}
+\titlespacing*{\subsection}{0pt}{2.2ex}{0.9ex}
+\titlespacing*{\subsubsection}{0pt}{1.6ex}{0.6ex}
+
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+\pagestyle{fancy}
+
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}%
+}
+
+$for(header-includes)$
+$header-includes$
+$endfor$
+
+$if(title)$
+\title{$title$}
+$endif$
+$if(author)$
+\author{$for(author)$$author$$sep$ \\ $endfor$}
+$endif$
+$if(date)$
+\date{$date$}
+$else$
+\date{}
+$endif$
+
+\begin{document}
+
+$if(logo)$
+\begin{center}
+  \vspace*{6mm}
+  \includegraphics[width=0.35\textwidth]{$logo$}
+  \vspace{12mm}
+\end{center}
+$endif$
+
+$if(title)$
+\maketitle
+$endif$
+
+$if(toc)$
+{
+  \hypersetup{linkcolor=black}
+  \tableofcontents
+  \newpage
+}
+$endif$
+
+$for(include-before)$
+$include-before$
+$endfor$
+
+$body$
+
+$for(include-after)$
+$include-after$
+$endfor$
+
+\end{document}`;
 
 console.log('📁 Percorsi backend configurati (Versione Monorepo):');
 console.log(`   PROJECT_ROOT:   ${PROJECT_ROOT}`);
@@ -81,10 +182,12 @@ console.log(`   __dirname:      ${__dirname}`);
 console.log(`   PUBLISH_SCRIPT: ${PUBLISH_SCRIPT}`);
 console.log(`   TEMPLATES_DIR:  ${TEMPLATES_DIR}`);
 console.log(`   ASSETS_DIR:     ${ASSETS_DIR}`); // Aggiungiamo un log per verifica
-if (fs.existsSync(PANDOC_FALLBACK_TEMPLATE)) {
-  console.log(`   PANDOC_TEMPLATE: ${PANDOC_FALLBACK_TEMPLATE}`);
+if (fs.existsSync(DEFAULT_PANDOC_FALLBACK_TEMPLATE)) {
+  console.log(`   PANDOC_TEMPLATE: ${DEFAULT_PANDOC_FALLBACK_TEMPLATE}`);
 } else {
-  console.warn(`⚠️  Template pandoc_fallback.tex non trovato in ${PANDOC_FALLBACK_TEMPLATE}`);
+  console.warn(
+    `⚠️  Template pandoc_fallback.tex non trovato in ${DEFAULT_PANDOC_FALLBACK_TEMPLATE}, verrà generato al volo se necessario.`
+  );
 }
 
 // Verifica che lo script esista all'avvio
@@ -184,6 +287,85 @@ const runShell = (command, opts = {}) => run('bash', ['-lc', command], opts);
 
 const latexPackageChecks = new Map();
 
+const ensurePandocFallbackTemplate = (() => {
+  let cachedPromise;
+
+  const uniqueResolved = (values) => {
+    const out = [];
+    const seen = new Set();
+    values
+      .filter(Boolean)
+      .forEach((value) => {
+        const resolved = path.resolve(value);
+        if (!seen.has(resolved)) {
+          seen.add(resolved);
+          out.push(resolved);
+        }
+      });
+    return out;
+  };
+
+  const buildSearchRoots = () => {
+    const roots = [
+      process.env.PROJECT_ROOT,
+      PROJECT_ROOT,
+      __dirname,
+      path.join(__dirname, '..'),
+      path.join(__dirname, '..', '..'),
+      process.cwd(),
+    ];
+
+    let current = path.resolve(__dirname);
+    while (true) {
+      roots.push(current);
+      const parent = path.dirname(current);
+      if (parent === current) {
+        break;
+      }
+      current = parent;
+    }
+
+    return uniqueResolved(roots);
+  };
+
+  return async () => {
+    if (!cachedPromise) {
+      cachedPromise = (async () => {
+        const searchRoots = buildSearchRoots();
+        for (const rootDir of searchRoots) {
+          const candidate = path.join(rootDir, 'Templates', PANDOC_FALLBACK_TEMPLATE_NAME);
+          try {
+            await fsp.access(candidate, fs.constants.R_OK);
+            return { templatePath: candidate, source: 'filesystem' };
+          } catch {
+            // continue searching
+          }
+        }
+
+        const tempDir = path.join(os.tmpdir(), 'rec2pdf-pandoc');
+        try {
+          await fsp.mkdir(tempDir, { recursive: true });
+        } catch {
+          // best-effort: ignore mkdir errors, write will fail below if dir unusable
+        }
+
+        try {
+          const tempPath = path.join(tempDir, PANDOC_FALLBACK_TEMPLATE_NAME);
+          await fsp.writeFile(tempPath, EMBEDDED_PANDOC_FALLBACK_TEMPLATE, 'utf8');
+          return { templatePath: tempPath, source: 'embedded' };
+        } catch (error) {
+          console.warn(
+            `⚠️ Impossibile generare il template pandoc_fallback temporaneo (${error?.message || error}). Uso il default Pandoc.`
+          );
+          return { templatePath: '', source: 'missing' };
+        }
+      })();
+    }
+
+    return cachedPromise;
+  };
+})();
+
 const ensureLatexPackage = async (pkgName) => {
   if (!latexPackageChecks.has(pkgName)) {
     latexPackageChecks.set(
@@ -259,20 +441,31 @@ const runPandocFallback = async (destDir, mdPath, pdfPath, env, logFn) => {
   const log = typeof logFn === 'function' ? logFn : () => {};
   await ensurePandocFallbackSupport(log);
 
+  const { templatePath, source } = await ensurePandocFallbackTemplate();
+  const templateDir = templatePath ? path.dirname(templatePath) : null;
+
   const resourcePaths = [
     destDir,
     path.dirname(mdPath),
     TEMPLATES_DIR,
     ASSETS_DIR,
+    templateDir && templateDir !== TEMPLATES_DIR ? templateDir : null,
   ]
     .filter(Boolean)
     .map((entry) => path.resolve(entry));
 
   const uniqueResourcePath = Array.from(new Set(resourcePaths)).join(':');
-  const hasFallbackTemplate = fs.existsSync(PANDOC_FALLBACK_TEMPLATE);
+  const hasFallbackTemplate = Boolean(templatePath && fs.existsSync(templatePath));
 
   if (hasFallbackTemplate) {
-    log('ℹ️ Uso del template pandoc_fallback.tex per la generazione PDF di emergenza', 'info');
+    if (source === 'embedded') {
+      log(
+        `⚠️ Template pandoc_fallback.tex non trovato nel container: uso copia temporanea in ${templatePath}`,
+        'warning'
+      );
+    } else {
+      log(`ℹ️ Uso del template pandoc_fallback.tex (${templatePath}) per la generazione PDF di emergenza`, 'info');
+    }
   } else {
     log('⚠️ Template pandoc_fallback.tex assente, uso il template Pandoc di default (richiede lmodern)', 'warning');
   }
@@ -282,7 +475,7 @@ const runPandocFallback = async (destDir, mdPath, pdfPath, env, logFn) => {
     '--from=markdown',
     '--pdf-engine=pdflatex',
     `--resource-path=${JSON.stringify(uniqueResourcePath)}`,
-    hasFallbackTemplate ? `--template=${JSON.stringify(PANDOC_FALLBACK_TEMPLATE)}` : '',
+    hasFallbackTemplate ? `--template=${JSON.stringify(templatePath)}` : '',
     JSON.stringify(mdPath),
     '-o',
     JSON.stringify(pdfPath),
