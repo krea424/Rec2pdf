@@ -1,0 +1,34 @@
+% cover.tex — BrightLedger MD_First_PDF_Publish — v0.3.0 (post-reorg)
+\begin{titlepage}
+  \thispagestyle{empty}
+  \centering
+
+  % Logo (SSoT passato via variabile Pandoc --variable logo=...)
+  \ifdefined\docLogo
+    \vspace*{6mm}
+    \includegraphics[width=52mm]{\docLogo}\par
+    \vspace{16mm}
+  \else
+    \vspace*{22mm} % se manca il logo, lascia respiro
+  \fi
+
+  % Titolo e metadati
+  {\sffamily\bfseries\LARGE \ifdefined\BLDTitle \BLDTitle\else Documento BrightLedger\fi \par}
+  \vspace{6mm}
+  {\sffamily\large
+    \ifdefined\BLDVersion Versione: \BLDVersion\fi
+    \ifdefined\BLDUpdated \quad|\quad Updated: \BLDUpdated\fi
+    \par
+  }
+  \vspace{2mm}
+  {\sffamily
+    \ifdefined\BLDAuthor \large Autore: \BLDAuthor\par\fi
+    \ifdefined\BLDProject \large Progetto: \BLDProject\par\fi
+  }
+
+  \vfill
+\end{titlepage}
+
+% Sommario in seconda pagina
+\tableofcontents
+\newpage

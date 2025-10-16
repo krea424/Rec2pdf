@@ -47,6 +47,8 @@ const resolveProjectRoot = () => {
 
   const candidates = [
     explicitRoot,
+    path.resolve(__dirname, 'publish-bundle'),
+    path.resolve(__dirname, '..', 'publish-bundle'),
     path.resolve(__dirname, '..'),
     path.resolve(__dirname),
     path.resolve(process.cwd()),
@@ -104,12 +106,14 @@ const publishCandidates = [
   process.env.PUBLISH_SCRIPT,
   PUBLISH_BUNDLE_ROOT && path.join(PUBLISH_BUNDLE_ROOT, 'Scripts', 'publish.sh'),
   defaultPublishScript,
+  path.join(__dirname, 'publish-bundle', 'Scripts', 'publish.sh'),
   path.join(__dirname, 'Scripts', 'publish.sh'),
 ];
 
 const templateCandidates = [
   process.env.TEMPLATES_DIR,
   PUBLISH_BUNDLE_ROOT && path.join(PUBLISH_BUNDLE_ROOT, 'Templates'),
+  path.join(__dirname, 'publish-bundle', 'Templates'),
   path.join(PROJECT_ROOT, 'Templates'),
   path.join(__dirname, 'Templates'),
 ];
@@ -117,6 +121,7 @@ const templateCandidates = [
 const assetCandidates = [
   process.env.ASSETS_DIR,
   PUBLISH_BUNDLE_ROOT && path.join(PUBLISH_BUNDLE_ROOT, 'assets'),
+  path.join(__dirname, 'publish-bundle', 'assets'),
   path.join(PROJECT_ROOT, 'assets'),
   path.join(__dirname, 'assets'),
 ];

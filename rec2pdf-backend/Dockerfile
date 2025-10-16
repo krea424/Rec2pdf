@@ -25,10 +25,7 @@ RUN npm install --production
 
 # 4. Copia il codice backend e il bundle professionale di publishing
 COPY rec2pdf-backend/. ./
-COPY Scripts ./Scripts
-COPY Templates ./Templates
-COPY assets ./assets
-ENV PUBLISH_BUNDLE_ROOT="/app"
+ENV PUBLISH_BUNDLE_ROOT="/app/publish-bundle"
 
 # 5. Installa Whisper via pip (richiede python3/pip già presenti)
 RUN pip3 install --no-cache-dir --break-system-packages openai-whisper
