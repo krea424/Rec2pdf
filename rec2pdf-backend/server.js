@@ -73,6 +73,7 @@ const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT
   : defaultPublishScript;
 const TEMPLATES_DIR = process.env.TEMPLATES_DIR || path.join(PROJECT_ROOT, 'Templates');
 const ASSETS_DIR = process.env.ASSETS_DIR || path.join(PROJECT_ROOT, 'assets'); // <-- RIGA CORRETTA
+const PANDOC_FALLBACK_TEMPLATE = path.join(TEMPLATES_DIR, 'pandoc_fallback.tex');
 
 console.log('📁 Percorsi backend configurati (Versione Monorepo):');
 console.log(`   PROJECT_ROOT:   ${PROJECT_ROOT}`);
@@ -80,6 +81,11 @@ console.log(`   __dirname:      ${__dirname}`);
 console.log(`   PUBLISH_SCRIPT: ${PUBLISH_SCRIPT}`);
 console.log(`   TEMPLATES_DIR:  ${TEMPLATES_DIR}`);
 console.log(`   ASSETS_DIR:     ${ASSETS_DIR}`); // Aggiungiamo un log per verifica
+if (fs.existsSync(PANDOC_FALLBACK_TEMPLATE)) {
+  console.log(`   PANDOC_TEMPLATE: ${PANDOC_FALLBACK_TEMPLATE}`);
+} else {
+  console.warn(`⚠️  Template pandoc_fallback.tex non trovato in ${PANDOC_FALLBACK_TEMPLATE}`);
+}
 
 // Verifica che lo script esista all'avvio
 if (!fs.existsSync(PUBLISH_SCRIPT)) {
@@ -253,10 +259,36 @@ const runPandocFallback = async (destDir, mdPath, pdfPath, env, logFn) => {
   const log = typeof logFn === 'function' ? logFn : () => {};
   await ensurePandocFallbackSupport(log);
 
-  return runShell(
-    `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
-    env
-  );
+  const resourcePaths = [
+    destDir,
+    path.dirname(mdPath),
+    TEMPLATES_DIR,
+    ASSETS_DIR,
+  ]
+    .filter(Boolean)
+    .map((entry) => path.resolve(entry));
+
+  const uniqueResourcePath = Array.from(new Set(resourcePaths)).join(':');
+  const hasFallbackTemplate = fs.existsSync(PANDOC_FALLBACK_TEMPLATE);
+
+  if (hasFallbackTemplate) {
+    log('ℹ️ Uso del template pandoc_fallback.tex per la generazione PDF di emergenza', 'info');
+  } else {
+    log('⚠️ Template pandoc_fallback.tex assente, uso il template Pandoc di default (richiede lmodern)', 'warning');
+  }
+
+  const commandParts = [
+    'pandoc',
+    '--from=markdown',
+    '--pdf-engine=pdflatex',
+    `--resource-path=${JSON.stringify(uniqueResourcePath)}`,
+    hasFallbackTemplate ? `--template=${JSON.stringify(PANDOC_FALLBACK_TEMPLATE)}` : '',
+    JSON.stringify(mdPath),
+    '-o',
+    JSON.stringify(pdfPath),
+  ].filter(Boolean);
+
+  return runShell(`cd ${JSON.stringify(destDir)} && ${commandParts.join(' ')}`, env);
 };
 
 const commandVersion = async (cmd) => {

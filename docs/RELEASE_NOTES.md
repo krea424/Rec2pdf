@@ -24,4 +24,4 @@
 4. Per deploy containerizzati (Cloud Run incluso) settare `WHISPER_MODEL=tiny` se non già presente: il backend applica automaticamente il modello `tiny` quando rileva l'ambiente Cloud Run, ma esplicitare la variabile in configurazione evita regressioni su revisioni precedenti o istanze riusate.【F:rec2pdf-backend/server.js†L2353-L2369】
 
 ## Backend
-- Il fallback Pandoc installa automaticamente il pacchetto LaTeX `lmodern` (via `tlmgr`) se mancante, prevenendo i crash di compilazione PDF su Cloud Run privi della font family di default.【F:rec2pdf-backend/server.js†L163-L260】
+- Il fallback Pandoc usa un template dedicato che evita la dipendenza rigida da `lmodern` e, quando disponibile, prova comunque a installare il pacchetto via `tlmgr` prima di compilare così da preservare il rendering originale.【F:rec2pdf-backend/server.js†L163-L314】【F:Templates/pandoc_fallback.tex†L1-L102】
