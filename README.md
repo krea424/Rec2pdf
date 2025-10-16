@@ -59,7 +59,7 @@ La modalità **Advanced** abilita la “control room” boardroom experience. È
 - **Pipeline audio end-to-end**: upload o registrazione browser, normalizzazione, trascrizione Whisper, generazione Markdown e pubblicazione PDF con log di stato e assegnazione workspace/progetto.【F:rec2pdf-backend/server.js†L1312-L1669】【F:rec2pdf-frontend/src/App.jsx†L1660-L1807】
 - **Upload testo e Markdown**: endpoint dedicati per TXT e `.md` pre-esistenti replicano le fasi di generazione, consentendo reimpaginazioni e conversioni veloci con gli stessi metadati della pipeline audio.【F:rec2pdf-backend/server.js†L1673-L2348】【F:rec2pdf-frontend/src/App.jsx†L1810-L2075】
 - **Prompt library e generazione guidata**: i prompt preconfigurati (con cue card, checklist e regole PDF) sono persistiti su filesystem, modificabili via API e applicati nel comando `gemini` che produce il Markdown finale.【F:rec2pdf-backend/server.js†L376-L445】【F:rec2pdf-backend/server.js†L833-L1250】【F:rec2pdf-frontend/src/App.jsx†L1360-L1456】
-- **Impaginazione professionale**: `publish.sh` orchestra `pandoc`/`xelatex`, gestisce logo custom e fallback automatico, mentre il backend replica la stessa logica anche per rigenerazioni da Supabase.【F:Scripts/publish.sh†L1-L103】【F:rec2pdf-backend/server.js†L2003-L2055】【F:rec2pdf-backend/server.js†L2232-L2295】
+- **Impaginazione professionale**: `publish.sh` orchestra `pandoc`/`xelatex`, gestisce logo custom e fallback automatico, mentre il backend replica la stessa logica anche per rigenerazioni da Supabase.【F:rec2pdf-backend/publish-bundle/Scripts/publish.sh†L1-L103】【F:rec2pdf-backend/server.js†L2003-L2055】【F:rec2pdf-backend/server.js†L2232-L2295】
 - **Workspace Navigator**: gestione avanzata di clienti, progetti e stati con filtri salvabili, sincronizzazione pipeline e assegnazioni massive direttamente dalla cronologia.【F:rec2pdf-backend/server.js†L448-L676】【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L520-L719】
 - **Cloud library su Supabase**: browsing, anteprima e download sicuro degli artefatti archiviati nei bucket (`processed-media`, `audio-uploads`, `text-uploads`) con query filtrate per workspace/progetto.【F:rec2pdf-backend/server.js†L2352-L2513】【F:rec2pdf-frontend/src/components/CloudLibraryPanel.jsx†L75-L198】
 - **Markdown editor e analisi struttura**: l'editor modale applica controlli su heading, checklist del prompt e completezza percentuale sfruttando la metrica calcolata dal backend.【F:rec2pdf-backend/server.js†L573-L643】【F:rec2pdf-frontend/src/App.jsx†L1980-L1999】【F:rec2pdf-frontend/src/components/MarkdownEditorModal.jsx†L1-L200】
@@ -83,7 +83,7 @@ La modalità **Advanced** abilita la “control room” boardroom experience. È
 ```
 - **Frontend**: single-page app con gestione locale di history, workspace, preferenze e sessione Supabase.【F:rec2pdf-frontend/src/App.jsx†L385-L475】
 - **Backend**: Node.js Express che coordina pipeline, persiste configurazioni locali (`~/.rec2pdf`) e delega storage/autenticazione a Supabase.【F:rec2pdf-backend/server.js†L13-L736】
-- **Toolchain**: dipendenze CLI eseguite tramite `child_process` con fallback e logging granulari (ffmpeg, whisper, gemini, ppubr, pandoc, xelatex).【F:rec2pdf-backend/server.js†L1274-L1300】【F:Scripts/publish.sh†L1-L103】
+- **Toolchain**: dipendenze CLI eseguite tramite `child_process` con fallback e logging granulari (ffmpeg, whisper, gemini, ppubr, pandoc, xelatex).【F:rec2pdf-backend/server.js†L1274-L1300】【F:rec2pdf-backend/publish-bundle/Scripts/publish.sh†L1-L103】
 - **Supabase**: servizio esterno per autenticazione, gestione token e storage degli artefatti generati.【F:rec2pdf-backend/server.js†L15-L105】【F:rec2pdf-backend/server.js†L710-L760】【F:rec2pdf-backend/server.js†L2352-L2513】
 
 ## Prerequisiti
@@ -111,9 +111,14 @@ which ppubr
    SUPABASE_URL="https://<your-project>.supabase.co"
    SUPABASE_SERVICE_KEY="<service_role_key>"
    PROJECT_ROOT="$(pwd)"
-   PUBLISH_SCRIPT="$(pwd)/Scripts/publish.sh"  # opzionale, default già corretto
+   PUBLISH_SCRIPT="$(pwd)/publish-bundle/Scripts/publish.sh"  # opzionale, default già corretto
+   PUBLISH_BUNDLE_ROOT="$(pwd)/publish-bundle"                # opzionale, punta alla cartella che contiene Scripts/ e Templates/
+   WHISPER_MODEL=tiny  # es. per Cloud Run o container con memoria ridotta
    ```
-   Il backend crea automaticamente il client Supabase, abilita l'autenticazione su tutte le rotte `/api` (eccetto `/api/health`) e mostra un warning se avviato senza credenziali, ricadendo in modalità sviluppo senza protezione.【F:rec2pdf-backend/server.js†L13-L105】
+   Il backend crea automaticamente il client Supabase, abilita l'autenticazione su tutte le rotte `/api` (eccetto `/api/health`) e mostra un warning se avviato senza credenziali, ricadendo in modalità sviluppo senza protezione.【F:rec2pdf-backend/server.js†L1-L108】
+   - `WHISPER_MODEL` (opzionale, default `small`, auto-`tiny` su Cloud Run se non impostato): controlla il modello usato dalla CLI `whisper` durante la trascrizione. Impostare `tiny` su deploy Cloud Run o container con meno di 2 GB di RAM per ridurre l'uso di memoria durante la fase di trascrizione.【F:rec2pdf-backend/server.js†L2353-L2368】
+   - `PUBLISH_BUNDLE_ROOT` (opzionale): se i template e lo `Scripts/publish.sh` professionale si trovano fuori dal percorso monorepo, puntarlo alla directory che li contiene (deve avere le sottocartelle `Scripts/`, `Templates/`, `assets/`). Il backend proverà i percorsi dichiarati nell'ordine `PUBLISH_SCRIPT`, `PUBLISH_BUNDLE_ROOT`, `PROJECT_ROOT` e userà il fallback Pandoc generico quando non trova i file richiesti.【F:rec2pdf-backend/server.js†L43-L153】【F:rec2pdf-backend/server.js†L214-L240】
+   - L'immagine Docker ufficiale (`rec2pdf-backend/Dockerfile`) include automaticamente il bundle professionale (`publish-bundle/` con sottocartelle `Scripts/`, `Templates/`, `assets/`) e imposta `PUBLISH_BUNDLE_ROOT=/app/publish-bundle`, così la pipeline Cloud Run dispone subito della toolchain professionale. È comunque possibile sovrascrivere i percorsi via variabili d'ambiente se si desidera montare un bundle esterno.【F:rec2pdf-backend/Dockerfile†L1-L63】【F:rec2pdf-backend/server.js†L114-L153】
 2. **Crea i bucket di storage** nel progetto Supabase chiamandoli `audio-uploads`, `text-uploads`, `processed-media` e abilita le policy di lettura/scrittura per il ruolo `service_role`; gli upload/download falliscono se il client non è configurato.【F:rec2pdf-backend/server.js†L710-L760】【F:rec2pdf-backend/server.js†L736-L760】
 3. **Imposta le variabili del frontend** (`rec2pdf-frontend/.env.local`):
    ```bash
@@ -137,7 +142,7 @@ which ppubr
    # crea un file .env con SUPABASE_URL e SUPABASE_SERVICE_KEY (vedi sezione dedicata)
    npm run dev   # espone le API su http://localhost:7788
    ```
-   Il server Express usa `PORT`, `PROJECT_ROOT`, `PUBLISH_SCRIPT`, `TEMPLATES_DIR` e `ASSETS_DIR` se presenti nel `.env` ed esegue il publish script `Scripts/publish.sh` quando richiesto.【F:rec2pdf-backend/package.json†L1-L17】【F:rec2pdf-backend/server.js†L13-L83】
+   Il server Express usa `PORT`, `PROJECT_ROOT`, `PUBLISH_SCRIPT`, `TEMPLATES_DIR` e `ASSETS_DIR` se presenti nel `.env` ed esegue il publish script professionale (`publish-bundle/Scripts/publish.sh`) quando richiesto.【F:rec2pdf-backend/package.json†L1-L17】【F:rec2pdf-backend/server.js†L13-L83】
 3. **Frontend** (nuovo terminale)
    ```bash
    cd rec2pdf-frontend
@@ -218,24 +223,25 @@ npm run preview  # serve statico su http://localhost:4173
 5. **Accessibilità**: verificare periodicamente la checklist in `docs/ACCESSIBILITY_CHECKLIST.md` (focus visibile, label) dopo modifiche UI.
 
 ## Personalizzazione template PDF
-La cartella [`Templates/`](Templates) contiene i file LaTeX usati da `publish.sh`:
+La cartella [`rec2pdf-backend/publish-bundle/Templates/`](rec2pdf-backend/publish-bundle/Templates) contiene i file LaTeX usati da `publish.sh`:
 - `default.tex`: layout principale.
 - `header_footer.tex`: elementi ripetuti.
 - `cover.tex`: pagina di copertina.
 
 Per personalizzare:
 1. Modifica i template mantenendo i placeholder Pandoc (`$body$`, `$logo$`, ecc.).
-2. Esegui `Scripts/publish.sh path/al/documento.md` per testare localmente (richiede `pandoc` + `xelatex`).
-3. Imposta `CUSTOM_PDF_LOGO` o carica un logo dal frontend per sovrascrivere l'asset di default (`assets/thinkDOC.pdf`).
+2. Esegui `rec2pdf-backend/publish-bundle/Scripts/publish.sh path/al/documento.md` per testare localmente (richiede `pandoc` + `xelatex`).
+3. Imposta `CUSTOM_PDF_LOGO` o carica un logo dal frontend per sovrascrivere l'asset di default (`rec2pdf-backend/publish-bundle/assets/thinkDOC.pdf`).
 
 ## Struttura del repository
 ```text
 Rec2pdf/
 ├── rec2pdf-backend/      # Server Express e orchestrazione pipeline
 ├── rec2pdf-frontend/     # SPA React + Tailwind
-├── Scripts/              # Script shell per pubblicazione PDF
-├── Templates/            # Template LaTeX utilizzati da publish.sh
-├── assets/               # Asset grafici (logo PDF, SVG)
+├── rec2pdf-backend/publish-bundle/
+│   ├── Scripts/          # Script shell per pubblicazione PDF
+│   ├── Templates/        # Template LaTeX utilizzati da publish.sh
+│   └── assets/           # Asset grafici (logo PDF, SVG)
 ├── BusinessCase.md       # Documentazione di prodotto
 ├── Brand_Vision_and_Creative_Brief.md
 └── Manuale utente – Workspace Navigator mul.md
