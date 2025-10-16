@@ -1,0 +1,6 @@
+# Repository-wide Docker ignore rules
+.git
+**/node_modules
+**/.DS_Store
+*.log
+Screenshot*.png
