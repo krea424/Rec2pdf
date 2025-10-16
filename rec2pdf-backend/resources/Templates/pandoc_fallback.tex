@@ -1,0 +1,95 @@
+% pandoc_fallback.tex — Minimal template that avoids hard dependency on lmodern
+\documentclass[11pt]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{amssymb}
+\usepackage{microtype}
+\IfFileExists{lmodern.sty}{\usepackage{lmodern}}{}
+
+\definecolor{FallbackBlue}{HTML}{0A4E8A}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=FallbackBlue,
+  urlcolor=FallbackBlue,
+  citecolor=FallbackBlue
+}
+
+\setlength{\parskip}{6pt}
+\setlength{\parindent}{0pt}
+\setlist[itemize]{topsep=4pt,itemsep=2pt}
+\setlist[enumerate]{topsep=4pt,itemsep=2pt}
+
+\titleformat{\section}{\Large\bfseries\sffamily\color{black}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily\color{FallbackBlue}}{\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily\color{FallbackBlue}}{\thesubsubsection}{0.8em}{}
+\titlespacing*{\section}{0pt}{3.0ex}{1.4ex}
+\titlespacing*{\subsection}{0pt}{2.2ex}{0.9ex}
+\titlespacing*{\subsubsection}{0pt}{1.6ex}{0.6ex}
+
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+\pagestyle{fancy}
+
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}%
+}
+
+$for(header-includes)$
+$header-includes$
+$endfor$
+
+$if(title)$
+\title{$title$}
+$endif$
+$if(author)$
+\author{$for(author)$$author$$sep$ \\ $endfor$}
+$endif$
+$if(date)$
+\date{$date$}
+$else$
+\date{}
+$endif$
+
+\begin{document}
+
+$if(logo)$
+\begin{center}
+  \vspace*{6mm}
+  \includegraphics[width=0.35\textwidth]{$logo$}
+  \vspace{12mm}
+\end{center}
+$endif$
+
+$if(title)$
+\maketitle
+$endif$
+
+$if(toc)$
+{
+  \hypersetup{linkcolor=black}
+  \tableofcontents
+  \newpage
+}
+$endif$
+
+$for(include-before)$
+$include-before$
+$endfor$
+
+$body$
+
+$for(include-after)$
+$include-after$
+$endfor$
+
+\end{document}
