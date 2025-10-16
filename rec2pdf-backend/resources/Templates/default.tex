@@ -1,0 +1,104 @@
+% default.tex — BrightLedger MD_First_PDF_Publish — v0.3.0 (post-reorg)_
+\documentclass[10pt]{article}
+
+% Margini e gestione header/footer
+\usepackage[margin=2.6cm, includeheadfoot]{geometry}
+% Distanza testo-header (headsep) per evitare taglio prima riga:
+\setlength{\headsep}{14pt}
+
+% Colori, font, hyperlink
+\usepackage{xcolor}
+\definecolor{BrightLedgerBlue}{HTML}{0033A0}
+\definecolor{BrightLedgerGrey}{HTML}{666666}
+
+\usepackage{fontspec}
+% Font sostituito per supportare un range più ampio di caratteri Unicode (es. emoji, simboli tecnici)
+\setmainfont{DejaVu Sans}
+\setsansfont{DejaVu Sans}
+
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=BrightLedgerBlue,
+  urlcolor=BrightLedgerBlue,
+  citecolor=BrightLedgerBlue
+}
+
+% Titoli e spaziature
+\usepackage{titlesec}
+% --- Tabelle Pandoc/LaTeX ---
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{calc}
+\usepackage{amssymb}
+\providecommand{\real}[1]{#1}
+
+% Riduci la dimensione del font all'interno delle tabelle per migliorare la leggibilità
+\usepackage{etoolbox}
+\usepackage{seqsplit} % Per spezzare le stringhe lunghe nelle tabelle
+\AtBeginEnvironment{longtable}{\footnotesize\sloppy}
+
+% Sezioni (nero), sottosezioni (grigio più chiaro)
+\titleformat{\section}
+  {\Large\bfseries\sffamily\color{black}}{\thesection}{0.8em}{}
+\titleformat{\subsection}
+  {\large\bfseries\sffamily\color{BrightLedgerGrey}}{\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}
+  {\normalsize\bfseries\sffamily\color{BrightLedgerGrey}}{\thesubsubsection}{0.8em}{}
+
+% Spaziature “ampio respiro”
+%            {indent}{spazio prima del titolo}{spazio dopo il titolo}
+\titlespacing*{\section}{0pt}{3.2ex}{1.6ex}
+\titlespacing*{\subsection}{0pt}{2.2ex}{0.9ex}
+\titlespacing*{\subsubsection}{0pt}{1.6ex}{0.6ex}
+
+% Profondità TOC/numero sezioni
+\setcounter{tocdepth}{3}
+\setcounter{secnumdepth}{3}
+
+% Fix elenchi compatti Pandoc
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}%
+}
+
+% ===== Variabili Pandoc & macro LaTeX =====
+$if(logo)$\newcommand{\docLogo}{$logo$}$endif$
+$if(title)$\newcommand{\BLDTitle}{$title$}$endif$
+$if(author)$\newcommand{\BLDAuthor}{$author$}$endif$
+$if(version)$\newcommand{\BLDVersion}{$version$}$endif$
+$if(updated)$\newcommand{\BLDUpdated}{$updated$}$endif$
+$if(project)$\newcommand{\BLDProject}{$project$}$endif$
+$if(language)$\newcommand{\BLDLanguage}{$language$}$endif$
+$if(tags)$\newcommand{\BLDTags}{$tags$}$endif$
+% --- Pandoc code highlighting macros (necessarie per Shaded/Highlighting) ---
+$if(highlighting-macros)$
+$highlighting-macros$
+$endif$
+
+% ===== Hook di Pandoc per inclusioni nel preambolo =====
+$for(header-includes)$
+$header-includes$
+$endfor$
+
+\begin{document}
+
+% ===== Hook di Pandoc per elementi PRIMA del corpo (es. cover, TOC) =====
+$for(include-before)$
+$include-before$
+$endfor$
+
+% ===== Corpo del documento =====
+$body$
+
+% ===== Hook di Pandoc per elementi DOPO il corpo (se servono) =====
+$for(include-after)$
+$include-after$
+$endfor$
+
+\end{document}
+
+% CODEOWNERS test: Dev-Core
+% CODEOWNERS verify v2
+% Column type with ragged-right for better wrapping in narrow columns
+\newcolumntype{P}[1]{>{\RaggedRight\arraybackslash}p{#1}}
