@@ -112,8 +112,10 @@ which ppubr
    SUPABASE_SERVICE_KEY="<service_role_key>"
    PROJECT_ROOT="$(pwd)"
    PUBLISH_SCRIPT="$(pwd)/Scripts/publish.sh"  # opzionale, default già corretto
+   WHISPER_MODEL=tiny  # es. per Cloud Run con memoria ridotta
    ```
    Il backend crea automaticamente il client Supabase, abilita l'autenticazione su tutte le rotte `/api` (eccetto `/api/health`) e mostra un warning se avviato senza credenziali, ricadendo in modalità sviluppo senza protezione.【F:rec2pdf-backend/server.js†L13-L105】
+   - `WHISPER_MODEL` (opzionale, default `small`): controlla il modello usato dalla CLI `whisper` durante la trascrizione. Impostare `tiny` su deploy Cloud Run o container con meno di 2 GB di RAM per ridurre l'uso di memoria durante la fase di trascrizione.【F:rec2pdf-backend/server.js†L2353-L2368】
 2. **Crea i bucket di storage** nel progetto Supabase chiamandoli `audio-uploads`, `text-uploads`, `processed-media` e abilita le policy di lettura/scrittura per il ruolo `service_role`; gli upload/download falliscono se il client non è configurato.【F:rec2pdf-backend/server.js†L710-L760】【F:rec2pdf-backend/server.js†L736-L760】
 3. **Imposta le variabili del frontend** (`rec2pdf-frontend/.env.local`):
    ```bash
