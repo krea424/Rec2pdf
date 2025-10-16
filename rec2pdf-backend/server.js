@@ -40,11 +40,37 @@ if (!isAuthEnabled) {
 }
 // ===== Configurazione Path (Versione Monorepo Corretta) =====
 
-// __dirname sarà /app/rec2pdf-backend. Salendo di un livello ('..')
-// arriviamo a /app, che è la root del nostro monorepo nel container.
-const PROJECT_ROOT = path.resolve(__dirname, '..'); 
+const resolveProjectRoot = () => {
+  const explicitRoot = process.env.PROJECT_ROOT
+    ? path.resolve(process.env.PROJECT_ROOT)
+    : null;
 
-const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT || path.join(PROJECT_ROOT, 'Scripts', 'publish.sh');
+  const candidates = [
+    explicitRoot,
+    path.resolve(__dirname, '..'),
+    path.resolve(__dirname),
+    path.resolve(process.cwd()),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const publishPath = path.join(candidate, 'Scripts', 'publish.sh');
+    if (fs.existsSync(publishPath)) {
+      return { root: candidate, publishPath };
+    }
+  }
+
+  const fallbackRoot = candidates[0] || path.resolve(__dirname, '..');
+  return {
+    root: fallbackRoot,
+    publishPath: path.join(fallbackRoot, 'Scripts', 'publish.sh'),
+  };
+};
+
+const { root: PROJECT_ROOT, publishPath: defaultPublishScript } = resolveProjectRoot();
+
+const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT
+  ? path.resolve(process.env.PUBLISH_SCRIPT)
+  : defaultPublishScript;
 const TEMPLATES_DIR = process.env.TEMPLATES_DIR || path.join(PROJECT_ROOT, 'Templates');
 const ASSETS_DIR = process.env.ASSETS_DIR || path.join(PROJECT_ROOT, 'assets'); // <-- RIGA CORRETTA
 
@@ -147,7 +173,91 @@ const run = (cmd, args, opts = {}) => new Promise((resolve) => {
   });
 });
 
-const zsh = (command, opts = {}) => run('zsh', ['-lc', command], opts);
+// Utilizza bash per i comandi di shell multi-step: è presente sia in locale che nei container Cloud Run
+const runShell = (command, opts = {}) => run('bash', ['-lc', command], opts);
+
+const latexPackageChecks = new Map();
+
+const ensureLatexPackage = async (pkgName) => {
+  if (!latexPackageChecks.has(pkgName)) {
+    latexPackageChecks.set(
+      pkgName,
+      (async () => {
+        const baseResult = { package: pkgName, ok: false, installed: false };
+
+        const kpsewhichProbe = await runShell('command -v kpsewhich >/dev/null 2>&1');
+        if (kpsewhichProbe.code !== 0) {
+          return { ...baseResult, reason: 'kpsewhich non disponibile' };
+        }
+
+        const alreadyPresent = await runShell(`kpsewhich ${pkgName}.sty >/dev/null 2>&1`);
+        if (alreadyPresent.code === 0) {
+          return { ...baseResult, ok: true };
+        }
+
+        const tlmgrProbe = await runShell('command -v tlmgr >/dev/null 2>&1');
+        if (tlmgrProbe.code !== 0) {
+          return { ...baseResult, reason: 'tlmgr non disponibile' };
+        }
+
+        const install = await runShell(
+          `(tlmgr install ${pkgName}) || (tlmgr init-usertree && tlmgr install --usermode ${pkgName})`
+        );
+        if (install.code !== 0) {
+          return {
+            ...baseResult,
+            installed: false,
+            reason: install.stderr || install.stdout || 'installazione tlmgr fallita',
+          };
+        }
+
+        const postCheck = await runShell(`kpsewhich ${pkgName}.sty >/dev/null 2>&1`);
+        if (postCheck.code === 0) {
+          return { package: pkgName, ok: true, installed: true };
+        }
+
+        return {
+          ...baseResult,
+          installed: true,
+          reason: 'pacchetto non rilevato dopo installazione',
+        };
+      })()
+    );
+  }
+
+  return latexPackageChecks.get(pkgName);
+};
+
+const ensurePandocFallbackSupport = async (logFn) => {
+  const log = typeof logFn === 'function' ? logFn : () => {};
+  const result = await ensureLatexPackage('lmodern');
+
+  if (result.ok) {
+    log(
+      result.installed
+        ? '📦 Pacchetto LaTeX lmodern installato tramite tlmgr'
+        : 'ℹ️ Pacchetto LaTeX lmodern già disponibile',
+      'info'
+    );
+  } else {
+    log(
+      `⚠️ Pacchetto LaTeX lmodern non disponibile${result.reason ? ` (${result.reason})` : ''}`,
+      'warning'
+    );
+  }
+
+  return result;
+};
+
+const runPandocFallback = async (destDir, mdPath, pdfPath, env, logFn) => {
+  const log = typeof logFn === 'function' ? logFn : () => {};
+  await ensurePandocFallbackSupport(log);
+
+  return runShell(
+    `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
+    env
+  );
+};
 
 const commandVersion = async (cmd) => {
   try {
@@ -2013,12 +2123,12 @@ app.get('/api/diag', async (req, res) => {
   } catch { out('❌ gemini non eseguibile'); }
 */
   try {
-    const ppub = await zsh('command -v ppubr >/dev/null || command -v PPUBR >/dev/null && echo OK || echo NO');
+    const ppub = await runShell('command -v ppubr >/dev/null || command -v PPUBR >/dev/null && echo OK || echo NO');
     out(ppub.stdout.includes('OK') ? `✅ ppubr/PPUBR: disponibile` : '❌ ppubr/PPUBR non trovato');
   } catch { out('❌ ppubr non disponibile'); }
 
   try {
-    const pandoc = await zsh('command -v pandocPDF >/dev/null && echo pandocPDF || command -v pandoc >/dev/null && echo pandoc || echo NO');
+    const pandoc = await runShell('command -v pandocPDF >/dev/null && echo pandocPDF || command -v pandoc >/dev/null && echo pandoc || echo NO');
     out(/pandoc/i.test(pandoc.stdout) ? `✅ pandoc: ${pandoc.stdout.trim()}` : '⚠️ pandoc non trovato');
   } catch { out('⚠️ pandoc non disponibile'); }
 
@@ -2342,6 +2452,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       await safeUnlink(wavLocalPath);
     }
 
+    const whisperModel =
+      process.env.WHISPER_MODEL || (process.env.K_SERVICE ? 'tiny' : 'small');
     out('🎧 Trascrizione con Whisper…', 'transcribe', 'running');
     const wavLocalForTranscribe = registerTempFile(path.join(pipelineDir, `${baseName}.wav`));
     let transcriptLocalPath = '';
@@ -2351,7 +2463,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       const whisperOutputDir = pipelineDir;
       const w = await run('bash', [
         '-lc',
-        `whisper ${JSON.stringify(wavLocalForTranscribe)} --language it --model tiny --output_format txt --output_dir ${JSON.stringify(whisperOutputDir)} --verbose False`
+        `whisper ${JSON.stringify(wavLocalForTranscribe)} --language it --model ${whisperModel} --output_format txt --output_dir ${JSON.stringify(whisperOutputDir)} --verbose False`
       ]);
       if (w.code !== 0) {
         out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
@@ -2487,9 +2599,12 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
 
       if (!fs.existsSync(pdfLocalPath)) {
         const destDir = path.dirname(mdLocalForPublish);
-        const pandoc = await zsh(
-          `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalForPublish)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalForPublish)}`,
-          publishEnv
+        const pandoc = await runPandocFallback(
+          destDir,
+          mdLocalForPublish,
+          pdfLocalPath,
+          publishEnv,
+          (message, status) => out(message, 'publish', status)
         );
         if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
           out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
@@ -2692,9 +2807,12 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
 
       if (!fs.existsSync(pdfLocalPath)) {
         out('publish.sh non ha generato un PDF, fallback su pandoc…');
-        const pandoc = await zsh(
-          `cd ${JSON.stringify(workDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalPath)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalPath)}`,
-          publishEnv
+        const pandoc = await runPandocFallback(
+          workDir,
+          mdLocalPath,
+          pdfLocalPath,
+          publishEnv,
+          (message, status) => out(message, status)
         );
         if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
           out(pandoc.stderr || pandoc.stdout || 'pandoc failed');
@@ -2758,9 +2876,12 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
 
     if (!fs.existsSync(pdfPath)) {
       out('publish.sh non ha generato un PDF, fallback su pandoc…');
-      const pandoc = await zsh(
-        `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
-        publishEnv
+      const pandoc = await runPandocFallback(
+        dest,
+        mdPath,
+        pdfPath,
+        publishEnv,
+        (message, status) => out(message, status)
       );
       if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
         out(pandoc.stderr || pandoc.stdout || 'pandoc failed');
@@ -2970,9 +3091,12 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
 
     if (!fs.existsSync(pdfPath)) {
       out('publish.sh non ha generato un PDF, fallback su pandoc…', 'publish', 'info');
-      const pandoc = await zsh(
-        `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
-        publishEnv
+      const pandoc = await runPandocFallback(
+        destDir,
+        mdPath,
+        pdfPath,
+        publishEnv,
+        (message, status) => out(message, 'publish', status)
       );
       if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
         out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
@@ -3277,9 +3401,12 @@ app.post(
 
         if (!fs.existsSync(pdfLocalPath)) {
           const destDir = path.dirname(mdLocalForPublish);
-          const pandoc = await zsh(
-            `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalForPublish)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalForPublish)}`,
-            publishEnv
+          const pandoc = await runPandocFallback(
+            destDir,
+            mdLocalForPublish,
+            pdfLocalPath,
+            publishEnv,
+            (message, status) => out(message, 'publish', status)
           );
           if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
             out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
