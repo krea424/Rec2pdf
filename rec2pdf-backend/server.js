@@ -68,11 +68,74 @@ const resolveProjectRoot = () => {
 
 const { root: PROJECT_ROOT, publishPath: defaultPublishScript } = resolveProjectRoot();
 
-const PUBLISH_SCRIPT = process.env.PUBLISH_SCRIPT
-  ? path.resolve(process.env.PUBLISH_SCRIPT)
-  : defaultPublishScript;
-const TEMPLATES_DIR = process.env.TEMPLATES_DIR || path.join(PROJECT_ROOT, 'Templates');
-const ASSETS_DIR = process.env.ASSETS_DIR || path.join(PROJECT_ROOT, 'assets'); // <-- RIGA CORRETTA
+const ensureAbsolute = (value) => (value ? path.resolve(value) : null);
+const uniquePaths = (values = []) => {
+  const seen = new Set();
+  return values
+    .filter(Boolean)
+    .map((entry) => ensureAbsolute(entry))
+    .filter((entry) => {
+      if (!entry || seen.has(entry)) {
+        return false;
+      }
+      seen.add(entry);
+      return true;
+    });
+};
+
+const resolveFromCandidates = (candidates = [], { expectDirectory = false } = {}) => {
+  const attempts = uniquePaths(candidates);
+  for (const candidate of attempts) {
+    try {
+      const stats = fs.statSync(candidate);
+      if (expectDirectory ? stats.isDirectory() : stats.isFile()) {
+        return { found: candidate, attempts };
+      }
+    } catch (error) {
+      // ignore missing candidates
+    }
+  }
+  return { found: null, attempts };
+};
+
+const PUBLISH_BUNDLE_ROOT = ensureAbsolute(process.env.PUBLISH_BUNDLE_ROOT);
+
+const publishCandidates = [
+  process.env.PUBLISH_SCRIPT,
+  PUBLISH_BUNDLE_ROOT && path.join(PUBLISH_BUNDLE_ROOT, 'Scripts', 'publish.sh'),
+  defaultPublishScript,
+  path.join(__dirname, 'Scripts', 'publish.sh'),
+];
+
+const templateCandidates = [
+  process.env.TEMPLATES_DIR,
+  PUBLISH_BUNDLE_ROOT && path.join(PUBLISH_BUNDLE_ROOT, 'Templates'),
+  path.join(PROJECT_ROOT, 'Templates'),
+  path.join(__dirname, 'Templates'),
+];
+
+const assetCandidates = [
+  process.env.ASSETS_DIR,
+  PUBLISH_BUNDLE_ROOT && path.join(PUBLISH_BUNDLE_ROOT, 'assets'),
+  path.join(PROJECT_ROOT, 'assets'),
+  path.join(__dirname, 'assets'),
+];
+
+const publishResolution = resolveFromCandidates(publishCandidates);
+let PUBLISH_SCRIPT = publishResolution.found
+  ? publishResolution.found
+  : ensureAbsolute(publishCandidates.find(Boolean) || defaultPublishScript);
+
+const templateResolution = resolveFromCandidates(templateCandidates, { expectDirectory: true });
+let TEMPLATES_DIR = templateResolution.found
+  ? templateResolution.found
+  : ensureAbsolute(templateCandidates.find(Boolean) || path.join(PROJECT_ROOT, 'Templates'));
+
+const assetResolution = resolveFromCandidates(assetCandidates, { expectDirectory: true });
+let ASSETS_DIR = assetResolution.found
+  ? assetResolution.found
+  : ensureAbsolute(assetCandidates.find(Boolean) || path.join(PROJECT_ROOT, 'assets'));
+
 const PANDOC_FALLBACK_TEMPLATE_NAME = 'pandoc_fallback.tex';
 const DEFAULT_PANDOC_FALLBACK_TEMPLATE = path.join(
   TEMPLATES_DIR,
@@ -182,6 +245,18 @@ console.log(`   __dirname:      ${__dirname}`);
 console.log(`   PUBLISH_SCRIPT: ${PUBLISH_SCRIPT}`);
 console.log(`   TEMPLATES_DIR:  ${TEMPLATES_DIR}`);
 console.log(`   ASSETS_DIR:     ${ASSETS_DIR}`); // Aggiungiamo un log per verifica
+if (!publishResolution.found && publishResolution.attempts.length) {
+  console.warn('   Percorsi script controllati senza successo:');
+  publishResolution.attempts.forEach((candidate) => console.warn(`     - ${candidate}`));
+}
+if (!templateResolution.found && templateResolution.attempts.length) {
+  console.warn('   Directory template non trovate tra:');
+  templateResolution.attempts.forEach((candidate) => console.warn(`     - ${candidate}`));
+}
+if (!assetResolution.found && assetResolution.attempts.length) {
+  console.warn('   Directory assets non trovate tra:');
+  assetResolution.attempts.forEach((candidate) => console.warn(`     - ${candidate}`));
+}
 if (fs.existsSync(DEFAULT_PANDOC_FALLBACK_TEMPLATE)) {
   console.log(`   PANDOC_TEMPLATE: ${DEFAULT_PANDOC_FALLBACK_TEMPLATE}`);
 } else {
@@ -196,6 +271,14 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
   console.warn(`   Il sistema userà il fallback pandoc generico.`);
 } else {
   console.log(`✅ Script publish.sh trovato: ${PUBLISH_SCRIPT}`);
+}
+
+if (!fs.existsSync(TEMPLATES_DIR)) {
+  console.warn(`⚠️  Directory Templates non trovata in ${TEMPLATES_DIR}`);
+}
+
+if (!fs.existsSync(ASSETS_DIR)) {
+  console.warn(`⚠️  Directory assets non trovata in ${ASSETS_DIR}`);
 }
 
 app.use(cors());
@@ -800,16 +883,20 @@ const callPublishScript = async (mdPath, env = {}) => {
   const envOptions = env && typeof env === 'object' && env.env && typeof env.env === 'object'
     ? env.env
     : env;
+  const publishToolRoot = path.resolve(path.dirname(PUBLISH_SCRIPT), '..');
   const publishEnv = {
     ...process.env,
     ...envOptions,
-    TOOL_ROOT: PROJECT_ROOT,
+    TOOL_ROOT: publishToolRoot,
     TEMPLATE_DIR: TEMPLATES_DIR,
     ASSETS_DIR: ASSETS_DIR,
   };
 
   // Esegui lo script
-  return await run('bash', [PUBLISH_SCRIPT, mdPath], { env: publishEnv });
+  return await run('bash', [PUBLISH_SCRIPT, mdPath], {
+    env: publishEnv,
+    cwd: path.dirname(PUBLISH_SCRIPT),
+  });
 };
 
 const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
