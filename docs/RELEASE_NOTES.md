@@ -22,3 +22,6 @@
 2. Rieseguire smoke test base/advanced seguendo la demo script per assicurarsi che gli utenti senza flag avanzato restino operativi.【F:docs/ADVANCED_GUIDE.md†L50-L68】
 3. Validare gli screenshot di modalità Base/Advanced prima dell'invio della release note pubblica, assicurandosi che corrispondano al tema boardroom aggiornato descritto nel README.【F:README.md†L43-L55】
 4. Per deploy containerizzati (Cloud Run incluso) settare `WHISPER_MODEL=tiny` se non già presente: il backend applica automaticamente il modello `tiny` quando rileva l'ambiente Cloud Run, ma esplicitare la variabile in configurazione evita regressioni su revisioni precedenti o istanze riusate.【F:rec2pdf-backend/server.js†L2353-L2369】
+
+## Backend
+- Il fallback Pandoc installa automaticamente il pacchetto LaTeX `lmodern` (via `tlmgr`) se mancante, prevenendo i crash di compilazione PDF su Cloud Run privi della font family di default.【F:rec2pdf-backend/server.js†L163-L260】
