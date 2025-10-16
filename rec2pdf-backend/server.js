@@ -2342,6 +2342,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       await safeUnlink(wavLocalPath);
     }
 
+    const whisperModel = process.env.WHISPER_MODEL || 'small';
     out('🎧 Trascrizione con Whisper…', 'transcribe', 'running');
     const wavLocalForTranscribe = registerTempFile(path.join(pipelineDir, `${baseName}.wav`));
     let transcriptLocalPath = '';
@@ -2351,7 +2352,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       const whisperOutputDir = pipelineDir;
       const w = await run('bash', [
         '-lc',
-        `whisper ${JSON.stringify(wavLocalForTranscribe)} --language it --model tiny --output_format txt --output_dir ${JSON.stringify(whisperOutputDir)} --verbose False`
+        `whisper ${JSON.stringify(wavLocalForTranscribe)} --language it --model ${whisperModel} --output_format txt --output_dir ${JSON.stringify(whisperOutputDir)} --verbose False`
       ]);
       if (w.code !== 0) {
         out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
