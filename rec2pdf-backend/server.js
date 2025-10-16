@@ -70,7 +70,18 @@ const resolveProjectRoot = () => {
 
 const { root: PROJECT_ROOT, publishPath: defaultPublishScript } = resolveProjectRoot();
 
-const ensureAbsolute = (value) => (value ? path.resolve(value) : null);
+const ensureAbsolute = (value) => {
+  if (!value || typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim().replace(/^['"]+|['"]+$/g, '');
+  if (!trimmed) {
+    return null;
+  }
+
+  return path.isAbsolute(trimmed) ? trimmed : path.resolve(trimmed);
+};
 const uniquePaths = (values = []) => {
   const seen = new Set();
   return values
