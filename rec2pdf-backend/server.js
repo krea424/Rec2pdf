@@ -1818,28 +1818,90 @@ const bootstrapDefaultPrompts = () => {
 
 const applyPromptMigrations = (prompts = []) => {
   let changed = false;
-  const upgraded = (prompts || []).map((prompt) => {
+  const upgraded = [];
+  const existingById = new Map();
+  const existingBySlug = new Map();
+
+  for (const prompt of prompts || []) {
     if (!prompt || typeof prompt !== 'object') {
-      return prompt;
+      upgraded.push(prompt);
+      continue;
     }
 
-    if (prompt.builtIn) {
-      const defaults =
-        DEFAULT_PROMPTS_BY_ID.get(prompt.id) ||
-        (prompt.slug ? DEFAULT_PROMPTS_BY_SLUG.get(prompt.slug) : null);
+    const defaults = prompt.builtIn
+      ? DEFAULT_PROMPTS_BY_ID.get(prompt.id) ||
+        (prompt.slug ? DEFAULT_PROMPTS_BY_SLUG.get(prompt.slug) : null)
+      : null;
 
-      if (defaults) {
-        const next = { ...prompt };
-        if (!next.summary && defaults.summary) {
-          next.summary = defaults.summary;
+    const next = { ...prompt };
+
+    if (defaults) {
+      if (!next.summary && defaults.summary) {
+        next.summary = defaults.summary;
+        changed = true;
+      }
+
+      if (!next.builtIn) {
+        next.builtIn = true;
+        changed = true;
+      }
+
+      if (defaults.pdfRules && typeof defaults.pdfRules === 'object') {
+        const currentPdfRules =
+          next.pdfRules && typeof next.pdfRules === 'object' ? { ...next.pdfRules } : {};
+        let pdfRulesChanged = false;
+        for (const [key, value] of Object.entries(defaults.pdfRules)) {
+          if (currentPdfRules[key] === undefined) {
+            currentPdfRules[key] = value;
+            pdfRulesChanged = true;
+          }
+        }
+        if (pdfRulesChanged || (!next.pdfRules && Object.keys(currentPdfRules).length)) {
+          next.pdfRules = currentPdfRules;
           changed = true;
         }
-        return next;
       }
     }
 
-    return prompt;
-  });
+    upgraded.push(next);
+
+    if (next && typeof next === 'object') {
+      if (next.id) {
+        existingById.set(next.id, next);
+      }
+      if (next.slug) {
+        existingBySlug.set(next.slug, next);
+      }
+    }
+  }
+
+  for (const defaults of DEFAULT_PROMPTS) {
+    if (!defaults || !defaults.builtIn) {
+      continue;
+    }
+    const alreadyPresent =
+      (defaults.id && existingById.get(defaults.id)) ||
+      (defaults.slug && existingBySlug.get(defaults.slug));
+    if (alreadyPresent) {
+      continue;
+    }
+
+    const timestamp = Date.now();
+    const injected = {
+      ...defaults,
+      createdAt: defaults.createdAt || timestamp,
+      updatedAt: defaults.updatedAt || timestamp,
+    };
+
+    upgraded.push(injected);
+    if (injected.id) {
+      existingById.set(injected.id, injected);
+    }
+    if (injected.slug) {
+      existingBySlug.set(injected.slug, injected);
+    }
+    changed = true;
+  }
 
   return { prompts: upgraded, changed };
 };
