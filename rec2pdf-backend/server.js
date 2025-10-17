@@ -163,11 +163,14 @@ const buildPandocFallback = (templateInfo, mdArg, pdfArg) => {
   const templateType = inferredType ? inferredType.toLowerCase() : '';
   const cssPath = info?.cssPath && typeof info.cssPath === 'string' ? info.cssPath : '';
   const resourcePath = info?.resourcePath && typeof info.resourcePath === 'string' ? info.resourcePath : '';
+  const inlineMetadataPath =
+    info?.inlineMetadataPath && typeof info.inlineMetadataPath === 'string' ? info.inlineMetadataPath : '';
 
   if (templatePath && templateType === 'html') {
     const templateArg = ` --template ${JSON.stringify(templatePath)}`;
     const cssArg = cssPath ? ` --css ${JSON.stringify(cssPath)}` : '';
     const resourceArg = resourcePath ? ` --resource-path ${JSON.stringify(resourcePath)}` : '';
+    const metadataArg = inlineMetadataPath ? ` --metadata-file ${JSON.stringify(inlineMetadataPath)}` : '';
     return [
       '(',
       'html_engine="${WORKSPACE_PROFILE_TEMPLATE_ENGINE:-${PREFERRED_HTML_ENGINE:-}}";',
@@ -188,7 +191,7 @@ const buildPandocFallback = (templateInfo, mdArg, pdfArg) => {
       'if [[ "$html_engine" == "wkhtmltopdf" ]]; then',
       '  extra_opts+=(--pdf-engine-opt=--enable-local-file-access);',
       'fi;',
-      `pandoc ${mdArg} --from markdown+yaml_metadata_block --to html${templateArg}${cssArg}${resourceArg} --highlight-style=kate --embed-resources --pdf-engine "$html_engine" "\${extra_opts[@]}" -o ${pdfArg};`,
+      `pandoc ${mdArg} --from markdown+yaml_metadata_block --to html${templateArg}${cssArg}${resourceArg}${metadataArg} --highlight-style=kate --embed-resources --pdf-engine "$html_engine" "\${extra_opts[@]}" -o ${pdfArg};`,
       ')',
     ].join(' ');
   }
@@ -198,6 +201,21 @@ const buildPandocFallback = (templateInfo, mdArg, pdfArg) => {
     )} -o ${pdfArg} ${mdArg}`;
   }
   return `pandoc -o ${pdfArg} ${mdArg}`;
+};
+
+const createInlineCssMetadataFile = async (cssPath, targetDir) => {
+  if (!cssPath || !targetDir) {
+    throw new Error('Percorsi CSS o destinazione non validi');
+  }
+  const cssContent = await fsp.readFile(cssPath, 'utf8');
+  const normalized = cssContent.replace(/\r\n?/g, '\n');
+  const lines = normalized.split('\n');
+  const indented = lines.map((line) => `    ${line}`);
+  const payload = `styles:\n  inline: |\n${indented.join('\n')}\n`;
+  const fileName = `inline_css_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.yaml`;
+  const filePath = path.join(targetDir, fileName);
+  await fsp.writeFile(filePath, payload, 'utf8');
+  return filePath;
 };
 
 const commandVersion = async (cmd) => {
@@ -566,17 +584,39 @@ const publishWithTemplateFallback = async ({
     const mdArg = JSON.stringify(mdLocalPath);
     const pdfArg = JSON.stringify(pdfLocalPath);
     const resolvedTemplateInfo = templateInfo || templateInfoFromEnv(publishEnv);
-    const fallbackCmdParts = [];
-    fallbackCmdParts.push(`cd ${JSON.stringify(destDir)};`);
-    fallbackCmdParts.push(
-      `command -v pandocPDF >/dev/null && pandocPDF ${mdArg} || ${buildPandocFallback(resolvedTemplateInfo, mdArg, pdfArg)}`
-    );
-    const pandoc = await runPandoc(fallbackCmdParts.join(' '), publishEnv);
-    if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
-      log(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
-      throw new Error('Generazione PDF fallita');
+    let inlineMetadataPath = '';
+    let fallbackTemplateInfo = resolvedTemplateInfo;
+    if (resolvedTemplateInfo && resolvedTemplateInfo.type === 'html' && resolvedTemplateInfo.cssPath) {
+      try {
+        inlineMetadataPath = await createInlineCssMetadataFile(resolvedTemplateInfo.cssPath, destDir);
+        if (inlineMetadataPath) {
+          fallbackTemplateInfo = { ...resolvedTemplateInfo, inlineMetadataPath };
+        }
+      } catch (metadataError) {
+        log(
+          `⚠️ CSS inline non generato per il fallback: ${metadataError?.message || metadataError}`,
+          'publish',
+          'warning'
+        );
+      }
     }
-    log('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
+    try {
+      const fallbackCmdParts = [];
+      fallbackCmdParts.push(`cd ${JSON.stringify(destDir)};`);
+      fallbackCmdParts.push(
+        `command -v pandocPDF >/dev/null && pandocPDF ${mdArg} || ${buildPandocFallback(fallbackTemplateInfo, mdArg, pdfArg)}`
+      );
+      const pandoc = await runPandoc(fallbackCmdParts.join(' '), publishEnv);
+      if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
+        log(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
+        throw new Error('Generazione PDF fallita');
+      }
+      log('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
+    } finally {
+      if (inlineMetadataPath) {
+        await safeUnlink(inlineMetadataPath);
+      }
+    }
   }
 
   return result;

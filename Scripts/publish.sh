@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+declare -a REC2PDF_TMP_FILES=()
+
+register_tmp_file() {
+  local path="$1"
+  [[ -z "$path" ]] && return 0
+  REC2PDF_TMP_FILES+=("$path")
+}
+
+cleanup_tmp_files() {
+  if [[ ${#REC2PDF_TMP_FILES[@]} -gt 0 ]]; then
+    local item
+    for item in "${REC2PDF_TMP_FILES[@]}"; do
+      [[ -n "$item" && -e "$item" ]] && rm -f "$item" || true
+    done
+  fi
+}
+
+trap cleanup_tmp_files EXIT
+
 # ============================================ 
 # BrightLedger – MD_First_PDF_Publish v0.3.1
 # ============================================ 
@@ -43,6 +62,7 @@ SELECTED_CSS=""
 TEMPLATE_KIND="tex"
 HTML_ENGINE=""
 HTML_RESOURCE_PATH=""
+HTML_INLINE_METADATA_FILE=""
 
 if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
   PROFILE_TEMPLATE_CANDIDATE="$WORKSPACE_PROFILE_TEMPLATE"
@@ -138,6 +158,22 @@ if [[ "$TEMPLATE_KIND" == "html" ]]; then
   }
   resolve_html_engine
   unset -f resolve_html_engine
+
+  if [[ -n "$SELECTED_CSS" && -f "$SELECTED_CSS" ]]; then
+    HTML_INLINE_METADATA_FILE="$(mktemp "${TMPDIR:-/tmp}/rec2pdf_css_XXXXXX.yaml")"
+    if [[ -n "$HTML_INLINE_METADATA_FILE" ]]; then
+      register_tmp_file "$HTML_INLINE_METADATA_FILE"
+      {
+        printf 'styles:\n'
+        printf '  inline: |\n'
+        while IFS='' read -r line || [[ -n "$line" ]]; do
+          printf '    %s\n' "$line"
+        done <"$SELECTED_CSS"
+      } >"$HTML_INLINE_METADATA_FILE"
+    else
+      echo "⚠️  Impossibile creare il file temporaneo per il CSS inline"
+    fi
+  fi
 fi
 
 # ----- Log esecuzione & Logo -----
@@ -253,6 +289,9 @@ else
   )
   if [[ -n "$SELECTED_CSS" ]]; then
     pandoc_args+=(--css "$SELECTED_CSS")
+  fi
+  if [[ -n "$HTML_INLINE_METADATA_FILE" ]]; then
+    pandoc_args+=(--metadata-file "$HTML_INLINE_METADATA_FILE")
   fi
   if [[ -n "$HTML_RESOURCE_PATH" ]]; then
     pandoc_args+=(--resource-path "$HTML_RESOURCE_PATH")
