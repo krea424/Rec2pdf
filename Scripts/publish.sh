@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+declare -a REC2PDF_TMP_FILES=()
+
+register_tmp_file() {
+  local path="$1"
+  [[ -z "$path" ]] && return 0
+  REC2PDF_TMP_FILES+=("$path")
+}
+
+cleanup_tmp_files() {
+  if [[ ${#REC2PDF_TMP_FILES[@]} -gt 0 ]]; then
+    local item
+    for item in "${REC2PDF_TMP_FILES[@]}"; do
+      [[ -n "$item" && -e "$item" ]] && rm -f "$item" || true
+    done
+  fi
+}
+
+trap cleanup_tmp_files EXIT
+
 # ============================================ 
 # BrightLedger – MD_First_PDF_Publish v0.3.1
 # ============================================ 
@@ -42,6 +61,8 @@ SELECTED_TEMPLATE="$DEFAULT_TEX"
 SELECTED_CSS=""
 TEMPLATE_KIND="tex"
 HTML_ENGINE=""
+HTML_RESOURCE_PATH=""
+HTML_INLINE_METADATA_FILE=""
 
 if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
   PROFILE_TEMPLATE_CANDIDATE="$WORKSPACE_PROFILE_TEMPLATE"
@@ -56,9 +77,18 @@ if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
       *.html|*.HTML)
         SELECTED_TEMPLATE="$PROFILE_TEMPLATE_CANDIDATE"
         TEMPLATE_KIND="html"
-        CSS_CANDIDATE="${PROFILE_TEMPLATE_CANDIDATE%.*}.css"
-        if [[ -f "$CSS_CANDIDATE" ]]; then
-          SELECTED_CSS="$CSS_CANDIDATE"
+        if [[ -n "${WORKSPACE_PROFILE_TEMPLATE_CSS:-}" ]]; then
+          if [[ -f "${WORKSPACE_PROFILE_TEMPLATE_CSS}" ]]; then
+            SELECTED_CSS="$WORKSPACE_PROFILE_TEMPLATE_CSS"
+          else
+            echo "⚠️  CSS template indicato ma non trovato: ${WORKSPACE_PROFILE_TEMPLATE_CSS}"
+          fi
+        fi
+        if [[ -z "$SELECTED_CSS" ]]; then
+          CSS_CANDIDATE="${PROFILE_TEMPLATE_CANDIDATE%.*}.css"
+          if [[ -f "$CSS_CANDIDATE" ]]; then
+            SELECTED_CSS="$CSS_CANDIDATE"
+          fi
         fi
         ;;
       *)
@@ -68,29 +98,43 @@ if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
   fi
 fi
 
-# ----- Log esecuzione & Logo -----
-echo "🚀 Generazione PDF da: $INPUT_MD"
-echo "📌 Template selezionato: $SELECTED_TEMPLATE"
-[[ -n "$SELECTED_CSS" ]] && echo "📌 CSS associato: $SELECTED_CSS"
-if [[ "$TEMPLATE_KIND" == "tex" ]]; then
-  echo "📌 Include header: $HEADER_FOOTER_TEX"
-  echo "📌 Include cover : $COVER_TEX"
-fi
-
-# Seleziona il logo: custom se disponibile, altrimenti default 
-CUSTOM_LOGO_PATH="${CUSTOM_PDF_LOGO:-}"
-if [[ -n "$CUSTOM_LOGO_PATH" && -f "$CUSTOM_LOGO_PATH" ]]; then
-  LOGO="$CUSTOM_LOGO_PATH"
-  echo "📌 Logo (Custom)   : $LOGO"
-else
-  LOGO="$SCRIPT_DIR/../assets/thinkDOC.pdf"
-  echo "📌 Logo (Default)  : $LOGO"
-fi
-[[ -f "$LOGO" ]] || die "Logo PDF non trovato: $LOGO"
-
-
 # Risolvi eventuale motore HTML prima del dry-run
 if [[ "$TEMPLATE_KIND" == "html" ]]; then
+  HTML_RESOURCE_PATH_RAW="${WORKSPACE_PROFILE_TEMPLATE_RESOURCE_PATH:-}"
+  if [[ -n "$HTML_RESOURCE_PATH_RAW" ]]; then
+    OLD_IFS="$IFS"
+    IFS=':' read -r -a _RESOURCE_PATH_CANDIDATES <<<"$HTML_RESOURCE_PATH_RAW"
+    IFS="$OLD_IFS"
+    unset OLD_IFS
+  else
+    _RESOURCE_PATH_CANDIDATES=()
+  fi
+  TEMPLATE_DIRNAME="$(dirname "$SELECTED_TEMPLATE")"
+  _RESOURCE_PATH_CANDIDATES+=("$TEMPLATE_DIRNAME")
+  if [[ -n "$SELECTED_CSS" ]]; then
+    _RESOURCE_PATH_CANDIDATES+=("$(dirname "$SELECTED_CSS")")
+  fi
+  TEMPLATE_ASSETS_DIR="$TEMPLATE_DIRNAME/$(basename "$SELECTED_TEMPLATE" .html)"
+  if [[ -d "$TEMPLATE_ASSETS_DIR" ]]; then
+    _RESOURCE_PATH_CANDIDATES+=("$TEMPLATE_ASSETS_DIR")
+  fi
+  HTML_RESOURCE_PATH=""
+  for _candidate in "${_RESOURCE_PATH_CANDIDATES[@]}"; do
+    [[ -z "$_candidate" ]] && continue
+    [[ ! -d "$_candidate" ]] && continue
+    case ":$HTML_RESOURCE_PATH:" in
+      *":$_candidate:"*)
+        continue
+        ;;
+    esac
+    if [[ -z "$HTML_RESOURCE_PATH" ]]; then
+      HTML_RESOURCE_PATH="$_candidate"
+    else
+      HTML_RESOURCE_PATH="$HTML_RESOURCE_PATH:$_candidate"
+    fi
+  done
+  unset _RESOURCE_PATH_CANDIDATES _candidate
+
   resolve_html_engine() {
     local preferred="${PREFERRED_HTML_ENGINE:-}"
     local resolved=""
@@ -114,7 +158,44 @@ if [[ "$TEMPLATE_KIND" == "html" ]]; then
   }
   resolve_html_engine
   unset -f resolve_html_engine
+
+  if [[ -n "$SELECTED_CSS" && -f "$SELECTED_CSS" ]]; then
+    HTML_INLINE_METADATA_FILE="$(mktemp "${TMPDIR:-/tmp}/rec2pdf_css_XXXXXX.yaml")"
+    if [[ -n "$HTML_INLINE_METADATA_FILE" ]]; then
+      register_tmp_file "$HTML_INLINE_METADATA_FILE"
+      {
+        printf 'styles:\n'
+        printf '  inline: |\n'
+        while IFS='' read -r line || [[ -n "$line" ]]; do
+          printf '    %s\n' "$line"
+        done <"$SELECTED_CSS"
+      } >"$HTML_INLINE_METADATA_FILE"
+    else
+      echo "⚠️  Impossibile creare il file temporaneo per il CSS inline"
+    fi
+  fi
 fi
+
+# ----- Log esecuzione & Logo -----
+echo "🚀 Generazione PDF da: $INPUT_MD"
+echo "📌 Template selezionato: $SELECTED_TEMPLATE"
+[[ -n "$SELECTED_CSS" ]] && echo "📌 CSS associato: $SELECTED_CSS"
+[[ -n "$HTML_RESOURCE_PATH" ]] && echo "📁 Resource path : $HTML_RESOURCE_PATH"
+if [[ "$TEMPLATE_KIND" == "tex" ]]; then
+  echo "📌 Include header: $HEADER_FOOTER_TEX"
+  echo "📌 Include cover : $COVER_TEX"
+fi
+
+# Seleziona il logo: custom se disponibile, altrimenti default
+CUSTOM_LOGO_PATH="${CUSTOM_PDF_LOGO:-}"
+if [[ -n "$CUSTOM_LOGO_PATH" && -f "$CUSTOM_LOGO_PATH" ]]; then
+  LOGO="$CUSTOM_LOGO_PATH"
+  echo "📌 Logo (Custom)   : $LOGO"
+else
+  LOGO="$SCRIPT_DIR/../assets/thinkDOC.pdf"
+  echo "📌 Logo (Default)  : $LOGO"
+fi
+[[ -f "$LOGO" ]] || die "Logo PDF non trovato: $LOGO"
 
 # ----- DRY RUN -----
 if [[ "${2:-}" == "--dry-run" ]]; then
@@ -126,6 +207,7 @@ TEMPLATE_DIR  = $TEMPLATE_DIR
 DEFAULT_TEX   = $DEFAULT_TEX
 SELECTED_TPL  = $SELECTED_TEMPLATE
 SELECTED_CSS  = ${SELECTED_CSS:-}
+RESOURCE_PATH = ${HTML_RESOURCE_PATH:-}
 TEMPLATE_KIND = $TEMPLATE_KIND
 HEADER_FOOTER = $HEADER_FOOTER_TEX
 COVER_TEX     = $COVER_TEX
@@ -176,27 +258,50 @@ fi
 
 # ----- Comando Pandoc -----
 if [[ "$TEMPLATE_KIND" == "tex" ]]; then
-  pandoc_args=("$INPUT_MD"
-    --from markdown
+  pandoc_args=(
+    "$INPUT_MD"
+    --from
+    markdown
     --pdf-engine=xelatex
     --highlight-style=kate
-    --template "$SELECTED_TEMPLATE"
-    --include-in-header "$HEADER_FOOTER_TEX"
-    --include-before-body "$COVER_TEX"
-    --variable "logo=$LOGO"
-    -o "$OUTPUT_PDF")
+    --template
+    "$SELECTED_TEMPLATE"
+    --include-in-header
+    "$HEADER_FOOTER_TEX"
+    --include-before-body
+    "$COVER_TEX"
+    --variable
+    "logo=$LOGO"
+    -o
+    "$OUTPUT_PDF"
+  )
 else
-  pandoc_args=("$INPUT_MD"
-    --from markdown+yaml_metadata_block
-    --to html
-    --template "$SELECTED_TEMPLATE"
-    --highlight-style=kate)
+  pandoc_args=(
+    "$INPUT_MD"
+    --from
+    markdown+yaml_metadata_block
+    --to
+    html
+    --template
+    "$SELECTED_TEMPLATE"
+    --highlight-style=kate
+    --embed-resources
+  )
   if [[ -n "$SELECTED_CSS" ]]; then
     pandoc_args+=(--css "$SELECTED_CSS")
   fi
-  pandoc_args+=(--metadata "logo=$LOGO"
-    --pdf-engine "$HTML_ENGINE"
-    -o "$OUTPUT_PDF")
+  if [[ -n "$HTML_INLINE_METADATA_FILE" ]]; then
+    pandoc_args+=(--metadata-file "$HTML_INLINE_METADATA_FILE")
+  fi
+  if [[ -n "$HTML_RESOURCE_PATH" ]]; then
+    pandoc_args+=(--resource-path "$HTML_RESOURCE_PATH")
+  fi
+  pandoc_args+=(--metadata "logo=$LOGO")
+  pandoc_args+=(--pdf-engine "$HTML_ENGINE")
+  if [[ "$HTML_ENGINE" == "wkhtmltopdf" ]]; then
+    pandoc_args+=(--pdf-engine-opt=--enable-local-file-access)
+  fi
+  pandoc_args+=(-o "$OUTPUT_PDF")
 fi
 
 pandoc "${pandoc_args[@]}" || die "Errore durante la generazione del PDF"
