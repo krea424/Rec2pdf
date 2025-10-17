@@ -188,7 +188,7 @@ const buildPandocFallback = (templateInfo, mdArg, pdfArg) => {
       'if [[ "$html_engine" == "wkhtmltopdf" ]]; then',
       '  extra_opts+=(--pdf-engine-opt=--enable-local-file-access);',
       'fi;',
-      `pandoc ${mdArg} --from markdown+yaml_metadata_block --to html${templateArg}${cssArg}${resourceArg} --highlight-style=kate --pdf-engine "$html_engine" "\${extra_opts[@]}" -o ${pdfArg};`,
+      `pandoc ${mdArg} --from markdown+yaml_metadata_block --to html${templateArg}${cssArg}${resourceArg} --highlight-style=kate --embed-resources --pdf-engine "$html_engine" "\${extra_opts[@]}" -o ${pdfArg};`,
       ')',
     ].join(' ');
   }

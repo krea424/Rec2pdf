@@ -249,6 +249,7 @@ else
     --template
     "$SELECTED_TEMPLATE"
     --highlight-style=kate
+    --embed-resources
   )
   if [[ -n "$SELECTED_CSS" ]]; then
     pandoc_args+=(--css "$SELECTED_CSS")

@@ -51,6 +51,7 @@ describe('publishWithTemplateFallback with meeting template', () => {
       expect(command).toContain('verbale_meeting.html');
       expect(command).toContain('verbale_meeting.css');
       expect(command).toContain('--resource-path');
+      expect(command).toContain('--embed-resources');
       expect(command).toContain('--pdf-engine-opt=--enable-local-file-access');
       await fsp.writeFile(pdfLocalPath, '%PDF-1.4');
       return { code: 0, stdout: '', stderr: '' };
