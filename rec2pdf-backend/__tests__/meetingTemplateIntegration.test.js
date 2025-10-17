@@ -47,8 +47,12 @@ describe('publishWithTemplateFallback with meeting template', () => {
       expect(env.WORKSPACE_PROFILE_TEMPLATE).toBe(descriptor.path);
       expect(env.WORKSPACE_PROFILE_TEMPLATE_TYPE).toBe('html');
       expect(env.WORKSPACE_PROFILE_TEMPLATE_CSS).toBe(descriptor.cssPath);
+      expect(env.WORKSPACE_PROFILE_TEMPLATE_RESOURCE_PATH).toBe(descriptor.resourcePath);
       expect(command).toContain('verbale_meeting.html');
       expect(command).toContain('verbale_meeting.css');
+      expect(command).toContain('--resource-path');
+      expect(command).toContain('--embed-resources');
+      expect(command).toContain('--pdf-engine-opt=--enable-local-file-access');
       await fsp.writeFile(pdfLocalPath, '%PDF-1.4');
       return { code: 0, stdout: '', stderr: '' };
     });
