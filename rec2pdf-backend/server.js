@@ -151,6 +151,40 @@ const run = (cmd, args, opts = {}) => new Promise((resolve) => {
 
 const zsh = (command, opts = {}) => run('zsh', ['-lc', command], opts);
 
+const buildPandocFallback = (templatePath, templateCssPath, mdArg, pdfArg) => {
+  const safeTemplate = typeof templatePath === 'string' ? templatePath : '';
+  const safeCss = typeof templateCssPath === 'string' ? templateCssPath : '';
+  if (safeTemplate && safeTemplate.toLowerCase().endsWith('.html')) {
+    const templateArg = ` --template ${JSON.stringify(safeTemplate)}`;
+    const cssArg = safeCss ? ` --css ${JSON.stringify(safeCss)}` : '';
+    return [
+      '(',
+      'html_engine="${PREFERRED_HTML_ENGINE:-}";',
+      'if [[ -n "$html_engine" ]] && ! command -v "$html_engine" >/dev/null 2>&1; then',
+      '  html_engine="";',
+      'fi;',
+      'if [[ -z "$html_engine" ]]; then',
+      '  if command -v wkhtmltopdf >/dev/null 2>&1; then',
+      '    html_engine=wkhtmltopdf;',
+      '  elif command -v weasyprint >/dev/null 2>&1; then',
+      '    html_engine=weasyprint;',
+      '  else',
+      '    echo "Nessun motore HTML disponibile (wkhtmltopdf/weasyprint)" >&2;',
+      '    exit 1;',
+      '  fi;',
+      'fi;',
+      `pandoc ${mdArg} --from markdown+yaml_metadata_block --to html${templateArg}${cssArg} --highlight-style=kate --pdf-engine "$html_engine" -o ${pdfArg};`,
+      ')',
+    ].join(' ');
+  }
+  if (safeTemplate && safeTemplate.toLowerCase().endsWith('.tex')) {
+    return `pandoc --from markdown --pdf-engine=xelatex --highlight-style=kate --template ${JSON.stringify(
+      safeTemplate
+    )} -o ${pdfArg} ${mdArg}`;
+  }
+  return `pandoc -o ${pdfArg} ${mdArg}`;
+};
+
 const commandVersion = async (cmd) => {
   try {
     const result = await run(cmd, ['-version']);
@@ -2488,12 +2522,27 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
 
     const profileTemplateCandidate = workspaceProfile?.pdfTemplate || workspaceProfileTemplate || '';
     let profileTemplatePath = '';
+    let profileTemplateCssPath = '';
     if (profileTemplateCandidate) {
       const candidatePath = path.join(TEMPLATES_DIR, profileTemplateCandidate);
       try {
         await fsp.access(candidatePath, fs.constants.R_OK);
         profileTemplatePath = candidatePath;
         out(`📄 Template profilo: ${path.basename(candidatePath)}`, 'publish', 'info');
+        if (candidatePath.toLowerCase().endsWith('.html')) {
+          const cssCandidate = candidatePath.replace(/\.html$/i, '.css');
+          try {
+            await fsp.access(cssCandidate, fs.constants.R_OK);
+            profileTemplateCssPath = cssCandidate;
+            out(`🎨 CSS template: ${path.basename(cssCandidate)}`, 'publish', 'info');
+          } catch (cssError) {
+            out(
+              `ℹ️ CSS template non trovato o non leggibile (${cssCandidate}): ${cssError?.message || cssError}`,
+              'publish',
+              'info'
+            );
+          }
+        }
       } catch (templateError) {
         out(`⚠️ Template profilo non accessibile: ${templateError?.message || templateError}`, 'publish', 'warning');
       }
@@ -2522,10 +2571,14 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
 
       if (!fs.existsSync(pdfLocalPath)) {
         const destDir = path.dirname(mdLocalForPublish);
-        const pandoc = await zsh(
-          `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalForPublish)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalForPublish)}`,
-          publishEnv
+        const fallbackCmdParts = [];
+        fallbackCmdParts.push(`cd ${JSON.stringify(destDir)};`);
+        const mdArg = JSON.stringify(mdLocalForPublish);
+        const pdfArg = JSON.stringify(pdfLocalPath);
+        fallbackCmdParts.push(
+          `command -v pandocPDF >/dev/null && pandocPDF ${mdArg} || ${buildPandocFallback(profileTemplatePath, profileTemplateCssPath, mdArg, pdfArg)}`
         );
+        const pandoc = await zsh(fallbackCmdParts.join(' '), publishEnv);
         if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
           out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
           throw new Error('Generazione PDF fallita');

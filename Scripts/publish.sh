@@ -9,7 +9,6 @@ die() { echo "❌ $*" >&2; exit 1; }
 
 # ----- Dipendenze minime ----- 
 command -v pandoc >/dev/null 2>&1 || die "Pandoc non trovato. Installa Pandoc e riprova."
-command -v xelatex >/dev/null 2>&1 || die "XeLaTeX non trovato. Installa MacTeX/TeXLive e riprova."
 
 
 # ----- Localizzazione script/toolchain ----- 
@@ -38,11 +37,45 @@ COVER_TEX="$TEMPLATE_DIR/cover.tex"
 [[ -f "$HEADER_FOOTER_TEX" ]] || die "Template header_footer.tex non trovato: $HEADER_FOOTER_TEX"
 [[ -f "$COVER_TEX" ]] || die "Template cover.tex non trovato: $COVER_TEX"
 
-# ----- Log esecuzione & Logo ----- 
+# ----- Selezione template profilo -----
+SELECTED_TEMPLATE="$DEFAULT_TEX"
+SELECTED_CSS=""
+TEMPLATE_KIND="tex"
+HTML_ENGINE=""
+
+if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
+  PROFILE_TEMPLATE_CANDIDATE="$WORKSPACE_PROFILE_TEMPLATE"
+  if [[ ! -f "$PROFILE_TEMPLATE_CANDIDATE" ]]; then
+    echo "⚠️  Template profilo non trovato: $PROFILE_TEMPLATE_CANDIDATE (uso default)"
+  else
+    case "$PROFILE_TEMPLATE_CANDIDATE" in
+      *.tex|*.TEX)
+        SELECTED_TEMPLATE="$PROFILE_TEMPLATE_CANDIDATE"
+        TEMPLATE_KIND="tex"
+        ;;
+      *.html|*.HTML)
+        SELECTED_TEMPLATE="$PROFILE_TEMPLATE_CANDIDATE"
+        TEMPLATE_KIND="html"
+        CSS_CANDIDATE="${PROFILE_TEMPLATE_CANDIDATE%.*}.css"
+        if [[ -f "$CSS_CANDIDATE" ]]; then
+          SELECTED_CSS="$CSS_CANDIDATE"
+        fi
+        ;;
+      *)
+        echo "⚠️  Estensione template non supportata ($PROFILE_TEMPLATE_CANDIDATE), uso default."
+        ;;
+    esac
+  fi
+fi
+
+# ----- Log esecuzione & Logo -----
 echo "🚀 Generazione PDF da: $INPUT_MD"
-echo "📌 Template: $DEFAULT_TEX"
-echo "📌 Include header: $HEADER_FOOTER_TEX"
-echo "📌 Include cover : $COVER_TEX"
+echo "📌 Template selezionato: $SELECTED_TEMPLATE"
+[[ -n "$SELECTED_CSS" ]] && echo "📌 CSS associato: $SELECTED_CSS"
+if [[ "$TEMPLATE_KIND" == "tex" ]]; then
+  echo "📌 Include header: $HEADER_FOOTER_TEX"
+  echo "📌 Include cover : $COVER_TEX"
+fi
 
 # Seleziona il logo: custom se disponibile, altrimenti default 
 CUSTOM_LOGO_PATH="${CUSTOM_PDF_LOGO:-}"
@@ -56,7 +89,34 @@ fi
 [[ -f "$LOGO" ]] || die "Logo PDF non trovato: $LOGO"
 
 
-# ----- DRY RUN ----- 
+# Risolvi eventuale motore HTML prima del dry-run
+if [[ "$TEMPLATE_KIND" == "html" ]]; then
+  resolve_html_engine() {
+    local preferred="${PREFERRED_HTML_ENGINE:-}"
+    local resolved=""
+    if [[ -n "$preferred" ]]; then
+      if command -v "$preferred" >/dev/null 2>&1; then
+        resolved="$preferred"
+      else
+        echo "⚠️  Motore HTML preferito non trovato: $preferred"
+      fi
+    fi
+    if [[ -z "$resolved" ]]; then
+      if command -v wkhtmltopdf >/dev/null 2>&1; then
+        resolved="wkhtmltopdf"
+      elif command -v weasyprint >/dev/null 2>&1; then
+        resolved="weasyprint"
+      else
+        die "Nessun motore HTML disponibile (wkhtmltopdf/weasyprint)."
+      fi
+    fi
+    HTML_ENGINE="$resolved"
+  }
+  resolve_html_engine
+  unset -f resolve_html_engine
+fi
+
+# ----- DRY RUN -----
 if [[ "${2:-}" == "--dry-run" ]]; then
   cat <<INFO
 🔎 DRY RUN
@@ -64,35 +124,41 @@ REPO_ROOT     = $REPO_ROOT
 TOOL_ROOT     = $TOOL_ROOT
 TEMPLATE_DIR  = $TEMPLATE_DIR
 DEFAULT_TEX   = $DEFAULT_TEX
+SELECTED_TPL  = $SELECTED_TEMPLATE
+SELECTED_CSS  = ${SELECTED_CSS:-}
+TEMPLATE_KIND = $TEMPLATE_KIND
 HEADER_FOOTER = $HEADER_FOOTER_TEX
 COVER_TEX     = $COVER_TEX
 LOGO          = $LOGO
 INPUT_MD      = $INPUT_MD
 OUTPUT_PDF    = $OUTPUT_PDF
+HTML_ENGINE   = ${HTML_ENGINE:-}
 INFO
   exit 0
 fi
 
 # ----- Font check (soft) ----- 
-if command -v fc-list >/dev/null 2>&1; then
-  if fc-list | grep -qi "TeX Gyre Termes"; then
-    echo "✅ Font TeX Gyre rilevati (Termes/Heros)"
+if [[ "$TEMPLATE_KIND" == "tex" ]]; then
+  if command -v fc-list >/dev/null 2>&1; then
+    if fc-list | grep -qi "TeX Gyre Termes"; then
+      echo "✅ Font TeX Gyre rilevati (Termes/Heros)"
+    else
+      echo "⚠️  Font TeX Gyre non rilevati: il template usa TeX Gyre Termes/Heros."
+      echo "   Se la compilazione fallisce, installa:"
+      echo "   brew install --cask font-tex-gyre-termes font-tex-gyre-heros"
+    fi
   else
-    echo "⚠️  Font TeX Gyre non rilevati: il template usa TeX Gyre Termes/Heros."
-    echo "   Se la compilazione fallisce, installa:"
-    echo "   brew install --cask font-tex-gyre-termes font-tex-gyre-heros"
+    echo "ℹ️  'fc-list' non disponibile: salto il controllo font."
   fi
-else
-  echo "ℹ️  'fc-list' non disponibile: salto il controllo font."
 fi
 
 # --- DEBUG/VERBOSE opzionale (abilitato da PPUBD) -------------------------
-if [[ -n "${BLD_PUBLISH_DEBUG:-}" ]]; then
+if [[ -n "${BLD_PUBLISH_DEBUG:-}" && "$TEMPLATE_KIND" == "tex" ]]; then
   set -x
   DEBUG_TEX="${OUTPUT_PDF%.pdf}.debug.tex"
   pandoc "$INPUT_MD" \
     --from=markdown \
-    --template="$DEFAULT_TEX" \
+    --template="$SELECTED_TEMPLATE" \
     --include-in-header="$HEADER_FOOTER_TEX" \
     --include-before-body="$COVER_TEX" \
     --variable logo="$LOGO" \
@@ -100,18 +166,40 @@ if [[ -n "${BLD_PUBLISH_DEBUG:-}" ]]; then
   echo "📝 TEX intermedio scritto in: $DEBUG_TEX"
   set +x
 fi
-# -------------------------------------------------------------------------- 
+# --------------------------------------------------------------------------
 
-# ----- Comando Pandoc ----- 
-pandoc "$INPUT_MD" \
-  --from markdown \
-  --pdf-engine=xelatex \
-  --highlight-style=kate \
-  --template "$DEFAULT_TEX" \
-  --include-in-header "$HEADER_FOOTER_TEX" \
-  --include-before-body "$COVER_TEX" \
-  --variable logo="$LOGO" \
-  -o "$OUTPUT_PDF" || die "Errore durante la generazione del PDF"
+if [[ "$TEMPLATE_KIND" == "tex" ]]; then
+  command -v xelatex >/dev/null 2>&1 || die "XeLaTeX non trovato. Installa MacTeX/TeXLive e riprova."
+else
+  echo "🛠️  Motore HTML selezionato: $HTML_ENGINE"
+fi
+
+# ----- Comando Pandoc -----
+if [[ "$TEMPLATE_KIND" == "tex" ]]; then
+  pandoc_args=("$INPUT_MD"
+    --from markdown
+    --pdf-engine=xelatex
+    --highlight-style=kate
+    --template "$SELECTED_TEMPLATE"
+    --include-in-header "$HEADER_FOOTER_TEX"
+    --include-before-body "$COVER_TEX"
+    --variable "logo=$LOGO"
+    -o "$OUTPUT_PDF")
+else
+  pandoc_args=("$INPUT_MD"
+    --from markdown+yaml_metadata_block
+    --to html
+    --template "$SELECTED_TEMPLATE"
+    --highlight-style=kate)
+  if [[ -n "$SELECTED_CSS" ]]; then
+    pandoc_args+=(--css "$SELECTED_CSS")
+  fi
+  pandoc_args+=(--metadata "logo=$LOGO"
+    --pdf-engine "$HTML_ENGINE"
+    -o "$OUTPUT_PDF")
+fi
+
+pandoc "${pandoc_args[@]}" || die "Errore durante la generazione del PDF"
 
 # ----- Esito ----- 
 [[ -f "$OUTPUT_PDF" ]] && echo "✅ PDF generato con successo: $OUTPUT_PDF"
