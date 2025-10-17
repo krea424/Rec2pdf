@@ -228,6 +228,22 @@ Per personalizzare:
 2. Esegui `Scripts/publish.sh path/al/documento.md` per testare localmente (richiede `pandoc` + `xelatex`).
 3. Imposta `CUSTOM_PDF_LOGO` o carica un logo dal frontend per sovrascrivere l'asset di default (`assets/thinkDOC.pdf`).
 
+### Template meeting HTML (`verbale_meeting`)
+Oltre ai layout LaTeX è disponibile un template HTML pensato per i verbali di riunione.
+
+1. **Installa un motore HTML → PDF** se non già presente. Il fallback automatico usa `wkhtmltopdf` o `weasyprint`. Su sistemi Debian/Ubuntu è sufficiente `sudo apt-get install -y wkhtmltopdf` oppure `sudo apt-get install -y weasyprint`.
+2. **Abilita il template** impostando l'ambiente prima di lanciare il backend/pipeline:
+   ```bash
+   export WORKSPACE_PROFILE_TEMPLATE="$(pwd)/Templates/verbale_meeting.html"
+   export WORKSPACE_PROFILE_TEMPLATE_TYPE=html
+   export WORKSPACE_PROFILE_TEMPLATE_CSS="$(pwd)/Templates/verbale_meeting.css"
+   ```
+   In alternativa seleziona il template dall'interfaccia Workspace Profile.
+3. **Usa il prompt dedicato** `prompt_meeting_minutes` (Chief of Staff) per generare il contenuto coerente con il layout.
+4. **Prepara il front matter YAML** includendo `pdfRules.layout: verbale_meeting` (o il campo `layout`) e tre array strutturati: `action_items` (oggetti con description, assignee.{name,role}, due_date), `key_points` (stringhe) e `transcript` (blocchi con speaker, role, timestamp e paragraphs). Un esempio completo è disponibile in [`docs/sample_verbale_meeting.md`](docs/sample_verbale_meeting.md) e nel quickstart [`docs/meeting_template_quickstart.md`](docs/meeting_template_quickstart.md).
+
+Il corpo del documento dovrebbe rispettare le sezioni: **Riepilogo esecutivo**, **Decisioni e approvazioni**, **Azioni assegnate**, **Punti chiave** e **Trascrizione integrale**, così da sfruttare al meglio i componenti del template HTML.
+
 ## Struttura del repository
 ```text
 Rec2pdf/

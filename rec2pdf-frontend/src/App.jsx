@@ -155,7 +155,7 @@ const normalizeStructureMeta = (structure) => {
   };
 };
 
-const normalizePromptEntry = (prompt) => {
+export const normalizePromptEntry = (prompt) => {
   if (!prompt || typeof prompt !== 'object') {
     return null;
   }
