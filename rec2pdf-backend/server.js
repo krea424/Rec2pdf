@@ -225,6 +225,10 @@ const SUPPORTED_TEMPLATE_EXTENSIONS = new Map([
   ['.tex', { type: 'tex' }],
 ]);
 
+const DEFAULT_LAYOUT_TEMPLATE_MAP = new Map([
+  ['verbale_meeting', 'verbale_meeting.html'],
+]);
+
 const sanitizeTemplateRequestName = (name) => {
   if (!name || typeof name !== 'string') return '';
   const normalized = name.replace(/\\/g, '/').trim();
@@ -448,6 +452,52 @@ const buildTemplateEnv = (descriptor) => {
     env.WORKSPACE_PROFILE_TEMPLATE_RESOURCE_PATH = descriptor.resourcePath;
   }
   return env;
+};
+
+const resolvePromptTemplateDescriptor = async (prompt, { logger } = {}) => {
+  if (!prompt || typeof prompt !== 'object') {
+    return null;
+  }
+  const pdfRules = prompt.pdfRules && typeof prompt.pdfRules === 'object' ? prompt.pdfRules : null;
+  if (!pdfRules) {
+    return null;
+  }
+
+  let candidate = '';
+  if (typeof pdfRules.template === 'string' && pdfRules.template.trim()) {
+    candidate = pdfRules.template.trim();
+  }
+  if (!candidate && typeof pdfRules.layout === 'string' && pdfRules.layout.trim()) {
+    const normalizedLayout = pdfRules.layout.trim().toLowerCase();
+    if (DEFAULT_LAYOUT_TEMPLATE_MAP.has(normalizedLayout)) {
+      candidate = DEFAULT_LAYOUT_TEMPLATE_MAP.get(normalizedLayout);
+    }
+  }
+
+  if (!candidate) {
+    return null;
+  }
+
+  try {
+    const descriptor = await resolveTemplateDescriptor(candidate);
+    if (typeof logger === 'function') {
+      logger(`📄 Template prompt: ${descriptor.fileName}`, 'publish', 'info');
+      if (descriptor.cssFileName) {
+        logger(`🎨 CSS template prompt: ${descriptor.cssFileName}`, 'publish', 'info');
+      }
+      if (descriptor.engine) {
+        logger(`⚙️ Motore HTML prompt: ${descriptor.engine}`, 'publish', 'info');
+      }
+    }
+    return descriptor;
+  } catch (error) {
+    if (typeof logger === 'function') {
+      const reason =
+        error instanceof TemplateResolutionError ? error.userMessage : error?.message || error;
+      logger(`⚠️ Template prompt non accessibile: ${reason}`, 'publish', 'warning');
+    }
+    return null;
+  }
 };
 
 const unwrapEnvOptions = (envOptions) => {
@@ -2974,6 +3024,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
 
     const profileTemplateCandidate = workspaceProfile?.pdfTemplate || workspaceProfileTemplate || '';
     let profileTemplateDescriptor = null;
+    let promptTemplateDescriptor = null;
     if (profileTemplateCandidate) {
       try {
         profileTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateCandidate);
@@ -2993,10 +3044,16 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       }
     }
 
+    if (!profileTemplateDescriptor && selectedPrompt) {
+      promptTemplateDescriptor = await resolvePromptTemplateDescriptor(selectedPrompt, { logger: out });
+    }
+
+    const activeTemplateDescriptor = profileTemplateDescriptor || promptTemplateDescriptor;
+
     const publishEnv = buildEnvOptions(
       promptEnv,
       customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null,
-      profileTemplateDescriptor ? buildTemplateEnv(profileTemplateDescriptor) : null
+      activeTemplateDescriptor ? buildTemplateEnv(activeTemplateDescriptor) : null
     );
 
     let mdLocalForPublish = '';
@@ -3011,7 +3068,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         mdLocalPath: mdLocalForPublish,
         pdfLocalPath,
         publishEnv,
-        templateInfo: profileTemplateDescriptor,
+        templateInfo: activeTemplateDescriptor,
         logger: out,
       });
 
@@ -4032,4 +4089,6 @@ module.exports = {
   resolveTemplateDescriptor,
   TemplateResolutionError,
   publishWithTemplateFallback,
+  resolvePromptTemplateDescriptor,
+  DEFAULT_LAYOUT_TEMPLATE_MAP,
 };
