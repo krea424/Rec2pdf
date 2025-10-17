@@ -300,6 +300,9 @@ const normalizeWorkspaceProfile = (workspaceId, profile) => {
     destDir: profile.destDir || '',
     promptId: profile.promptId || '',
     pdfTemplate: profile.pdfTemplate || '',
+    pdfTemplateType: profile.pdfTemplateType || profile.templateType || '',
+    pdfTemplateCss:
+      profile.pdfTemplateCss || profile.pdfTemplateCssFileName || profile.templateCss || '',
     pdfLogoPath: profile.pdfLogoPath || '',
     pdfLogo: profile.pdfLogo || null,
     logoDownloadPath:
@@ -427,6 +430,16 @@ const appendWorkspaceProfileDetails = (
   const profileTemplate = String(profile?.pdfTemplate || '').trim();
   if (profileTemplate && !formData.has('workspaceProfileTemplate')) {
     formData.append('workspaceProfileTemplate', profileTemplate);
+  }
+
+  const profileTemplateType = String(profile?.pdfTemplateType || '').trim();
+  if (profileTemplateType && !formData.has('workspaceProfileTemplateType')) {
+    formData.append('workspaceProfileTemplateType', profileTemplateType);
+  }
+
+  const profileTemplateCss = String(profile?.pdfTemplateCss || '').trim();
+  if (profileTemplateCss && !formData.has('workspaceProfileTemplateCss')) {
+    formData.append('workspaceProfileTemplateCss', profileTemplateCss);
   }
 
   if (descriptor?.path && !formData.has('workspaceProfileLogoPath')) {
@@ -797,6 +810,9 @@ function AppContent(){
   });
   const [prompts, setPrompts] = useState([]);
   const [promptLoading, setPromptLoading] = useState(false);
+  const [pdfTemplates, setPdfTemplates] = useState([]);
+  const [pdfTemplatesLoading, setPdfTemplatesLoading] = useState(false);
+  const [pdfTemplatesError, setPdfTemplatesError] = useState(null);
   const [promptState, setPromptState] = useState(() => {
     if (typeof window === 'undefined') {
       return buildPromptState();
@@ -1386,6 +1402,51 @@ function AppContent(){
     [requestSignedFileUrl]
   );
 
+  const fetchPdfTemplates = useCallback(
+    async (options = {}) => {
+      const normalized = normalizeBackendUrlValue(options.backendUrlOverride || backendUrl);
+      if (!normalized) {
+        setPdfTemplates([]);
+        if (!options?.silent) {
+          setPdfTemplatesError('Backend non configurato');
+        } else {
+          setPdfTemplatesError(null);
+        }
+        return { ok: false, status: 0, message: 'Backend non configurato', skipped: true };
+      }
+
+      setPdfTemplatesLoading(true);
+      if (!options?.silent) {
+        setPdfTemplatesError(null);
+      }
+
+      try {
+        const result = await fetchBodyWithAuth(`${normalized}/api/templates`, { method: 'GET' });
+        if (result.ok && Array.isArray(result.data?.templates)) {
+          setPdfTemplates(result.data.templates);
+          setPdfTemplatesError(null);
+        } else {
+          const message = result.data?.message || result.raw || 'Impossibile caricare i template.';
+          if (!options?.silent) {
+            setPdfTemplatesError(message);
+            pushLogs([`⚠️ API template: ${message}`]);
+          }
+        }
+        return result;
+      } catch (error) {
+        const message = error?.message || String(error);
+        if (!options?.silent) {
+          setPdfTemplatesError(message);
+          pushLogs([`⚠️ Errore template: ${message}`]);
+        }
+        return { ok: false, status: 0, error };
+      } finally {
+        setPdfTemplatesLoading(false);
+      }
+    },
+    [backendUrl, fetchBodyWithAuth, pushLogs]
+  );
+
   const fetchPrompts = useCallback(
     async (options = {}) => {
       const normalized = normalizeBackendUrlValue(options.backendUrlOverride || backendUrl);
@@ -1431,6 +1492,18 @@ function AppContent(){
     }
     fetchPrompts({ silent: true });
   }, [backendUrl, canCallAuthenticatedApis, fetchPrompts, sessionChecked]);
+
+  useEffect(() => {
+    if (!backendUrl || !sessionChecked) {
+      setPdfTemplates([]);
+      setPdfTemplatesError(null);
+      return;
+    }
+    if (!canCallAuthenticatedApis) {
+      return;
+    }
+    fetchPdfTemplates({ silent: true });
+  }, [backendUrl, canCallAuthenticatedApis, fetchPdfTemplates, sessionChecked]);
 
   const fetchWorkspaces = useCallback(
     async (options = {}) => {
@@ -1780,6 +1853,10 @@ function AppContent(){
     fetchWorkspaces({ silent: false });
   }, [fetchWorkspaces]);
 
+  const refreshPdfTemplates = useCallback(() => {
+    fetchPdfTemplates({ silent: false });
+  }, [fetchPdfTemplates]);
+
   const createWorkspaceProfile = useCallback(
     async (workspaceId, profile) => {
       const targetWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
@@ -1803,6 +1880,8 @@ function AppContent(){
         formData.set('destDir', String(profile?.destDir || '').trim());
         formData.set('promptId', String(profile?.promptId || '').trim());
         formData.set('pdfTemplate', String(profile?.pdfTemplate || '').trim());
+        formData.set('pdfTemplateType', String(profile?.pdfTemplateType || '').trim());
+        formData.set('pdfTemplateCss', String(profile?.pdfTemplateCss || '').trim());
         if (profile?.pdfLogo instanceof File || profile?.pdfLogo instanceof Blob) {
           const file = profile.pdfLogo;
           const fileName = typeof file.name === 'string' && file.name ? file.name : 'logo.pdf';
@@ -1887,6 +1966,8 @@ function AppContent(){
         formData.set('destDir', String(profile?.destDir || '').trim());
         formData.set('promptId', String(profile?.promptId || '').trim());
         formData.set('pdfTemplate', String(profile?.pdfTemplate || '').trim());
+        formData.set('pdfTemplateType', String(profile?.pdfTemplateType || '').trim());
+        formData.set('pdfTemplateCss', String(profile?.pdfTemplateCss || '').trim());
         if (profile?.removePdfLogo) {
           formData.set('removePdfLogo', '1');
         }
@@ -3790,9 +3871,13 @@ function AppContent(){
     secondsCap,
     setSecondsCap,
     handleRefreshWorkspaces,
+    refreshPdfTemplates,
     createWorkspaceProfile,
     updateWorkspaceProfile,
     deleteWorkspaceProfile,
+    pdfTemplates,
+    pdfTemplatesLoading,
+    pdfTemplatesError,
     workspaceLoading,
     setWorkspaceBuilderOpen,
     workspaceBuilderOpen,
