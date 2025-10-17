@@ -162,10 +162,12 @@ const buildPandocFallback = (templateInfo, mdArg, pdfArg) => {
   const inferredType = info?.type || (templatePath ? path.extname(templatePath).replace(/^\./, '') : '');
   const templateType = inferredType ? inferredType.toLowerCase() : '';
   const cssPath = info?.cssPath && typeof info.cssPath === 'string' ? info.cssPath : '';
+  const resourcePath = info?.resourcePath && typeof info.resourcePath === 'string' ? info.resourcePath : '';
 
   if (templatePath && templateType === 'html') {
     const templateArg = ` --template ${JSON.stringify(templatePath)}`;
     const cssArg = cssPath ? ` --css ${JSON.stringify(cssPath)}` : '';
+    const resourceArg = resourcePath ? ` --resource-path ${JSON.stringify(resourcePath)}` : '';
     return [
       '(',
       'html_engine="${WORKSPACE_PROFILE_TEMPLATE_ENGINE:-${PREFERRED_HTML_ENGINE:-}}";',
@@ -182,7 +184,11 @@ const buildPandocFallback = (templateInfo, mdArg, pdfArg) => {
       '    exit 1;',
       '  fi;',
       'fi;',
-      `pandoc ${mdArg} --from markdown+yaml_metadata_block --to html${templateArg}${cssArg} --highlight-style=kate --pdf-engine "$html_engine" -o ${pdfArg};`,
+      'extra_opts=();',
+      'if [[ "$html_engine" == "wkhtmltopdf" ]]; then',
+      '  extra_opts+=(--pdf-engine-opt=--enable-local-file-access);',
+      'fi;',
+      `pandoc ${mdArg} --from markdown+yaml_metadata_block --to html${templateArg}${cssArg}${resourceArg} --highlight-style=kate --pdf-engine "$html_engine" "${extra_opts[@]}" -o ${pdfArg};`,
       ')',
     ].join(' ');
   }
@@ -344,10 +350,31 @@ const resolveTemplateDescriptor = async (templateName) => {
     }
   }
 
+  const templateDir = path.dirname(absolutePath);
+  const baseName = path.basename(absolutePath, ext);
+  const resourceCandidates = [templateDir, TEMPLATES_DIR];
+  if (cssPath) {
+    resourceCandidates.push(path.dirname(cssPath));
+  }
+  if (extensionInfo.type === 'html') {
+    resourceCandidates.push(path.join(templateDir, baseName));
+  }
+  const resourcePaths = resourceCandidates
+    .map((candidate) => candidate && candidate.trim())
+    .filter((candidate, index, arr) => candidate && arr.indexOf(candidate) === index)
+    .filter((candidate) => {
+      try {
+        return fs.existsSync(candidate) && fs.statSync(candidate).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+  const resourcePath = resourcePaths.join(path.delimiter);
+
   const descriptor = {
     path: absolutePath,
     fileName: path.relative(TEMPLATES_DIR, absolutePath),
-    baseName: path.basename(absolutePath, ext),
+    baseName,
     type: extensionInfo.type,
     cssPath,
     cssFileName: cssPath ? path.relative(TEMPLATES_DIR, cssPath) : '',
@@ -355,6 +382,8 @@ const resolveTemplateDescriptor = async (templateName) => {
     engine: typeof metadata.engine === 'string' ? metadata.engine.trim() : '',
     name: typeof metadata.name === 'string' && metadata.name.trim() ? metadata.name.trim() : '',
     metadata,
+    resourcePaths,
+    resourcePath,
   };
 
   if (!descriptor.name) {
@@ -415,6 +444,9 @@ const buildTemplateEnv = (descriptor) => {
   if (descriptor.engine) {
     env.WORKSPACE_PROFILE_TEMPLATE_ENGINE = descriptor.engine;
   }
+  if (descriptor.resourcePath) {
+    env.WORKSPACE_PROFILE_TEMPLATE_RESOURCE_PATH = descriptor.resourcePath;
+  }
   return env;
 };
 
@@ -437,12 +469,18 @@ const templateInfoFromEnv = (envOptions) => {
   const typeRaw = typeof env.WORKSPACE_PROFILE_TEMPLATE_TYPE === 'string' ? env.WORKSPACE_PROFILE_TEMPLATE_TYPE : '';
   const cssPath = typeof env.WORKSPACE_PROFILE_TEMPLATE_CSS === 'string' ? env.WORKSPACE_PROFILE_TEMPLATE_CSS : '';
   const engine = typeof env.WORKSPACE_PROFILE_TEMPLATE_ENGINE === 'string' ? env.WORKSPACE_PROFILE_TEMPLATE_ENGINE : '';
+  const resourcePath =
+    typeof env.WORKSPACE_PROFILE_TEMPLATE_RESOURCE_PATH === 'string'
+      ? env.WORKSPACE_PROFILE_TEMPLATE_RESOURCE_PATH
+      : '';
   const inferredType = typeRaw || path.extname(templatePath).replace(/^\./, '');
   return {
     path: templatePath,
     type: inferredType ? inferredType.toLowerCase() : '',
     cssPath,
     engine,
+    resourcePath,
+    resourcePaths: resourcePath ? resourcePath.split(path.delimiter).filter(Boolean) : [],
   };
 };
 
