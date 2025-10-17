@@ -151,15 +151,24 @@ const run = (cmd, args, opts = {}) => new Promise((resolve) => {
 
 const zsh = (command, opts = {}) => run('zsh', ['-lc', command], opts);
 
-const buildPandocFallback = (templatePath, templateCssPath, mdArg, pdfArg) => {
-  const safeTemplate = typeof templatePath === 'string' ? templatePath : '';
-  const safeCss = typeof templateCssPath === 'string' ? templateCssPath : '';
-  if (safeTemplate && safeTemplate.toLowerCase().endsWith('.html')) {
-    const templateArg = ` --template ${JSON.stringify(safeTemplate)}`;
-    const cssArg = safeCss ? ` --css ${JSON.stringify(safeCss)}` : '';
+const buildPandocFallback = (templateInfo, mdArg, pdfArg) => {
+  const info =
+    templateInfo && typeof templateInfo === 'object'
+      ? templateInfo
+      : typeof templateInfo === 'string'
+        ? { path: templateInfo }
+        : null;
+  const templatePath = info?.path && typeof info.path === 'string' ? info.path : '';
+  const inferredType = info?.type || (templatePath ? path.extname(templatePath).replace(/^\./, '') : '');
+  const templateType = inferredType ? inferredType.toLowerCase() : '';
+  const cssPath = info?.cssPath && typeof info.cssPath === 'string' ? info.cssPath : '';
+
+  if (templatePath && templateType === 'html') {
+    const templateArg = ` --template ${JSON.stringify(templatePath)}`;
+    const cssArg = cssPath ? ` --css ${JSON.stringify(cssPath)}` : '';
     return [
       '(',
-      'html_engine="${PREFERRED_HTML_ENGINE:-}";',
+      'html_engine="${WORKSPACE_PROFILE_TEMPLATE_ENGINE:-${PREFERRED_HTML_ENGINE:-}}";',
       'if [[ -n "$html_engine" ]] && ! command -v "$html_engine" >/dev/null 2>&1; then',
       '  html_engine="";',
       'fi;',
@@ -177,9 +186,9 @@ const buildPandocFallback = (templatePath, templateCssPath, mdArg, pdfArg) => {
       ')',
     ].join(' ');
   }
-  if (safeTemplate && safeTemplate.toLowerCase().endsWith('.tex')) {
+  if (templatePath && templateType === 'tex') {
     return `pandoc --from markdown --pdf-engine=xelatex --highlight-style=kate --template ${JSON.stringify(
-      safeTemplate
+      templatePath
     )} -o ${pdfArg} ${mdArg}`;
   }
   return `pandoc -o ${pdfArg} ${mdArg}`;
@@ -193,6 +202,296 @@ const commandVersion = async (cmd) => {
   } catch {
     return { ok: false, detail: 'not found' };
   }
+};
+
+class TemplateResolutionError extends Error {
+  constructor(code, message, options = {}) {
+    super(message);
+    this.name = 'TemplateResolutionError';
+    this.code = code || 'template_error';
+    this.templateName = options.templateName || '';
+    this.userMessage = options.userMessage || message;
+  }
+}
+
+const SUPPORTED_TEMPLATE_EXTENSIONS = new Map([
+  ['.html', { type: 'html' }],
+  ['.tex', { type: 'tex' }],
+]);
+
+const sanitizeTemplateRequestName = (name) => {
+  if (!name || typeof name !== 'string') return '';
+  const normalized = name.replace(/\\/g, '/').trim();
+  if (!normalized || normalized.includes('..')) {
+    throw new TemplateResolutionError('invalid_name', 'Nome template non valido', {
+      templateName: name,
+      userMessage: 'Il template selezionato non è valido.',
+    });
+  }
+  return normalized;
+};
+
+const readTemplateCommentDescription = async (filePath, type) => {
+  try {
+    const fileHandle = await fsp.open(filePath, 'r');
+    try {
+      const { buffer, bytesRead } = await fileHandle.read({ length: 8192, position: 0 });
+      const snippet = buffer.toString('utf8', 0, bytesRead);
+      if (type === 'html') {
+        const match = snippet.match(/<!--([\s\S]*?)-->/);
+        if (match && match[1]) {
+          const description = match[1].replace(/\s+/g, ' ').trim();
+          if (description) return description;
+        }
+      }
+      if (type === 'tex') {
+        const lines = snippet.split(/\r?\n/);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          if (trimmed.startsWith('%')) {
+            const description = trimmed.replace(/^%+\s?/, '').trim();
+            if (description) return description;
+          }
+          if (!trimmed.startsWith('%')) break;
+        }
+      }
+    } finally {
+      await fileHandle.close();
+    }
+  } catch {
+    /* ignore comment extraction errors */
+  }
+  return '';
+};
+
+const loadTemplateSidecarMetadata = async (templatePath, ext) => {
+  const jsonPath = templatePath.replace(new RegExp(`${ext.replace('.', '\\.')}$`, 'i'), '.json');
+  try {
+    const data = await fsp.readFile(jsonPath, 'utf8');
+    const metadata = JSON.parse(data);
+    if (metadata && typeof metadata === 'object') {
+      return metadata;
+    }
+  } catch (error) {
+    if (error && error.code !== 'ENOENT') {
+      console.warn('⚠️  Lettura metadata template fallita:', error.message || error);
+    }
+  }
+  return {};
+};
+
+const resolveTemplateDescriptor = async (templateName) => {
+  const normalizedName = sanitizeTemplateRequestName(templateName);
+  const absolutePath = path.resolve(TEMPLATES_DIR, normalizedName);
+  if (!absolutePath.startsWith(TEMPLATES_DIR)) {
+    throw new TemplateResolutionError('invalid_path', 'Percorso template non consentito', {
+      templateName: templateName,
+      userMessage: 'Il template selezionato non è valido.',
+    });
+  }
+
+  const ext = path.extname(absolutePath).toLowerCase();
+  const extensionInfo = SUPPORTED_TEMPLATE_EXTENSIONS.get(ext);
+  if (!extensionInfo) {
+    throw new TemplateResolutionError('unsupported_extension', `Estensione template non supportata: ${ext || 'nessuna'}`, {
+      templateName: templateName,
+      userMessage: `Il template ${templateName} ha un formato non supportato.`,
+    });
+  }
+
+  let stats;
+  try {
+    stats = await fsp.stat(absolutePath);
+  } catch (error) {
+    throw new TemplateResolutionError('not_found', `Template non trovato: ${templateName}`, {
+      templateName: templateName,
+      userMessage: `Il template ${templateName} non esiste: ${error?.message || error}`,
+    });
+  }
+
+  if (!stats.isFile()) {
+    throw new TemplateResolutionError('not_file', `Il template ${templateName} non è un file`, {
+      templateName: templateName,
+      userMessage: `Il template ${templateName} non è un file valido.`,
+    });
+  }
+
+  try {
+    await fsp.access(absolutePath, fs.constants.R_OK);
+  } catch (error) {
+    throw new TemplateResolutionError('unreadable', `Template non leggibile: ${templateName}`, {
+      templateName: templateName,
+      userMessage: `Il template ${templateName} non è leggibile: ${error?.message || error}`,
+    });
+  }
+
+  const metadata = await loadTemplateSidecarMetadata(absolutePath, ext);
+  const descriptionFromMetadata = typeof metadata.description === 'string' ? metadata.description.trim() : '';
+  const descriptionFromComment = await readTemplateCommentDescription(absolutePath, extensionInfo.type);
+  const cssCandidate =
+    extensionInfo.type === 'html' ? absolutePath.replace(/\.html$/i, '.css') : '';
+  let cssPath = '';
+  if (cssCandidate) {
+    try {
+      const cssStats = await fsp.stat(cssCandidate);
+      if (cssStats.isFile()) {
+        await fsp.access(cssCandidate, fs.constants.R_OK);
+        cssPath = cssCandidate;
+      }
+    } catch {
+      cssPath = '';
+    }
+  }
+
+  const descriptor = {
+    path: absolutePath,
+    fileName: path.relative(TEMPLATES_DIR, absolutePath),
+    baseName: path.basename(absolutePath, ext),
+    type: extensionInfo.type,
+    cssPath,
+    cssFileName: cssPath ? path.relative(TEMPLATES_DIR, cssPath) : '',
+    description: descriptionFromMetadata || descriptionFromComment || '',
+    engine: typeof metadata.engine === 'string' ? metadata.engine.trim() : '',
+    name: typeof metadata.name === 'string' && metadata.name.trim() ? metadata.name.trim() : '',
+    metadata,
+  };
+
+  if (!descriptor.name) {
+    descriptor.name = descriptor.baseName;
+  }
+
+  return descriptor;
+};
+
+const listTemplatesMetadata = async () => {
+  try {
+    const dirEntries = await fsp.readdir(TEMPLATES_DIR, { withFileTypes: true });
+    const templates = [];
+    for (const entry of dirEntries) {
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!SUPPORTED_TEMPLATE_EXTENSIONS.has(ext)) continue;
+      try {
+        const descriptor = await resolveTemplateDescriptor(entry.name);
+        templates.push({
+          name: descriptor.name,
+          fileName: descriptor.fileName,
+          type: descriptor.type,
+          hasCss: !!descriptor.cssFileName,
+          cssFileName: descriptor.cssFileName,
+          description: descriptor.description,
+          engine: descriptor.engine,
+        });
+      } catch (error) {
+        if (error instanceof TemplateResolutionError) {
+          console.warn(`⚠️  Template ignorato (${entry.name}): ${error.userMessage}`);
+        } else {
+          console.warn(`⚠️  Template ignorato (${entry.name}):`, error?.message || error);
+        }
+      }
+    }
+    templates.sort((a, b) => a.name.localeCompare(b.name));
+    return templates;
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+};
+
+const buildTemplateEnv = (descriptor) => {
+  if (!descriptor || typeof descriptor !== 'object') {
+    return null;
+  }
+  const env = {
+    WORKSPACE_PROFILE_TEMPLATE: descriptor.path,
+    WORKSPACE_PROFILE_TEMPLATE_TYPE: descriptor.type,
+  };
+  if (descriptor.cssPath) {
+    env.WORKSPACE_PROFILE_TEMPLATE_CSS = descriptor.cssPath;
+  }
+  if (descriptor.engine) {
+    env.WORKSPACE_PROFILE_TEMPLATE_ENGINE = descriptor.engine;
+  }
+  return env;
+};
+
+const unwrapEnvOptions = (envOptions) => {
+  if (!envOptions || typeof envOptions !== 'object') {
+    return {};
+  }
+  if (envOptions.env && typeof envOptions.env === 'object') {
+    return envOptions.env;
+  }
+  return envOptions;
+};
+
+const templateInfoFromEnv = (envOptions) => {
+  const env = unwrapEnvOptions(envOptions);
+  const templatePath = typeof env.WORKSPACE_PROFILE_TEMPLATE === 'string' ? env.WORKSPACE_PROFILE_TEMPLATE : '';
+  if (!templatePath) {
+    return null;
+  }
+  const typeRaw = typeof env.WORKSPACE_PROFILE_TEMPLATE_TYPE === 'string' ? env.WORKSPACE_PROFILE_TEMPLATE_TYPE : '';
+  const cssPath = typeof env.WORKSPACE_PROFILE_TEMPLATE_CSS === 'string' ? env.WORKSPACE_PROFILE_TEMPLATE_CSS : '';
+  const engine = typeof env.WORKSPACE_PROFILE_TEMPLATE_ENGINE === 'string' ? env.WORKSPACE_PROFILE_TEMPLATE_ENGINE : '';
+  const inferredType = typeRaw || path.extname(templatePath).replace(/^\./, '');
+  return {
+    path: templatePath,
+    type: inferredType ? inferredType.toLowerCase() : '',
+    cssPath,
+    engine,
+  };
+};
+
+const publishWithTemplateFallback = async ({
+  mdLocalPath,
+  pdfLocalPath,
+  publishEnv,
+  templateInfo,
+  logger,
+  callPublishFn = callPublishScript,
+  runPandoc = zsh,
+}) => {
+  if (!mdLocalPath || !pdfLocalPath) {
+    throw new Error('Percorsi Markdown o PDF mancanti per la pubblicazione');
+  }
+  const log = (message, stage = 'publish', status = 'info') => {
+    if (typeof logger === 'function') {
+      logger(message, stage, status);
+    }
+  };
+
+  const result = await callPublishFn(mdLocalPath, publishEnv);
+  if (result.code !== 0) {
+    log(result.stderr || result.stdout || 'publish.sh failed', 'publish', 'warning');
+    log('Tentativo fallback pandoc…', 'publish', 'info');
+  }
+
+  if (!fs.existsSync(pdfLocalPath)) {
+    if (result.code === 0) {
+      log('publish.sh non ha generato un PDF, fallback su pandoc…', 'publish', 'info');
+    }
+    const destDir = path.dirname(mdLocalPath);
+    const mdArg = JSON.stringify(mdLocalPath);
+    const pdfArg = JSON.stringify(pdfLocalPath);
+    const resolvedTemplateInfo = templateInfo || templateInfoFromEnv(publishEnv);
+    const fallbackCmdParts = [];
+    fallbackCmdParts.push(`cd ${JSON.stringify(destDir)};`);
+    fallbackCmdParts.push(
+      `command -v pandocPDF >/dev/null && pandocPDF ${mdArg} || ${buildPandocFallback(resolvedTemplateInfo, mdArg, pdfArg)}`
+    );
+    const pandoc = await runPandoc(fallbackCmdParts.join(' '), publishEnv);
+    if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
+      log(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
+      throw new Error('Generazione PDF fallita');
+    }
+    log('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
+  }
+
+  return result;
 };
 
 const ensureWritableDirectory = async (dir) => {
@@ -836,14 +1135,14 @@ const validateWorkspaceProfiles = async (profiles, { prompts } = {}) => {
     }
 
     if (profile.pdfTemplate) {
-      const templatePath = path.join(TEMPLATES_DIR, profile.pdfTemplate);
       try {
-        const stats = await fsp.stat(templatePath);
-        if (!stats.isFile()) {
-          errors.push(`Il template PDF per il profilo "${label}" non è un file valido.`);
-        }
+        await resolveTemplateDescriptor(profile.pdfTemplate);
       } catch (error) {
-        errors.push(`Il template PDF per il profilo "${label}" non esiste: ${error?.message || error}`);
+        const reason =
+          error instanceof TemplateResolutionError
+            ? error.userMessage
+            : error?.message || 'Template non valido';
+        errors.push(`Il template PDF per il profilo "${label}" non è valido: ${reason}`);
       }
     }
   }
@@ -1959,6 +2258,17 @@ app.get('/api/prompts', async (req, res) => {
   }
 });
 
+app.get('/api/templates', async (req, res) => {
+  try {
+    const templates = await listTemplatesMetadata();
+    return res.json({ ok: true, templates });
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    console.error('❌ Errore durante la lettura dei template:', message);
+    return res.status(500).json({ ok: false, message });
+  }
+});
+
 app.post('/api/prompts', async (req, res) => {
   try {
     const title = String(req.body?.title || '').trim();
@@ -2521,37 +2831,30 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     }
 
     const profileTemplateCandidate = workspaceProfile?.pdfTemplate || workspaceProfileTemplate || '';
-    let profileTemplatePath = '';
-    let profileTemplateCssPath = '';
+    let profileTemplateDescriptor = null;
     if (profileTemplateCandidate) {
-      const candidatePath = path.join(TEMPLATES_DIR, profileTemplateCandidate);
       try {
-        await fsp.access(candidatePath, fs.constants.R_OK);
-        profileTemplatePath = candidatePath;
-        out(`📄 Template profilo: ${path.basename(candidatePath)}`, 'publish', 'info');
-        if (candidatePath.toLowerCase().endsWith('.html')) {
-          const cssCandidate = candidatePath.replace(/\.html$/i, '.css');
-          try {
-            await fsp.access(cssCandidate, fs.constants.R_OK);
-            profileTemplateCssPath = cssCandidate;
-            out(`🎨 CSS template: ${path.basename(cssCandidate)}`, 'publish', 'info');
-          } catch (cssError) {
-            out(
-              `ℹ️ CSS template non trovato o non leggibile (${cssCandidate}): ${cssError?.message || cssError}`,
-              'publish',
-              'info'
-            );
-          }
+        profileTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateCandidate);
+        out(`📄 Template profilo: ${profileTemplateDescriptor.fileName}`, 'publish', 'info');
+        if (profileTemplateDescriptor.cssFileName) {
+          out(`🎨 CSS template: ${profileTemplateDescriptor.cssFileName}`, 'publish', 'info');
+        }
+        if (profileTemplateDescriptor.engine) {
+          out(`⚙️ Motore HTML preferito: ${profileTemplateDescriptor.engine}`, 'publish', 'info');
         }
       } catch (templateError) {
-        out(`⚠️ Template profilo non accessibile: ${templateError?.message || templateError}`, 'publish', 'warning');
+        const reason =
+          templateError instanceof TemplateResolutionError
+            ? templateError.userMessage
+            : templateError?.message || templateError;
+        out(`⚠️ Template profilo non accessibile: ${reason}`, 'publish', 'warning');
       }
     }
 
     const publishEnv = buildEnvOptions(
       promptEnv,
       customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null,
-      profileTemplatePath ? { WORKSPACE_PROFILE_TEMPLATE: profileTemplatePath } : null
+      profileTemplateDescriptor ? buildTemplateEnv(profileTemplateDescriptor) : null
     );
 
     let mdLocalForPublish = '';
@@ -2562,29 +2865,13 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       await fsp.writeFile(mdLocalForPublish, mdBufferForPublish);
       pdfLocalPath = registerTempFile(path.join(path.dirname(mdLocalForPublish), `documento_${baseName}.pdf`));
 
-      const pb = await callPublishScript(mdLocalForPublish, publishEnv);
-
-      if (pb.code !== 0) {
-        out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
-        out('Tentativo fallback pandoc…', 'publish', 'info');
-      }
-
-      if (!fs.existsSync(pdfLocalPath)) {
-        const destDir = path.dirname(mdLocalForPublish);
-        const fallbackCmdParts = [];
-        fallbackCmdParts.push(`cd ${JSON.stringify(destDir)};`);
-        const mdArg = JSON.stringify(mdLocalForPublish);
-        const pdfArg = JSON.stringify(pdfLocalPath);
-        fallbackCmdParts.push(
-          `command -v pandocPDF >/dev/null && pandocPDF ${mdArg} || ${buildPandocFallback(profileTemplatePath, profileTemplateCssPath, mdArg, pdfArg)}`
-        );
-        const pandoc = await zsh(fallbackCmdParts.join(' '), publishEnv);
-        if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
-          out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
-          throw new Error('Generazione PDF fallita');
-        }
-        out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
-      }
+      await publishWithTemplateFallback({
+        mdLocalPath: mdLocalForPublish,
+        pdfLocalPath,
+        publishEnv,
+        templateInfo: profileTemplateDescriptor,
+        logger: out,
+      });
 
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,
@@ -2772,24 +3059,12 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
       const mdBuffer = await downloadFileFromBucket(bucket, objectPath);
       await fsp.writeFile(mdLocalPath, mdBuffer);
 
-      const pb = await callPublishScript(mdLocalPath, publishEnv);
-      if (pb.code !== 0) {
-        out(pb.stderr || pb.stdout || 'publish.sh failed');
-        out('Tentativo fallback pandoc…');
-      }
-
-      if (!fs.existsSync(pdfLocalPath)) {
-        out('publish.sh non ha generato un PDF, fallback su pandoc…');
-        const pandoc = await zsh(
-          `cd ${JSON.stringify(workDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalPath)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalPath)}`,
-          publishEnv
-        );
-        if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
-          out(pandoc.stderr || pandoc.stdout || 'pandoc failed');
-          throw new Error('Rigenerazione PDF fallita');
-        }
-        out('✅ PDF creato tramite fallback pandoc');
-      }
+      await publishWithTemplateFallback({
+        mdLocalPath,
+        pdfLocalPath,
+        publishEnv,
+        logger: out,
+      });
 
       await uploadFileToBucket(bucket, pdfObjectPath, await fsp.readFile(pdfLocalPath), 'application/pdf');
       out(`☁️ PDF aggiornato su Supabase: ${pdfObjectPath}`);
@@ -2835,26 +3110,15 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
     const dest = path.dirname(mdPath);
     out(`♻️ Rigenerazione PDF con publish.sh da ${mdPath}`);
 
-    const pb = await callPublishScript(mdPath, publishEnv);
-    if (pb.code !== 0) {
-      out(pb.stderr || pb.stdout || 'publish.sh failed');
-      out('Tentativo fallback pandoc…');
-    }
-
     const baseName = path.basename(mdPath, path.extname(mdPath));
     const pdfPath = path.join(dest, `${baseName}.pdf`);
 
-    if (!fs.existsSync(pdfPath)) {
-      out('publish.sh non ha generato un PDF, fallback su pandoc…');
-      const pandoc = await zsh(
-        `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
-        publishEnv
-      );
-      if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
-        out(pandoc.stderr || pandoc.stdout || 'pandoc failed');
-        throw new Error('Rigenerazione PDF fallita');
-      }
-    }
+    await publishWithTemplateFallback({
+      mdLocalPath: mdPath,
+      pdfLocalPath: pdfPath,
+      publishEnv,
+      logger: out,
+    });
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`);
     return res.json({ ok: true, pdfPath, mdPath, localPdfPath: pdfPath, localMdPath: mdPath, logs });
@@ -3047,27 +3311,14 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     );
 
     // Chiama publish.sh
-    const pb = await callPublishScript(mdPath, publishEnv);
-
-    if (pb.code !== 0) {
-      out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
-      out('Tentativo fallback pandoc…', 'publish', 'info');
-    }
-
     const pdfPath = path.join(destDir, `${baseName}.pdf`);
 
-    if (!fs.existsSync(pdfPath)) {
-      out('publish.sh non ha generato un PDF, fallback su pandoc…', 'publish', 'info');
-      const pandoc = await zsh(
-        `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
-        publishEnv
-      );
-      if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
-        out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
-        throw new Error('Generazione PDF fallita');
-      }
-      out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
-    }
+    await publishWithTemplateFallback({
+      mdLocalPath: mdPath,
+      pdfLocalPath: pdfPath,
+      publishEnv,
+      logger: out,
+    });
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
 
@@ -3356,25 +3607,12 @@ app.post(
         await fsp.writeFile(mdLocalForPublish, mdBufferForPublish);
         pdfLocalPath = registerTempFile(path.join(path.dirname(mdLocalForPublish), `documento_${baseName}.pdf`));
 
-        const pb = await callPublishScript(mdLocalForPublish, publishEnv);
-
-        if (pb.code !== 0) {
-          out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
-          out('Tentativo fallback pandoc…', 'publish', 'info');
-        }
-
-        if (!fs.existsSync(pdfLocalPath)) {
-          const destDir = path.dirname(mdLocalForPublish);
-          const pandoc = await zsh(
-            `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalForPublish)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalForPublish)}`,
-            publishEnv
-          );
-          if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
-            out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
-            throw new Error('Generazione PDF fallita');
-          }
-          out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
-        }
+        await publishWithTemplateFallback({
+          mdLocalPath: mdLocalForPublish,
+          pdfLocalPath,
+          publishEnv,
+          logger: out,
+        });
 
         await uploadFileToBucket(
           SUPABASE_PROCESSED_BUCKET,
@@ -3630,8 +3868,26 @@ app.use((req, res, next) => {
   return next();
 });
 
-app.listen(PORT, HOST, () => {
-  const hostLabel = HOST === '0.0.0.0' ? '0.0.0.0' : HOST;
-  console.log(`rec2pdf backend in ascolto su http://${hostLabel}:${PORT}`);
-});
-;
+const startServer = () => {
+  const server = app.listen(PORT, HOST, () => {
+    const hostLabel = HOST === '0.0.0.0' ? '0.0.0.0' : HOST;
+    console.log(`rec2pdf backend in ascolto su http://${hostLabel}:${PORT}`);
+  });
+  return server;
+};
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = {
+  app,
+  startServer,
+  buildPandocFallback,
+  buildTemplateEnv,
+  buildEnvOptions,
+  listTemplatesMetadata,
+  resolveTemplateDescriptor,
+  TemplateResolutionError,
+  publishWithTemplateFallback,
+};
