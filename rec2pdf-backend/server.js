@@ -1684,6 +1684,48 @@ const DEFAULT_PROMPTS = [
     builtIn: true,
   },
   {
+    id: 'prompt_meeting_minutes',
+    slug: 'verbale_meeting',
+    title: 'Verbale riunione executive',
+    summary: 'Genera verbali completi e azionabili a partire da trascrizioni di meeting.',
+    description:
+      "Trasforma la trascrizione di una riunione in un verbale pronto per il template HTML meeting. Apri il documento con un front matter YAML che imposti `pdfRules.layout: verbale_meeting` (o il campo `layout`) e opzionalmente `styles.css: Templates/verbale_meeting.css`. Il front matter deve includere tre array obbligatori: `action_items` (oggetti con description, assignee.name, assignee.role, due_date), `key_points` (voci sintetiche) e `transcript` (blocchi con speaker, role, timestamp, paragraphs). Struttura il corpo usando le sezioni esatte: 'Riepilogo esecutivo', 'Decisioni e approvazioni', 'Azioni assegnate', 'Punti chiave', 'Trascrizione integrale' e chiudi con eventuali allegati o note operative.",
+    persona: 'Chief of Staff',
+    color: '#f97316',
+    tags: ['meeting', 'verbale', 'operations'],
+    cueCards: [
+      { key: 'context', title: 'Contesto', hint: 'Qual era lo scopo della riunione e quali team erano coinvolti?' },
+      { key: 'decisions', title: 'Decisioni', hint: 'Quali decisioni o approvazioni sono state prese e da chi?' },
+      { key: 'actions', title: 'Azioni', hint: 'Elenca le attività con owner, ruolo e scadenza stimata.' },
+      { key: 'risks', title: 'Criticità', hint: 'Segnala blocchi, rischi aperti o richieste di follow-up.' },
+      { key: 'transcript', title: 'Trascrizione', hint: 'Evidenzia passaggi chiave da riportare nel blocco transcript.' },
+    ],
+    markdownRules: {
+      tone: 'Professionale e sintetico, orientato al follow-up.',
+      voice: 'Terza persona con riferimenti ai ruoli aziendali.',
+      bulletStyle: 'Liste numerate per decisioni e puntate per punti chiave.',
+      includeCallouts: true,
+      summaryStyle: 'Tabella o elenco iniziale con data, durata e partecipanti.',
+    },
+    pdfRules: {
+      accentColor: '#f97316',
+      layout: 'verbale_meeting',
+      template: 'verbale_meeting.html',
+      includeCover: false,
+      includeToc: false,
+    },
+    checklist: {
+      sections: [
+        'Riepilogo esecutivo',
+        'Decisioni e approvazioni',
+        'Azioni assegnate',
+        'Punti chiave',
+        'Trascrizione integrale',
+      ],
+    },
+    builtIn: true,
+  },
+  {
     id: 'prompt_format_base',
     slug: 'format_base',
     title: 'Format base',
