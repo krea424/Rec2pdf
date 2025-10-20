@@ -1,10 +1,10 @@
 # Rec2PDF
 
 <p align="center">
-  <img src="logo_thinkDOC.svg" alt="Rec2PDF" width="260" />
+  <img src="rec2pdf-frontend/logo-thinkdoc-sfondo_scuro.svg" alt="Rec2PDF" width="260" />
 </p>
 
-Rec2PDF automatizza il flusso **voce → trascrizione → documento editoriale** trasformando i pensieri a voce alta, i brainstorming con se stessi e le registrazioni vocali in genere in PDF strutturati e pronti per la distribuzione. Oggi il progetto integra autenticazione e storage gestiti da Supabase, con un frontend che offre login, librerie cloud e strumenti di revisione, e un backend che coordina pipeline audio/testo, generazione Markdown e impaginazione. L’ultima iterazione introduce un’esperienza “boardroom” con onboarding guidato, diagnostica integrata e gestione avanzata di workspace e progetti direttamente dall’interfaccia.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L15-L139】【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L26-L199】【F:rec2pdf-frontend/src/App.jsx†L473-L714】
+Rec2PDF automatizza il flusso **voce → trascrizione → documento editoriale** trasformando i pensieri a voce alta, i brainstorming con se stessi e le registrazioni vocali in genere in PDF strutturati e pronti per la distribuzione. Oggi il progetto integra autenticazione e storage gestiti da Supabase, con un frontend che offre login, librerie cloud e strumenti di revisione, e un backend che coordina pipeline audio/testo, generazione Markdown e impaginazione. La release 3.0 estende l’esperienza “boardroom” con diarizzazione WhisperX, mappatura interattiva degli speaker e template meeting automatici direttamente dalla stessa interfaccia.【rec2pdf-frontend/src/features/base/PipelinePanel.jsx:397】【rec2pdf-frontend/src/components/MarkdownEditorModal.jsx:207】【rec2pdf-backend/server.js:3358】
 
 ## Sommario
 - [Panoramica](#panoramica)
@@ -23,12 +23,11 @@ Rec2PDF automatizza il flusso **voce → trascrizione → documento editoriale**
 - [Struttura del repository](#struttura-del-repository)
 - [Licenza](#licenza)
 
-## Novità della prossima release
-- **Onboarding e branding guidati**: l’AppShell espone banner di onboarding, header brandable e un cassetto impostazioni che integra Setup Assistant, diagnostica CLI, caricamento loghi e cambio tema consultando lo stato Supabase in tempo reale.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L15-L139】【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L26-L199】【F:rec2pdf-frontend/src/App.jsx†L473-L714】
-- **Workspace Navigator potenziato**: viste cronologiche filtrabili e salvabili, adozione della selezione nel form pipeline, cache anteprime Markdown e azioni rapide (PDF/MD/log, assegnazioni, rigenerazioni) sono ora disponibili nella libreria locale.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L215】【F:rec2pdf-frontend/src/pages/Library.jsx†L6-L59】【F:rec2pdf-frontend/src/App.jsx†L560-L714】
-- **Libreria cloud contestuale**: il pannello Supabase si allinea automaticamente alla selezione di workspace/progetto, applica sanitizzazione delle cartelle e consente cambio bucket/prefix con feedback immediato su errori o rete.【F:rec2pdf-frontend/src/components/CloudLibraryPanel.jsx†L6-L198】【F:rec2pdf-frontend/src/App.jsx†L2884-L2964】
-- **Modifica e rigenerazione Markdown**: la modale editor consente salvataggio, backup automatico su Supabase e rigenerazione del PDF senza lasciare il browser, sfruttando i nuovi endpoint `/api/markdown` e `/api/ppubr` del backend.【F:rec2pdf-frontend/src/components/MarkdownEditorModal.jsx†L9-L133】【F:rec2pdf-backend/server.js†L1733-L2055】【F:rec2pdf-backend/server.js†L2435-L2520】
-- **Metriche struttura documento**: ogni pipeline arricchisce la risposta con punteggio di completezza, sezioni mancanti e checklist del prompt per orientare la revisione qualitativa.【F:rec2pdf-backend/server.js†L1681-L1707】【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L35-L58】
+## Novità v3.0.0
+- **Diarizzazione WhisperX integrata**: la modalità riunione abilita la separazione degli speaker direttamente dal pannello di pubblicazione e attiva la pipeline WhisperX lato server, con controlli diagnostici e requisito del token Hugging Face (`HUGGING_FACE_TOKEN`).【rec2pdf-frontend/src/features/base/PipelinePanel.jsx:397】【rec2pdf-backend/server.js:2881】【rec2pdf-backend/server.js:3000】
+- **Mappatura speaker end-to-end**: l’editor Markdown espone un mapper dedicato con anteprima in tempo reale e pulsante “Rigenera PDF con nomi”, mentre il backend applica la mappatura sia durante la pubblicazione sia in ppubr/ripubblicazioni programmatiche.【rec2pdf-frontend/src/components/SpeakerMapper.jsx:1】【rec2pdf-frontend/src/components/MarkdownEditorModal.jsx:207】【rec2pdf-frontend/src/App.jsx:3408】【rec2pdf-backend/server.js:1660】【rec2pdf-backend/server.js:3601】
+- **Template meeting automatici**: quando la pipeline usa diarizzazione o quando la rigenerazione riceve una mappa speaker, il server forza il template `verbale_meeting` e completa il front matter YAML con CSS e layout coerenti.【rec2pdf-backend/server.js:1695】【rec2pdf-backend/server.js:3358】【rec2pdf-backend/server.js:3725】
+- **Branding aggiornato**: frontend e PDF condividono il nuovo logo ThinkDoc, con asset predefiniti aggiornati nello header dell’app e nello script di pubblicazione.【rec2pdf-frontend/src/assets/logo.svg:1】【Scripts/publish.sh:190】
 
 ## Panoramica
 Rec2PDF nasce per supportare team editoriali e professionisti che necessitano di verbalizzazioni affidabili. Il sistema accetta registrazioni vocali, file di testo già trascritti o Markdown esistente e coordina automaticamente:
@@ -91,6 +90,7 @@ Installare i seguenti componenti sulla macchina che esegue backend/pipeline:
 - Node.js ≥ 18 e npm ≥ 9.
 - `ffmpeg` per la transcodifica.
 - `whisper` CLI (modelli disponibili localmente).
+- `whisperx` CLI (per diarizzazione multi-speaker; installabile con `pip install git+https://github.com/m-bain/whisperX` e richiede un token Hugging Face).
 - `gemini` CLI (per generazione Markdown) e `ppubr/PPUBR` se si desidera la toolchain proprietaria.
 - `pandoc` e `xelatex` (es. TeX Live) per l'esportazione PDF via script.
 - Facoltativo: `fc-list` per il controllo font dal publish script.
@@ -100,6 +100,7 @@ Verificare con la diagnostica interna (`Diagnostica` nell'UI) oppure manualmente
 ```bash
 ffmpeg -version
 whisper --help
+whisperx --help
 pandoc --version
 which gemini
 which ppubr
@@ -110,10 +111,11 @@ which ppubr
    ```bash
    SUPABASE_URL="https://<your-project>.supabase.co"
    SUPABASE_SERVICE_KEY="<service_role_key>"
+   HUGGING_FACE_TOKEN="<hf_token>"
    PROJECT_ROOT="$(pwd)"
    PUBLISH_SCRIPT="$(pwd)/Scripts/publish.sh"  # opzionale, default già corretto
    ```
-   Il backend crea automaticamente il client Supabase, abilita l'autenticazione su tutte le rotte `/api` (eccetto `/api/health`) e mostra un warning se avviato senza credenziali, ricadendo in modalità sviluppo senza protezione.【F:rec2pdf-backend/server.js†L13-L105】
+   Il backend crea automaticamente il client Supabase, abilita l'autenticazione su tutte le rotte `/api` (eccetto `/api/health`) e mostra un warning se avviato senza credenziali o senza token Hugging Face, ricadendo in modalità sviluppo senza protezione o disattivando la diarizzazione.【rec2pdf-backend/server.js:13】【rec2pdf-backend/server.js:36】
 2. **Crea i bucket di storage** nel progetto Supabase chiamandoli `audio-uploads`, `text-uploads`, `processed-media` e abilita le policy di lettura/scrittura per il ruolo `service_role`; gli upload/download falliscono se il client non è configurato.【F:rec2pdf-backend/server.js†L710-L760】【F:rec2pdf-backend/server.js†L736-L760】
 3. **Imposta le variabili del frontend** (`rec2pdf-frontend/.env.local`):
    ```bash
@@ -138,6 +140,11 @@ which ppubr
    npm run dev   # espone le API su http://localhost:7788
    ```
    Il server Express usa `PORT`, `PROJECT_ROOT`, `PUBLISH_SCRIPT`, `TEMPLATES_DIR` e `ASSETS_DIR` se presenti nel `.env` ed esegue il publish script `Scripts/publish.sh` quando richiesto.【F:rec2pdf-backend/package.json†L1-L17】【F:rec2pdf-backend/server.js†L13-L83】
+   > Per sfruttare la diarizzazione installa prima `whisperx` e definisci il token Hugging Face:
+   > ```bash
+   > pip install git+https://github.com/m-bain/whisperX
+   > export HUGGING_FACE_TOKEN="hf_xxx"
+   > ```
 3. **Frontend** (nuovo terminale)
    ```bash
    cd rec2pdf-frontend
@@ -158,9 +165,9 @@ which ppubr
 - **Server principale**: `rec2pdf-backend/server.js`.
 - **Persistenza locale**: crea automaticamente `~/.rec2pdf/workspaces.json` e `prompts.json` se mancanti, mantenendo metadati locali oltre agli artefatti salvati su Supabase.【F:rec2pdf-backend/server.js†L32-L67】【F:rec2pdf-backend/server.js†L448-L676】
 - **Endpoint chiave** (tutti protetti da bearer token Supabase):
-  - `POST /api/rec2pdf`: pipeline completa audio → PDF/Markdown; restituisce percorsi Supabase, eventi di stage, log e metadati workspace/prompt.【F:rec2pdf-backend/server.js†L1312-L1669】
+  - `POST /api/rec2pdf`: pipeline completa audio → PDF/Markdown; supporta il flag `diarize=true` per attivare WhisperX, restituisce diarizzazioni JSON, etichette speaker e copia la mappa speaker nei metadati di sessione.【rec2pdf-backend/server.js:2937】【rec2pdf-backend/server.js:3202】【rec2pdf-backend/server.js:3330】
   - `POST /api/text-upload`: stessa pipeline partendo da file `.txt` (senza fase di trascrizione).【F:rec2pdf-backend/server.js†L2058-L2348】
-  - `POST /api/ppubr` e `POST /api/ppubr-upload`: rigenera PDF da Markdown già presente (locale o Supabase) o da upload manuale.【F:rec2pdf-backend/server.js†L1673-L2055】
+  - `POST /api/ppubr` e `POST /api/ppubr-upload`: rigenera PDF da Markdown già presente (locale o Supabase) o da upload manuale, applicando eventuali mappature speaker e scegliendo automaticamente il template più adatto.【rec2pdf-backend/server.js:3601】【rec2pdf-backend/server.js:3725】
   - `GET/POST/PUT/DELETE /api/workspaces`: CRUD dei workspace con aggiornamento automatico dello storage locale.【F:rec2pdf-backend/server.js†L1072-L1146】
   - `GET/POST/PUT/DELETE /api/prompts`: gestione dei prompt, inclusa validazione di cue card e checklist.【F:rec2pdf-backend/server.js†L1160-L1269】
   - `GET /api/markdown` & `PUT /api/markdown`: lettura e modifica dei Markdown su Supabase con backup automatico delle versioni precedenti.【F:rec2pdf-backend/server.js†L2375-L2462】
@@ -174,11 +181,12 @@ Il backend usa `multer` per gestire upload multipart, costruisce nomi coerenti c
 - **Funzionalità UI**:
   - Schermata di login con magic link e OAuth GitHub; il resto della SPA è disponibile solo a sessione Supabase attiva.【F:rec2pdf-frontend/src/App.jsx†L385-L439】【F:rec2pdf-frontend/src/components/LoginPage.jsx†L1-L82】
   - Recorder/loader audio con tracking in tempo reale dei log/stage della pipeline e salvataggio cronologia su `localStorage`.【F:rec2pdf-frontend/src/App.jsx†L1658-L1999】
+  - Toggle “Identifica speaker multipli” per attivare la diarizzazione WhisperX direttamente dal pannello di pubblicazione.【rec2pdf-frontend/src/features/base/PipelinePanel.jsx:397】
   - Upload dedicati per Markdown e TXT, riuso delle stesse preferenze workspace/prompt e gestione fallback quando mancano alcune fasi della pipeline.【F:rec2pdf-frontend/src/App.jsx†L1999-L2354】
   - Prompt Library con preferiti, cue card e checklist interattive, sincronizzata con le API del backend.【F:rec2pdf-frontend/src/App.jsx†L1360-L1456】
   - Workspace Navigator evoluto con filtri salvabili, cache anteprime, assegnazioni rapide e adozione dei metadati per la pipeline.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L215】【F:rec2pdf-frontend/src/pages/Library.jsx†L6-L59】
   - Cloud Library collegata a Supabase Storage per sfogliare, filtrare e aprire artefatti firmati senza lasciare l'app.【F:rec2pdf-frontend/src/components/CloudLibraryPanel.jsx†L75-L198】
-  - Modale editor Markdown con analisi struttura, checklist del prompt e repubblicazione diretta dal browser.【F:rec2pdf-frontend/src/App.jsx†L1980-L1999】【F:rec2pdf-frontend/src/components/MarkdownEditorModal.jsx†L9-L133】
+  - Modale editor Markdown con analisi struttura, mapper degli speaker e doppia azione di rigenerazione (standard o con nomi applicati).【rec2pdf-frontend/src/App.jsx:3758】【rec2pdf-frontend/src/components/MarkdownEditorModal.jsx:207】【rec2pdf-frontend/src/components/SpeakerMapper.jsx:1】
   - Setup Assistant e diagnostica integrata (`useBackendDiagnostics`) per verificare dipendenze, permessi e connettività autenticata.【F:rec2pdf-frontend/src/hooks/useBackendDiagnostics.js†L1-L85】【F:rec2pdf-frontend/src/components/SetupAssistant.jsx†L1-L200】
   - Temi consultabili, loghi personalizzati, gestione device audio e wizard workspace/progetto/stato dal cassetto impostazioni.【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L47-L199】【F:rec2pdf-frontend/src/App.jsx†L361-L714】
 
@@ -199,9 +207,9 @@ npm run preview  # serve statico su http://localhost:4173
 2. Dalla voce **Impostazioni** crea workspace/progetti/stati con il builder interno oppure allinea la selezione al form pipeline.【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L47-L199】【F:rec2pdf-frontend/src/App.jsx†L560-L714】
 3. Configura (o importa) workspace e filtri salvati nel Navigator per popolare rapidamente le opzioni di pipeline.【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L61-L215】【F:rec2pdf-frontend/src/pages/Library.jsx†L6-L59】
 4. Crea/duplica un prompt dalla libreria, imposta tone of voice, checklist e regole PDF e salvalo via API.【F:rec2pdf-frontend/src/App.jsx†L1360-L1456】【F:rec2pdf-backend/server.js†L1160-L1269】
-5. Registra o carica l'audio (oppure trascina un TXT/Markdown) associando workspace, progetto e prompt desiderati.【F:rec2pdf-frontend/src/App.jsx†L1658-L2354】
+5. Registra o carica l'audio (oppure trascina un TXT/Markdown) associando workspace, progetto e prompt desiderati; attiva la diarizzazione se stai lavorando su una riunione multi-speaker.【F:rec2pdf-frontend/src/App.jsx†L1658-L2354】【rec2pdf-frontend/src/features/base/PipelinePanel.jsx:397】
 6. Segui lo stato della pipeline (transcode → trascrizione → Markdown → PDF) tramite i log animati e le notifiche di completezza del documento.【F:rec2pdf-frontend/src/App.jsx†L1688-L1768】【F:rec2pdf-backend/server.js†L1681-L1707】
-7. Revisiona il Markdown nell'editor modale, salva le modifiche su Supabase e rigenera il PDF direttamente dal browser.【F:rec2pdf-backend/server.js†L2435-L2520】【F:rec2pdf-frontend/src/components/MarkdownEditorModal.jsx†L9-L133】
+7. Revisiona il Markdown nell'editor modale, assegna nomi reali agli speaker tramite il mapper incluso, salva le modifiche su Supabase e rigenera il PDF (anche con nomi applicati) direttamente dal browser.【rec2pdf-backend/server.js:3601】【rec2pdf-frontend/src/components/MarkdownEditorModal.jsx:207】【rec2pdf-frontend/src/components/SpeakerMapper.jsx:1】
 8. Condividi o scarica gli artefatti dalla Cloud Library, utilizzando i link firmati generati dal backend.【F:rec2pdf-backend/server.js†L2352-L2513】【F:rec2pdf-frontend/src/components/CloudLibraryPanel.jsx†L75-L198】
 
 ## QA & non-regression
@@ -212,10 +220,12 @@ npm run preview  # serve statico su http://localhost:4173
 
 ### Checklist non-regression
 1. **Pipeline audio**: caricamento clip, abilitazione CTA "Avvia pipeline" e ricezione evento `Pipeline completata` devono funzionare con backend mockato o reale (verificato dall'E2E).【F:rec2pdf-frontend/src/pages/Create.jsx†L1086-L1145】【F:rec2pdf-frontend/tests/e2e/audio-to-pdf.spec.js†L33-L87】
-2. **Workspace Navigator**: filtri, anteprima e azioni principali (Aggiorna, ricerca) non devono produrre errori console; unit test garantisce callbacks di base.
-3. **Editor Markdown**: apertura modale da `/editor`, salvataggio (`handleMdEditorSave`) e repubblicazione (`handleRepublishFromEditor`) devono rimanere disponibili dopo refactor del contesto.【F:rec2pdf-frontend/src/pages/Editor.jsx†L1-L27】【F:rec2pdf-frontend/src/App.jsx†L3360-L3508】
-4. **Diagnostica**: `useBackendDiagnostics` deve continuare a riportare stato health/diag senza bloccare l'onboarding; monitorare `diagnostics.status` nel banner.
-5. **Accessibilità**: verificare periodicamente la checklist in `docs/ACCESSIBILITY_CHECKLIST.md` (focus visibile, label) dopo modifiche UI.
+2. **Diarizzazione WhisperX**: con il toggle attivo la pipeline deve produrre trascrizioni `.json`, log dedicati e popolazione dell'elenco speaker nella risposta.【rec2pdf-frontend/src/features/base/PipelinePanel.jsx:397】【rec2pdf-backend/server.js:3202】
+3. **Workspace Navigator**: filtri, anteprima e azioni principali (Aggiorna, ricerca) non devono produrre errori console; unit test garantisce callbacks di base.
+4. **Editor Markdown**: apertura modale da `/editor`, salvataggio (`handleMdEditorSave`) e repubblicazione (`handleRepublishFromEditor`) devono rimanere disponibili dopo refactor del contesto.【F:rec2pdf-frontend/src/pages/Editor.jsx†L1-L27】【F:rec2pdf-frontend/src/App.jsx†L3360-L3508】
+5. **Mappatura speaker**: inserire nomi reali deve aggiornare anteprima e consentire la rigenerazione con nomi applicati (pulsante dedicato).【rec2pdf-frontend/src/components/SpeakerMapper.jsx:1】【rec2pdf-frontend/src/components/MarkdownEditorModal.jsx:207】
+6. **Diagnostica**: `useBackendDiagnostics` deve continuare a riportare stato health/diag senza bloccare l'onboarding; monitorare `diagnostics.status` nel banner.
+7. **Accessibilità**: verificare periodicamente la checklist in `docs/ACCESSIBILITY_CHECKLIST.md` (focus visibile, label) dopo modifiche UI.
 
 ## Personalizzazione template PDF
 La cartella [`Templates/`](Templates) contiene i file LaTeX usati da `publish.sh`:
