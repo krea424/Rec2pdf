@@ -10,6 +10,8 @@ const emptyForm = {
   destDir: "",
   promptId: "",
   pdfTemplate: "",
+  pdfTemplateType: "",
+  pdfTemplateCss: "",
 };
 
 const WorkspaceProfilesManager = () => {
@@ -18,15 +20,20 @@ const WorkspaceProfilesManager = () => {
     workspaceSelection,
     prompts,
     handleRefreshWorkspaces,
+    refreshPdfTemplates,
     createWorkspaceProfile,
     updateWorkspaceProfile,
     deleteWorkspaceProfile,
+    pdfTemplates,
+    pdfTemplatesLoading,
+    pdfTemplatesError,
   } = useAppContext();
 
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(
     workspaceSelection.workspaceId || (workspaces[0]?.id ?? "")
   );
   const [formState, setFormState] = useState(emptyForm);
+  const [useCustomTemplate, setUseCustomTemplate] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [removePdfLogo, setRemovePdfLogo] = useState(false);
   const [editingProfileId, setEditingProfileId] = useState("");
@@ -36,6 +43,7 @@ const WorkspaceProfilesManager = () => {
 
   const resetForm = useCallback(() => {
     setFormState(emptyForm);
+    setUseCustomTemplate(false);
     setLogoFile(null);
     setRemovePdfLogo(false);
     setEditingProfileId("");
@@ -79,6 +87,51 @@ const WorkspaceProfilesManager = () => {
     return map;
   }, [prompts]);
 
+  const selectedTemplate = useMemo(
+    () => pdfTemplates.find((template) => template.fileName === formState.pdfTemplate) || null,
+    [pdfTemplates, formState.pdfTemplate]
+  );
+
+  const templateSelectValue = useMemo(() => {
+    if (useCustomTemplate) {
+      return "__custom__";
+    }
+    return selectedTemplate ? selectedTemplate.fileName : "";
+  }, [selectedTemplate, useCustomTemplate]);
+
+  const templateCount = pdfTemplates.length;
+
+  const templateHelperText = useMemo(() => {
+    if (pdfTemplatesLoading) {
+      return "Caricamento template in corso…";
+    }
+    if (selectedTemplate?.description) {
+      return selectedTemplate.description;
+    }
+    if (useCustomTemplate) {
+      return "Inserisci manualmente il file del template e, se necessario, specifica tipo e CSS.";
+    }
+    if (templateCount === 0) {
+      return "Nessun template disponibile dal backend. Usa l'opzione personalizzata per indicarne uno.";
+    }
+    return "Seleziona un template predefinito o scegli l'opzione personalizzata.";
+  }, [pdfTemplatesLoading, selectedTemplate, templateCount, useCustomTemplate]);
+
+  useEffect(() => {
+    if (!formState.pdfTemplate) {
+      return;
+    }
+    if (!selectedTemplate && !useCustomTemplate) {
+      setUseCustomTemplate(true);
+    }
+  }, [formState.pdfTemplate, selectedTemplate, useCustomTemplate]);
+
+  useEffect(() => {
+    if (selectedTemplate && useCustomTemplate) {
+      setUseCustomTemplate(false);
+    }
+  }, [selectedTemplate, useCustomTemplate]);
+
   const handleWorkspaceChange = useCallback(
     (event) => {
       const nextId = event.target.value;
@@ -92,6 +145,42 @@ const WorkspaceProfilesManager = () => {
     const value = event.target.value;
     setFormState((prev) => ({ ...prev, [field]: value }));
   }, []);
+
+  const handleTemplateSelect = useCallback(
+    (event) => {
+      const value = event.target.value;
+      if (value === "__custom__") {
+        setUseCustomTemplate(true);
+        setFormState((prev) => ({
+          ...prev,
+          pdfTemplateType: prev.pdfTemplateType || "",
+          pdfTemplateCss: prev.pdfTemplateCss || "",
+        }));
+        return;
+      }
+
+      setUseCustomTemplate(false);
+
+      if (!value) {
+        setFormState((prev) => ({
+          ...prev,
+          pdfTemplate: "",
+          pdfTemplateType: "",
+          pdfTemplateCss: "",
+        }));
+        return;
+      }
+
+      const template = pdfTemplates.find((item) => item.fileName === value) || null;
+      setFormState((prev) => ({
+        ...prev,
+        pdfTemplate: value,
+        pdfTemplateType: template?.type || "",
+        pdfTemplateCss: template?.cssFileName || "",
+      }));
+    },
+    [pdfTemplates]
+  );
 
   const handleLogoChange = useCallback((event) => {
     const file = event.target.files?.[0] || null;
@@ -111,12 +200,16 @@ const WorkspaceProfilesManager = () => {
         destDir: profile.destDir || "",
         promptId: profile.promptId || "",
         pdfTemplate: profile.pdfTemplate || "",
+        pdfTemplateType: profile.pdfTemplateType || "",
+        pdfTemplateCss: profile.pdfTemplateCss || "",
       });
+      const knownTemplate = pdfTemplates.some((item) => item.fileName === (profile.pdfTemplate || ""));
+      setUseCustomTemplate(Boolean(profile.pdfTemplate && !knownTemplate));
       setLogoFile(null);
       setRemovePdfLogo(false);
       setFeedback({ success: "", error: "", details: [] });
     },
-    []
+    [pdfTemplates]
   );
 
   const handleDeleteProfile = useCallback(
@@ -183,7 +276,11 @@ const WorkspaceProfilesManager = () => {
             destDir: updated.destDir || "",
             promptId: updated.promptId || "",
             pdfTemplate: updated.pdfTemplate || "",
+            pdfTemplateType: updated.pdfTemplateType || "",
+            pdfTemplateCss: updated.pdfTemplateCss || "",
           });
+          const knownTemplate = pdfTemplates.some((item) => item.fileName === (updated.pdfTemplate || ""));
+          setUseCustomTemplate(Boolean(updated.pdfTemplate && !knownTemplate));
           setLogoFile(null);
           setRemovePdfLogo(false);
           if (logoInputRef.current) {
@@ -213,6 +310,7 @@ const WorkspaceProfilesManager = () => {
       editingProfileId,
       formState,
       logoFile,
+      pdfTemplates,
       removePdfLogo,
       resetForm,
       selectedWorkspaceId,
@@ -299,7 +397,13 @@ const WorkspaceProfilesManager = () => {
                           <span className="normal-case">
                             Prompt: {prompt?.title || profile.promptId || "—"}
                           </span>
-                          <span className="normal-case">Template: {profile.pdfTemplate || "—"}</span>
+                          <span className="normal-case">
+                            Template: {profile.pdfTemplate || "—"}
+                            {profile.pdfTemplateType ? ` (${profile.pdfTemplateType})` : ""}
+                          </span>
+                          {profile.pdfTemplateCss ? (
+                            <span className="normal-case">CSS: {profile.pdfTemplateCss}</span>
+                          ) : null}
                           <span className="normal-case">
                             Logo: {profile.pdfLogo?.originalName || (profile.pdfLogoPath ? "Caricato" : "—")}
                           </span>
@@ -394,13 +498,97 @@ const WorkspaceProfilesManager = () => {
                   </option>
                 ))}
               </Select>
-              <Input
+              <Select
                 label="Template PDF"
-                value={formState.pdfTemplate}
-                onChange={handleFieldChange("pdfTemplate")}
-                placeholder="nome-template.pdf"
-                helperText="Nome del file presente nella cartella templates del backend"
-              />
+                value={templateSelectValue}
+                onChange={handleTemplateSelect}
+                helperText={templateHelperText}
+                error={pdfTemplatesError || undefined}
+                className="bg-transparent"
+                containerClassName="md:col-span-2"
+                disabled={pdfTemplatesLoading && !pdfTemplates.length}
+              >
+                <option value="">Nessun template predefinito</option>
+                {pdfTemplates.map((template) => (
+                  <option
+                    key={template.fileName}
+                    value={template.fileName}
+                    title={template.description || undefined}
+                  >
+                    {template.name || template.fileName}
+                    {template.type ? ` (${template.type.toUpperCase()})` : ""}
+                  </option>
+                ))}
+                <option value="__custom__">Template personalizzato…</option>
+              </Select>
+              <div className="md:col-span-2 flex flex-wrap items-center gap-3 text-xs text-surface-400">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  leadingIcon={RefreshCw}
+                  onClick={refreshPdfTemplates}
+                >
+                  Aggiorna template
+                </Button>
+                {pdfTemplatesLoading ? <span>Caricamento…</span> : null}
+              </div>
+              {!useCustomTemplate && selectedTemplate ? (
+                <div className="md:col-span-2 space-y-2 rounded-2xl border border-surface-700/60 bg-surface-900/30 p-4 text-xs text-surface-300">
+                  <div className="text-sm font-semibold text-surface-100">{selectedTemplate.name}</div>
+                  {selectedTemplate.description ? (
+                    <p className="text-surface-300">{selectedTemplate.description}</p>
+                  ) : null}
+                  <div className="flex flex-wrap gap-4 text-[11px] uppercase tracking-wide text-surface-500">
+                    <span>
+                      Tipo:
+                      <span className="ml-1 text-surface-100 normal-case">
+                        {selectedTemplate.type || "—"}
+                      </span>
+                    </span>
+                    <span>
+                      CSS:
+                      <span className="ml-1 text-surface-100 normal-case">
+                        {selectedTemplate.cssFileName || "—"}
+                      </span>
+                    </span>
+                    {selectedTemplate.engine ? (
+                      <span>
+                        Motore:
+                        <span className="ml-1 text-surface-100 normal-case">
+                          {selectedTemplate.engine}
+                        </span>
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              {useCustomTemplate ? (
+                <div className="md:col-span-2 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Input
+                    label="Nome file template"
+                    value={formState.pdfTemplate}
+                    onChange={handleFieldChange("pdfTemplate")}
+                    placeholder="nome-template.html"
+                    helperText="Percorso relativo nella cartella templates del backend"
+                  />
+                  <Input
+                    label="Tipo template"
+                    value={formState.pdfTemplateType}
+                    onChange={handleFieldChange("pdfTemplateType")}
+                    placeholder="es. html, docx"
+                    helperText="Indica il formato atteso dal backend"
+                  />
+                  <Input
+                    label="Foglio di stile CSS"
+                    value={formState.pdfTemplateCss}
+                    onChange={handleFieldChange("pdfTemplateCss")}
+                    placeholder="stili/report.css"
+                    helperText="Opzionale. Percorso relativo del CSS associato"
+                    containerClassName="md:col-span-2"
+                  />
+                </div>
+              ) : null}
               <div className="flex flex-col gap-2">
                 <span className="text-sm font-medium text-surface-200">Logo PDF</span>
                 <div className="flex flex-wrap items-center gap-2">

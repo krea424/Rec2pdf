@@ -15,6 +15,7 @@ const PORT = process.env.PORT || 7788;
 const HOST = process.env.HOST || '0.0.0.0';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const HUGGING_FACE_TOKEN = process.env.HUGGING_FACE_TOKEN || '';
 
 const supabase =
   SUPABASE_URL && SUPABASE_SERVICE_KEY
@@ -31,6 +32,9 @@ const isAuthEnabled = !!supabase;
 
 if (!isAuthEnabled) {
   console.warn('⚠️  Supabase non configurato: il backend è avviato senza autenticazione (MODALITÀ SVILUPPO).');
+}
+if (!HUGGING_FACE_TOKEN) {
+  console.warn('⚠️  HUGGING_FACE_TOKEN non configurato: la diarizzazione WhisperX non sarà disponibile.');
 }
 // ===== Configurazione Path =====
 // Il PROJECT_ROOT è la cartella che CONTIENE le cartelle 'rec2pdf-backend', 'Scripts', etc.
@@ -53,13 +57,22 @@ if (!fs.existsSync(PUBLISH_SCRIPT)) {
   console.log(`✅ Script publish.sh trovato: ${PUBLISH_SCRIPT}`);
 }
 
-app.use(cors({
-  origin: [
+const allowedOrigins = [
     'http://localhost:5173',
-    'https://rec2pdf-frontend.vercel.app'
-  ],
-  credentials: true
-}));
+     'https://rec2pdf-frontend.vercel.app',
+     'https://rec2pdf.vercel.app'
+   ];
+   
+   app.use(cors({
+     origin: function (origin, callback) {
+       if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true
+  }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -142,6 +155,73 @@ const run = (cmd, args, opts = {}) => new Promise((resolve) => {
 
 const zsh = (command, opts = {}) => run('zsh', ['-lc', command], opts);
 
+const buildPandocFallback = (templateInfo, mdArg, pdfArg) => {
+  const info =
+    templateInfo && typeof templateInfo === 'object'
+      ? templateInfo
+      : typeof templateInfo === 'string'
+        ? { path: templateInfo }
+        : null;
+  const templatePath = info?.path && typeof info.path === 'string' ? info.path : '';
+  const inferredType = info?.type || (templatePath ? path.extname(templatePath).replace(/^\./, '') : '');
+  const templateType = inferredType ? inferredType.toLowerCase() : '';
+  const cssPath = info?.cssPath && typeof info.cssPath === 'string' ? info.cssPath : '';
+  const resourcePath = info?.resourcePath && typeof info.resourcePath === 'string' ? info.resourcePath : '';
+  const inlineMetadataPath =
+    info?.inlineMetadataPath && typeof info.inlineMetadataPath === 'string' ? info.inlineMetadataPath : '';
+
+  if (templatePath && templateType === 'html') {
+    const templateArg = ` --template ${JSON.stringify(templatePath)}`;
+    const cssArg = cssPath ? ` --css ${JSON.stringify(cssPath)}` : '';
+    const resourceArg = resourcePath ? ` --resource-path ${JSON.stringify(resourcePath)}` : '';
+    const metadataArg = inlineMetadataPath ? ` --metadata-file ${JSON.stringify(inlineMetadataPath)}` : '';
+    return [
+      '(',
+      'html_engine="${WORKSPACE_PROFILE_TEMPLATE_ENGINE:-${PREFERRED_HTML_ENGINE:-}}";',
+      'if [[ -n "$html_engine" ]] && ! command -v "$html_engine" >/dev/null 2>&1; then',
+      '  html_engine="";',
+      'fi;',
+      'if [[ -z "$html_engine" ]]; then',
+      '  if command -v wkhtmltopdf >/dev/null 2>&1; then',
+      '    html_engine=wkhtmltopdf;',
+      '  elif command -v weasyprint >/dev/null 2>&1; then',
+      '    html_engine=weasyprint;',
+      '  else',
+      '    echo "Nessun motore HTML disponibile (wkhtmltopdf/weasyprint)" >&2;',
+      '    exit 1;',
+      '  fi;',
+      'fi;',
+      'extra_opts=();',
+      'if [[ "$html_engine" == "wkhtmltopdf" ]]; then',
+      '  extra_opts+=(--pdf-engine-opt=--enable-local-file-access);',
+      'fi;',
+      `pandoc ${mdArg} --from markdown+yaml_metadata_block --to html${templateArg}${cssArg}${resourceArg}${metadataArg} --highlight-style=kate --embed-resources --pdf-engine "$html_engine" "\${extra_opts[@]}" -o ${pdfArg};`,
+      ')',
+    ].join(' ');
+  }
+  if (templatePath && templateType === 'tex') {
+    return `pandoc --from markdown --pdf-engine=xelatex --highlight-style=kate --template ${JSON.stringify(
+      templatePath
+    )} -o ${pdfArg} ${mdArg}`;
+  }
+  return `pandoc -o ${pdfArg} ${mdArg}`;
+};
+
+const createInlineCssMetadataFile = async (cssPath, targetDir) => {
+  if (!cssPath || !targetDir) {
+    throw new Error('Percorsi CSS o destinazione non validi');
+  }
+  const cssContent = await fsp.readFile(cssPath, 'utf8');
+  const normalized = cssContent.replace(/\r\n?/g, '\n');
+  const lines = normalized.split('\n');
+  const indented = lines.map((line) => `    ${line}`);
+  const payload = `styles:\n  inline: |\n${indented.join('\n')}\n`;
+  const fileName = `inline_css_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.yaml`;
+  const filePath = path.join(targetDir, fileName);
+  await fsp.writeFile(filePath, payload, 'utf8');
+  return filePath;
+};
+
 const commandVersion = async (cmd) => {
   try {
     const result = await run(cmd, ['-version']);
@@ -150,6 +230,412 @@ const commandVersion = async (cmd) => {
   } catch {
     return { ok: false, detail: 'not found' };
   }
+};
+
+class TemplateResolutionError extends Error {
+  constructor(code, message, options = {}) {
+    super(message);
+    this.name = 'TemplateResolutionError';
+    this.code = code || 'template_error';
+    this.templateName = options.templateName || '';
+    this.userMessage = options.userMessage || message;
+  }
+}
+
+const SUPPORTED_TEMPLATE_EXTENSIONS = new Map([
+  ['.html', { type: 'html' }],
+  ['.tex', { type: 'tex' }],
+]);
+
+const DEFAULT_LAYOUT_TEMPLATE_MAP = new Map([
+  ['verbale_meeting', 'verbale_meeting.html'],
+]);
+
+const sanitizeTemplateRequestName = (name) => {
+  if (!name || typeof name !== 'string') return '';
+  const normalized = name.replace(/\\/g, '/').trim();
+  if (!normalized || normalized.includes('..')) {
+    throw new TemplateResolutionError('invalid_name', 'Nome template non valido', {
+      templateName: name,
+      userMessage: 'Il template selezionato non è valido.',
+    });
+  }
+  return normalized;
+};
+
+const readTemplateCommentDescription = async (filePath, type) => {
+  try {
+    const fileHandle = await fsp.open(filePath, 'r');
+    try {
+      const { buffer, bytesRead } = await fileHandle.read({ length: 8192, position: 0 });
+      const snippet = buffer.toString('utf8', 0, bytesRead);
+      if (type === 'html') {
+        const match = snippet.match(/<!--([\s\S]*?)-->/);
+        if (match && match[1]) {
+          const description = match[1].replace(/\s+/g, ' ').trim();
+          if (description) return description;
+        }
+      }
+      if (type === 'tex') {
+        const lines = snippet.split(/\r?\n/);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          if (trimmed.startsWith('%')) {
+            const description = trimmed.replace(/^%+\s?/, '').trim();
+            if (description) return description;
+          }
+          if (!trimmed.startsWith('%')) break;
+        }
+      }
+    } finally {
+      await fileHandle.close();
+    }
+  } catch {
+    /* ignore comment extraction errors */
+  }
+  return '';
+};
+
+const loadTemplateSidecarMetadata = async (templatePath, ext) => {
+  const jsonPath = templatePath.replace(new RegExp(`${ext.replace('.', '\\.')}$`, 'i'), '.json');
+  try {
+    const data = await fsp.readFile(jsonPath, 'utf8');
+    const metadata = JSON.parse(data);
+    if (metadata && typeof metadata === 'object') {
+      return metadata;
+    }
+  } catch (error) {
+    if (error && error.code !== 'ENOENT') {
+      console.warn('⚠️  Lettura metadata template fallita:', error.message || error);
+    }
+  }
+  return {};
+};
+
+const resolveTemplateDescriptor = async (templateName) => {
+  const normalizedName = sanitizeTemplateRequestName(templateName);
+  const absolutePath = path.resolve(TEMPLATES_DIR, normalizedName);
+  if (!absolutePath.startsWith(TEMPLATES_DIR)) {
+    throw new TemplateResolutionError('invalid_path', 'Percorso template non consentito', {
+      templateName: templateName,
+      userMessage: 'Il template selezionato non è valido.',
+    });
+  }
+
+  const ext = path.extname(absolutePath).toLowerCase();
+  const extensionInfo = SUPPORTED_TEMPLATE_EXTENSIONS.get(ext);
+  if (!extensionInfo) {
+    throw new TemplateResolutionError('unsupported_extension', `Estensione template non supportata: ${ext || 'nessuna'}`, {
+      templateName: templateName,
+      userMessage: `Il template ${templateName} ha un formato non supportato.`,
+    });
+  }
+
+  let stats;
+  try {
+    stats = await fsp.stat(absolutePath);
+  } catch (error) {
+    throw new TemplateResolutionError('not_found', `Template non trovato: ${templateName}`, {
+      templateName: templateName,
+      userMessage: `Il template ${templateName} non esiste: ${error?.message || error}`,
+    });
+  }
+
+  if (!stats.isFile()) {
+    throw new TemplateResolutionError('not_file', `Il template ${templateName} non è un file`, {
+      templateName: templateName,
+      userMessage: `Il template ${templateName} non è un file valido.`,
+    });
+  }
+
+  try {
+    await fsp.access(absolutePath, fs.constants.R_OK);
+  } catch (error) {
+    throw new TemplateResolutionError('unreadable', `Template non leggibile: ${templateName}`, {
+      templateName: templateName,
+      userMessage: `Il template ${templateName} non è leggibile: ${error?.message || error}`,
+    });
+  }
+
+  const metadata = await loadTemplateSidecarMetadata(absolutePath, ext);
+  const descriptionFromMetadata = typeof metadata.description === 'string' ? metadata.description.trim() : '';
+  const descriptionFromComment = await readTemplateCommentDescription(absolutePath, extensionInfo.type);
+  const cssCandidate =
+    extensionInfo.type === 'html' ? absolutePath.replace(/\.html$/i, '.css') : '';
+  let cssPath = '';
+  if (cssCandidate) {
+    try {
+      const cssStats = await fsp.stat(cssCandidate);
+      if (cssStats.isFile()) {
+        await fsp.access(cssCandidate, fs.constants.R_OK);
+        cssPath = cssCandidate;
+      }
+    } catch {
+      cssPath = '';
+    }
+  }
+
+  const templateDir = path.dirname(absolutePath);
+  const baseName = path.basename(absolutePath, ext);
+  const resourceCandidates = [templateDir, TEMPLATES_DIR];
+  if (cssPath) {
+    resourceCandidates.push(path.dirname(cssPath));
+  }
+  if (extensionInfo.type === 'html') {
+    resourceCandidates.push(path.join(templateDir, baseName));
+  }
+  const resourcePaths = resourceCandidates
+    .map((candidate) => candidate && candidate.trim())
+    .filter((candidate, index, arr) => candidate && arr.indexOf(candidate) === index)
+    .filter((candidate) => {
+      try {
+        return fs.existsSync(candidate) && fs.statSync(candidate).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+  const resourcePath = resourcePaths.join(path.delimiter);
+
+  const descriptor = {
+    path: absolutePath,
+    fileName: path.relative(TEMPLATES_DIR, absolutePath),
+    baseName,
+    type: extensionInfo.type,
+    cssPath,
+    cssFileName: cssPath ? path.relative(TEMPLATES_DIR, cssPath) : '',
+    description: descriptionFromMetadata || descriptionFromComment || '',
+    engine: typeof metadata.engine === 'string' ? metadata.engine.trim() : '',
+    name: typeof metadata.name === 'string' && metadata.name.trim() ? metadata.name.trim() : '',
+    metadata,
+    resourcePaths,
+    resourcePath,
+  };
+
+  if (!descriptor.name) {
+    descriptor.name = descriptor.baseName;
+  }
+
+  return descriptor;
+};
+
+const listTemplatesMetadata = async () => {
+  try {
+    const dirEntries = await fsp.readdir(TEMPLATES_DIR, { withFileTypes: true });
+    const templates = [];
+    for (const entry of dirEntries) {
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!SUPPORTED_TEMPLATE_EXTENSIONS.has(ext)) continue;
+      try {
+        const descriptor = await resolveTemplateDescriptor(entry.name);
+        templates.push({
+          name: descriptor.name,
+          fileName: descriptor.fileName,
+          type: descriptor.type,
+          hasCss: !!descriptor.cssFileName,
+          cssFileName: descriptor.cssFileName,
+          description: descriptor.description,
+          engine: descriptor.engine,
+        });
+      } catch (error) {
+        if (error instanceof TemplateResolutionError) {
+          console.warn(`⚠️  Template ignorato (${entry.name}): ${error.userMessage}`);
+        } else {
+          console.warn(`⚠️  Template ignorato (${entry.name}):`, error?.message || error);
+        }
+      }
+    }
+    templates.sort((a, b) => a.name.localeCompare(b.name));
+    return templates;
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+};
+
+const buildTemplateEnv = (descriptor) => {
+  if (!descriptor || typeof descriptor !== 'object') {
+    return null;
+  }
+  const env = {
+    WORKSPACE_PROFILE_TEMPLATE: descriptor.path,
+    WORKSPACE_PROFILE_TEMPLATE_TYPE: descriptor.type,
+  };
+  if (descriptor.cssPath) {
+    env.WORKSPACE_PROFILE_TEMPLATE_CSS = descriptor.cssPath;
+  }
+  if (descriptor.engine) {
+    env.WORKSPACE_PROFILE_TEMPLATE_ENGINE = descriptor.engine;
+  }
+  if (descriptor.resourcePath) {
+    env.WORKSPACE_PROFILE_TEMPLATE_RESOURCE_PATH = descriptor.resourcePath;
+  }
+  if (descriptor.size && typeof descriptor.size === 'object') {
+    const { marginTop, marginRight, marginBottom, marginLeft } = {
+      marginTop: descriptor.size.margin_top || descriptor.size.marginTop,
+      marginRight: descriptor.size.margin_right || descriptor.size.marginRight,
+      marginBottom: descriptor.size.margin_bottom || descriptor.size.marginBottom,
+      marginLeft: descriptor.size.margin_left || descriptor.size.marginLeft,
+    };
+    if (marginTop) env.WORKSPACE_PROFILE_MARGIN_TOP = marginTop;
+    if (marginRight) env.WORKSPACE_PROFILE_MARGIN_RIGHT = marginRight;
+    if (marginBottom) env.WORKSPACE_PROFILE_MARGIN_BOTTOM = marginBottom;
+    if (marginLeft) env.WORKSPACE_PROFILE_MARGIN_LEFT = marginLeft;
+  }
+  return env;
+};
+
+const resolvePromptTemplateDescriptor = async (prompt, { logger } = {}) => {
+  if (!prompt || typeof prompt !== 'object') {
+    return null;
+  }
+  const pdfRules = prompt.pdfRules && typeof prompt.pdfRules === 'object' ? prompt.pdfRules : null;
+  if (!pdfRules) {
+    return null;
+  }
+
+  let candidate = '';
+  if (typeof pdfRules.template === 'string' && pdfRules.template.trim()) {
+    candidate = pdfRules.template.trim();
+  }
+  if (!candidate && typeof pdfRules.layout === 'string' && pdfRules.layout.trim()) {
+    const normalizedLayout = pdfRules.layout.trim().toLowerCase();
+    if (DEFAULT_LAYOUT_TEMPLATE_MAP.has(normalizedLayout)) {
+      candidate = DEFAULT_LAYOUT_TEMPLATE_MAP.get(normalizedLayout);
+    }
+  }
+
+  if (!candidate) {
+    return null;
+  }
+
+  try {
+    const descriptor = await resolveTemplateDescriptor(candidate);
+    if (typeof logger === 'function') {
+      logger(`📄 Template prompt: ${descriptor.fileName}`, 'publish', 'info');
+      if (descriptor.cssFileName) {
+        logger(`🎨 CSS template prompt: ${descriptor.cssFileName}`, 'publish', 'info');
+      }
+      if (descriptor.engine) {
+        logger(`⚙️ Motore HTML prompt: ${descriptor.engine}`, 'publish', 'info');
+      }
+    }
+    return descriptor;
+  } catch (error) {
+    if (typeof logger === 'function') {
+      const reason =
+        error instanceof TemplateResolutionError ? error.userMessage : error?.message || error;
+      logger(`⚠️ Template prompt non accessibile: ${reason}`, 'publish', 'warning');
+    }
+    return null;
+  }
+};
+
+const unwrapEnvOptions = (envOptions) => {
+  if (!envOptions || typeof envOptions !== 'object') {
+    return {};
+  }
+  if (envOptions.env && typeof envOptions.env === 'object') {
+    return envOptions.env;
+  }
+  return envOptions;
+};
+
+const templateInfoFromEnv = (envOptions) => {
+  const env = unwrapEnvOptions(envOptions);
+  const templatePath = typeof env.WORKSPACE_PROFILE_TEMPLATE === 'string' ? env.WORKSPACE_PROFILE_TEMPLATE : '';
+  if (!templatePath) {
+    return null;
+  }
+  const typeRaw = typeof env.WORKSPACE_PROFILE_TEMPLATE_TYPE === 'string' ? env.WORKSPACE_PROFILE_TEMPLATE_TYPE : '';
+  const cssPath = typeof env.WORKSPACE_PROFILE_TEMPLATE_CSS === 'string' ? env.WORKSPACE_PROFILE_TEMPLATE_CSS : '';
+  const engine = typeof env.WORKSPACE_PROFILE_TEMPLATE_ENGINE === 'string' ? env.WORKSPACE_PROFILE_TEMPLATE_ENGINE : '';
+  const resourcePath =
+    typeof env.WORKSPACE_PROFILE_TEMPLATE_RESOURCE_PATH === 'string'
+      ? env.WORKSPACE_PROFILE_TEMPLATE_RESOURCE_PATH
+      : '';
+  const inferredType = typeRaw || path.extname(templatePath).replace(/^\./, '');
+  return {
+    path: templatePath,
+    type: inferredType ? inferredType.toLowerCase() : '',
+    cssPath,
+    engine,
+    resourcePath,
+    resourcePaths: resourcePath ? resourcePath.split(path.delimiter).filter(Boolean) : [],
+  };
+};
+
+const publishWithTemplateFallback = async ({
+  mdLocalPath,
+  pdfLocalPath,
+  publishEnv,
+  templateInfo,
+  logger,
+  callPublishFn = callPublishScript,
+  runPandoc = zsh,
+}) => {
+  if (!mdLocalPath || !pdfLocalPath) {
+    throw new Error('Percorsi Markdown o PDF mancanti per la pubblicazione');
+  }
+  const log = (message, stage = 'publish', status = 'info') => {
+    if (typeof logger === 'function') {
+      logger(message, stage, status);
+    }
+  };
+
+  const result = await callPublishFn(mdLocalPath, publishEnv);
+  if (result.code !== 0) {
+    log(result.stderr || result.stdout || 'publish.sh failed', 'publish', 'warning');
+    log('Tentativo fallback pandoc…', 'publish', 'info');
+  }
+
+  if (!fs.existsSync(pdfLocalPath)) {
+    if (result.code === 0) {
+      log('publish.sh non ha generato un PDF, fallback su pandoc…', 'publish', 'info');
+    }
+    const destDir = path.dirname(mdLocalPath);
+    const mdArg = JSON.stringify(mdLocalPath);
+    const pdfArg = JSON.stringify(pdfLocalPath);
+    const resolvedTemplateInfo = templateInfo || templateInfoFromEnv(publishEnv);
+    let inlineMetadataPath = '';
+    let fallbackTemplateInfo = resolvedTemplateInfo;
+    if (resolvedTemplateInfo && resolvedTemplateInfo.type === 'html' && resolvedTemplateInfo.cssPath) {
+      try {
+        inlineMetadataPath = await createInlineCssMetadataFile(resolvedTemplateInfo.cssPath, destDir);
+        if (inlineMetadataPath) {
+          fallbackTemplateInfo = { ...resolvedTemplateInfo, inlineMetadataPath };
+        }
+      } catch (metadataError) {
+        log(
+          `⚠️ CSS inline non generato per il fallback: ${metadataError?.message || metadataError}`,
+          'publish',
+          'warning'
+        );
+      }
+    }
+    try {
+      const fallbackCmdParts = [];
+      fallbackCmdParts.push(`cd ${JSON.stringify(destDir)};`);
+      fallbackCmdParts.push(
+        `command -v pandocPDF >/dev/null && pandocPDF ${mdArg} || ${buildPandocFallback(fallbackTemplateInfo, mdArg, pdfArg)}`
+      );
+      const pandoc = await runPandoc(fallbackCmdParts.join(' '), publishEnv);
+      if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
+        log(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
+        throw new Error('Generazione PDF fallita');
+      }
+      log('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
+    } finally {
+      if (inlineMetadataPath) {
+        await safeUnlink(inlineMetadataPath);
+      }
+    }
+  }
+
+  return result;
 };
 
 const ensureWritableDirectory = async (dir) => {
@@ -470,16 +956,62 @@ const callPublishScript = async (mdPath, env = {}) => {
   return await run('bash', [PUBLISH_SCRIPT, mdPath], { env: publishEnv });
 };
 
+const diarizedSegmentsToText = (segments = []) => {
+  if (!Array.isArray(segments) || !segments.length) return '';
+  const normalized = segments
+    .map((segment) => {
+      if (!segment || typeof segment !== 'object') return null;
+      const start = Number(segment.start);
+      const speakerRaw = typeof segment.speaker === 'string' ? segment.speaker.trim() : '';
+      const speaker = speakerRaw || 'SPEAKER_UNKNOWN';
+      let text = '';
+      if (typeof segment.text === 'string' && segment.text.trim()) {
+        text = segment.text.replace(/\s+/g, ' ').trim();
+      } else if (Array.isArray(segment.words)) {
+        text = segment.words
+          .map((word) => (word && typeof word.word === 'string' ? word.word : ''))
+          .filter(Boolean)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+      if (!text) return null;
+      return { start: Number.isFinite(start) ? start : Number.MAX_SAFE_INTEGER, speaker, text };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start);
+  if (!normalized.length) return '';
+  return normalized.map((item) => `${item.speaker}: ${item.text}`).join('\n');
+};
+
+const loadTranscriptForPrompt = async (sourcePath) => {
+  const raw = await fsp.readFile(sourcePath, 'utf8');
+  const ext = path.extname(sourcePath || '').toLowerCase();
+  if (ext === '.json' || (!ext && raw.trim().startsWith('{'))) {
+    try {
+      const parsed = JSON.parse(raw);
+      const diarized = diarizedSegmentsToText(parsed?.segments || []);
+      if (diarized) {
+        return diarized;
+      }
+    } catch {
+      // ignore JSON parse errors, fallback to raw text
+    }
+  }
+  return raw;
+};
+
 const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
   try {
-    const transcript = await fsp.readFile(txtPath, 'utf8');
+    const transcript = await loadTranscriptForPrompt(txtPath);
 
     let promptLines = [
       "Sei un assistente AI specializzato nell'analisi di trascrizioni di riunioni.",
       "Il tuo compito è trasformare il testo grezzo in un documento Markdown ben strutturato, chiaro e utile.",
       "Organizza il contenuto usando intestazioni (es. `## Argomento`), elenchi puntati (`-`) e paragrafi concisi.",
       "L'output deve essere solo il Markdown, senza commenti o testo aggiuntivo.",
-      "La lingua del documento finale deve essere l'italiano."
+      "La lingua del documento finale deve essere l'italiano.",
+      "Il testo potrebbe contenere etichette come `SPEAKER_00:` o `SPEAKER_01:`. Mantieni l'ordine delle battute, identifica chiaramente gli speaker e formatta i loro nomi in modo leggibile (es. `**Speaker 1:**`)."
     ];
 
     if (promptPayload) {
@@ -793,14 +1325,14 @@ const validateWorkspaceProfiles = async (profiles, { prompts } = {}) => {
     }
 
     if (profile.pdfTemplate) {
-      const templatePath = path.join(TEMPLATES_DIR, profile.pdfTemplate);
       try {
-        const stats = await fsp.stat(templatePath);
-        if (!stats.isFile()) {
-          errors.push(`Il template PDF per il profilo "${label}" non è un file valido.`);
-        }
+        await resolveTemplateDescriptor(profile.pdfTemplate);
       } catch (error) {
-        errors.push(`Il template PDF per il profilo "${label}" non esiste: ${error?.message || error}`);
+        const reason =
+          error instanceof TemplateResolutionError
+            ? error.userMessage
+            : error?.message || 'Template non valido';
+        errors.push(`Il template PDF per il profilo "${label}" non è valido: ${reason}`);
       }
     }
   }
@@ -1083,6 +1615,204 @@ const SUPABASE_AUDIO_BUCKET = 'audio-uploads';
 const SUPABASE_TEXT_BUCKET = 'text-uploads';
 const SUPABASE_PROCESSED_BUCKET = 'processed-media';
 
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const buildSpeakerLabelVariants = (label = '') => {
+  if (!label || typeof label !== 'string') return [];
+  const normalized = label.trim();
+  if (!normalized) return [];
+  const variants = new Set();
+  variants.add(normalized);
+  variants.add(normalized.toUpperCase());
+  variants.add(normalized.toLowerCase());
+  const spaced = normalized.replace(/_/g, ' ');
+  if (spaced !== normalized) {
+    variants.add(spaced);
+    variants.add(spaced.toUpperCase());
+    variants.add(spaced.toLowerCase());
+    variants.add(spaced.replace(/\b\w/g, (c) => c.toUpperCase()));
+  }
+  return Array.from(variants);
+};
+
+const sanitizeSpeakerMapInput = (raw) => {
+  if (!raw || typeof raw !== 'object') {
+    return {};
+  }
+  const sanitized = {};
+  for (const [labelRaw, nameRaw] of Object.entries(raw)) {
+    if (typeof labelRaw !== 'string') continue;
+    const label = labelRaw.trim();
+    if (!label) continue;
+    const mappedName =
+      typeof nameRaw === 'string'
+        ? nameRaw.trim()
+        : typeof nameRaw === 'number'
+          ? String(nameRaw).trim()
+          : '';
+    if (!mappedName) continue;
+    sanitized[label] = mappedName;
+  }
+  return sanitized;
+};
+
+const applySpeakerMapToContent = (content, mapping = {}) => {
+  if (typeof content !== 'string' || !mapping || typeof mapping !== 'object') {
+    return content;
+  }
+
+  let result = content;
+  for (const [label, mappedName] of Object.entries(mapping)) {
+    if (!label || typeof label !== 'string') continue;
+    const trimmedName = typeof mappedName === 'string' ? mappedName.trim() : '';
+    if (!trimmedName) continue;
+    const variants = buildSpeakerLabelVariants(label);
+    variants.forEach((token) => {
+      const quotedPattern = new RegExp(`(['"])\\s*${escapeRegExp(token)}\\s*(['"])`, 'gi');
+      result = result.replace(quotedPattern, (_match, openQuote, closeQuote) => {
+        return `${openQuote}${trimmedName}${closeQuote}`;
+      });
+    });
+    variants.forEach((token) => {
+      const colonPattern = new RegExp(`(['"]?)(\\*\\*)?${escapeRegExp(token)}(\\*\\*)?(['"]?)(\\s*:)`, 'gi');
+      result = result.replace(colonPattern, (_match, openQuote, _leading, _trailing, closeQuote, suffix) => {
+        const quote = openQuote && openQuote === closeQuote ? openQuote : '';
+        const normalizedSuffix = suffix && suffix.includes(':') ? suffix : ':';
+        return `${quote}**${trimmedName}**${quote}${normalizedSuffix}`;
+      });
+    });
+    variants.forEach((token) => {
+      const barePattern = new RegExp(`(['"]?)(\\*\\*)?${escapeRegExp(token)}(\\*\\*)?(['"]?)`, 'gi');
+      result = result.replace(barePattern, (_match, openQuote, _leading, _trailing, closeQuote) => {
+        const quote = openQuote && openQuote === closeQuote ? openQuote : '';
+        return `${quote}**${trimmedName}**${quote}`;
+      });
+    });
+  }
+  return result;
+};
+
+const ensureTemplateFrontMatter = async (mdPath, descriptor) => {
+  if (!descriptor || !mdPath) return;
+  const templateName = path.basename(descriptor.path || '').toLowerCase();
+  if (templateName !== 'verbale_meeting.html') {
+    return;
+  }
+
+  try {
+    let content = await fsp.readFile(mdPath, 'utf8');
+    const cssRelative = descriptor.cssFileName
+      ? (descriptor.cssFileName.startsWith('Templates/')
+          ? descriptor.cssFileName
+          : `Templates/${descriptor.cssFileName}`)
+      : 'Templates/verbale_meeting.css';
+    const styleLine = `styles.css: ${cssRelative}`;
+    const layoutLines = ['pdfRules:', '  layout: verbale_meeting'];
+
+    const hasFrontMatter = content.startsWith('---');
+    if (hasFrontMatter) {
+      const secondDelimIndex = content.indexOf('\n---', 3);
+      if (secondDelimIndex !== -1) {
+        let frontMatterBlock = content.slice(0, secondDelimIndex);
+        const closing = content.slice(secondDelimIndex, secondDelimIndex + 4);
+        const body = content.slice(secondDelimIndex + 4);
+        const lines = frontMatterBlock.split('\n');
+        const closingIndex = lines.length - 1;
+        let changed = false;
+
+        const hasStyles = lines.some((line) => line.trim().startsWith('styles.css:'));
+        if (!hasStyles) {
+          lines.splice(closingIndex, 0, styleLine);
+          changed = true;
+        }
+
+        const pdfRulesIndex = lines.findIndex((line) => line.trim().startsWith('pdfRules:'));
+        if (pdfRulesIndex === -1) {
+          lines.splice(closingIndex, 0, ...layoutLines);
+          changed = true;
+        } else {
+          const layoutExists = lines.some(
+            (line, index) => index > pdfRulesIndex && line.trim().startsWith('layout:')
+          );
+          if (!layoutExists) {
+            lines.splice(pdfRulesIndex + 1, 0, layoutLines[1]);
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          frontMatterBlock = lines.join('\n');
+          content = `${frontMatterBlock}${closing}${body}`;
+          await fsp.writeFile(mdPath, content, 'utf8');
+        }
+        return;
+      }
+    }
+
+    const injectedFrontMatter = [
+      '---',
+      styleLine,
+      ...layoutLines,
+      '---',
+      '',
+    ].join('\n');
+    content = `${injectedFrontMatter}${content}`;
+    await fsp.writeFile(mdPath, content, 'utf8');
+  } catch (error) {
+    console.warn(`⚠️  Impossibile aggiornare il front matter per ${mdPath}:`, error?.message || error);
+  }
+};
+
+const extractLayoutFromMarkdown = (content = '') => {
+  if (typeof content !== 'string' || !content.startsWith('---')) return '';
+  const closingIndex = content.indexOf('\n---', 3);
+  if (closingIndex === -1) return '';
+  const block = content.slice(3, closingIndex).split(/\r?\n/);
+  let layout = '';
+  let inPdfRules = false;
+  for (const rawLine of block) {
+    const line = rawLine;
+    if (!line.trim()) continue;
+    if (!line.startsWith(' ') && !line.startsWith('\t')) {
+      inPdfRules = line.trim().startsWith('pdfRules:');
+      if (!inPdfRules && !layout && line.trim().startsWith('layout:')) {
+        layout = line.split(':').slice(1).join(':').trim();
+      }
+      continue;
+    }
+    if (inPdfRules) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('layout:')) {
+        layout = trimmed.split(':').slice(1).join(':').trim();
+      }
+    }
+  }
+  return layout.replace(/^['"]|['"]$/g, '');
+};
+
+const resolveTemplateFromLayout = async (layout, { logger } = {}) => {
+  if (!layout) return null;
+  const normalized = layout.trim().toLowerCase();
+  let candidate = layout.trim();
+  if (DEFAULT_LAYOUT_TEMPLATE_MAP.has(normalized)) {
+    candidate = DEFAULT_LAYOUT_TEMPLATE_MAP.get(normalized);
+  }
+  try {
+    const descriptor = await resolveTemplateDescriptor(candidate);
+    if (logger) {
+      logger(`📄 Template layout: ${descriptor.fileName}`, 'publish', 'info');
+    }
+    return descriptor;
+  } catch (error) {
+    if (logger) {
+      const reason =
+        error instanceof TemplateResolutionError ? error.userMessage : error?.message || error;
+      logger(`⚠️ Template layout non accessibile: ${reason}`, 'publish', 'warning');
+    }
+    return null;
+  }
+};
+
 const safeUnlink = async (filePath) => {
   if (!filePath) return;
   try {
@@ -1342,6 +2072,48 @@ const DEFAULT_PROMPTS = [
     builtIn: true,
   },
   {
+    id: 'prompt_meeting_minutes',
+    slug: 'verbale_meeting',
+    title: 'Verbale riunione executive',
+    summary: 'Genera verbali completi e azionabili a partire da trascrizioni di meeting.',
+    description:
+      "Trasforma la trascrizione di una riunione in un verbale pronto per il template HTML meeting. Apri il documento con un front matter YAML che imposti `pdfRules.layout: verbale_meeting` (o il campo `layout`) e opzionalmente `styles.css: Templates/verbale_meeting.css`. Il front matter deve includere tre array obbligatori: `action_items` (oggetti con description, assignee.name, assignee.role, due_date), `key_points` (voci sintetiche) e `transcript` (blocchi con speaker, role, timestamp, paragraphs). Struttura il corpo usando le sezioni esatte: 'Riepilogo esecutivo', 'Decisioni e approvazioni', 'Azioni assegnate', 'Punti chiave', 'Trascrizione integrale' e chiudi con eventuali allegati o note operative.",
+    persona: 'Chief of Staff',
+    color: '#f97316',
+    tags: ['meeting', 'verbale', 'operations'],
+    cueCards: [
+      { key: 'context', title: 'Contesto', hint: 'Qual era lo scopo della riunione e quali team erano coinvolti?' },
+      { key: 'decisions', title: 'Decisioni', hint: 'Quali decisioni o approvazioni sono state prese e da chi?' },
+      { key: 'actions', title: 'Azioni', hint: 'Elenca le attività con owner, ruolo e scadenza stimata.' },
+      { key: 'risks', title: 'Criticità', hint: 'Segnala blocchi, rischi aperti o richieste di follow-up.' },
+      { key: 'transcript', title: 'Trascrizione', hint: 'Evidenzia passaggi chiave da riportare nel blocco transcript.' },
+    ],
+    markdownRules: {
+      tone: 'Professionale e sintetico, orientato al follow-up.',
+      voice: 'Terza persona con riferimenti ai ruoli aziendali.',
+      bulletStyle: 'Liste numerate per decisioni e puntate per punti chiave.',
+      includeCallouts: true,
+      summaryStyle: 'Tabella o elenco iniziale con data, durata e partecipanti.',
+    },
+    pdfRules: {
+      accentColor: '#f97316',
+      layout: 'verbale_meeting',
+      template: 'verbale_meeting.html',
+      includeCover: false,
+      includeToc: false,
+    },
+    checklist: {
+      sections: [
+        'Riepilogo esecutivo',
+        'Decisioni e approvazioni',
+        'Azioni assegnate',
+        'Punti chiave',
+        'Trascrizione integrale',
+      ],
+    },
+    builtIn: true,
+  },
+  {
     id: 'prompt_format_base',
     slug: 'format_base',
     title: 'Format base',
@@ -1434,28 +2206,90 @@ const bootstrapDefaultPrompts = () => {
 
 const applyPromptMigrations = (prompts = []) => {
   let changed = false;
-  const upgraded = (prompts || []).map((prompt) => {
+  const upgraded = [];
+  const existingById = new Map();
+  const existingBySlug = new Map();
+
+  for (const prompt of prompts || []) {
     if (!prompt || typeof prompt !== 'object') {
-      return prompt;
+      upgraded.push(prompt);
+      continue;
     }
 
-    if (prompt.builtIn) {
-      const defaults =
-        DEFAULT_PROMPTS_BY_ID.get(prompt.id) ||
-        (prompt.slug ? DEFAULT_PROMPTS_BY_SLUG.get(prompt.slug) : null);
+    const defaults = prompt.builtIn
+      ? DEFAULT_PROMPTS_BY_ID.get(prompt.id) ||
+        (prompt.slug ? DEFAULT_PROMPTS_BY_SLUG.get(prompt.slug) : null)
+      : null;
 
-      if (defaults) {
-        const next = { ...prompt };
-        if (!next.summary && defaults.summary) {
-          next.summary = defaults.summary;
+    const next = { ...prompt };
+
+    if (defaults) {
+      if (!next.summary && defaults.summary) {
+        next.summary = defaults.summary;
+        changed = true;
+      }
+
+      if (!next.builtIn) {
+        next.builtIn = true;
+        changed = true;
+      }
+
+      if (defaults.pdfRules && typeof defaults.pdfRules === 'object') {
+        const currentPdfRules =
+          next.pdfRules && typeof next.pdfRules === 'object' ? { ...next.pdfRules } : {};
+        let pdfRulesChanged = false;
+        for (const [key, value] of Object.entries(defaults.pdfRules)) {
+          if (currentPdfRules[key] === undefined) {
+            currentPdfRules[key] = value;
+            pdfRulesChanged = true;
+          }
+        }
+        if (pdfRulesChanged || (!next.pdfRules && Object.keys(currentPdfRules).length)) {
+          next.pdfRules = currentPdfRules;
           changed = true;
         }
-        return next;
       }
     }
 
-    return prompt;
-  });
+    upgraded.push(next);
+
+    if (next && typeof next === 'object') {
+      if (next.id) {
+        existingById.set(next.id, next);
+      }
+      if (next.slug) {
+        existingBySlug.set(next.slug, next);
+      }
+    }
+  }
+
+  for (const defaults of DEFAULT_PROMPTS) {
+    if (!defaults || !defaults.builtIn) {
+      continue;
+    }
+    const alreadyPresent =
+      (defaults.id && existingById.get(defaults.id)) ||
+      (defaults.slug && existingBySlug.get(defaults.slug));
+    if (alreadyPresent) {
+      continue;
+    }
+
+    const timestamp = Date.now();
+    const injected = {
+      ...defaults,
+      createdAt: defaults.createdAt || timestamp,
+      updatedAt: defaults.updatedAt || timestamp,
+    };
+
+    upgraded.push(injected);
+    if (injected.id) {
+      existingById.set(injected.id, injected);
+    }
+    if (injected.slug) {
+      existingBySlug.set(injected.slug, injected);
+    }
+    changed = true;
+  }
 
   return { prompts: upgraded, changed };
 };
@@ -1916,6 +2750,17 @@ app.get('/api/prompts', async (req, res) => {
   }
 });
 
+app.get('/api/templates', async (req, res) => {
+  try {
+    const templates = await listTemplatesMetadata();
+    return res.json({ ok: true, templates });
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    console.error('❌ Errore durante la lettura dei template:', message);
+    return res.status(500).json({ ok: false, message });
+  }
+});
+
 app.post('/api/prompts', async (req, res) => {
   try {
     const title = String(req.body?.title || '').trim();
@@ -2034,6 +2879,25 @@ app.get('/api/diag', async (req, res) => {
   } catch { out('❌ whisper non eseguibile'); }
 
   try {
+    const wx = await run('bash', [
+      '-lc',
+      'if command -v whisperx >/dev/null 2>&1; then whisperx --help >/dev/null 2>&1 && echo whisperx-ok || echo whisperx-help-failed; else echo whisperx-missing; fi'
+    ]);
+    const diagToken = wx.stdout.trim();
+    if (diagToken === 'whisperx-ok') {
+      out('✅ whisperX: disponibile');
+    } else if (diagToken === 'whisperx-help-failed') {
+      out('⚠️ whisperX rilevato ma non eseguibile (controlla dipendenze)');
+    } else {
+      out('⚠️ whisperX non trovato (richiesto per diarizzazione)');
+    }
+  } catch {
+    out('⚠️ whisperX non eseguibile');
+  }
+
+  out(HUGGING_FACE_TOKEN ? '✅ HUGGING_FACE_TOKEN configurato' : '⚠️ HUGGING_FACE_TOKEN non impostato');
+
+  try {
     const g = await run('bash', ['-lc', 'command -v gemini']);
     out(g.code === 0 ? '✅ gemini: trovato' : '❌ gemini non trovato. Necessario per la generazione Markdown.');
   } catch { out('❌ gemini non eseguibile'); }
@@ -2070,6 +2934,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
   let promptCuesCompleted = [];
   const tempFiles = new Set();
   const tempDirs = new Set();
+  let speakerLabels = [];
 
   const logStageEvent = (stage, status = 'info', message = '') => {
     if (!stage) return;
@@ -2131,6 +2996,23 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         promptCuesCompleted = [];
       }
     }
+
+    const diarizeRaw = typeof req.body?.diarize === 'string' ? req.body.diarize : '';
+    const diarizeEnabled = (() => {
+      if (typeof req.body?.diarize === 'boolean') return req.body.diarize;
+      if (typeof diarizeRaw === 'string' && diarizeRaw) {
+        const normalized = diarizeRaw.trim().toLowerCase();
+        return ['true', '1', 'yes', 'on'].includes(normalized);
+      }
+      return false;
+    })();
+    out(
+      diarizeEnabled
+        ? '🗣️ Modalità riunione con diarizzazione WhisperX attivata.'
+        : '🗣️ Modalità standard (voce singola) attiva.',
+      'upload',
+      'info'
+    );
 
     let promptId = String(req.body?.promptId || '').trim();
     if (promptId) {
@@ -2317,7 +3199,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
 
     const processedBasePath = `processed/${userId}`;
     const wavStoragePath = `${processedBasePath}/${baseName}.wav`;
-    const txtStoragePath = `${processedBasePath}/${baseName}.txt`;
+    const transcriptExt = diarizeEnabled ? '.json' : '.txt';
+    const transcriptStoragePath = `${processedBasePath}/${baseName}${transcriptExt}`;
     const mdStoragePath = `${processedBasePath}/documento_${baseName}.md`;
     const pdfStoragePath = `${processedBasePath}/documento_${baseName}.pdf`;
 
@@ -2368,50 +3251,162 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       await safeUnlink(wavLocalPath);
     }
 
-    out('🎧 Trascrizione con Whisper…', 'transcribe', 'running');
+    out(
+      diarizeEnabled
+        ? '🎧 Trascrizione + diarizzazione con WhisperX…'
+        : '🎧 Trascrizione con Whisper…',
+      'transcribe',
+      'running'
+    );
     const wavLocalForTranscribe = registerTempFile(path.join(pipelineDir, `${baseName}.wav`));
     let transcriptLocalPath = '';
     try {
       const wavBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, wavStoragePath);
       await fsp.writeFile(wavLocalForTranscribe, wavBuffer);
-      const whisperOutputDir = pipelineDir;
-      const w = await run('bash', [
-        '-lc',
-        `whisper ${JSON.stringify(wavLocalForTranscribe)} --language it --model small --output_format txt --output_dir ${JSON.stringify(whisperOutputDir)} --verbose False`
-      ]);
-      if (w.code !== 0) {
-        out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
-        throw new Error('Trascrizione fallita');
+      const transcribeOutputDir = pipelineDir;
+      if (diarizeEnabled) {
+        if (!HUGGING_FACE_TOKEN) {
+          out('❌ HUGGING_FACE_TOKEN mancante: impossibile eseguire diarizzazione', 'transcribe', 'failed');
+          throw new Error('Diarizzazione WhisperX non disponibile: HUGGING_FACE_TOKEN non configurato');
+        }
+        const diarizeCmd = [
+          'whisperx',
+          JSON.stringify(wavLocalForTranscribe),
+          '--language it',
+          '--compute_type float32',
+          '--diarize',
+          `--hf_token ${JSON.stringify(HUGGING_FACE_TOKEN)}`,
+          `--output_dir ${JSON.stringify(transcribeOutputDir)}`,
+          '--output_format json'
+        ].join(' ');
+        const wx = await run('bash', ['-lc', diarizeCmd]);
+        if (wx.code !== 0) {
+          out(wx.stderr || wx.stdout || 'whisperX failed', 'transcribe', 'failed');
+          throw new Error('Trascrizione fallita (whisperX)');
+        }
+        const candidates = (await fsp.readdir(transcribeOutputDir)).filter(
+          (file) => file.startsWith(baseName) && file.endsWith('.json')
+        );
+        if (!candidates.length) {
+          throw new Error('Trascrizione diarizzata .json non trovata');
+        }
+        transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, candidates[0]));
+      } else {
+        const w = await run('bash', [
+          '-lc',
+          `whisper ${JSON.stringify(wavLocalForTranscribe)} --language it --model small --output_format txt --output_dir ${JSON.stringify(transcribeOutputDir)} --verbose False`
+        ]);
+        if (w.code !== 0) {
+          out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
+          throw new Error('Trascrizione fallita');
+        }
+        const candidates = (await fsp.readdir(transcribeOutputDir)).filter(
+          (file) => file.startsWith(baseName) && file.endsWith('.txt')
+        );
+        if (!candidates.length) {
+          throw new Error('Trascrizione .txt non trovata');
+        }
+        transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, candidates[0]));
       }
-      const candidates = (await fsp.readdir(whisperOutputDir)).filter((file) => file.startsWith(baseName) && file.endsWith('.txt'));
-      if (!candidates.length) {
-        throw new Error('Trascrizione .txt non trovata');
-      }
-      transcriptLocalPath = registerTempFile(path.join(whisperOutputDir, candidates[0]));
+      const transcriptMime = diarizeEnabled ? 'application/json' : 'text/plain';
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,
-        txtStoragePath,
+        transcriptStoragePath,
         await fsp.readFile(transcriptLocalPath),
-        'text/plain'
+        transcriptMime
       );
-      out(`✅ Trascrizione completata: ${path.basename(transcriptLocalPath)}`, 'transcribe', 'completed');
+      out(
+        diarizeEnabled
+          ? `✅ Trascrizione diarizzata completata: ${path.basename(transcriptLocalPath)}`
+          : `✅ Trascrizione completata: ${path.basename(transcriptLocalPath)}`,
+        'transcribe',
+        'completed'
+      );
     } finally {
       await safeUnlink(wavLocalForTranscribe);
       await safeUnlink(transcriptLocalPath);
     }
 
+        const profileTemplateCandidate = workspaceProfile?.pdfTemplate || workspaceProfileTemplate || '';
+    let profileTemplateDescriptor = null;
+    let promptTemplateDescriptor = null;
+    if (profileTemplateCandidate) {
+      try {
+        profileTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateCandidate);
+        out(`📄 Template profilo: ${profileTemplateDescriptor.fileName}`, 'publish', 'info');
+        if (profileTemplateDescriptor.cssFileName) {
+          out(`🎨 CSS template: ${profileTemplateDescriptor.cssFileName}`, 'publish', 'info');
+        }
+        if (profileTemplateDescriptor.engine) {
+          out(`⚙️ Motore HTML preferito: ${profileTemplateDescriptor.engine}`, 'publish', 'info');
+        }
+      } catch (templateError) {
+        const reason =
+          templateError instanceof TemplateResolutionError
+            ? templateError.userMessage
+            : templateError?.message || templateError;
+        out(`⚠️ Template profilo non accessibile: ${reason}`, 'publish', 'warning');
+      }
+    }
+
+    if (!profileTemplateDescriptor && selectedPrompt) {
+      promptTemplateDescriptor = await resolvePromptTemplateDescriptor(selectedPrompt, { logger: out });
+    }
+
+    let activeTemplateDescriptor = profileTemplateDescriptor || promptTemplateDescriptor;
+
+    if (!activeTemplateDescriptor && diarizeEnabled) {
+      try {
+        activeTemplateDescriptor = await resolveTemplateDescriptor('verbale_meeting.html');
+        out(`📄 Template diarizzazione fallback: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+      } catch (templateError) {
+        const reason =
+          templateError instanceof TemplateResolutionError
+            ? templateError.userMessage
+            : templateError?.message || templateError;
+        out(`⚠️ Template fallback diarizzazione non accessibile: ${reason}`, 'publish', 'warning');
+      }
+    }
+
     out('📝 Generazione Markdown…', 'markdown', 'running');
-    let txtLocalForMarkdown = '';
+    let transcriptLocalForMarkdown = '';
     let mdLocalPath = '';
     try {
-      const transcriptBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, txtStoragePath);
-      txtLocalForMarkdown = registerTempFile(path.join(pipelineDir, `${baseName}.txt`));
-      await fsp.writeFile(txtLocalForMarkdown, transcriptBuffer);
+      const transcriptBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, transcriptStoragePath);
+      transcriptLocalForMarkdown = registerTempFile(path.join(pipelineDir, `${baseName}${transcriptExt}`));
+      await fsp.writeFile(transcriptLocalForMarkdown, transcriptBuffer);
+      if (diarizeEnabled) {
+        try {
+          const parsedTranscript = JSON.parse(transcriptBuffer.toString('utf8'));
+          const speakerSet = new Set();
+          if (Array.isArray(parsedTranscript?.segments)) {
+            parsedTranscript.segments.forEach((segment) => {
+              if (segment && typeof segment.speaker === 'string') {
+                const normalizedSpeaker = segment.speaker.trim();
+                if (normalizedSpeaker) {
+                  speakerSet.add(normalizedSpeaker);
+                }
+              }
+            });
+          }
+          speakerLabels = Array.from(speakerSet).sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }));
+        } catch (parseError) {
+          out(
+            `⚠️ Impossibile analizzare gli speaker diarizzati: ${parseError?.message || parseError}`,
+            'transcribe',
+            'warning'
+          );
+          speakerLabels = [];
+        }
+      }
       mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
-      const gm = await generateMarkdown(txtLocalForMarkdown, mdLocalPath, promptRulePayload);
+      const gm = await generateMarkdown(transcriptLocalForMarkdown, mdLocalPath, promptRulePayload);
       if (gm.code !== 0) {
         out(gm.stderr || gm.stdout || 'Generazione Markdown fallita', 'markdown', 'failed');
         throw new Error('Generazione Markdown fallita: ' + (gm.stderr || gm.stdout));
+      }
+      if (activeTemplateDescriptor) {
+        await ensureTemplateFrontMatter(mdLocalPath, activeTemplateDescriptor);
       }
       if (!fs.existsSync(mdLocalPath)) {
         throw new Error(`Markdown non trovato: ${mdLocalPath}`);
@@ -2424,7 +3419,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       );
       out(`✅ Markdown generato: ${path.basename(mdLocalPath)}`, 'markdown', 'completed');
     } finally {
-      await safeUnlink(txtLocalForMarkdown);
+      await safeUnlink(transcriptLocalForMarkdown);
       await safeUnlink(mdLocalPath);
     }
 
@@ -2477,23 +3472,10 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       }
     }
 
-    const profileTemplateCandidate = workspaceProfile?.pdfTemplate || workspaceProfileTemplate || '';
-    let profileTemplatePath = '';
-    if (profileTemplateCandidate) {
-      const candidatePath = path.join(TEMPLATES_DIR, profileTemplateCandidate);
-      try {
-        await fsp.access(candidatePath, fs.constants.R_OK);
-        profileTemplatePath = candidatePath;
-        out(`📄 Template profilo: ${path.basename(candidatePath)}`, 'publish', 'info');
-      } catch (templateError) {
-        out(`⚠️ Template profilo non accessibile: ${templateError?.message || templateError}`, 'publish', 'warning');
-      }
-    }
-
     const publishEnv = buildEnvOptions(
       promptEnv,
       customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null,
-      profileTemplatePath ? { WORKSPACE_PROFILE_TEMPLATE: profileTemplatePath } : null
+      activeTemplateDescriptor ? buildTemplateEnv(activeTemplateDescriptor) : null
     );
 
     let mdLocalForPublish = '';
@@ -2504,25 +3486,13 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       await fsp.writeFile(mdLocalForPublish, mdBufferForPublish);
       pdfLocalPath = registerTempFile(path.join(path.dirname(mdLocalForPublish), `documento_${baseName}.pdf`));
 
-      const pb = await callPublishScript(mdLocalForPublish, publishEnv);
-
-      if (pb.code !== 0) {
-        out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
-        out('Tentativo fallback pandoc…', 'publish', 'info');
-      }
-
-      if (!fs.existsSync(pdfLocalPath)) {
-        const destDir = path.dirname(mdLocalForPublish);
-        const pandoc = await zsh(
-          `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalForPublish)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalForPublish)}`,
-          publishEnv
-        );
-        if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
-          out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
-          throw new Error('Generazione PDF fallita');
-        }
-        out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
-      }
+      await publishWithTemplateFallback({
+        mdLocalPath: mdLocalForPublish,
+        pdfLocalPath,
+        publishEnv,
+        templateInfo: activeTemplateDescriptor,
+        logger: out,
+      });
 
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,
@@ -2585,6 +3555,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       workspace: workspaceAssignment,
       prompt: promptAssignment,
       structure,
+      speakers: speakerLabels,
     });
   } catch (err) {
     const message = String(err && err.message ? err.message : err);
@@ -2625,6 +3596,22 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
     const mdPathRaw = String(req.body?.mdPath || '').trim();
     if (!mdPathRaw) {
       return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante', logs });
+    }
+
+    let speakerMap = {};
+    const rawSpeakerMap = typeof req.body?.speakerMap === 'string' ? req.body.speakerMap.trim() : '';
+    if (rawSpeakerMap) {
+      try {
+        const parsed = JSON.parse(rawSpeakerMap);
+        speakerMap = sanitizeSpeakerMapInput(parsed);
+      } catch (parseError) {
+        out(`⚠️ Mappatura speaker non valida: ${parseError?.message || parseError}`);
+        speakerMap = {};
+      }
+    }
+    const hasSpeakerMap = Object.keys(speakerMap).length > 0;
+    if (hasSpeakerMap) {
+      out(`🗣️ Mappatura speaker ricevuta (${Object.keys(speakerMap).length} etichette)`);
     }
 
     const looksLikeStoragePath =
@@ -2682,6 +3669,26 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
       return { localPdfPath, localMdPath };
     };
 
+    const createMappedMarkdownCopy = async (sourcePath) => {
+      if (!hasSpeakerMap) {
+        return sourcePath;
+      }
+      try {
+        const originalContent = await fsp.readFile(sourcePath, 'utf8');
+        const mappedContent = applySpeakerMapToContent(originalContent, speakerMap);
+        const ext = path.extname(sourcePath) || '.md';
+        const baseName = path.basename(sourcePath, ext);
+        const mappedPath = path.join(path.dirname(sourcePath), `${baseName}_speaker-map${ext}`);
+        await fsp.writeFile(mappedPath, mappedContent, 'utf8');
+        cleanupFiles.add(mappedPath);
+        out('📝 Applicata mappatura speaker al Markdown temporaneo');
+        return mappedPath;
+      } catch (error) {
+        out(`⚠️ Impossibile applicare la mappatura speaker: ${error?.message || error}`);
+        return sourcePath;
+      }
+    };
+
     if (looksLikeStoragePath) {
       let bucket;
       let objectPath;
@@ -2710,24 +3717,33 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
       const mdBuffer = await downloadFileFromBucket(bucket, objectPath);
       await fsp.writeFile(mdLocalPath, mdBuffer);
 
-      const pb = await callPublishScript(mdLocalPath, publishEnv);
-      if (pb.code !== 0) {
-        out(pb.stderr || pb.stdout || 'publish.sh failed');
-        out('Tentativo fallback pandoc…');
+      let activeTemplateDescriptor = null;
+      const layoutCandidate = extractLayoutFromMarkdown(mdBuffer.toString('utf8'));
+      if (layoutCandidate) {
+        activeTemplateDescriptor = await resolveTemplateFromLayout(layoutCandidate, { logger: out });
+      }
+      if (!activeTemplateDescriptor && hasSpeakerMap) {
+        try {
+          activeTemplateDescriptor = await resolveTemplateDescriptor('verbale_meeting.html');
+          out(`📄 Template fallback (speaker map): ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+        } catch (templateError) {
+          const reason =
+            templateError instanceof TemplateResolutionError
+              ? templateError.userMessage
+              : templateError?.message || templateError;
+          out(`⚠️ Template fallback non accessibile: ${reason}`, 'publish', 'warning');
+        }
       }
 
-      if (!fs.existsSync(pdfLocalPath)) {
-        out('publish.sh non ha generato un PDF, fallback su pandoc…');
-        const pandoc = await zsh(
-          `cd ${JSON.stringify(workDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalPath)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalPath)}`,
-          publishEnv
-        );
-        if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
-          out(pandoc.stderr || pandoc.stdout || 'pandoc failed');
-          throw new Error('Rigenerazione PDF fallita');
-        }
-        out('✅ PDF creato tramite fallback pandoc');
-      }
+      const mdPathForPublish = await createMappedMarkdownCopy(mdLocalPath);
+
+      await publishWithTemplateFallback({
+        mdLocalPath: mdPathForPublish,
+        pdfLocalPath,
+        publishEnv,
+        templateInfo: activeTemplateDescriptor,
+        logger: out,
+      });
 
       await uploadFileToBucket(bucket, pdfObjectPath, await fsp.readFile(pdfLocalPath), 'application/pdf');
       out(`☁️ PDF aggiornato su Supabase: ${pdfObjectPath}`);
@@ -2758,6 +3774,7 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
         localPdfPath,
         localMdPath,
         logs,
+        speakerMap,
       });
     }
 
@@ -2773,41 +3790,40 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
     const dest = path.dirname(mdPath);
     out(`♻️ Rigenerazione PDF con publish.sh da ${mdPath}`);
 
-    const pb = await callPublishScript(mdPath, publishEnv);
-    if (pb.code !== 0) {
-      out(pb.stderr || pb.stdout || 'publish.sh failed');
-      out('Tentativo fallback pandoc…');
-    }
-
     const baseName = path.basename(mdPath, path.extname(mdPath));
     const pdfPath = path.join(dest, `${baseName}.pdf`);
+    const mdPathForPublish = await createMappedMarkdownCopy(mdPath);
 
-    if (!fs.existsSync(pdfPath)) {
-      out('publish.sh non ha generato un PDF, fallback su pandoc…');
-      const pandoc = await zsh(
-        `cd ${JSON.stringify(dest)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
-        publishEnv
-      );
-      if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
-        out(pandoc.stderr || pandoc.stdout || 'pandoc failed');
-        throw new Error('Rigenerazione PDF fallita');
-      }
-    }
+    await publishWithTemplateFallback({
+      mdLocalPath: mdPathForPublish,
+      pdfLocalPath: pdfPath,
+      publishEnv,
+      logger: out,
+    });
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`);
-    return res.json({ ok: true, pdfPath, mdPath, localPdfPath: pdfPath, localMdPath: mdPath, logs });
+    return res.json({
+      ok: true,
+      pdfPath,
+      mdPath,
+      localPdfPath: pdfPath,
+      localMdPath: mdPath,
+      logs,
+      speakerMap,
+    });
   } catch (err) {
     out('❌ Errore durante la rigenerazione');
     out(String(err && err.message ? err.message : err));
+    console.error('PPUBR error', err);
     return res.status(500).json({ ok: false, message: String(err && err.message ? err.message : err), logs });
   } finally {
     if (customLogoPath) {
       await safeUnlink(customLogoPath);
     }
+    for (const filePath of cleanupFiles) {
+      await safeUnlink(filePath);
+    }
     if (usedSupabaseFlow) {
-      for (const filePath of cleanupFiles) {
-        await safeUnlink(filePath);
-      }
       await safeRemoveDir(workDir);
     }
     try { if (req.files && req.files.pdfLogo) await safeUnlink(req.files.pdfLogo[0].path); } catch { }
@@ -2985,27 +4001,14 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     );
 
     // Chiama publish.sh
-    const pb = await callPublishScript(mdPath, publishEnv);
-
-    if (pb.code !== 0) {
-      out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
-      out('Tentativo fallback pandoc…', 'publish', 'info');
-    }
-
     const pdfPath = path.join(destDir, `${baseName}.pdf`);
 
-    if (!fs.existsSync(pdfPath)) {
-      out('publish.sh non ha generato un PDF, fallback su pandoc…', 'publish', 'info');
-      const pandoc = await zsh(
-        `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdPath)} || pandoc -o ${JSON.stringify(pdfPath)} ${JSON.stringify(mdPath)}`,
-        publishEnv
-      );
-      if (pandoc.code !== 0 || !fs.existsSync(pdfPath)) {
-        out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
-        throw new Error('Generazione PDF fallita');
-      }
-      out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
-    }
+    await publishWithTemplateFallback({
+      mdLocalPath: mdPath,
+      pdfLocalPath: pdfPath,
+      publishEnv,
+      logger: out,
+    });
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
 
@@ -3294,25 +4297,12 @@ app.post(
         await fsp.writeFile(mdLocalForPublish, mdBufferForPublish);
         pdfLocalPath = registerTempFile(path.join(path.dirname(mdLocalForPublish), `documento_${baseName}.pdf`));
 
-        const pb = await callPublishScript(mdLocalForPublish, publishEnv);
-
-        if (pb.code !== 0) {
-          out(pb.stderr || pb.stdout || 'publish.sh failed', 'publish', 'warning');
-          out('Tentativo fallback pandoc…', 'publish', 'info');
-        }
-
-        if (!fs.existsSync(pdfLocalPath)) {
-          const destDir = path.dirname(mdLocalForPublish);
-          const pandoc = await zsh(
-            `cd ${JSON.stringify(destDir)}; command -v pandocPDF >/dev/null && pandocPDF ${JSON.stringify(mdLocalForPublish)} || pandoc -o ${JSON.stringify(pdfLocalPath)} ${JSON.stringify(mdLocalForPublish)}`,
-            publishEnv
-          );
-          if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
-            out(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
-            throw new Error('Generazione PDF fallita');
-          }
-          out('✅ PDF creato tramite fallback pandoc', 'publish', 'done');
-        }
+        await publishWithTemplateFallback({
+          mdLocalPath: mdLocalForPublish,
+          pdfLocalPath,
+          publishEnv,
+          logger: out,
+        });
 
         await uploadFileToBucket(
           SUPABASE_PROCESSED_BUCKET,
@@ -3568,8 +4558,28 @@ app.use((req, res, next) => {
   return next();
 });
 
-app.listen(PORT, HOST, () => {
-  const hostLabel = HOST === '0.0.0.0' ? '0.0.0.0' : HOST;
-  console.log(`rec2pdf backend in ascolto su http://${hostLabel}:${PORT}`);
-});
-;
+const startServer = () => {
+  const server = app.listen(PORT, HOST, () => {
+    const hostLabel = HOST === '0.0.0.0' ? '0.0.0.0' : HOST;
+    console.log(`rec2pdf backend in ascolto su http://${hostLabel}:${PORT}`);
+  });
+  return server;
+};
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = {
+  app,
+  startServer,
+  buildPandocFallback,
+  buildTemplateEnv,
+  buildEnvOptions,
+  listTemplatesMetadata,
+  resolveTemplateDescriptor,
+  TemplateResolutionError,
+  publishWithTemplateFallback,
+  resolvePromptTemplateDescriptor,
+  DEFAULT_LAYOUT_TEMPLATE_MAP,
+};

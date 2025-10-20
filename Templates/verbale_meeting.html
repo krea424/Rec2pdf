@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="$if(lang)$$lang$$else$it$endif$">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>$title$</title>
+    <!-- Impostare styles.css nel front matter (es. styles.css: Templates/verbale_meeting.css)
+         oppure passare --css da riga di comando. -->
+    $if(styles.css)$
+    <link rel="stylesheet" href="$styles.css$">
+    $else$
+    $if(css)$
+    $for(css)$
+    <link rel="stylesheet" href="$css$">
+    $endfor$
+    $else$
+    <link rel="stylesheet" href="Templates/verbale_meeting.css">
+    $endif$
+    $endif$
+</head>
+<body>
+    <div class="pdf-container">
+        <!--
+            Intestazione aziendale.
+            YAML atteso:
+            metadata:
+              organization:
+                logo:
+                  main: "Parla"
+                  highlight: "DOC"
+                  tagline: "Verbali automatici"
+                watermark:
+                  text: "Generato da ParlaDOC"
+                  website: "parladoc.it"
+        -->
+        <div class="pdf-header">
+            <div class="logo">
+                $if(metadata.organization.logo.main)$$metadata.organization.logo.main$$else$$if(metadata.organization.name)$$metadata.organization.name$$else$$title$$endif$$endif$
+                $if(metadata.organization.logo.highlight)$<span>$metadata.organization.logo.highlight$</span>$endif$
+                $if(metadata.organization.logo.tagline)$<div class="logo-tagline">$metadata.organization.logo.tagline$</div>$endif$
+            </div>
+            <div class="watermark">
+                $if(metadata.organization.watermark.text)$$metadata.organization.watermark.text$$endif$
+                $if(metadata.organization.watermark.website)$<br>$metadata.organization.watermark.website$$endif$
+            </div>
+        </div>
+
+        <!--
+            Sezione titolo meeting.
+            metadata.meeting:
+              subtitle: "Sprint Planning Q1"
+              date: "29 Settembre 2025"
+              duration: "48 minuti"
+              participants:
+                count: 4
+                list:
+                  - "Andrea (CEO)"
+                  - "Giulia (Head of Sales)"
+        -->
+        <div class="title-section">
+            <h1 class="doc-title">$title$</h1>
+            $if(metadata.meeting.subtitle)$<div class="doc-subtitle">$metadata.meeting.subtitle$</div>$endif$
+            <div class="metadata">
+                $if(metadata.meeting.date)$
+                <div class="metadata-item">
+                    <span class="metadata-label">Data:</span>
+                    <span>$metadata.meeting.date$</span>
+                </div>
+                $endif$
+                $if(metadata.meeting.duration)$
+                <div class="metadata-item">
+                    <span class="metadata-label">Durata:</span>
+                    <span>$metadata.meeting.duration$</span>
+                </div>
+                $endif$
+                $if(metadata.meeting.participants.count)$
+                <div class="metadata-item">
+                    <span class="metadata-label">Partecipanti:</span>
+                    <span>$metadata.meeting.participants.count$$if(metadata.meeting.participants.list)$ ($for(metadata.meeting.participants.list)$$metadata.meeting.participants.list$$sep$, $endfor$)$endif$</span>
+                </div>
+                $endif$
+            </div>
+        </div>
+
+        <!--
+            Box riassuntivo.
+            metadata.summary:
+              title: "Riassunto Esecutivo"
+              body: |
+                Testo in Markdown/HTML.
+        -->
+        $if(metadata.summary)$
+        <div class="summary-box">
+            <h2 class="summary-title">$if(metadata.summary.title)$$metadata.summary.title$$else$Riassunto$endif$</h2>
+            <div class="summary-content">
+                $if(metadata.summary.body)$$metadata.summary.body$$endif$
+            </div>
+        </div>
+        $endif$
+
+        <!--
+            Action items.
+            metadata.action_items: elenco di task con struttura
+              - description: "Preparare roadmap..."
+                assignee:
+                  name: "Marco"
+                  role: "CTO"
+                due_date: "6 Ottobre 2025"
+        -->
+        $if(metadata.action_items)$
+        <div class="action-items">
+            <h2 class="action-items-title">$if(metadata.action_items_title)$$metadata.action_items_title$$else$Action Items$endif$</h2>
+            $for(metadata.action_items)$
+            <div class="action-item">
+                <div class="action-checkbox"></div>
+                <div class="action-content">
+                    $if(metadata.action_items.description)$
+                    <div class="action-text">$metadata.action_items.description$</div>
+                    $endif$
+                    <div class="action-meta">
+                        $if(metadata.action_items.assignee.name)$
+                        Assegnato a: <span class="action-assignee">$metadata.action_items.assignee.name$$if(metadata.action_items.assignee.role)$ ($metadata.action_items.assignee.role$)$endif$</span>
+                        $endif$
+                        $if(metadata.action_items.due_date)$
+                        $if(metadata.action_items.assignee.name)$ | $endif$Scadenza: $metadata.action_items.due_date$
+                        $endif$
+                    </div>
+                </div>
+            </div>
+            $endfor$
+        </div>
+        $endif$
+
+        <!--
+            Punti chiave.
+            metadata.key_points: elenco stringhe o oggetti con campo text.
+        -->
+        $if(metadata.key_points)$
+        <div class="key-points">
+            <h3 class="key-points-title">$if(metadata.key_points_title)$$metadata.key_points_title$$else$Punti Chiave della Discussione$endif$</h3>
+            $for(metadata.key_points)$
+            <div class="key-point">$if(metadata.key_points.text)$$metadata.key_points.text$$else$$metadata.key_points$$endif$</div>
+            $endfor$
+        </div>
+        $endif$
+
+        <!--
+            Trascrizione.
+            metadata.transcript: elenco di interventi
+              - speaker: "Andrea"
+                role: "CEO"
+                timestamp: "00:00:15"
+                paragraphs:
+                  - "Testo paragrafo 1"
+                  - "Testo paragrafo 2"
+                content: "Alternativa al blocco paragraphs"
+        -->
+        $if(metadata.transcript)$
+        <div class="transcript">
+            <h2 class="section-title">$if(metadata.transcript_title)$$metadata.transcript_title$$else$Trascrizione Completa$endif$</h2>
+            $for(metadata.transcript)$
+            <div class="transcript-entry">
+                <div class="speaker-tag">
+                    $if(metadata.transcript.speaker)$[$metadata.transcript.speaker$$if(metadata.transcript.role)$ - $metadata.transcript.role$$endif$]$endif$
+                    $if(metadata.transcript.timestamp)$<span class="timestamp">$metadata.transcript.timestamp$</span>$endif$
+                </div>
+                <div class="speaker-text">
+                    $if(metadata.transcript.paragraphs)$
+                    $for(metadata.transcript.paragraphs)$
+                    <p>$metadata.transcript.paragraphs$</p>
+                    $endfor$
+                    $elseif(metadata.transcript.content)$
+                    <p>$metadata.transcript.content$</p>
+                    $endif$
+                </div>
+            </div>
+            $endfor$
+        </div>
+        $endif$
+
+        <!--
+            Footer.
+            metadata.footer:
+              notes:
+                - "Documento generato..."
+              generated_at: "29 Settembre 2025 alle 15:42"
+        -->
+        $if(metadata.footer)$
+        <div class="pdf-footer">
+            $if(metadata.footer.generated_at)$
+            <div class="footer-note">Documento generato $metadata.footer.generated_at$</div>
+            $endif$
+            $for(metadata.footer.notes)$
+            <div class="footer-note">$metadata.footer.notes$</div>
+            $endfor$
+        </div>
+        $endif$
+
+        $if(body)$
+        <div class="additional-content">
+            $body$
+        </div>
+        $endif$
+    </div>
+</body>
+</html>
