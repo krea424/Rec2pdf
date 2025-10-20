@@ -1,0 +1,17 @@
+{
+  "description": "Layout verbale meeting HTML con palette ParlaDOC",
+  "type": "html",
+  "engine": "wkhtmltopdf",
+  "resources": [
+    {
+      "path": "."
+    },
+    {
+      "path": "Templates/verbale_meeting.css"
+    },
+    {
+      "path": "Templates/verbale_meeting",
+      "recursive": false
+    }
+  ]
+}

@@ -133,3 +133,10 @@ frontend.log
 # Gemini files
 .gemini/
 .gemini.lock
+
+# File di output e temporanei
+*.pdf
+*.png
+*.jpeg
+*.html
+*.json

@@ -66,6 +66,9 @@ const EMPTY_EDITOR_STATE = {
   success: '',
   lastAction: 'idle',
   originPath: '/library',
+  speakers: [],
+  speakerMap: {},
+  renderedContent: '',
 };
 
 const normalizeBackendUrlValue = (url) => {
@@ -94,6 +97,99 @@ const buildFileUrl = (backendUrl, filePath, options = {}) => {
   }
   return `${normalized}/api/file?${params.toString()}`;
 };
+
+const normalizeSpeakers = (speakers) =>
+  Array.isArray(speakers)
+    ? speakers
+        .map((label) => (typeof label === 'string' ? label.trim() : ''))
+        .filter(Boolean)
+    : [];
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const buildSpeakerLabelVariants = (label = '') => {
+  if (!label || typeof label !== 'string') return [];
+  const normalized = label.trim();
+  if (!normalized) return [];
+  const variants = new Set();
+  variants.add(normalized);
+  variants.add(normalized.toUpperCase());
+  variants.add(normalized.toLowerCase());
+  const spaced = normalized.replace(/_/g, ' ');
+  if (spaced !== normalized) {
+    variants.add(spaced);
+    variants.add(spaced.toUpperCase());
+    variants.add(spaced.toLowerCase());
+    variants.add(spaced.replace(/\b\w/g, (c) => c.toUpperCase()));
+  }
+  return Array.from(variants);
+};
+
+const buildSpeakerMap = (speakers, currentMap = {}) => {
+  const normalizedSpeakers = normalizeSpeakers(speakers);
+  const result = {};
+  normalizedSpeakers.forEach((label) => {
+    const value =
+      currentMap && typeof currentMap[label] === 'string'
+        ? currentMap[label]
+        : '';
+    result[label] = value;
+  });
+  return result;
+};
+
+const applySpeakerMappingToContent = (content, mapping = {}) => {
+  if (typeof content !== 'string' || !mapping || typeof mapping !== 'object') {
+    return content;
+  }
+  let result = content;
+  Object.entries(mapping).forEach(([label, mappedName]) => {
+    if (!label || typeof label !== 'string') return;
+    const trimmedName = typeof mappedName === 'string' ? mappedName.trim() : '';
+    if (!trimmedName) return;
+    const variants = buildSpeakerLabelVariants(label);
+    variants.forEach((token) => {
+      const quotedPattern = new RegExp(`(['"]?)\s*${escapeRegex(token)}\s*(['"]?)`, 'gi');
+      result = result.replace(quotedPattern, (_match, openQuote, closeQuote) => {
+        if (openQuote && openQuote === closeQuote) {
+          return `${openQuote}${trimmedName}${closeQuote}`;
+        }
+        return `${trimmedName}`;
+      });
+    });
+    variants.forEach((token) => {
+      const colonPattern = new RegExp(`(['"]?)(\\*\\*)?${escapeRegex(token)}(\\*\\*)?(['"]?)(\\s*:)`, 'gi');
+      result = result.replace(colonPattern, (_match, openQuote, _leading, _trailing, closeQuote, suffix) => {
+        const quote = openQuote && openQuote === closeQuote ? openQuote : '';
+        const normalizedSuffix = suffix && suffix.includes(':') ? suffix : ':';
+        return `${quote}**${trimmedName}**${quote}${normalizedSuffix}`;
+      });
+    });
+    variants.forEach((token) => {
+      const barePattern = new RegExp(`(['"]?)(\\*\\*)?${escapeRegex(token)}(\\*\\*)?(['"]?)`, 'gi');
+      result = result.replace(barePattern, (_match, openQuote, _leading, _trailing, closeQuote) => {
+        const quote = openQuote && openQuote === closeQuote ? openQuote : '';
+        return `${quote}**${trimmedName}**${quote}`;
+      });
+    });
+  });
+  return result;
+};
+
+const sanitizeSpeakerMapForSubmit = (speakers, mapping = {}) => {
+  const normalizedSpeakers = normalizeSpeakers(speakers);
+  const sanitized = {};
+  normalizedSpeakers.forEach((label) => {
+    const value = mapping && typeof mapping[label] === 'string' ? mapping[label].trim() : '';
+    if (value) {
+      sanitized[label] = value;
+    }
+  });
+  return sanitized;
+};
+
+const hasNamedSpeakers = (mapping = {}) =>
+  Object.values(mapping).some((name) => typeof name === 'string' && name.trim().length > 0);
 
 const normalizeWorkspaceEntry = (workspace) => {
   if (!workspace || typeof workspace !== 'object') {
@@ -272,6 +368,14 @@ function AppContextComposer({ baseValue, children }) {
       window.removeEventListener('keydown', handleKeydown);
     };
   }, [availableModes, isSelectionVisible, setMode]);
+
+  const resetDiarizationPreferenceFromMode = baseValue?.resetDiarizationPreference;
+
+  useEffect(() => {
+    if (typeof resetDiarizationPreferenceFromMode === 'function') {
+      resetDiarizationPreferenceFromMode();
+    }
+  }, [mode, resetDiarizationPreferenceFromMode]);
 
   const contextValue = {
     ...baseValue,
@@ -487,6 +591,8 @@ const hydrateHistoryEntry = (entry) => {
   const workspace = normalizeWorkspaceEntry(entry.workspace);
   const structure = normalizeStructureMeta(entry.structure);
   const prompt = normalizePromptEntry(entry.prompt);
+  const speakers = normalizeSpeakers(entry.speakers);
+  const speakerMap = buildSpeakerMap(speakers, entry.speakerMap);
 
   return {
     ...entry,
@@ -505,6 +611,8 @@ const hydrateHistoryEntry = (entry) => {
     structure,
     completenessScore: structure?.score ?? null,
     prompt,
+    speakers,
+    speakerMap,
   };
 };
 
@@ -552,6 +660,15 @@ const PIPELINE_STAGES = [
     icon: CheckCircle2,
   },
 ];
+
+const PIPELINE_STAGE_WEIGHTS = {
+  upload: 0.15,
+  transcode: 0.2,
+  transcribe: 0.25,
+  markdown: 0.2,
+  publish: 0.15,
+  complete: 0.05,
+};
 
 const buildInitialPipelineStatus = (initial = 'idle') => {
   return PIPELINE_STAGES.reduce((acc, stage) => {
@@ -695,6 +812,7 @@ function AppContent(){
   const [logs,setLogs]=useState([]);
   const [pdfPath,setPdfPath]=useState("");
   const [mdPath, setMdPath] = useState("");
+  const [enableDiarization, setEnableDiarization] = useState(false);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -1220,7 +1338,7 @@ function AppContent(){
 
   const stopRecording=()=>{ const rec=mediaRecorderRef.current; if(rec&&rec.state!=="inactive") rec.stop(); setRecording(false); };
   useEffect(()=>{ if(recording&&secondsCap&&elapsed>=secondsCap) stopRecording(); },[recording,secondsCap,elapsed]);
-  const resetAll=()=>{ setAudioBlob(null); setAudioUrl(""); setMime(""); setElapsed(0); setLogs([]); setPdfPath(""); setMdPath(""); setPermissionMessage(""); setErrorBanner(null); resetPipelineProgress(false); setShowRawLogs(false); setLastMarkdownUpload(null); resetJourneyVisibility(); };
+  const resetAll=()=>{ setAudioBlob(null); setAudioUrl(""); setMime(""); setElapsed(0); setLogs([]); setPdfPath(""); setMdPath(""); setPermissionMessage(""); setErrorBanner(null); resetPipelineProgress(false); setShowRawLogs(false); setLastMarkdownUpload(null); resetJourneyVisibility(); setEnableDiarization(false); };
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
   const canCallAuthenticatedApis = useMemo(
@@ -2389,6 +2507,14 @@ function AppContent(){
     }
   }, [workspaceSelection.workspaceId, workspaceProfileSelection.workspaceId]);
 
+  useEffect(() => {
+    setEnableDiarization(false);
+  }, [workspaceSelection.workspaceId]);
+
+  const resetDiarizationPreference = useCallback(() => {
+    setEnableDiarization(false);
+  }, []);
+
   const applyWorkspaceProfile = useCallback(
     (profileId, options = {}) => {
       const targetWorkspaceId = options.workspaceId || workspaceSelection.workspaceId;
@@ -2572,6 +2698,10 @@ function AppContent(){
           fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
         }
       }
+      if(enableDiarization){
+        fd.append('diarize','true');
+        appendLogs(['🗣️ Modalità riunione attivata: verrà eseguita la diarizzazione degli speaker.']);
+      }
       const cap=Number(secondsCap||0);
       if(cap>0) fd.append('seconds',String(cap));
       const {ok,status,data,raw}=await fetchBodyWithAuth(`${backendUrl}/api/rec2pdf`,{method:'POST',body:fd});
@@ -2666,6 +2796,8 @@ function AppContent(){
             : null),
           structure: structureMeta,
           prompt: promptSummary,
+          speakers: Array.isArray(data?.speakers) ? data.speakers : [],
+          speakerMap: data?.speakerMap || {},
         });
         setHistory(prev=>{
           const next=[historyEntry,...prev];
@@ -2874,6 +3006,8 @@ function AppContent(){
             : null),
           structure: structureMeta,
           prompt: promptSummary,
+          speakers: Array.isArray(data?.speakers) ? data.speakers : [],
+          speakerMap: data?.speakerMap || {},
         });
         setHistory(prev=>{
           const next=[historyEntry,...prev];
@@ -2983,12 +3117,7 @@ function AppContent(){
     return `${trimmed}/api/diag`;
   }, [backendUrl, backendUrlValid]);
 
-  const shouldShowOnboardingBanner = useMemo(() => {
-    if (diagnostics.status === 'error') {
-      return true;
-    }
-    return !onboardingComplete;
-  }, [diagnostics.status, onboardingComplete]);
+  const shouldShowOnboardingBanner = useMemo(() => diagnostics.status === 'error', [diagnostics.status]);
 
   const openMicSettings = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -3191,6 +3320,10 @@ function AppContent(){
   const normalizedBackendUrl = useMemo(() => normalizeBackendUrlValue(backendUrl), [backendUrl]);
 
   const mdEditorDirty = useMemo(() => mdEditor.content !== mdEditor.originalContent, [mdEditor.content, mdEditor.originalContent]);
+  const speakerMapHasNames = useMemo(
+    () => hasNamedSpeakers(mdEditor.speakerMap),
+    [mdEditor.speakerMap]
+  );
 
   const handleOpenHistoryPdf = useCallback(
     async (entry) => {
@@ -3273,6 +3406,8 @@ function AppContent(){
       }
 
       const currentPath = location?.pathname || '/library';
+      const entrySpeakers = normalizeSpeakers(entry?.speakers);
+      const initialSpeakerMap = buildSpeakerMap(entrySpeakers, entry?.speakerMap || {});
 
       setMdEditor({
         ...EMPTY_EDITOR_STATE,
@@ -3283,6 +3418,9 @@ function AppContent(){
         loading: true,
         lastAction: 'opening',
         originPath: currentPath === '/editor' ? '/library' : currentPath,
+        speakers: entrySpeakers,
+        speakerMap: initialSpeakerMap,
+        renderedContent: '',
       });
       pushLogs([`✏️ Apertura editor del PDF (${mdPathResolved})`]);
 
@@ -3317,6 +3455,7 @@ function AppContent(){
             loading: false,
             content,
             originalContent: content,
+            renderedContent: applySpeakerMappingToContent(content, prev.speakerMap),
             error: '',
             success: '',
             lastAction: 'loaded',
@@ -3402,7 +3541,7 @@ function AppContent(){
     [normalizedBackendUrl, openSignedFileInNewTab, pushLogs]
   );
 
-  const handleRepublishFromMd = useCallback(async (entry, overrideMdPath) => {
+  const handleRepublishFromMd = useCallback(async (entry, overrideMdPath, options = {}) => {
     const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
     if (!mdPathResolved) {
       pushLogs(['❌ Percorso del testo non disponibile per la rigenerazione.']);
@@ -3428,6 +3567,13 @@ function AppContent(){
       setErrorBanner({ title: 'Backend non configurato', details: message });
       return;
     }
+
+    const overrideSpeakerMap = options && typeof options.speakerMap === 'object' ? options.speakerMap : null;
+    const speakers = normalizeSpeakers(entry?.speakers);
+    const sanitizedSpeakerMap = overrideSpeakerMap
+      ? sanitizeSpeakerMapForSubmit(speakers, overrideSpeakerMap)
+      : {};
+    const hasSpeakerMapPayload = Object.keys(sanitizedSpeakerMap).length > 0;
 
     revealPipelinePanel();
     setBusy(true);
@@ -3477,6 +3623,12 @@ function AppContent(){
         profile: activeWorkspaceProfile,
         logoDescriptor: customPdfLogo,
       });
+      if (hasSpeakerMapPayload) {
+        fd.append('speakerMap', JSON.stringify(sanitizedSpeakerMap));
+        pushLogs([
+          `🗣️ Applicazione mappa speaker (${Object.keys(sanitizedSpeakerMap).length} etichette) durante la rigenerazione`,
+        ]);
+      }
 
       const response = await fetchWithAuth(`${backendUsed}/api/ppubr`, {
         method: 'POST',
@@ -3514,6 +3666,12 @@ function AppContent(){
 
       const pdfUrl = buildFileUrl(backendUsed, payload.pdfPath) || entry.pdfUrl;
       const mdUrl = buildFileUrl(backendUsed, mdPathResolved) || entry.mdUrl;
+      const responseSpeakerMapRaw =
+        payload?.speakerMap && typeof payload.speakerMap === 'object'
+          ? payload.speakerMap
+          : sanitizedSpeakerMap;
+      const normalizedResponseSpeakerMap = buildSpeakerMap(speakers, responseSpeakerMapRaw);
+      const responseHasSpeakerNames = hasNamedSpeakers(normalizedResponseSpeakerMap);
 
       setPdfPath(payload.pdfPath);
       setMdPath(mdPathResolved);
@@ -3532,17 +3690,31 @@ function AppContent(){
           ...(item.logos || {}),
           pdf: pdfLogoLabel,
         },
+        speakerMap: responseHasSpeakerNames
+          ? responseSpeakerMapRaw
+          : hasSpeakerMapPayload
+            ? sanitizedSpeakerMap
+            : item.speakerMap || {},
+        speakers: speakers.length ? speakers : item.speakers,
       }) : item));
 
       setMdEditor((prev) => {
         if (!prev.open || prev.path !== mdPathResolved) {
           return prev;
         }
+        const fallbackSpeakerMapState = hasSpeakerMapPayload
+          ? buildSpeakerMap(prev.speakers, { ...prev.speakerMap, ...sanitizedSpeakerMap })
+          : prev.speakerMap;
+        const nextSpeakerMapState = responseHasSpeakerNames
+          ? normalizedResponseSpeakerMap
+          : fallbackSpeakerMapState;
         return {
           ...prev,
           success: 'PDF rigenerato con successo. Usa "Apri PDF aggiornato" per visualizzarlo subito.',
           error: '',
           lastAction: 'republished',
+          speakerMap: nextSpeakerMapState,
+          renderedContent: applySpeakerMappingToContent(prev.content, nextSpeakerMapState),
           entry: {
             ...(prev.entry || {}),
             pdfPath: payload.pdfPath,
@@ -3552,6 +3724,12 @@ function AppContent(){
             backendUrl: backendUsed || prev.entry?.backendUrl || normalizedBackendUrl,
             localPdfPath: payload?.localPdfPath || prev.entry?.localPdfPath || '',
             localMdPath: payload?.localMdPath || prev.entry?.localMdPath || '',
+            speakerMap: responseHasSpeakerNames
+              ? responseSpeakerMapRaw
+              : hasSpeakerMapPayload
+                ? sanitizedSpeakerMap
+                : prev.entry?.speakerMap || prev.speakerMap,
+            speakers: prev.entry?.speakers || prev.speakers,
           },
         };
       });
@@ -3581,6 +3759,7 @@ function AppContent(){
     setMdEditor((prev) => ({
       ...prev,
       content: nextValue,
+      renderedContent: applySpeakerMappingToContent(nextValue, prev.speakerMap),
       error: '',
       success: '',
       lastAction: 'editing',
@@ -3595,6 +3774,29 @@ function AppContent(){
     navigate(targetPath);
     setMdEditor(() => ({ ...EMPTY_EDITOR_STATE }));
   }, [navigate, originPath]);
+
+  const handleSpeakerMapChange = useCallback((nextMap) => {
+    setMdEditor((prev) => {
+      if (!prev.open) {
+        return prev;
+      }
+      const updatedMap = buildSpeakerMap(prev.speakers, nextMap || {});
+      const previousMap = prev.speakerMap || {};
+      const sameKeys = Object.keys(updatedMap).length === Object.keys(previousMap).length;
+      const isEqual =
+        sameKeys && Object.keys(updatedMap).every((key) => (previousMap[key] || '').trim() === (updatedMap[key] || '').trim());
+      if (isEqual) {
+        return prev;
+      }
+      return {
+        ...prev,
+        speakerMap: updatedMap,
+        renderedContent: applySpeakerMappingToContent(prev.content, updatedMap),
+        lastAction: 'editing-speakers',
+        entry: prev.entry ? { ...prev.entry, speakerMap: updatedMap } : prev.entry,
+      };
+    });
+  }, []);
 
   const handleMdEditorViewPdf = useCallback(async () => {
     const entry = mdEditor?.entry;
@@ -3702,6 +3904,11 @@ function AppContent(){
     handleRepublishFromMd(mdEditor.entry, mdEditor.path);
   }, [mdEditor, handleRepublishFromMd]);
 
+  const handleRepublishFromEditorWithSpeakers = useCallback(() => {
+    if (!mdEditor?.entry) return;
+    handleRepublishFromMd(mdEditor.entry, mdEditor.path, { speakerMap: mdEditor.speakerMap });
+  }, [mdEditor, handleRepublishFromMd]);
+
   const handleShowHistoryLogs = useCallback((entry) => {
     if (!entry) return;
     const stageEventsFromHistory = Array.isArray(entry.stageEvents) ? entry.stageEvents : [];
@@ -3743,8 +3950,33 @@ function AppContent(){
   const destIsPlaceholder=isDestDirPlaceholder(destDir);
 
   const totalStages = PIPELINE_STAGES.length;
-  const completedStagesCount = useMemo(() => PIPELINE_STAGES.reduce((acc, stage) => acc + (pipelineStatus[stage.key] === 'done' ? 1 : 0), 0), [pipelineStatus]);
-  const progressPercent = totalStages ? Math.min(100, Math.max(0, Math.round((completedStagesCount / totalStages) * 100))) : 0;
+  const stageWeightSum = useMemo(
+    () => PIPELINE_STAGES.reduce((acc, stage) => acc + (PIPELINE_STAGE_WEIGHTS[stage.key] ?? 1), 0),
+    []
+  );
+  const completedStagesCount = useMemo(
+    () => PIPELINE_STAGES.reduce((acc, stage) => acc + (pipelineStatus[stage.key] === 'done' ? 1 : 0), 0),
+    [pipelineStatus]
+  );
+  const progressPercent = useMemo(() => {
+    if (!stageWeightSum) return 0;
+    let accumulated = 0;
+    PIPELINE_STAGES.forEach((stage) => {
+      const weight = PIPELINE_STAGE_WEIGHTS[stage.key] ?? 1;
+      const status = pipelineStatus[stage.key];
+      if (status === 'done') {
+        accumulated += weight;
+      } else if (status === 'running') {
+        accumulated += weight * 0.35;
+      }
+    });
+    const ratio = Math.min(1, Math.max(0, accumulated / stageWeightSum));
+    const percent = Math.round(ratio * 100);
+    if (busy && percent < 5) {
+      return 5;
+    }
+    return percent;
+  }, [busy, pipelineStatus, stageWeightSum]);
   const failedStage = useMemo(() => PIPELINE_STAGES.find((stage) => pipelineStatus[stage.key] === 'failed'), [pipelineStatus]);
   const pipelineComplete = useMemo(() => totalStages > 0 && PIPELINE_STAGES.every((stage) => pipelineStatus[stage.key] === 'done'), [pipelineStatus, totalStages]);
   const activeStageDefinition = useMemo(() => PIPELINE_STAGES.find((stage) => stage.key === activeStageKey), [activeStageKey]);
@@ -3923,6 +4155,8 @@ function AppContent(){
     mime,
     audioBlob,
     audioUrl,
+    enableDiarization,
+    setEnableDiarization,
     processViaBackend,
     resetAll,
     fileInputRef,
@@ -3975,7 +4209,10 @@ function AppContent(){
     handleMdEditorClose,
     handleMdEditorSave,
     handleRepublishFromEditor,
+    handleSpeakerMapChange,
+    handleRepublishFromEditorWithSpeakers,
     mdEditorDirty,
+    speakerMapHasNames,
     handleOpenMdInNewTab,
     handleMdEditorViewPdf,
     headerStatus,
@@ -3985,6 +4222,7 @@ function AppContent(){
     revealPipelinePanel,
     resetJourneyVisibility,
     pipelineComplete,
+    resetDiarizationPreference,
   };
 
   return (
@@ -4005,4 +4243,3 @@ function AppContent(){
 }
 
 export default AppContent;
-

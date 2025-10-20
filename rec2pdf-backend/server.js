@@ -15,6 +15,7 @@ const PORT = process.env.PORT || 7788;
 const HOST = process.env.HOST || '0.0.0.0';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const HUGGING_FACE_TOKEN = process.env.HUGGING_FACE_TOKEN || '';
 
 const supabase =
   SUPABASE_URL && SUPABASE_SERVICE_KEY
@@ -31,6 +32,9 @@ const isAuthEnabled = !!supabase;
 
 if (!isAuthEnabled) {
   console.warn('⚠️  Supabase non configurato: il backend è avviato senza autenticazione (MODALITÀ SVILUPPO).');
+}
+if (!HUGGING_FACE_TOKEN) {
+  console.warn('⚠️  HUGGING_FACE_TOKEN non configurato: la diarizzazione WhisperX non sarà disponibile.');
 }
 // ===== Configurazione Path =====
 // Il PROJECT_ROOT è la cartella che CONTIENE le cartelle 'rec2pdf-backend', 'Scripts', etc.
@@ -468,6 +472,18 @@ const buildTemplateEnv = (descriptor) => {
   }
   if (descriptor.resourcePath) {
     env.WORKSPACE_PROFILE_TEMPLATE_RESOURCE_PATH = descriptor.resourcePath;
+  }
+  if (descriptor.size && typeof descriptor.size === 'object') {
+    const { marginTop, marginRight, marginBottom, marginLeft } = {
+      marginTop: descriptor.size.margin_top || descriptor.size.marginTop,
+      marginRight: descriptor.size.margin_right || descriptor.size.marginRight,
+      marginBottom: descriptor.size.margin_bottom || descriptor.size.marginBottom,
+      marginLeft: descriptor.size.margin_left || descriptor.size.marginLeft,
+    };
+    if (marginTop) env.WORKSPACE_PROFILE_MARGIN_TOP = marginTop;
+    if (marginRight) env.WORKSPACE_PROFILE_MARGIN_RIGHT = marginRight;
+    if (marginBottom) env.WORKSPACE_PROFILE_MARGIN_BOTTOM = marginBottom;
+    if (marginLeft) env.WORKSPACE_PROFILE_MARGIN_LEFT = marginLeft;
   }
   return env;
 };
@@ -940,16 +956,62 @@ const callPublishScript = async (mdPath, env = {}) => {
   return await run('bash', [PUBLISH_SCRIPT, mdPath], { env: publishEnv });
 };
 
+const diarizedSegmentsToText = (segments = []) => {
+  if (!Array.isArray(segments) || !segments.length) return '';
+  const normalized = segments
+    .map((segment) => {
+      if (!segment || typeof segment !== 'object') return null;
+      const start = Number(segment.start);
+      const speakerRaw = typeof segment.speaker === 'string' ? segment.speaker.trim() : '';
+      const speaker = speakerRaw || 'SPEAKER_UNKNOWN';
+      let text = '';
+      if (typeof segment.text === 'string' && segment.text.trim()) {
+        text = segment.text.replace(/\s+/g, ' ').trim();
+      } else if (Array.isArray(segment.words)) {
+        text = segment.words
+          .map((word) => (word && typeof word.word === 'string' ? word.word : ''))
+          .filter(Boolean)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+      if (!text) return null;
+      return { start: Number.isFinite(start) ? start : Number.MAX_SAFE_INTEGER, speaker, text };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start);
+  if (!normalized.length) return '';
+  return normalized.map((item) => `${item.speaker}: ${item.text}`).join('\n');
+};
+
+const loadTranscriptForPrompt = async (sourcePath) => {
+  const raw = await fsp.readFile(sourcePath, 'utf8');
+  const ext = path.extname(sourcePath || '').toLowerCase();
+  if (ext === '.json' || (!ext && raw.trim().startsWith('{'))) {
+    try {
+      const parsed = JSON.parse(raw);
+      const diarized = diarizedSegmentsToText(parsed?.segments || []);
+      if (diarized) {
+        return diarized;
+      }
+    } catch {
+      // ignore JSON parse errors, fallback to raw text
+    }
+  }
+  return raw;
+};
+
 const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
   try {
-    const transcript = await fsp.readFile(txtPath, 'utf8');
+    const transcript = await loadTranscriptForPrompt(txtPath);
 
     let promptLines = [
       "Sei un assistente AI specializzato nell'analisi di trascrizioni di riunioni.",
       "Il tuo compito è trasformare il testo grezzo in un documento Markdown ben strutturato, chiaro e utile.",
       "Organizza il contenuto usando intestazioni (es. `## Argomento`), elenchi puntati (`-`) e paragrafi concisi.",
       "L'output deve essere solo il Markdown, senza commenti o testo aggiuntivo.",
-      "La lingua del documento finale deve essere l'italiano."
+      "La lingua del documento finale deve essere l'italiano.",
+      "Il testo potrebbe contenere etichette come `SPEAKER_00:` o `SPEAKER_01:`. Mantieni l'ordine delle battute, identifica chiaramente gli speaker e formatta i loro nomi in modo leggibile (es. `**Speaker 1:**`)."
     ];
 
     if (promptPayload) {
@@ -1552,6 +1614,204 @@ const ensureTempFileHasExtension = async (file, allowedExtensions = VALID_LOGO_E
 const SUPABASE_AUDIO_BUCKET = 'audio-uploads';
 const SUPABASE_TEXT_BUCKET = 'text-uploads';
 const SUPABASE_PROCESSED_BUCKET = 'processed-media';
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const buildSpeakerLabelVariants = (label = '') => {
+  if (!label || typeof label !== 'string') return [];
+  const normalized = label.trim();
+  if (!normalized) return [];
+  const variants = new Set();
+  variants.add(normalized);
+  variants.add(normalized.toUpperCase());
+  variants.add(normalized.toLowerCase());
+  const spaced = normalized.replace(/_/g, ' ');
+  if (spaced !== normalized) {
+    variants.add(spaced);
+    variants.add(spaced.toUpperCase());
+    variants.add(spaced.toLowerCase());
+    variants.add(spaced.replace(/\b\w/g, (c) => c.toUpperCase()));
+  }
+  return Array.from(variants);
+};
+
+const sanitizeSpeakerMapInput = (raw) => {
+  if (!raw || typeof raw !== 'object') {
+    return {};
+  }
+  const sanitized = {};
+  for (const [labelRaw, nameRaw] of Object.entries(raw)) {
+    if (typeof labelRaw !== 'string') continue;
+    const label = labelRaw.trim();
+    if (!label) continue;
+    const mappedName =
+      typeof nameRaw === 'string'
+        ? nameRaw.trim()
+        : typeof nameRaw === 'number'
+          ? String(nameRaw).trim()
+          : '';
+    if (!mappedName) continue;
+    sanitized[label] = mappedName;
+  }
+  return sanitized;
+};
+
+const applySpeakerMapToContent = (content, mapping = {}) => {
+  if (typeof content !== 'string' || !mapping || typeof mapping !== 'object') {
+    return content;
+  }
+
+  let result = content;
+  for (const [label, mappedName] of Object.entries(mapping)) {
+    if (!label || typeof label !== 'string') continue;
+    const trimmedName = typeof mappedName === 'string' ? mappedName.trim() : '';
+    if (!trimmedName) continue;
+    const variants = buildSpeakerLabelVariants(label);
+    variants.forEach((token) => {
+      const quotedPattern = new RegExp(`(['"])\\s*${escapeRegExp(token)}\\s*(['"])`, 'gi');
+      result = result.replace(quotedPattern, (_match, openQuote, closeQuote) => {
+        return `${openQuote}${trimmedName}${closeQuote}`;
+      });
+    });
+    variants.forEach((token) => {
+      const colonPattern = new RegExp(`(['"]?)(\\*\\*)?${escapeRegExp(token)}(\\*\\*)?(['"]?)(\\s*:)`, 'gi');
+      result = result.replace(colonPattern, (_match, openQuote, _leading, _trailing, closeQuote, suffix) => {
+        const quote = openQuote && openQuote === closeQuote ? openQuote : '';
+        const normalizedSuffix = suffix && suffix.includes(':') ? suffix : ':';
+        return `${quote}**${trimmedName}**${quote}${normalizedSuffix}`;
+      });
+    });
+    variants.forEach((token) => {
+      const barePattern = new RegExp(`(['"]?)(\\*\\*)?${escapeRegExp(token)}(\\*\\*)?(['"]?)`, 'gi');
+      result = result.replace(barePattern, (_match, openQuote, _leading, _trailing, closeQuote) => {
+        const quote = openQuote && openQuote === closeQuote ? openQuote : '';
+        return `${quote}**${trimmedName}**${quote}`;
+      });
+    });
+  }
+  return result;
+};
+
+const ensureTemplateFrontMatter = async (mdPath, descriptor) => {
+  if (!descriptor || !mdPath) return;
+  const templateName = path.basename(descriptor.path || '').toLowerCase();
+  if (templateName !== 'verbale_meeting.html') {
+    return;
+  }
+
+  try {
+    let content = await fsp.readFile(mdPath, 'utf8');
+    const cssRelative = descriptor.cssFileName
+      ? (descriptor.cssFileName.startsWith('Templates/')
+          ? descriptor.cssFileName
+          : `Templates/${descriptor.cssFileName}`)
+      : 'Templates/verbale_meeting.css';
+    const styleLine = `styles.css: ${cssRelative}`;
+    const layoutLines = ['pdfRules:', '  layout: verbale_meeting'];
+
+    const hasFrontMatter = content.startsWith('---');
+    if (hasFrontMatter) {
+      const secondDelimIndex = content.indexOf('\n---', 3);
+      if (secondDelimIndex !== -1) {
+        let frontMatterBlock = content.slice(0, secondDelimIndex);
+        const closing = content.slice(secondDelimIndex, secondDelimIndex + 4);
+        const body = content.slice(secondDelimIndex + 4);
+        const lines = frontMatterBlock.split('\n');
+        const closingIndex = lines.length - 1;
+        let changed = false;
+
+        const hasStyles = lines.some((line) => line.trim().startsWith('styles.css:'));
+        if (!hasStyles) {
+          lines.splice(closingIndex, 0, styleLine);
+          changed = true;
+        }
+
+        const pdfRulesIndex = lines.findIndex((line) => line.trim().startsWith('pdfRules:'));
+        if (pdfRulesIndex === -1) {
+          lines.splice(closingIndex, 0, ...layoutLines);
+          changed = true;
+        } else {
+          const layoutExists = lines.some(
+            (line, index) => index > pdfRulesIndex && line.trim().startsWith('layout:')
+          );
+          if (!layoutExists) {
+            lines.splice(pdfRulesIndex + 1, 0, layoutLines[1]);
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          frontMatterBlock = lines.join('\n');
+          content = `${frontMatterBlock}${closing}${body}`;
+          await fsp.writeFile(mdPath, content, 'utf8');
+        }
+        return;
+      }
+    }
+
+    const injectedFrontMatter = [
+      '---',
+      styleLine,
+      ...layoutLines,
+      '---',
+      '',
+    ].join('\n');
+    content = `${injectedFrontMatter}${content}`;
+    await fsp.writeFile(mdPath, content, 'utf8');
+  } catch (error) {
+    console.warn(`⚠️  Impossibile aggiornare il front matter per ${mdPath}:`, error?.message || error);
+  }
+};
+
+const extractLayoutFromMarkdown = (content = '') => {
+  if (typeof content !== 'string' || !content.startsWith('---')) return '';
+  const closingIndex = content.indexOf('\n---', 3);
+  if (closingIndex === -1) return '';
+  const block = content.slice(3, closingIndex).split(/\r?\n/);
+  let layout = '';
+  let inPdfRules = false;
+  for (const rawLine of block) {
+    const line = rawLine;
+    if (!line.trim()) continue;
+    if (!line.startsWith(' ') && !line.startsWith('\t')) {
+      inPdfRules = line.trim().startsWith('pdfRules:');
+      if (!inPdfRules && !layout && line.trim().startsWith('layout:')) {
+        layout = line.split(':').slice(1).join(':').trim();
+      }
+      continue;
+    }
+    if (inPdfRules) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('layout:')) {
+        layout = trimmed.split(':').slice(1).join(':').trim();
+      }
+    }
+  }
+  return layout.replace(/^['"]|['"]$/g, '');
+};
+
+const resolveTemplateFromLayout = async (layout, { logger } = {}) => {
+  if (!layout) return null;
+  const normalized = layout.trim().toLowerCase();
+  let candidate = layout.trim();
+  if (DEFAULT_LAYOUT_TEMPLATE_MAP.has(normalized)) {
+    candidate = DEFAULT_LAYOUT_TEMPLATE_MAP.get(normalized);
+  }
+  try {
+    const descriptor = await resolveTemplateDescriptor(candidate);
+    if (logger) {
+      logger(`📄 Template layout: ${descriptor.fileName}`, 'publish', 'info');
+    }
+    return descriptor;
+  } catch (error) {
+    if (logger) {
+      const reason =
+        error instanceof TemplateResolutionError ? error.userMessage : error?.message || error;
+      logger(`⚠️ Template layout non accessibile: ${reason}`, 'publish', 'warning');
+    }
+    return null;
+  }
+};
 
 const safeUnlink = async (filePath) => {
   if (!filePath) return;
@@ -2619,6 +2879,25 @@ app.get('/api/diag', async (req, res) => {
   } catch { out('❌ whisper non eseguibile'); }
 
   try {
+    const wx = await run('bash', [
+      '-lc',
+      'if command -v whisperx >/dev/null 2>&1; then whisperx --help >/dev/null 2>&1 && echo whisperx-ok || echo whisperx-help-failed; else echo whisperx-missing; fi'
+    ]);
+    const diagToken = wx.stdout.trim();
+    if (diagToken === 'whisperx-ok') {
+      out('✅ whisperX: disponibile');
+    } else if (diagToken === 'whisperx-help-failed') {
+      out('⚠️ whisperX rilevato ma non eseguibile (controlla dipendenze)');
+    } else {
+      out('⚠️ whisperX non trovato (richiesto per diarizzazione)');
+    }
+  } catch {
+    out('⚠️ whisperX non eseguibile');
+  }
+
+  out(HUGGING_FACE_TOKEN ? '✅ HUGGING_FACE_TOKEN configurato' : '⚠️ HUGGING_FACE_TOKEN non impostato');
+
+  try {
     const g = await run('bash', ['-lc', 'command -v gemini']);
     out(g.code === 0 ? '✅ gemini: trovato' : '❌ gemini non trovato. Necessario per la generazione Markdown.');
   } catch { out('❌ gemini non eseguibile'); }
@@ -2655,6 +2934,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
   let promptCuesCompleted = [];
   const tempFiles = new Set();
   const tempDirs = new Set();
+  let speakerLabels = [];
 
   const logStageEvent = (stage, status = 'info', message = '') => {
     if (!stage) return;
@@ -2716,6 +2996,23 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         promptCuesCompleted = [];
       }
     }
+
+    const diarizeRaw = typeof req.body?.diarize === 'string' ? req.body.diarize : '';
+    const diarizeEnabled = (() => {
+      if (typeof req.body?.diarize === 'boolean') return req.body.diarize;
+      if (typeof diarizeRaw === 'string' && diarizeRaw) {
+        const normalized = diarizeRaw.trim().toLowerCase();
+        return ['true', '1', 'yes', 'on'].includes(normalized);
+      }
+      return false;
+    })();
+    out(
+      diarizeEnabled
+        ? '🗣️ Modalità riunione con diarizzazione WhisperX attivata.'
+        : '🗣️ Modalità standard (voce singola) attiva.',
+      'upload',
+      'info'
+    );
 
     let promptId = String(req.body?.promptId || '').trim();
     if (promptId) {
@@ -2902,7 +3199,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
 
     const processedBasePath = `processed/${userId}`;
     const wavStoragePath = `${processedBasePath}/${baseName}.wav`;
-    const txtStoragePath = `${processedBasePath}/${baseName}.txt`;
+    const transcriptExt = diarizeEnabled ? '.json' : '.txt';
+    const transcriptStoragePath = `${processedBasePath}/${baseName}${transcriptExt}`;
     const mdStoragePath = `${processedBasePath}/documento_${baseName}.md`;
     const pdfStoragePath = `${processedBasePath}/documento_${baseName}.pdf`;
 
@@ -2953,50 +3251,162 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       await safeUnlink(wavLocalPath);
     }
 
-    out('🎧 Trascrizione con Whisper…', 'transcribe', 'running');
+    out(
+      diarizeEnabled
+        ? '🎧 Trascrizione + diarizzazione con WhisperX…'
+        : '🎧 Trascrizione con Whisper…',
+      'transcribe',
+      'running'
+    );
     const wavLocalForTranscribe = registerTempFile(path.join(pipelineDir, `${baseName}.wav`));
     let transcriptLocalPath = '';
     try {
       const wavBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, wavStoragePath);
       await fsp.writeFile(wavLocalForTranscribe, wavBuffer);
-      const whisperOutputDir = pipelineDir;
-      const w = await run('bash', [
-        '-lc',
-        `whisper ${JSON.stringify(wavLocalForTranscribe)} --language it --model small --output_format txt --output_dir ${JSON.stringify(whisperOutputDir)} --verbose False`
-      ]);
-      if (w.code !== 0) {
-        out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
-        throw new Error('Trascrizione fallita');
+      const transcribeOutputDir = pipelineDir;
+      if (diarizeEnabled) {
+        if (!HUGGING_FACE_TOKEN) {
+          out('❌ HUGGING_FACE_TOKEN mancante: impossibile eseguire diarizzazione', 'transcribe', 'failed');
+          throw new Error('Diarizzazione WhisperX non disponibile: HUGGING_FACE_TOKEN non configurato');
+        }
+        const diarizeCmd = [
+          'whisperx',
+          JSON.stringify(wavLocalForTranscribe),
+          '--language it',
+          '--compute_type float32',
+          '--diarize',
+          `--hf_token ${JSON.stringify(HUGGING_FACE_TOKEN)}`,
+          `--output_dir ${JSON.stringify(transcribeOutputDir)}`,
+          '--output_format json'
+        ].join(' ');
+        const wx = await run('bash', ['-lc', diarizeCmd]);
+        if (wx.code !== 0) {
+          out(wx.stderr || wx.stdout || 'whisperX failed', 'transcribe', 'failed');
+          throw new Error('Trascrizione fallita (whisperX)');
+        }
+        const candidates = (await fsp.readdir(transcribeOutputDir)).filter(
+          (file) => file.startsWith(baseName) && file.endsWith('.json')
+        );
+        if (!candidates.length) {
+          throw new Error('Trascrizione diarizzata .json non trovata');
+        }
+        transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, candidates[0]));
+      } else {
+        const w = await run('bash', [
+          '-lc',
+          `whisper ${JSON.stringify(wavLocalForTranscribe)} --language it --model small --output_format txt --output_dir ${JSON.stringify(transcribeOutputDir)} --verbose False`
+        ]);
+        if (w.code !== 0) {
+          out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
+          throw new Error('Trascrizione fallita');
+        }
+        const candidates = (await fsp.readdir(transcribeOutputDir)).filter(
+          (file) => file.startsWith(baseName) && file.endsWith('.txt')
+        );
+        if (!candidates.length) {
+          throw new Error('Trascrizione .txt non trovata');
+        }
+        transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, candidates[0]));
       }
-      const candidates = (await fsp.readdir(whisperOutputDir)).filter((file) => file.startsWith(baseName) && file.endsWith('.txt'));
-      if (!candidates.length) {
-        throw new Error('Trascrizione .txt non trovata');
-      }
-      transcriptLocalPath = registerTempFile(path.join(whisperOutputDir, candidates[0]));
+      const transcriptMime = diarizeEnabled ? 'application/json' : 'text/plain';
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,
-        txtStoragePath,
+        transcriptStoragePath,
         await fsp.readFile(transcriptLocalPath),
-        'text/plain'
+        transcriptMime
       );
-      out(`✅ Trascrizione completata: ${path.basename(transcriptLocalPath)}`, 'transcribe', 'completed');
+      out(
+        diarizeEnabled
+          ? `✅ Trascrizione diarizzata completata: ${path.basename(transcriptLocalPath)}`
+          : `✅ Trascrizione completata: ${path.basename(transcriptLocalPath)}`,
+        'transcribe',
+        'completed'
+      );
     } finally {
       await safeUnlink(wavLocalForTranscribe);
       await safeUnlink(transcriptLocalPath);
     }
 
+        const profileTemplateCandidate = workspaceProfile?.pdfTemplate || workspaceProfileTemplate || '';
+    let profileTemplateDescriptor = null;
+    let promptTemplateDescriptor = null;
+    if (profileTemplateCandidate) {
+      try {
+        profileTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateCandidate);
+        out(`📄 Template profilo: ${profileTemplateDescriptor.fileName}`, 'publish', 'info');
+        if (profileTemplateDescriptor.cssFileName) {
+          out(`🎨 CSS template: ${profileTemplateDescriptor.cssFileName}`, 'publish', 'info');
+        }
+        if (profileTemplateDescriptor.engine) {
+          out(`⚙️ Motore HTML preferito: ${profileTemplateDescriptor.engine}`, 'publish', 'info');
+        }
+      } catch (templateError) {
+        const reason =
+          templateError instanceof TemplateResolutionError
+            ? templateError.userMessage
+            : templateError?.message || templateError;
+        out(`⚠️ Template profilo non accessibile: ${reason}`, 'publish', 'warning');
+      }
+    }
+
+    if (!profileTemplateDescriptor && selectedPrompt) {
+      promptTemplateDescriptor = await resolvePromptTemplateDescriptor(selectedPrompt, { logger: out });
+    }
+
+    let activeTemplateDescriptor = profileTemplateDescriptor || promptTemplateDescriptor;
+
+    if (!activeTemplateDescriptor && diarizeEnabled) {
+      try {
+        activeTemplateDescriptor = await resolveTemplateDescriptor('verbale_meeting.html');
+        out(`📄 Template diarizzazione fallback: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+      } catch (templateError) {
+        const reason =
+          templateError instanceof TemplateResolutionError
+            ? templateError.userMessage
+            : templateError?.message || templateError;
+        out(`⚠️ Template fallback diarizzazione non accessibile: ${reason}`, 'publish', 'warning');
+      }
+    }
+
     out('📝 Generazione Markdown…', 'markdown', 'running');
-    let txtLocalForMarkdown = '';
+    let transcriptLocalForMarkdown = '';
     let mdLocalPath = '';
     try {
-      const transcriptBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, txtStoragePath);
-      txtLocalForMarkdown = registerTempFile(path.join(pipelineDir, `${baseName}.txt`));
-      await fsp.writeFile(txtLocalForMarkdown, transcriptBuffer);
+      const transcriptBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, transcriptStoragePath);
+      transcriptLocalForMarkdown = registerTempFile(path.join(pipelineDir, `${baseName}${transcriptExt}`));
+      await fsp.writeFile(transcriptLocalForMarkdown, transcriptBuffer);
+      if (diarizeEnabled) {
+        try {
+          const parsedTranscript = JSON.parse(transcriptBuffer.toString('utf8'));
+          const speakerSet = new Set();
+          if (Array.isArray(parsedTranscript?.segments)) {
+            parsedTranscript.segments.forEach((segment) => {
+              if (segment && typeof segment.speaker === 'string') {
+                const normalizedSpeaker = segment.speaker.trim();
+                if (normalizedSpeaker) {
+                  speakerSet.add(normalizedSpeaker);
+                }
+              }
+            });
+          }
+          speakerLabels = Array.from(speakerSet).sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }));
+        } catch (parseError) {
+          out(
+            `⚠️ Impossibile analizzare gli speaker diarizzati: ${parseError?.message || parseError}`,
+            'transcribe',
+            'warning'
+          );
+          speakerLabels = [];
+        }
+      }
       mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
-      const gm = await generateMarkdown(txtLocalForMarkdown, mdLocalPath, promptRulePayload);
+      const gm = await generateMarkdown(transcriptLocalForMarkdown, mdLocalPath, promptRulePayload);
       if (gm.code !== 0) {
         out(gm.stderr || gm.stdout || 'Generazione Markdown fallita', 'markdown', 'failed');
         throw new Error('Generazione Markdown fallita: ' + (gm.stderr || gm.stdout));
+      }
+      if (activeTemplateDescriptor) {
+        await ensureTemplateFrontMatter(mdLocalPath, activeTemplateDescriptor);
       }
       if (!fs.existsSync(mdLocalPath)) {
         throw new Error(`Markdown non trovato: ${mdLocalPath}`);
@@ -3009,7 +3419,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       );
       out(`✅ Markdown generato: ${path.basename(mdLocalPath)}`, 'markdown', 'completed');
     } finally {
-      await safeUnlink(txtLocalForMarkdown);
+      await safeUnlink(transcriptLocalForMarkdown);
       await safeUnlink(mdLocalPath);
     }
 
@@ -3061,34 +3471,6 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         );
       }
     }
-
-    const profileTemplateCandidate = workspaceProfile?.pdfTemplate || workspaceProfileTemplate || '';
-    let profileTemplateDescriptor = null;
-    let promptTemplateDescriptor = null;
-    if (profileTemplateCandidate) {
-      try {
-        profileTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateCandidate);
-        out(`📄 Template profilo: ${profileTemplateDescriptor.fileName}`, 'publish', 'info');
-        if (profileTemplateDescriptor.cssFileName) {
-          out(`🎨 CSS template: ${profileTemplateDescriptor.cssFileName}`, 'publish', 'info');
-        }
-        if (profileTemplateDescriptor.engine) {
-          out(`⚙️ Motore HTML preferito: ${profileTemplateDescriptor.engine}`, 'publish', 'info');
-        }
-      } catch (templateError) {
-        const reason =
-          templateError instanceof TemplateResolutionError
-            ? templateError.userMessage
-            : templateError?.message || templateError;
-        out(`⚠️ Template profilo non accessibile: ${reason}`, 'publish', 'warning');
-      }
-    }
-
-    if (!profileTemplateDescriptor && selectedPrompt) {
-      promptTemplateDescriptor = await resolvePromptTemplateDescriptor(selectedPrompt, { logger: out });
-    }
-
-    const activeTemplateDescriptor = profileTemplateDescriptor || promptTemplateDescriptor;
 
     const publishEnv = buildEnvOptions(
       promptEnv,
@@ -3173,6 +3555,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       workspace: workspaceAssignment,
       prompt: promptAssignment,
       structure,
+      speakers: speakerLabels,
     });
   } catch (err) {
     const message = String(err && err.message ? err.message : err);
@@ -3213,6 +3596,22 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
     const mdPathRaw = String(req.body?.mdPath || '').trim();
     if (!mdPathRaw) {
       return res.status(400).json({ ok: false, message: 'Percorso Markdown mancante', logs });
+    }
+
+    let speakerMap = {};
+    const rawSpeakerMap = typeof req.body?.speakerMap === 'string' ? req.body.speakerMap.trim() : '';
+    if (rawSpeakerMap) {
+      try {
+        const parsed = JSON.parse(rawSpeakerMap);
+        speakerMap = sanitizeSpeakerMapInput(parsed);
+      } catch (parseError) {
+        out(`⚠️ Mappatura speaker non valida: ${parseError?.message || parseError}`);
+        speakerMap = {};
+      }
+    }
+    const hasSpeakerMap = Object.keys(speakerMap).length > 0;
+    if (hasSpeakerMap) {
+      out(`🗣️ Mappatura speaker ricevuta (${Object.keys(speakerMap).length} etichette)`);
     }
 
     const looksLikeStoragePath =
@@ -3270,6 +3669,26 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
       return { localPdfPath, localMdPath };
     };
 
+    const createMappedMarkdownCopy = async (sourcePath) => {
+      if (!hasSpeakerMap) {
+        return sourcePath;
+      }
+      try {
+        const originalContent = await fsp.readFile(sourcePath, 'utf8');
+        const mappedContent = applySpeakerMapToContent(originalContent, speakerMap);
+        const ext = path.extname(sourcePath) || '.md';
+        const baseName = path.basename(sourcePath, ext);
+        const mappedPath = path.join(path.dirname(sourcePath), `${baseName}_speaker-map${ext}`);
+        await fsp.writeFile(mappedPath, mappedContent, 'utf8');
+        cleanupFiles.add(mappedPath);
+        out('📝 Applicata mappatura speaker al Markdown temporaneo');
+        return mappedPath;
+      } catch (error) {
+        out(`⚠️ Impossibile applicare la mappatura speaker: ${error?.message || error}`);
+        return sourcePath;
+      }
+    };
+
     if (looksLikeStoragePath) {
       let bucket;
       let objectPath;
@@ -3298,10 +3717,31 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
       const mdBuffer = await downloadFileFromBucket(bucket, objectPath);
       await fsp.writeFile(mdLocalPath, mdBuffer);
 
+      let activeTemplateDescriptor = null;
+      const layoutCandidate = extractLayoutFromMarkdown(mdBuffer.toString('utf8'));
+      if (layoutCandidate) {
+        activeTemplateDescriptor = await resolveTemplateFromLayout(layoutCandidate, { logger: out });
+      }
+      if (!activeTemplateDescriptor && hasSpeakerMap) {
+        try {
+          activeTemplateDescriptor = await resolveTemplateDescriptor('verbale_meeting.html');
+          out(`📄 Template fallback (speaker map): ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+        } catch (templateError) {
+          const reason =
+            templateError instanceof TemplateResolutionError
+              ? templateError.userMessage
+              : templateError?.message || templateError;
+          out(`⚠️ Template fallback non accessibile: ${reason}`, 'publish', 'warning');
+        }
+      }
+
+      const mdPathForPublish = await createMappedMarkdownCopy(mdLocalPath);
+
       await publishWithTemplateFallback({
-        mdLocalPath,
+        mdLocalPath: mdPathForPublish,
         pdfLocalPath,
         publishEnv,
+        templateInfo: activeTemplateDescriptor,
         logger: out,
       });
 
@@ -3334,6 +3774,7 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
         localPdfPath,
         localMdPath,
         logs,
+        speakerMap,
       });
     }
 
@@ -3351,28 +3792,38 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
 
     const baseName = path.basename(mdPath, path.extname(mdPath));
     const pdfPath = path.join(dest, `${baseName}.pdf`);
+    const mdPathForPublish = await createMappedMarkdownCopy(mdPath);
 
     await publishWithTemplateFallback({
-      mdLocalPath: mdPath,
+      mdLocalPath: mdPathForPublish,
       pdfLocalPath: pdfPath,
       publishEnv,
       logger: out,
     });
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`);
-    return res.json({ ok: true, pdfPath, mdPath, localPdfPath: pdfPath, localMdPath: mdPath, logs });
+    return res.json({
+      ok: true,
+      pdfPath,
+      mdPath,
+      localPdfPath: pdfPath,
+      localMdPath: mdPath,
+      logs,
+      speakerMap,
+    });
   } catch (err) {
     out('❌ Errore durante la rigenerazione');
     out(String(err && err.message ? err.message : err));
+    console.error('PPUBR error', err);
     return res.status(500).json({ ok: false, message: String(err && err.message ? err.message : err), logs });
   } finally {
     if (customLogoPath) {
       await safeUnlink(customLogoPath);
     }
+    for (const filePath of cleanupFiles) {
+      await safeUnlink(filePath);
+    }
     if (usedSupabaseFlow) {
-      for (const filePath of cleanupFiles) {
-        await safeUnlink(filePath);
-      }
       await safeRemoveDir(workDir);
     }
     try { if (req.files && req.files.pdfLogo) await safeUnlink(req.files.pdfLogo[0].path); } catch { }

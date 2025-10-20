@@ -300,6 +300,17 @@ else
   pandoc_args+=(--pdf-engine "$HTML_ENGINE")
   if [[ "$HTML_ENGINE" == "wkhtmltopdf" ]]; then
     pandoc_args+=(--pdf-engine-opt=--enable-local-file-access)
+    pandoc_args+=(--pdf-engine-opt=--print-media-type)
+    local mt=${WORKSPACE_PROFILE_MARGIN_TOP:-20mm}
+    local mr=${WORKSPACE_PROFILE_MARGIN_RIGHT:-15mm}
+    local mb=${WORKSPACE_PROFILE_MARGIN_BOTTOM:-20mm}
+    local ml=${WORKSPACE_PROFILE_MARGIN_LEFT:-15mm}
+    pandoc_args+=(--pdf-engine-opt=--margin-top=${mt})
+    pandoc_args+=(--pdf-engine-opt=--margin-right=${mr})
+    pandoc_args+=(--pdf-engine-opt=--margin-bottom=${mb})
+    pandoc_args+=(--pdf-engine-opt=--margin-left=${ml})
+    pandoc_args+=(--pdf-engine-opt=--dpi=144)
+    pandoc_args+=(--pdf-engine-opt=--encoding=UTF-8)
   fi
   pandoc_args+=(-o "$OUTPUT_PDF")
 fi

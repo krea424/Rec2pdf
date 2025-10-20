@@ -22,6 +22,6 @@
 4. Torna alla library chiudendo il modal; stato `mdEditorDirty` previene uscite accidentali.
 
 ## 4. Onboarding & diagnostica
-1. Dopo login, `AppShell` può mostrare `OnboardingBanner` se `shouldShowOnboardingBanner` è true.
+1. Dopo login, `AppShell` mostra `OnboardingBanner` solo quando la diagnostica segnala un problema (`diagnostics.status === 'error'`).
 2. L'utente apre `SetupAssistant` (`openSetupAssistant`) per seguire check-list (test microfono, backend health tramite `useBackendDiagnostics`).
 3. Completando i passaggi, la banner scompare e la pipeline può essere eseguita con maggiore confidenza.

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Cpu, Download, FileText, RefreshCw, Sparkles } from "../../components/icons";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Cpu, Download, FileText, RefreshCw, Sparkles, Users } from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
 import { useAnalytics } from "../../context/AnalyticsContext";
 import { classNames } from "../../utils/classNames";
@@ -32,6 +32,15 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     resetAll,
     baseJourneyVisibility,
     revealPipelinePanel,
+    enableDiarization,
+    setEnableDiarization,
+    workspaceSelection,
+    workspaceProfileSelection,
+    activeWorkspaceProfiles,
+    applyWorkspaceProfile,
+    clearWorkspaceProfile,
+    workspaces,
+    handleSelectWorkspaceForPipeline,
   } = context;
 
   const canPublish = Boolean(audioBlob) && !busy && backendUp !== false;
@@ -43,6 +52,147 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     journeyStage === "download" && pipelineComplete && latestEntry?.pdfPath && !hasDownloaded;
 
   const pipelineInFlight = busy && !pipelineComplete;
+  const diarizationProfileKey = "nuovo_template_verbale";
+  const previousProfileRef = useRef(null);
+
+  const applyMeetingProfileIfAvailable = useCallback(() => {
+    const normalize = (value) =>
+      (value || "")
+        .toString()
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "_");
+    const targetKey = normalize(diarizationProfileKey);
+
+    let targetWorkspaceId = workspaceSelection?.workspaceId || "";
+    let candidateProfiles = activeWorkspaceProfiles;
+
+    if (!targetWorkspaceId) {
+      const matchingWorkspace = (workspaces || []).find((workspace) => {
+        if (!workspace || typeof workspace !== "object") {
+          return false;
+        }
+        const profiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
+        return profiles.some((profile) => {
+          const keys = [
+            normalize(profile?.id),
+            normalize(profile?.slug),
+            normalize(profile?.label),
+          ].filter(Boolean);
+          return keys.includes(targetKey);
+        });
+      });
+      if (!matchingWorkspace) {
+        return false;
+      }
+      targetWorkspaceId = matchingWorkspace.id || "";
+      candidateProfiles = Array.isArray(matchingWorkspace?.profiles)
+        ? matchingWorkspace.profiles
+        : [];
+      if (typeof handleSelectWorkspaceForPipeline === "function" && targetWorkspaceId) {
+        handleSelectWorkspaceForPipeline(targetWorkspaceId);
+      }
+    }
+
+    const candidate =
+      candidateProfiles.find((profile) => {
+        if (!profile || typeof profile !== "object") {
+          return false;
+        }
+        const keys = [
+          normalize(profile.id),
+          normalize(profile.slug),
+          normalize(profile.label),
+        ].filter(Boolean);
+        return keys.includes(targetKey);
+      }) || null;
+
+    if (!candidate) {
+      return false;
+    }
+
+    const currentProfileId = workspaceProfileSelection?.profileId || "";
+    if (currentProfileId === candidate.id) {
+      return true;
+    }
+
+    previousProfileRef.current = currentProfileId;
+    const result = applyWorkspaceProfile(candidate.id, {
+      workspaceId: targetWorkspaceId,
+    });
+
+    if (!result?.ok) {
+      console.warn(
+        "Impossibile applicare il profilo diarizzazione:",
+        result?.message || "profilo non applicato"
+      );
+      return false;
+    }
+    return true;
+  }, [
+    activeWorkspaceProfiles,
+    applyWorkspaceProfile,
+    handleSelectWorkspaceForPipeline,
+    workspaceProfileSelection?.profileId,
+    workspaceSelection?.workspaceId,
+    workspaces,
+  ]);
+
+  const restorePreviousProfile = useCallback(() => {
+    if (!workspaceSelection?.workspaceId) {
+      previousProfileRef.current = null;
+      return;
+    }
+    const previousProfileId = previousProfileRef.current;
+    previousProfileRef.current = null;
+    if (previousProfileId) {
+      const result = applyWorkspaceProfile(previousProfileId, {
+        workspaceId: workspaceSelection.workspaceId,
+      });
+      if (!result?.ok) {
+        console.warn(
+          "Impossibile ripristinare il profilo precedente:",
+          result?.message || "profilo non disponibile"
+        );
+      }
+      return;
+    }
+    if (typeof clearWorkspaceProfile === "function") {
+      clearWorkspaceProfile();
+    }
+  }, [applyWorkspaceProfile, clearWorkspaceProfile, workspaceSelection?.workspaceId]);
+
+  useEffect(() => {
+    previousProfileRef.current = null;
+  }, [workspaceSelection?.workspaceId]);
+
+  const toggleDiarization = useCallback(() => {
+    if (busy) {
+      return;
+    }
+    const nextValue = !enableDiarization;
+    setEnableDiarization(nextValue);
+    if (!enableDiarization && nextValue) {
+      if (audioBlob) {
+        const applied = applyMeetingProfileIfAvailable();
+        if (!applied) {
+          previousProfileRef.current = null;
+        }
+      } else {
+        previousProfileRef.current = null;
+      }
+    }
+    if (enableDiarization && !nextValue) {
+      restorePreviousProfile();
+    }
+  }, [
+    applyMeetingProfileIfAvailable,
+    audioBlob,
+    busy,
+    enableDiarization,
+    restorePreviousProfile,
+    setEnableDiarization,
+  ]);
 
   const entryId = latestEntry?.id ?? null;
   const entryPdfPath = latestEntry?.pdfPath ?? null;
@@ -240,6 +390,38 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
       </div>
 
       <div className="space-y-3">
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-semibold text-white">
+                <Users className="h-4 w-4" /> Identifica speaker multipli (per riunioni)
+              </p>
+              <p className="mt-1 text-xs text-white/60">
+                Attiva questa opzione per separare le voci in una conversazione. L&apos;elaborazione potrebbe richiedere più tempo.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={enableDiarization}
+              aria-label="Attiva diarizzazione degli speaker"
+              onClick={toggleDiarization}
+              disabled={busy}
+              className={classNames(
+                "relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+                enableDiarization ? "bg-emerald-400" : "bg-white/20",
+                busy ? "cursor-not-allowed opacity-50" : "hover:bg-white/30"
+              )}
+            >
+              <span
+                className={classNames(
+                  "inline-block h-5 w-5 rounded-full bg-white transition-transform",
+                  enableDiarization ? "translate-x-5" : "translate-x-1"
+                )}
+              />
+            </button>
+          </div>
+        </div>
         <button
           type="button"
           onClick={handlePublish}

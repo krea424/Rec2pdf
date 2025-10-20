@@ -13,16 +13,19 @@ import { Button, IconButton } from "./ui/Button";
 import { TextArea } from "./ui/Input";
 import { Toast } from "./ui/Toast";
 import { Skeleton } from "./ui/Skeleton";
+import SpeakerMapper from "./SpeakerMapper";
 
 export default function MarkdownEditorModal({
   open,
   title,
   path,
   value,
+  renderedValue,
   onChange,
   onClose,
   onSave,
   onRepublish,
+  onRepublishWithSpeakers,
   loading,
   saving,
   error,
@@ -34,6 +37,10 @@ export default function MarkdownEditorModal({
   busy,
   themeStyles,
   lastAction,
+  speakers = [],
+  speakerMap = {},
+  onSpeakerMapChange,
+  speakerMapHasNames = false,
 }) {
   if (!open) return null;
 
@@ -89,15 +96,17 @@ export default function MarkdownEditorModal({
     ? "in-progress"
     : hasUnsavedChanges
       ? "pending"
-      : ["saved", "republished"].includes(normalizedLastAction)
-        ? "done"
-        : "pending";
+    : ["saved", "republished"].includes(normalizedLastAction)
+      ? "done"
+      : "pending";
   const isRepublishing = busy || normalizedLastAction === "republishing";
   const stepThreeStatus = isRepublishing
     ? "in-progress"
     : normalizedLastAction === "republished"
       ? "done"
       : "pending";
+  const showSpeakerMapper = Array.isArray(speakers) && speakers.length > 0;
+  const previewContent = typeof renderedValue === "string" ? renderedValue : value;
 
   const stepOneDescription = hasUnsavedChanges
     ? "Apporta le correzioni direttamente nel testo del documento. Hai modifiche non ancora salvate."
@@ -175,7 +184,7 @@ export default function MarkdownEditorModal({
             <XCircle className="h-4 w-4" />
           </IconButton>
         </div>
-        <div className="flex-1 overflow-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-6 py-4 max-h-[70vh]">
           {loading ? (
             <Skeleton className="h-[420px] w-full rounded-2xl bg-surface-800/70" />
           ) : (
@@ -191,6 +200,31 @@ export default function MarkdownEditorModal({
               )}
             />
           )}
+          {showSpeakerMapper ? (
+            <div className="mt-6 space-y-4 rounded-3xl border border-surface-800/80 bg-surface-950/40 p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-surface-50">Identifica speaker</p>
+                  <p className="mt-1 text-xs text-surface-400">
+                    Assegna un nome reale alle etichette generiche. Le modifiche sono applicate in anteprima in tempo reale; i campi lasciati vuoti manterranno l&apos;etichetta originale.
+                  </p>
+                </div>
+              </div>
+              <SpeakerMapper
+                speakers={speakers}
+                value={speakerMap}
+                onMapChange={onSpeakerMapChange}
+              />
+              <div className="rounded-2xl border border-surface-800 bg-surface-900/40 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-surface-400">
+                  Anteprima con nomi
+                </p>
+                <div className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap rounded-2xl bg-surface-950/70 p-3 text-xs font-mono text-surface-100 shadow-inset">
+                  {previewContent}
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
             {error ? (
               <Toast tone="danger" description={error} className="text-xs" />
@@ -271,6 +305,18 @@ export default function MarkdownEditorModal({
             >
               {busy ? "Rigenerazione…" : hasUnsavedChanges ? "Salva per rigenerare" : "Rigenera PDF"}
             </Button>
+            {showSpeakerMapper && typeof onRepublishWithSpeakers === "function" ? (
+              <Button
+                onClick={() => onRepublishWithSpeakers?.()}
+                disabled={busy || hasUnsavedChanges || !speakerMapHasNames}
+                variant="primary"
+                size="sm"
+                leadingIcon={RefreshCw}
+                isLoading={busy}
+              >
+                {busy ? "Rigenerazione…" : "Rigenera PDF con nomi"}
+              </Button>
+            ) : null}
             <Button
               onClick={() => onSave?.(value)}
               disabled={loading || saving || !hasUnsavedChanges}
@@ -287,4 +333,3 @@ export default function MarkdownEditorModal({
     </div>
   );
 }
-
