@@ -3,6 +3,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 ### Added
+- Documentazione per l'architettura RAG multi-tenant, incluse variabili d'ambiente e flussi di ingest/retrieval.
 
 ### Changed
 
