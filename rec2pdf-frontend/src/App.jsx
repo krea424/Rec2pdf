@@ -461,15 +461,28 @@ const isWorkspaceProfileLogoDescriptor = (value) =>
       value.source === 'workspace-profile' &&
       typeof value.profileId === 'string' &&
       value.profileId &&
-      typeof value.path === 'string' &&
-      value.path
+      (typeof value.path === 'string' || typeof value.downloadUrl === 'string')
   );
 
-const buildWorkspaceProfileLogoDescriptor = (workspaceId, profile) => {
+const buildWorkspaceProfileLogoDescriptor = (workspaceId, profile, options = {}) => {
   if (!workspaceId || !profile || typeof profile !== 'object') {
     return null;
   }
-  if (!profile.id || !profile.pdfLogoPath) {
+  if (!profile.id) {
+    return null;
+  }
+  const rawPath = typeof profile.pdfLogoPath === 'string' ? profile.pdfLogoPath.trim() : '';
+  const rawDownload = typeof profile.logoDownloadPath === 'string' ? profile.logoDownloadPath.trim() : '';
+  const baseUrl = typeof options.backendUrl === 'string' ? options.backendUrl.trim() : '';
+
+  let downloadUrl = rawDownload;
+  if (downloadUrl && !/^https?:\/\//i.test(downloadUrl) && baseUrl) {
+    const normalizedBase = baseUrl.replace(/\/+$/, '');
+    const normalizedPath = downloadUrl.replace(/^\/+/, '');
+    downloadUrl = `${normalizedBase}/${normalizedPath}`;
+  }
+
+  if (!rawPath && !downloadUrl) {
     return null;
   }
   const label =
@@ -480,9 +493,9 @@ const buildWorkspaceProfileLogoDescriptor = (workspaceId, profile) => {
     source: 'workspace-profile',
     workspaceId,
     profileId: profile.id,
-    path: profile.pdfLogoPath,
+    path: rawPath,
     label: label || profile.id,
-    downloadUrl: profile.logoDownloadPath || '',
+    downloadUrl,
   };
 };
 
@@ -498,27 +511,44 @@ const appendPdfLogoIfPresent = (formData, logo) => {
 
 const appendWorkspaceProfileDetails = (
   formData,
-  { selection, profile, logoDescriptor }
+  { selection, profile, logoDescriptor, backendUrl }
 ) => {
   if (!formData) {
     return;
   }
-  const descriptor =
-    isWorkspaceProfileLogoDescriptor(logoDescriptor) && logoDescriptor.path
-      ? logoDescriptor
-      : buildWorkspaceProfileLogoDescriptor(selection?.workspaceId, profile);
+  const descriptorCandidate = isWorkspaceProfileLogoDescriptor(logoDescriptor)
+    ? logoDescriptor
+    : buildWorkspaceProfileLogoDescriptor(selection?.workspaceId, profile, { backendUrl });
+
+  if (!descriptorCandidate) {
+    return;
+  }
+
+  let descriptor = descriptorCandidate;
+  if (
+    descriptorCandidate.downloadUrl &&
+    backendUrl &&
+    !/^https?:\/\//i.test(descriptorCandidate.downloadUrl)
+  ) {
+    const normalizedBase = backendUrl.replace(/\/+$/, '');
+    const normalizedPath = descriptorCandidate.downloadUrl.replace(/^\/+/, '');
+    descriptor = {
+      ...descriptorCandidate,
+      downloadUrl: `${normalizedBase}/${normalizedPath}`,
+    };
+  }
 
   const profileId =
     (selection && selection.profileId) ||
-    (descriptor && descriptor.profileId) ||
-    (profile && profile.id) ||
+      (descriptor && descriptor.profileId) ||
+      (profile && profile.id) ||
     '';
 
   if (!profileId) {
     return;
   }
 
-  if (!formData.has('workspaceProfileId')) {
+  if (!formData.has('workspaceProfileId') && profileId) {
     formData.append('workspaceProfileId', profileId);
   }
 
@@ -2539,17 +2569,23 @@ function AppContent(){
       if (profile.promptId) {
         setPromptState(buildPromptState({ promptId: profile.promptId }));
       }
-      if (profile.pdfLogoPath) {
-        const descriptor = buildWorkspaceProfileLogoDescriptor(targetWorkspaceId, profile);
-        setCustomPdfLogo(descriptor || null);
-      } else {
-        setCustomPdfLogo(null);
-      }
+      const descriptor = buildWorkspaceProfileLogoDescriptor(targetWorkspaceId, profile, {
+        backendUrl: normalizeBackendUrlValue(backendUrl),
+      });
+      setCustomPdfLogo(descriptor || null);
       setWorkspaceProfileSelection({ workspaceId: targetWorkspaceId, profileId: profile.id });
       setWorkspaceProfileLocked(true);
       return { ok: true, profile };
     },
-    [workspaces, workspaceSelection.workspaceId, setDestDir, setSlug, setPromptState, setCustomPdfLogo]
+    [
+      workspaces,
+      workspaceSelection.workspaceId,
+      setDestDir,
+      setSlug,
+      setPromptState,
+      setCustomPdfLogo,
+      backendUrl,
+    ]
   );
 
   const clearWorkspaceProfile = useCallback(() => {
@@ -2685,6 +2721,7 @@ function AppContent(){
         selection: workspaceProfileSelection,
         profile: activeWorkspaceProfile,
         logoDescriptor: customPdfLogo,
+        backendUrl: normalizeBackendUrlValue(backendUrl),
       });
       if (promptState.promptId) {
         fd.append('promptId', promptState.promptId);
@@ -2870,6 +2907,7 @@ function AppContent(){
         selection: workspaceProfileSelection,
         profile: activeWorkspaceProfile,
         logoDescriptor: customPdfLogo,
+        backendUrl: normalizeBackendUrlValue(backendUrl),
       });
       if (promptState.promptId) {
         fd.append('promptId', promptState.promptId);
@@ -3622,6 +3660,7 @@ function AppContent(){
         selection: workspaceProfileSelection,
         profile: activeWorkspaceProfile,
         logoDescriptor: customPdfLogo,
+        backendUrl: normalizeBackendUrlValue(backendUrl),
       });
       if (hasSpeakerMapPayload) {
         fd.append('speakerMap', JSON.stringify(sanitizedSpeakerMap));

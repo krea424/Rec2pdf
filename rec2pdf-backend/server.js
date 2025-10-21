@@ -1080,15 +1080,73 @@ const readWorkspaces = async () => {
     const raw = await fsp.readFile(WORKSPACES_FILE, 'utf8');
     const parsed = JSON.parse(raw);
     if (parsed && Array.isArray(parsed.workspaces)) {
-      return parsed.workspaces.map((workspace) => {
+      const workspaces = parsed.workspaces.map((workspace) => {
         if (!workspace || typeof workspace !== 'object') {
           return workspace;
         }
-        if (Array.isArray(workspace.profiles)) {
-          return workspace;
+        const normalized = { ...workspace };
+        if (!Array.isArray(normalized.profiles)) {
+          normalized.profiles = [];
         }
-        return { ...workspace, profiles: [] };
+        return normalized;
       });
+
+      let mutated = false;
+      const now = Date.now();
+
+      for (const workspace of workspaces) {
+        if (!workspace || !Array.isArray(workspace.profiles)) {
+          continue;
+        }
+        let workspaceMutated = false;
+        for (const profile of workspace.profiles) {
+          if (!profile || typeof profile !== 'object' || profile.pdfLogoPath) {
+            continue;
+          }
+          const repairedPath = discoverStoredProfileLogoPath(workspace.id || '', profile);
+          if (!repairedPath) {
+            continue;
+          }
+          profile.pdfLogoPath = repairedPath;
+          if (profile.pdfLogo && typeof profile.pdfLogo === 'object') {
+            profile.pdfLogo.fileName = sanitizeStorageFileName(
+              profile.pdfLogo.fileName || path.basename(repairedPath),
+              path.basename(repairedPath)
+            );
+            if (!profile.pdfLogo.originalName) {
+              profile.pdfLogo.originalName = profile.pdfLogo.fileName;
+            }
+            if (!Number.isFinite(profile.pdfLogo.updatedAt)) {
+              profile.pdfLogo.updatedAt = now;
+            }
+          } else {
+            profile.pdfLogo = {
+              fileName: path.basename(repairedPath),
+              originalName: path.basename(repairedPath),
+              updatedAt: now,
+            };
+          }
+          profile.updatedAt = now;
+          workspaceMutated = true;
+        }
+        if (workspaceMutated) {
+          workspace.updatedAt = now;
+          mutated = true;
+        }
+      }
+
+      if (mutated) {
+        try {
+          await writeWorkspaces(workspaces);
+        } catch (persistError) {
+          console.warn(
+            'Impossibile aggiornare workspaces.json con i loghi ripristinati:',
+            persistError.message || persistError
+          );
+        }
+      }
+
+      return workspaces;
     }
   } catch (error) {
     console.warn('Impossibile leggere workspaces.json:', error.message || error);
@@ -1163,6 +1221,8 @@ const resolveProfileLogoAbsolutePath = (storedPath) => {
   return normalized;
 };
 
+const VALID_LOGO_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.svg']);
+
 const storeProfileLogo = async ({ workspaceId, profileId, tmpPath, originalName }) => {
   if (!workspaceId || !profileId || !tmpPath) {
     return null;
@@ -1197,6 +1257,63 @@ const removeStoredProfileLogo = async (storedPath) => {
     if (error?.code !== 'ENOENT') {
       console.warn(`⚠️  Impossibile rimuovere il logo profilo ${targetDir}: ${error.message || error}`);
     }
+  }
+};
+
+const discoverStoredProfileLogoPath = (workspaceId, profile) => {
+  if (!workspaceId || !profile || !profile.id) {
+    return '';
+  }
+
+  const safeWorkspace = sanitizeSlug(workspaceId, 'workspace');
+  const safeProfile = sanitizeSlug(profile.id, 'profile');
+  if (!safeWorkspace || !safeProfile) {
+    return '';
+  }
+
+  const targetDir = path.join(PROFILE_LOGO_ROOT, safeWorkspace, safeProfile);
+  try {
+    const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+    const files = entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .filter((name) => VALID_LOGO_EXTENSIONS.has(path.extname(name).toLowerCase()));
+    if (!files.length) {
+      return '';
+    }
+
+    const preferredNameRaw =
+      (profile.pdfLogo && typeof profile.pdfLogo === 'object' && profile.pdfLogo.fileName) ||
+      (profile.pdfLogoPath ? path.basename(profile.pdfLogoPath) : '') ||
+      (profile.pdfLogo && typeof profile.pdfLogo === 'object' && profile.pdfLogo.originalName) ||
+      '';
+    const preferredName = preferredNameRaw
+      ? sanitizeStorageFileName(preferredNameRaw, preferredNameRaw)
+      : '';
+
+    let resolvedFile = '';
+    if (preferredName && files.includes(preferredName)) {
+      resolvedFile = preferredName;
+    } else {
+      resolvedFile = files[0];
+    }
+    if (!resolvedFile) {
+      return '';
+    }
+
+    const relativePath = path.join('logos', safeWorkspace, safeProfile, resolvedFile).replace(/\\+/g, '/');
+    const absolutePath = resolveProfileLogoAbsolutePath(relativePath);
+    if (!absolutePath) {
+      return '';
+    }
+    try {
+      fs.accessSync(absolutePath, fs.constants.R_OK);
+      return relativePath;
+    } catch {
+      return '';
+    }
+  } catch {
+    return '';
   }
 };
 
@@ -1584,8 +1701,6 @@ const optionalProfileUpload = (req, res, next) => {
   }
   return next();
 };
-
-const VALID_LOGO_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.svg']);
 
 const ensureTempFileHasExtension = async (file, allowedExtensions = VALID_LOGO_EXTENSIONS) => {
   if (!file) return null;
