@@ -45,6 +45,7 @@ This guide distills the repository essentials for autonomous contributors. Use i
 - Node.js ≥ 18, npm ≥ 9.
 - CLI tools expected on PATH: `ffmpeg`, `whisper` (OpenAI CLI install), `pandoc`, `xelatex` (for LaTeX templates), `wkhtmltopdf` or `weasyprint` for HTML templates.
 - Supabase service role key grants storage/admin operations; rotate secrets when sharing environments.
+- Knowledge base ingestion: execute `npm run ingest -- --workspaceId=<id>` inside `rec2pdf-backend/` after populating `knowledge_sources/<id>/` with `.txt`/`.md` files. The script chunking (250 parole con overlap 50) invia embedding `text-embedding-3-small` verso la tabella `knowledge_chunks`; assicurati di applicare la migrazione SQL `rec2pdf-backend/supabase/migrations/20240506_add_workspace_id_to_knowledge_chunks.sql` per creare la colonna `workspace_id` e l'indice correlato.
 
 ### Running & Testing
 ```bash

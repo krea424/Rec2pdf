@@ -176,6 +176,11 @@ which ppubr
 
 Il backend usa `multer` per gestire upload multipart, costruisce nomi coerenti con workspace/policy di versioning e sincronizza automaticamente file e log con i bucket Supabase.【F:rec2pdf-backend/server.js†L700-L760】【F:rec2pdf-backend/server.js†L1312-L2055】
 
+### Ingestione della knowledge base
+- **Migrazione Supabase**: aggiungi la colonna `workspace_id` e l'indice associato eseguendo lo script SQL `rec2pdf-backend/supabase/migrations/20240506_add_workspace_id_to_knowledge_chunks.sql` nel progetto Supabase.
+- **Prerequisiti**: configura le variabili `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` e `OPENAI_API_KEY` nel file `.env` del backend e prepara i sorgenti in `rec2pdf-backend/knowledge_sources/<workspaceId>/` in formato `.txt` o `.md`.
+- **Esecuzione**: lancia `npm run ingest -- --workspaceId=<workspaceId>` per generare chunk da 250 parole (overlap 50 parole), calcolare gli embedding OpenAI `text-embedding-3-small` e inserirli in `knowledge_chunks` con metadati `{"source": "<file>"}`.
+
 ## Interfaccia web
 - **Stack**: React 18, Vite 5, Tailwind CSS 3, icone Lucide, client Supabase JS.【F:rec2pdf-frontend/package.json†L1-L25】
 - **Funzionalità UI**:
