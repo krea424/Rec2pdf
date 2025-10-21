@@ -12,6 +12,7 @@ Rec2PDF automatizza il flusso **voce → trascrizione → documento editoriale**
 - [Modalità Advanced](#modalità-advanced)
 - [Caratteristiche principali](#caratteristiche-principali)
 - [Architettura](#architettura)
+- [RAG multi-tenant](#rag-multi-tenant)
 - [Prerequisiti](#prerequisiti)
 - [Autenticazione & Supabase](#autenticazione--supabase)
 - [Quick start](#quick-start)
@@ -180,6 +181,21 @@ Il backend usa `multer` per gestire upload multipart, costruisce nomi coerenti c
 - **Migrazione Supabase**: aggiungi la colonna `workspace_id` e l'indice associato eseguendo lo script SQL `rec2pdf-backend/supabase/migrations/20240506_add_workspace_id_to_knowledge_chunks.sql` nel progetto Supabase.
 - **Prerequisiti**: configura le variabili `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` e `OPENAI_API_KEY` nel file `.env` del backend e prepara i sorgenti in `rec2pdf-backend/knowledge_sources/<workspaceId>/` in formato `.txt` o `.md`.
 - **Esecuzione**: lancia `npm run ingest -- --workspaceId=<workspaceId>` per generare chunk da 250 parole (overlap 50 parole), calcolare gli embedding OpenAI `text-embedding-3-small` e inserirli in `knowledge_chunks` con metadati `{"source": "<file>"}`.
+
+## RAG multi-tenant
+
+### Overview architettura
+Il backend applica un isolamento per workspace su Supabase: ogni chunk di conoscenza è salvato nella tabella `knowledge_chunks` con il relativo `workspace_id` e viene recuperato tramite la funzione RPC `match_knowledge_chunks`, che ordina i risultati in base alla similarità vettoriale calcolata con gli embedding OpenAI.【F:rec2pdf-backend/scripts/ingest.js†L53-L103】【F:rec2pdf-backend/server.js†L31-L107】【F:rec2pdf-backend/supabase/migrations/20240703_create_match_knowledge_chunks_function.sql†L1-L24】 Durante la generazione del Markdown, il server concatena il prompt selezionato, le note e la trascrizione per interrogare la knowledge base del workspace corrente e inietta il contesto restituito direttamente nella chiamata a Gemini responsabile della sintesi.【F:rec2pdf-backend/server.js†L3589-L3668】
+
+### Pipeline di ingest e retrieval
+1. Prepara i file Markdown/TXT specifici del cliente in `rec2pdf-backend/knowledge_sources/<workspaceId>/`; la struttura delle cartelle viene mantenuta nei metadati `source` salvati su Supabase per facilitare gli audit.【F:rec2pdf-backend/scripts/ingest.js†L38-L75】
+2. Esegui `npm run ingest -- --workspaceId=<workspaceId>`: lo script normalizza il testo, crea chunk di 250 parole con overlap di 50, genera gli embedding `text-embedding-3-small` e inserisce i record in batch da 50 righe sul progetto Supabase.【F:rec2pdf-backend/scripts/ingest.js†L53-L100】
+3. Quando la pipeline voce→Markdown è avviata, il backend calcola un embedding della query combinata (prompt + trascrizione), invoca `match_knowledge_chunks` passando il workspace attivo e combina le risposte in un unico contesto separato da `---` prima di richiamare la generazione del documento.【F:rec2pdf-backend/server.js†L31-L107】【F:rec2pdf-backend/server.js†L3620-L3668】
+
+### Requisiti di configurazione
+- Definisci le variabili d’ambiente `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `OPENAI_API_KEY` e `GEMINI_API_KEY` nel `.env` del backend per abilitare rispettivamente l’accesso a Supabase, gli embedding OpenAI e la generazione del Markdown tramite Gemini.【F:rec2pdf-backend/.env.example†L7-L23】
+- Applica la migrazione `20240703_create_match_knowledge_chunks_function.sql` oltre all’aggiunta della colonna `workspace_id` per abilitare la funzione vettoriale `match_knowledge_chunks` utilizzata dal retrieval.【F:rec2pdf-backend/supabase/migrations/20240506_add_workspace_id_to_knowledge_chunks.sql†L1-L9】【F:rec2pdf-backend/supabase/migrations/20240703_create_match_knowledge_chunks_function.sql†L1-L24】
+- Utilizza l’header `x-workspace-id` o il parametro `workspaceId` quando richiami le API `/api/rec2pdf` o `/api/ppubr` per assicurarti che il backend risolva la knowledge base corretta durante la generazione del Markdown multi-tenant.【F:rec2pdf-backend/server.js†L34-L53】【F:rec2pdf-backend/server.js†L3620-L3668】
 
 ## Interfaccia web
 - **Stack**: React 18, Vite 5, Tailwind CSS 3, icone Lucide, client Supabase JS.【F:rec2pdf-frontend/package.json†L1-L25】
