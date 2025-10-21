@@ -20,10 +20,18 @@ if (!workspaceId) {
     process.exit(1);
 }
 
-const knowledgeDir = path.join(PROJECT_ROOT, 'knowledge_sources', workspaceId);
+const knowledgeDirCandidates = [
+    path.resolve(PROJECT_ROOT, 'knowledge_sources', workspaceId),
+    path.resolve(PROJECT_ROOT, '..', 'knowledge_sources', workspaceId)
+];
 
-if (!existsSync(knowledgeDir)) {
-    console.error(`Errore: la cartella ${knowledgeDir} non esiste. Assicurati che knowledge_sources/${workspaceId}/ contenga i file da indicizzare.`);
+const knowledgeDir = knowledgeDirCandidates.find((candidate) => existsSync(candidate));
+
+if (!knowledgeDir) {
+    console.error(
+        `Errore: impossibile trovare i contenuti per il workspace ${workspaceId}. ` +
+        `Crea knowledge_sources/${workspaceId}/ in rec2pdf-backend/ oppure nella root del progetto con i file da indicizzare.`
+    );
     process.exit(1);
 }
 

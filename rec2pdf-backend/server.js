@@ -84,10 +84,12 @@ const retrieveRelevantContext = async (queryText, workspaceId) => {
       return '';
     }
 
-    const { data, error } = await supabase.rpc('match_knowledge_chunks', {
-      match_workspace_id: normalizedWorkspaceId,
-      query_embedding: embedding,
-    });
+    // VERSIONE CORRETTA
+const { data, error } = await supabase.rpc('match_knowledge_chunks', {
+  query_embedding: embedding,
+  match_workspace_id: normalizedWorkspaceId,
+  match_count: 4 // <-- AGGIUNGI QUESTO PARAMETRO
+});
 
     if (error) {
       console.error('Errore RPC match_knowledge_chunks:', error);
