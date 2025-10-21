@@ -5,8 +5,8 @@ const fs = require('fs/promises');
 const { existsSync } = require('fs');
 const { randomUUID } = require('crypto');
 const dotenv = require('dotenv');
-const OpenAI = require('openai');
 const { createClient } = require('@supabase/supabase-js');
+const { getOpenAIClient } = require('../openaiClient');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
@@ -35,7 +35,12 @@ if (missingEnv.length > 0) {
 }
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = getOpenAIClient();
+
+if (!openai) {
+    console.error('Errore: impossibile inizializzare il client OpenAI. Verifica OPENAI_API_KEY.');
+    process.exit(1);
+}
 
 const CHUNK_SIZE = 250;
 const CHUNK_OVERLAP = 50;

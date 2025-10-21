@@ -9,6 +9,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { execFile, exec } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
+const { getOpenAIClient } = require('./openaiClient');
 
 const app = express();
 const PORT = process.env.PORT || 7788;
@@ -26,6 +27,87 @@ const supabase =
         },
       })
     : null;
+
+const OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+const CONTEXT_SEPARATOR = '\n\n---\n\n';
+const CONTEXT_QUERY_MAX_CHARS = 4000;
+
+const getWorkspaceIdFromRequest = (req = {}) => {
+  const bodyId = typeof req.body?.workspaceId === 'string' ? req.body.workspaceId.trim() : '';
+  if (bodyId) {
+    return bodyId;
+  }
+
+  const queryId = typeof req.query?.workspaceId === 'string' ? req.query.workspaceId.trim() : '';
+  if (queryId) {
+    return queryId;
+  }
+
+  const headerIdRaw = req.headers?.['x-workspace-id'] || req.headers?.['x-workspace'];
+  const headerId = typeof headerIdRaw === 'string' ? headerIdRaw.trim() : '';
+  if (headerId) {
+    return headerId;
+  }
+
+  return '';
+};
+
+const retrieveRelevantContext = async (queryText, workspaceId) => {
+  const normalizedWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
+  if (!normalizedWorkspaceId) {
+    return '';
+  }
+
+  const normalizedQuery = typeof queryText === 'string' ? queryText.trim() : '';
+  if (!normalizedQuery) {
+    return '';
+  }
+
+  if (!supabase) {
+    console.warn('⚠️  Supabase non configurato: impossibile eseguire retrieveRelevantContext.');
+    return '';
+  }
+
+  const openai = getOpenAIClient();
+  if (!openai) {
+    return '';
+  }
+
+  try {
+    const embeddingResponse = await openai.embeddings.create({
+      model: OPENAI_EMBEDDING_MODEL,
+      input: normalizedQuery,
+    });
+
+    const embedding = embeddingResponse?.data?.[0]?.embedding;
+    if (!Array.isArray(embedding)) {
+      return '';
+    }
+
+    const { data, error } = await supabase.rpc('match_knowledge_chunks', {
+      match_workspace_id: normalizedWorkspaceId,
+      query_embedding: embedding,
+    });
+
+    if (error) {
+      console.error('Errore RPC match_knowledge_chunks:', error);
+      return '';
+    }
+
+    if (!Array.isArray(data) || data.length === 0) {
+      return '';
+    }
+
+    const chunks = data
+      .map((row) => (row && typeof row.content === 'string' ? row.content.trim() : ''))
+      .filter(Boolean);
+
+    return chunks.length ? chunks.join(CONTEXT_SEPARATOR) : '';
+  } catch (error) {
+    console.error('retrieveRelevantContext fallita:', error);
+    return '';
+  }
+};
 
 // DICHIARA QUI LA VARIABILE MANCANTE
 const isAuthEnabled = !!supabase;
@@ -3050,6 +3132,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
   const tempFiles = new Set();
   const tempDirs = new Set();
   let speakerLabels = [];
+  let retrievedWorkspaceContext = '';
 
   const logStageEvent = (stage, status = 'info', message = '') => {
     if (!stage) return;
@@ -3081,7 +3164,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     }
 
     let slugInput = String(req.body?.slug || '').trim();
-    const workspaceId = String(req.body?.workspaceId || '').trim();
+    const workspaceId = getWorkspaceIdFromRequest(req);
     const workspaceProjectId = String(req.body?.workspaceProjectId || '').trim();
     const workspaceProjectName = String(
       req.body?.workspaceProjectName || req.body?.workspaceProject || ''
@@ -3490,10 +3573,12 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       const transcriptBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, transcriptStoragePath);
       transcriptLocalForMarkdown = registerTempFile(path.join(pipelineDir, `${baseName}${transcriptExt}`));
       await fsp.writeFile(transcriptLocalForMarkdown, transcriptBuffer);
+      let transcriptTextForQuery = '';
       if (diarizeEnabled) {
         try {
           const parsedTranscript = JSON.parse(transcriptBuffer.toString('utf8'));
           const speakerSet = new Set();
+          const transcriptTexts = [];
           if (Array.isArray(parsedTranscript?.segments)) {
             parsedTranscript.segments.forEach((segment) => {
               if (segment && typeof segment.speaker === 'string') {
@@ -3502,9 +3587,16 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
                   speakerSet.add(normalizedSpeaker);
                 }
               }
+              if (segment && typeof segment.text === 'string') {
+                const segmentText = segment.text.trim();
+                if (segmentText) {
+                  transcriptTexts.push(segmentText);
+                }
+              }
             });
           }
           speakerLabels = Array.from(speakerSet).sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }));
+          transcriptTextForQuery = transcriptTexts.join(' ');
         } catch (parseError) {
           out(
             `⚠️ Impossibile analizzare gli speaker diarizzati: ${parseError?.message || parseError}`,
@@ -3512,6 +3604,28 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
             'warning'
           );
           speakerLabels = [];
+        }
+      } else {
+        transcriptTextForQuery = transcriptBuffer.toString('utf8');
+      }
+
+      if (!retrievedWorkspaceContext) {
+        const queryParts = [];
+        if (promptFocus) {
+          queryParts.push(promptFocus);
+        }
+        if (promptNotes) {
+          queryParts.push(promptNotes);
+        }
+        if (transcriptTextForQuery) {
+          queryParts.push(transcriptTextForQuery);
+        }
+        const combinedQuery = queryParts.join('\n\n').slice(0, CONTEXT_QUERY_MAX_CHARS);
+        if (combinedQuery) {
+          retrievedWorkspaceContext = await retrieveRelevantContext(combinedQuery, workspaceId);
+          if (retrievedWorkspaceContext) {
+            res.locals.retrievedWorkspaceContext = retrievedWorkspaceContext;
+          }
         }
       }
       mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
