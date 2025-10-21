@@ -1083,7 +1083,7 @@ const loadTranscriptForPrompt = async (sourcePath) => {
   return raw;
 };
 
-const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
+const generateMarkdown = async (txtPath, mdFile, promptPayload, knowledgeContext = '') => {
   try {
     const transcript = await loadTranscriptForPrompt(txtPath);
 
@@ -1118,10 +1118,15 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload) => {
       }
     }
 
-    promptLines.push("\nEcco la trascrizione da elaborare:\n---\n");
     const prompt = promptLines.join('\n');
+    const normalizedContext =
+      typeof knowledgeContext === 'string' ? knowledgeContext.trim() : '';
+    const promptWithContext = normalizedContext
+      ? `${prompt}\n\nINFORMAZIONI AGGIUNTIVE DALLA KNOWLEDGE BASE:\n---\n${normalizedContext}\n---\n`
+      : prompt;
+    const promptWithTranscript = `${promptWithContext}\nEcco la trascrizione da elaborare:\n---\n`;
 
-    const fullPrompt = `${prompt}${transcript}`;
+    const fullPrompt = `${promptWithTranscript}${transcript}`;
 
     // Using 'gemini' CLI tool. Assuming it's in the PATH.
     // The command is constructed to prevent shell injection issues.
@@ -3629,7 +3634,12 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         }
       }
       mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
-      const gm = await generateMarkdown(transcriptLocalForMarkdown, mdLocalPath, promptRulePayload);
+      const gm = await generateMarkdown(
+        transcriptLocalForMarkdown,
+        mdLocalPath,
+        promptRulePayload,
+        retrievedWorkspaceContext || res.locals?.retrievedWorkspaceContext || ''
+      );
       if (gm.code !== 0) {
         out(gm.stderr || gm.stdout || 'Generazione Markdown fallita', 'markdown', 'failed');
         throw new Error('Generazione Markdown fallita: ' + (gm.stderr || gm.stdout));
@@ -4484,7 +4494,12 @@ app.post(
         txtLocalPath = registerTempFile(path.join(pipelineDir, `${baseName}.txt`));
         await fsp.writeFile(txtLocalPath, downloadedTxt);
         mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
-        const gm = await generateMarkdown(txtLocalPath, mdLocalPath, promptRulePayload);
+        const gm = await generateMarkdown(
+          txtLocalPath,
+          mdLocalPath,
+          promptRulePayload,
+          res.locals?.retrievedWorkspaceContext || ''
+        );
         if (gm.code !== 0) {
           const reason = gm.stderr || gm.stdout || 'Generazione Markdown fallita';
           out(reason, 'markdown', 'failed');
@@ -4811,4 +4826,5 @@ module.exports = {
   publishWithTemplateFallback,
   resolvePromptTemplateDescriptor,
   DEFAULT_LAYOUT_TEMPLATE_MAP,
+  generateMarkdown,
 };
