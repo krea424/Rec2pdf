@@ -6,6 +6,7 @@ const { existsSync } = require('fs');
 const { randomUUID } = require('crypto');
 const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
+const yaml = require('js-yaml');
 const { getOpenAIClient } = require('../openaiClient');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -59,12 +60,14 @@ const BATCH_SIZE = 50;
 
         for (const file of files) {
             const content = await fs.readFile(file.absolutePath, 'utf8');
-            const normalized = normalizeWhitespace(content);
+            const { body, frontMatter } = parseFrontMatter(content, file.absolutePath);
+            const normalized = normalizeWhitespace(body);
+            const metadata = buildMetadata(file.relativePath, frontMatter);
             const fileChunks = createChunks(normalized, CHUNK_SIZE, CHUNK_OVERLAP).map((chunkContent, index) => ({
                 id: randomUUID(),
                 workspace_id: workspaceId,
                 content: chunkContent,
-                metadata: { source: file.relativePath },
+                metadata,
                 order: index
             }));
 
@@ -194,4 +197,44 @@ function createChunks(text, chunkSize, overlap) {
     }
 
     return chunks;
+}
+
+function parseFrontMatter(rawContent, filePath) {
+    const result = { body: rawContent, frontMatter: null };
+    if (!rawContent) {
+        return result;
+    }
+
+    const frontMatterPattern = /^\ufeff?---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/;
+    const match = rawContent.match(frontMatterPattern);
+
+    if (!match) {
+        return result;
+    }
+
+    const [, frontMatterBlock] = match;
+    const body = rawContent.slice(match[0].length);
+
+    if (!frontMatterBlock.trim()) {
+        return { body, frontMatter: null };
+    }
+
+    try {
+        const parsed = yaml.load(frontMatterBlock);
+        if (parsed && typeof parsed === 'object') {
+            return { body, frontMatter: parsed };
+        }
+    } catch (error) {
+        console.warn(`Impossibile parsare il front matter YAML per ${filePath}: ${error.message}`);
+    }
+
+    return { body, frontMatter: null };
+}
+
+function buildMetadata(relativePath, frontMatter) {
+    if (frontMatter && typeof frontMatter === 'object' && !Array.isArray(frontMatter)) {
+        return { source: relativePath, ...frontMatter };
+    }
+
+    return { source: relativePath };
 }
