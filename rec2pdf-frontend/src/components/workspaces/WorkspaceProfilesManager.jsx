@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
-import { Button, Input, Select } from "../ui";
+import { Button, Input, Select, Tabs, TabsContent, TabsList, TabsTrigger } from "../ui";
 import {
   AlertCircle,
   FileText,
@@ -14,6 +14,7 @@ import {
   Upload,
   Users,
 } from "../icons";
+import KnowledgeBaseManager from "./KnowledgeBaseManager";
 
 const emptyForm = {
   label: "",
@@ -53,6 +54,7 @@ const WorkspaceProfilesManager = () => {
   const [editingProfileId, setEditingProfileId] = useState("");
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState({ success: "", error: "", details: [] });
+  const [activeTab, setActiveTab] = useState("profiles");
   const logoInputRef = useRef(null);
 
   const resetForm = useCallback(() => {
@@ -86,14 +88,19 @@ const WorkspaceProfilesManager = () => {
     [workspaces, selectedWorkspaceId]
   );
 
+  const workspaceProjects = useMemo(
+    () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []),
+    [activeWorkspace]
+  );
+
   const profiles = useMemo(
     () => (Array.isArray(activeWorkspace?.profiles) ? activeWorkspace.profiles : []),
     [activeWorkspace]
   );
 
   const projectCount = useMemo(
-    () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects.length : 0),
-    [activeWorkspace]
+    () => workspaceProjects.length,
+    [workspaceProjects]
   );
 
   const promptMap = useMemo(() => {
@@ -135,6 +142,27 @@ const WorkspaceProfilesManager = () => {
     }
     return "Seleziona un template predefinito o scegli l'opzione personalizzata.";
   }, [pdfTemplatesLoading, selectedTemplate, templateCount, useCustomTemplate]);
+
+  const formatProjectTimestamp = useCallback((value) => {
+    if (!value) {
+      return null;
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+    try {
+      return date.toLocaleString("it-IT", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch (error) {
+      return date.toISOString();
+    }
+  }, []);
 
   useEffect(() => {
     if (!formState.pdfTemplate) {
@@ -546,331 +574,416 @@ const WorkspaceProfilesManager = () => {
         </Button>
       </div>
 
-      {!selectedWorkspaceId ? (
-        <div className="rounded-2xl border border-dashed border-surface-700 bg-surface-900/30 p-6 text-center text-sm text-surface-400">
-          Seleziona un workspace per gestire i profili associati.
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-surface-100">Profili configurati</div>
-              <p className="mt-1 text-xs text-surface-400">
-                I profili applicano automaticamente slug, cartella, prompt e template alla pipeline.
-              </p>
-            </div>
-            <Button type="button" size="sm" variant="secondary" leadingIcon={Plus} onClick={resetForm}>
-              Nuovo profilo
-            </Button>
-          </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="mt-3">
+          <TabsTrigger value="profiles">Profili</TabsTrigger>
+          <TabsTrigger value="projects">Progetti</TabsTrigger>
+          <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
+        </TabsList>
 
-          {profiles.length ? (
-            <ul className="space-y-3">
-              {profiles.map((profile) => {
-                const prompt = promptMap.get(profile.promptId);
-                const isEditing = profile.id === editingProfileId;
-                return (
-                  <li
-                    key={profile.id}
-                    className={classNames(
-                      "rounded-2xl border border-surface-700 bg-surface-900/40 p-4 transition",
-                      isEditing && "border-brand-400/70 bg-brand-500/10"
-                    )}
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <div className="text-sm font-semibold text-surface-100">{profile.label || profile.id}</div>
-                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] uppercase tracking-wide text-surface-400">
-                          <span>
-                            Slug:
-                            <span className="ml-1 rounded bg-surface-800 px-1.5 py-0.5 text-[11px] text-surface-100 normal-case">
-                              {profile.slug || "—"}
-                            </span>
-                          </span>
-                          <span className="normal-case">Cartella: {profile.destDir || "—"}</span>
-                          <span className="normal-case">
-                            Prompt: {prompt?.title || profile.promptId || "—"}
-                          </span>
-                          <span className="normal-case">
-                            Template: {profile.pdfTemplate || "—"}
-                            {profile.pdfTemplateType ? ` (${profile.pdfTemplateType})` : ""}
-                          </span>
-                          {profile.pdfTemplateCss ? (
-                            <span className="normal-case">CSS: {profile.pdfTemplateCss}</span>
-                          ) : null}
-                          <span className="normal-case">
-                            Logo: {profile.pdfLogo?.originalName || (profile.pdfLogoPath ? "Caricato" : "—")}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          leadingIcon={FileText}
-                          onClick={() => handleEditProfile(profile)}
-                          disabled={pending}
-                        >
-                          Modifica
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="text-feedback-danger hover:text-white"
-                          leadingIcon={Trash2}
-                          onClick={() => handleDeleteProfile(profile)}
-                          disabled={pending}
-                        >
-                          Elimina
-                        </Button>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
+        <TabsContent value="profiles">
+          {!selectedWorkspaceId ? (
             <div className="rounded-2xl border border-dashed border-surface-700 bg-surface-900/30 p-6 text-center text-sm text-surface-400">
-              Nessun profilo configurato per questo workspace.
+              Seleziona un workspace per gestire i profili associati.
             </div>
-          )}
-
-          <form
-            onSubmit={handleSubmit}
-            className="space-y-5 rounded-2xl border border-surface-700 bg-surface-900/40 p-5"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-surface-100">
-                  {editingProfileId ? "Modifica profilo" : "Nuovo profilo"}
+          ) : (
+            <div className="mt-4 space-y-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-surface-100">Profili configurati</div>
+                  <p className="mt-1 text-xs text-surface-400">
+                    I profili applicano automaticamente slug, cartella, prompt e template alla pipeline.
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-surface-400">
-                  Compila i campi per salvare un profilo riutilizzabile. Tutti i valori sono opzionali tranne il nome.
-                </p>
-              </div>
-              {editingProfileId && (
-                <Button type="button" size="sm" variant="ghost" onClick={resetForm}>
-                  Annulla modifica
+                <Button type="button" size="sm" variant="secondary" leadingIcon={Plus} onClick={resetForm}>
+                  Nuovo profilo
                 </Button>
+              </div>
+
+              {profiles.length ? (
+                <ul className="space-y-3">
+                  {profiles.map((profile) => {
+                    const prompt = promptMap.get(profile.promptId);
+                    const isEditing = profile.id === editingProfileId;
+                    return (
+                      <li
+                        key={profile.id}
+                        className={classNames(
+                          "rounded-2xl border border-surface-700 bg-surface-900/40 p-4 transition",
+                          isEditing && "border-brand-400/70 bg-brand-500/10"
+                        )}
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-surface-100">{profile.label || profile.id}</div>
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] uppercase tracking-wide text-surface-400">
+                              <span>
+                                Slug:
+                                <span className="ml-1 rounded bg-surface-800 px-1.5 py-0.5 text-[11px] text-surface-100 normal-case">
+                                  {profile.slug || "—"}
+                                </span>
+                              </span>
+                              <span className="normal-case">Cartella: {profile.destDir || "—"}</span>
+                              <span className="normal-case">
+                                Prompt: {prompt?.title || profile.promptId || "—"}
+                              </span>
+                              <span className="normal-case">
+                                Template: {profile.pdfTemplate || "—"}
+                                {profile.pdfTemplateType ? ` (${profile.pdfTemplateType})` : ""}
+                              </span>
+                              {profile.pdfTemplateCss ? (
+                                <span className="normal-case">CSS: {profile.pdfTemplateCss}</span>
+                              ) : null}
+                              <span className="normal-case">
+                                Logo: {profile.pdfLogo?.originalName || (profile.pdfLogoPath ? "Caricato" : "—")}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              leadingIcon={FileText}
+                              onClick={() => handleEditProfile(profile)}
+                              disabled={pending}
+                            >
+                              Modifica
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="text-feedback-danger hover:text-white"
+                              leadingIcon={Trash2}
+                              onClick={() => handleDeleteProfile(profile)}
+                              disabled={pending}
+                            >
+                              Elimina
+                            </Button>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-surface-700 bg-surface-900/30 p-6 text-center text-sm text-surface-400">
+                  Nessun profilo configurato per questo workspace.
+                </div>
               )}
-            </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Input
-                label="Nome profilo"
-                value={formState.label}
-                onChange={handleFieldChange("label")}
-                placeholder="Es. Verbale standard"
-                required
-              />
-              <Input
-                label="Slug"
-                value={formState.slug}
-                onChange={handleFieldChange("slug")}
-                placeholder="es. verbale_standard"
-                helperText="Lascia vuoto per generarlo dal nome"
-              />
-              <Input
-                label="Cartella destinazione"
-                value={formState.destDir}
-                onChange={handleFieldChange("destDir")}
-                placeholder="/Users/nomeutente/Documenti"
-                helperText="Cartella sul backend dove salvare PDF e Markdown"
-              />
-              <Select
-                label="Prompt"
-                value={formState.promptId}
-                onChange={handleFieldChange("promptId")}
-                className="bg-transparent"
+              <form
+                onSubmit={handleSubmit}
+                className="space-y-5 rounded-2xl border border-surface-700 bg-surface-900/40 p-5"
               >
-                <option value="">Nessun prompt predefinito</option>
-                {prompts.map((prompt) => (
-                  <option key={prompt.id} value={prompt.id}>
-                    {prompt.title || prompt.slug || prompt.id}
-                  </option>
-                ))}
-              </Select>
-              <Select
-                label="Template PDF"
-                value={templateSelectValue}
-                onChange={handleTemplateSelect}
-                helperText={templateHelperText}
-                error={pdfTemplatesError || undefined}
-                className="bg-transparent"
-                containerClassName="md:col-span-2"
-                disabled={pdfTemplatesLoading && !pdfTemplates.length}
-              >
-                <option value="">Nessun template predefinito</option>
-                {pdfTemplates.map((template) => (
-                  <option
-                    key={template.fileName}
-                    value={template.fileName}
-                    title={template.description || undefined}
-                  >
-                    {template.name || template.fileName}
-                    {template.type ? ` (${template.type.toUpperCase()})` : ""}
-                  </option>
-                ))}
-                <option value="__custom__">Template personalizzato…</option>
-              </Select>
-              <div className="md:col-span-2 flex flex-wrap items-center gap-3 text-xs text-surface-400">
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="ghost"
-                  leadingIcon={RefreshCw}
-                  onClick={refreshPdfTemplates}
-                >
-                  Aggiorna template
-                </Button>
-                {pdfTemplatesLoading ? <span>Caricamento…</span> : null}
-              </div>
-              {!useCustomTemplate && selectedTemplate ? (
-                <div className="md:col-span-2 space-y-2 rounded-2xl border border-surface-700/60 bg-surface-900/30 p-4 text-xs text-surface-300">
-                  <div className="text-sm font-semibold text-surface-100">{selectedTemplate.name}</div>
-                  {selectedTemplate.description ? (
-                    <p className="text-surface-300">{selectedTemplate.description}</p>
-                  ) : null}
-                  <div className="flex flex-wrap gap-4 text-[11px] uppercase tracking-wide text-surface-500">
-                    <span>
-                      Tipo:
-                      <span className="ml-1 text-surface-100 normal-case">
-                        {selectedTemplate.type || "—"}
-                      </span>
-                    </span>
-                    <span>
-                      CSS:
-                      <span className="ml-1 text-surface-100 normal-case">
-                        {selectedTemplate.cssFileName || "—"}
-                      </span>
-                    </span>
-                    {selectedTemplate.engine ? (
-                      <span>
-                        Motore:
-                        <span className="ml-1 text-surface-100 normal-case">
-                          {selectedTemplate.engine}
-                        </span>
-                      </span>
-                    ) : null}
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-surface-100">
+                      {editingProfileId ? "Modifica profilo" : "Nuovo profilo"}
+                    </div>
+                    <p className="mt-1 text-xs text-surface-400">
+                      Compila i campi per salvare un profilo riutilizzabile. Tutti i valori sono opzionali tranne il nome.
+                    </p>
                   </div>
+                  {editingProfileId && (
+                    <Button type="button" size="sm" variant="ghost" onClick={resetForm}>
+                      Annulla modifica
+                    </Button>
+                  )}
                 </div>
-              ) : null}
-              {useCustomTemplate ? (
-                <div className="md:col-span-2 grid grid-cols-1 gap-4 md:grid-cols-2">
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <Input
-                    label="Nome file template"
-                    value={formState.pdfTemplate}
-                    onChange={handleFieldChange("pdfTemplate")}
-                    placeholder="nome-template.html"
-                    helperText="Percorso relativo nella cartella templates del backend"
+                    label="Nome profilo"
+                    value={formState.label}
+                    onChange={handleFieldChange("label")}
+                    placeholder="Es. Verbale standard"
+                    required
                   />
                   <Input
-                    label="Tipo template"
-                    value={formState.pdfTemplateType}
-                    onChange={handleFieldChange("pdfTemplateType")}
-                    placeholder="es. html, docx"
-                    helperText="Indica il formato atteso dal backend"
+                    label="Slug"
+                    value={formState.slug}
+                    onChange={handleFieldChange("slug")}
+                    placeholder="es. verbale_standard"
+                    helperText="Lascia vuoto per generarlo dal nome"
                   />
                   <Input
-                    label="Foglio di stile CSS"
-                    value={formState.pdfTemplateCss}
-                    onChange={handleFieldChange("pdfTemplateCss")}
-                    placeholder="stili/report.css"
-                    helperText="Opzionale. Percorso relativo del CSS associato"
+                    label="Cartella destinazione"
+                    value={formState.destDir}
+                    onChange={handleFieldChange("destDir")}
+                    placeholder="/Users/nomeutente/Documenti"
+                    helperText="Cartella sul backend dove salvare PDF e Markdown"
+                  />
+                  <Select
+                    label="Prompt"
+                    value={formState.promptId}
+                    onChange={handleFieldChange("promptId")}
+                    className="bg-transparent"
+                  >
+                    <option value="">Nessun prompt predefinito</option>
+                    {prompts.map((prompt) => (
+                      <option key={prompt.id} value={prompt.id}>
+                        {prompt.title || prompt.slug || prompt.id}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    label="Template PDF"
+                    value={templateSelectValue}
+                    onChange={handleTemplateSelect}
+                    helperText={templateHelperText}
+                    error={pdfTemplatesError || undefined}
+                    className="bg-transparent"
                     containerClassName="md:col-span-2"
-                  />
-                </div>
-              ) : null}
-              <div className="flex flex-col gap-2">
-                <span className="text-sm font-medium text-surface-200">Logo PDF</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <label className="inline-flex items-center gap-2">
-                    <input
-                      ref={logoInputRef}
-                      type="file"
-                      accept=".pdf,.png,.jpg,.jpeg,.svg"
-                      onChange={handleLogoChange}
-                      disabled={pending}
-                      className="hidden"
-                    />
+                    disabled={pdfTemplatesLoading && !pdfTemplates.length}
+                  >
+                    <option value="">Nessun template predefinito</option>
+                    {pdfTemplates.map((template) => (
+                      <option
+                        key={template.fileName}
+                        value={template.fileName}
+                        title={template.description || undefined}
+                      >
+                        {template.name || template.fileName}
+                        {template.type ? ` (${template.type.toUpperCase()})` : ""}
+                      </option>
+                    ))}
+                    <option value="__custom__">Template personalizzato…</option>
+                  </Select>
+                  <div className="md:col-span-2 flex flex-wrap items-center gap-3 text-xs text-surface-400">
                     <Button
                       type="button"
-                      variant="outline"
-                      size="sm"
-                      leadingIcon={Upload}
-                      onClick={() => logoInputRef.current?.click()}
-                      disabled={pending}
+                      size="xs"
+                      variant="ghost"
+                      leadingIcon={RefreshCw}
+                      onClick={refreshPdfTemplates}
                     >
-                      Carica logo
+                      Aggiorna template
                     </Button>
-                  </label>
-                  {logoFile && (
-                    <span className="text-xs text-surface-300">{logoFile.name}</span>
-                  )}
-                  {!logoFile && currentLogoLabel && !removePdfLogo && (
-                    <span className="text-xs text-surface-300">{currentLogoLabel}</span>
-                  )}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setLogoFile(null);
-                      if (logoInputRef.current) {
-                        logoInputRef.current.value = "";
-                      }
-                    }}
-                    disabled={pending || !logoFile}
-                  >
-                    Rimuovi file
+                    {pdfTemplatesLoading ? <span>Caricamento…</span> : null}
+                  </div>
+                  {!useCustomTemplate && selectedTemplate ? (
+                    <div className="md:col-span-2 space-y-2 rounded-2xl border border-surface-700/60 bg-surface-900/30 p-4 text-xs text-surface-300">
+                      <div className="text-sm font-semibold text-surface-100">{selectedTemplate.name}</div>
+                      {selectedTemplate.description ? (
+                        <p className="text-surface-300">{selectedTemplate.description}</p>
+                      ) : null}
+                      <div className="flex flex-wrap gap-4 text-[11px] uppercase tracking-wide text-surface-500">
+                        <span>
+                          Tipo:
+                          <span className="ml-1 text-surface-100 normal-case">
+                            {selectedTemplate.type || "—"}
+                          </span>
+                        </span>
+                        <span>
+                          CSS:
+                          <span className="ml-1 text-surface-100 normal-case">
+                            {selectedTemplate.cssFileName || "—"}
+                          </span>
+                        </span>
+                        {selectedTemplate.engine ? (
+                          <span>
+                            Motore:
+                            <span className="ml-1 text-surface-100 normal-case">
+                              {selectedTemplate.engine}
+                            </span>
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  {useCustomTemplate ? (
+                    <div className="md:col-span-2 grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <Input
+                        label="Nome file template"
+                        value={formState.pdfTemplate}
+                        onChange={handleFieldChange("pdfTemplate")}
+                        placeholder="nome-template.html"
+                        helperText="Percorso relativo nella cartella templates del backend"
+                      />
+                      <Input
+                        label="Tipo template"
+                        value={formState.pdfTemplateType}
+                        onChange={handleFieldChange("pdfTemplateType")}
+                        placeholder="es. html, docx"
+                        helperText="Indica il formato atteso dal backend"
+                      />
+                      <Input
+                        label="Foglio di stile CSS"
+                        value={formState.pdfTemplateCss}
+                        onChange={handleFieldChange("pdfTemplateCss")}
+                        placeholder="stili/report.css"
+                        helperText="Opzionale. Percorso relativo del CSS associato"
+                        containerClassName="md:col-span-2"
+                      />
+                    </div>
+                  ) : null}
+                  <div className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-surface-200">Logo PDF</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          ref={logoInputRef}
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg,.svg"
+                          onChange={handleLogoChange}
+                          disabled={pending}
+                          className="hidden"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          leadingIcon={Upload}
+                          onClick={() => logoInputRef.current?.click()}
+                          disabled={pending}
+                        >
+                          Carica logo
+                        </Button>
+                      </label>
+                      {logoFile && (
+                        <span className="text-xs text-surface-300">{logoFile.name}</span>
+                      )}
+                      {!logoFile && currentLogoLabel && !removePdfLogo && (
+                        <span className="text-xs text-surface-300">{currentLogoLabel}</span>
+                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setLogoFile(null);
+                          if (logoInputRef.current) {
+                            logoInputRef.current.value = "";
+                          }
+                        }}
+                        disabled={pending || !logoFile}
+                      >
+                        Rimuovi file
+                      </Button>
+                    </div>
+                    {editingProfileId && (
+                      <label className="flex items-center gap-2 text-xs text-surface-300">
+                        <input
+                          type="checkbox"
+                          checked={removePdfLogo}
+                          onChange={(event) => setRemovePdfLogo(event.target.checked)}
+                          disabled={pending}
+                        />
+                        Rimuovi il logo salvato
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {feedback.error ? (
+                  <div className="flex items-start gap-2 rounded-xl border border-feedback-danger/50 bg-feedback-danger/10 p-3 text-xs text-feedback-danger">
+                    <AlertCircle className="mt-0.5 h-4 w-4" />
+                    <div>
+                      <div className="font-medium">{feedback.error}</div>
+                      {feedback.details?.length ? (
+                        <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px]">
+                          {feedback.details.map((detail, index) => (
+                            <li key={index}>{detail}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                {feedback.success ? (
+                  <div className="rounded-xl border border-emerald-500/50 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+                    {feedback.success}
+                  </div>
+                ) : null}
+
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button type="submit" isLoading={pending}>
+                    {editingProfileId ? "Salva modifiche" : "Crea profilo"}
                   </Button>
                 </div>
-                {editingProfileId && (
-                  <label className="flex items-center gap-2 text-xs text-surface-300">
-                    <input
-                      type="checkbox"
-                      checked={removePdfLogo}
-                      onChange={(event) => setRemovePdfLogo(event.target.checked)}
-                      disabled={pending}
-                    />
-                    Rimuovi il logo salvato
-                  </label>
-                )}
+              </form>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="projects">
+          {!selectedWorkspaceId ? (
+            <div className="rounded-2xl border border-dashed border-surface-700 bg-surface-900/30 p-6 text-center text-sm text-surface-400">
+              Seleziona un workspace per visualizzare i progetti configurati.
+            </div>
+          ) : workspaceProjects.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-surface-700 bg-surface-900/30 p-6 text-center text-sm text-surface-400">
+              Nessun progetto configurato per questo workspace.
+            </div>
+          ) : (
+            <div className="mt-4 space-y-4">
+              <div className="rounded-2xl border border-surface-700 bg-surface-900/40 p-5">
+                <div className="text-sm font-semibold text-surface-100">Progetti del workspace</div>
+                <p className="mt-1 text-xs text-surface-400">
+                  Stati e metadati vengono utilizzati per organizzare i deliverable generati dalla pipeline.
+                </p>
+                <ul className="mt-4 space-y-3">
+                  {workspaceProjects.map((project) => {
+                    const updatedLabel = formatProjectTimestamp(project.updatedAt || project.createdAt);
+                    return (
+                      <li
+                        key={project.id}
+                        className="rounded-2xl border border-surface-700/70 bg-surface-900/30 p-4"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-surface-100">{project.name || project.id}</div>
+                            <div className="mt-1 text-xs text-surface-400">
+                              ID: <span className="font-mono text-surface-200">{project.id}</span>
+                            </div>
+                            {updatedLabel ? (
+                              <div className="text-[11px] uppercase tracking-wide text-surface-500">
+                                Aggiornato: {updatedLabel}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-surface-400">
+                            <span className="inline-flex items-center gap-2 rounded-full border border-surface-700/60 bg-surface-900/60 px-2 py-0.5">
+                              <span
+                                className="h-2.5 w-2.5 rounded-full"
+                                style={{ backgroundColor: project.color || '#6366f1' }}
+                                aria-hidden="true"
+                              />
+                              {project.color || '#6366f1'}
+                            </span>
+                            <span className="uppercase tracking-wide">
+                              {Array.isArray(project.statuses) ? project.statuses.length : 0} stati
+                            </span>
+                          </div>
+                        </div>
+                        {Array.isArray(project.statuses) && project.statuses.length ? (
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs text-surface-300">
+                            {project.statuses.map((status) => (
+                              <span
+                                key={`${project.id}-${status}`}
+                                className="rounded-full border border-surface-700/60 bg-surface-900/60 px-2 py-0.5"
+                              >
+                                {status}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             </div>
+          )}
+        </TabsContent>
 
-            {feedback.error ? (
-              <div className="flex items-start gap-2 rounded-xl border border-feedback-danger/50 bg-feedback-danger/10 p-3 text-xs text-feedback-danger">
-                <AlertCircle className="mt-0.5 h-4 w-4" />
-                <div>
-                  <div className="font-medium">{feedback.error}</div>
-                  {feedback.details?.length ? (
-                    <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px]">
-                      {feedback.details.map((detail, index) => (
-                        <li key={index}>{detail}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-
-            {feedback.success ? (
-              <div className="rounded-xl border border-emerald-500/50 bg-emerald-500/10 p-3 text-xs text-emerald-200">
-                {feedback.success}
-              </div>
-            ) : null}
-
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button type="submit" isLoading={pending}>
-                {editingProfileId ? "Salva modifiche" : "Crea profilo"}
-              </Button>
-            </div>
-          </form>
-        </div>
-      )}
+        <TabsContent value="knowledge">
+          <KnowledgeBaseManager workspaceId={selectedWorkspaceId} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

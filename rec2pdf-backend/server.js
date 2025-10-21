@@ -8,6 +8,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { execFile, exec } = require('child_process');
+const pdfParse = require('pdf-parse');
 const { createClient } = require('@supabase/supabase-js');
 const { getOpenAIClient } = require('./openaiClient');
 
@@ -1782,6 +1783,9 @@ const UP_BASE = path.join(os.tmpdir(), 'rec2pdf_uploads');
 if (!fs.existsSync(UP_BASE)) fs.mkdirSync(UP_BASE, { recursive: true });
 
 const uploadMiddleware = multer({ dest: UP_BASE });
+const KNOWLEDGE_UPLOAD_BASE = path.join(os.tmpdir(), 'rec2pdf_knowledge_uploads');
+if (!fs.existsSync(KNOWLEDGE_UPLOAD_BASE)) fs.mkdirSync(KNOWLEDGE_UPLOAD_BASE, { recursive: true });
+const knowledgeUpload = multer({ dest: KNOWLEDGE_UPLOAD_BASE });
 const profileUpload = uploadMiddleware.single('pdfLogo');
 const optionalProfileUpload = (req, res, next) => {
   const contentType = String(req.headers['content-type'] || '').toLowerCase();
@@ -2035,6 +2039,260 @@ const safeRemoveDir = async (dirPath) => {
   } catch (error) {
     if (error && error.code !== 'ENOENT') {
       console.warn(`⚠️  Impossibile rimuovere directory temporanea ${dirPath}: ${error.message}`);
+    }
+  }
+};
+
+const KNOWLEDGE_TEXT_EXTENSIONS = new Set(['.txt', '.md']);
+const KNOWLEDGE_AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.wav', '.aac', '.flac', '.ogg']);
+const KNOWLEDGE_PDF_EXTENSIONS = new Set(['.pdf']);
+const KNOWLEDGE_CHUNK_SIZE = 250;
+const KNOWLEDGE_CHUNK_OVERLAP = 50;
+const KNOWLEDGE_EMBED_BATCH_SIZE = 50;
+
+const normalizeKnowledgeText = (text = '') => {
+  if (!text) {
+    return '';
+  }
+  return text
+    .replace(/\uFEFF/g, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\t\f\v]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
+const createKnowledgeChunks = (text, chunkSize = KNOWLEDGE_CHUNK_SIZE, overlap = KNOWLEDGE_CHUNK_OVERLAP) => {
+  const normalized = typeof text === 'string' ? text.trim() : '';
+  if (!normalized) {
+    return [];
+  }
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (!words.length) {
+    return [];
+  }
+  const chunks = [];
+  const step = Math.max(chunkSize - overlap, 1);
+  for (let index = 0; index < words.length; index += step) {
+    const slice = words.slice(index, index + chunkSize);
+    if (!slice.length) {
+      continue;
+    }
+    const chunk = slice.join(' ').trim();
+    if (chunk) {
+      chunks.push(chunk);
+    }
+    if (slice.length < chunkSize) {
+      break;
+    }
+  }
+  return chunks;
+};
+
+const extractSourceFileName = (metadata = {}) => {
+  if (!metadata || typeof metadata !== 'object') {
+    return '';
+  }
+  return (
+    metadata.sourceFile ||
+    metadata.source ||
+    metadata.fileName ||
+    metadata.filename ||
+    metadata.originalName ||
+    metadata.path ||
+    ''
+  );
+};
+
+const transcribeAudioForKnowledge = async (filePath) => {
+  if (!filePath) {
+    return '';
+  }
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf_knowledge_audio_'));
+  try {
+    const baseName = path.basename(filePath, path.extname(filePath)) || `audio_${Date.now()}`;
+    const wavPath = path.join(tempDir, `${baseName}.wav`);
+    const ff = await run('ffmpeg', ['-y', '-i', filePath, '-ac', '1', '-ar', '16000', wavPath]);
+    if (ff.code !== 0) {
+      throw new Error(ff.stderr || 'ffmpeg failed');
+    }
+    const whisperCmd = [
+      'whisper',
+      JSON.stringify(wavPath),
+      '--model small',
+      '--output_format txt',
+      `--output_dir ${JSON.stringify(tempDir)}`,
+      '--verbose False',
+    ].join(' ');
+    const w = await run('bash', ['-lc', whisperCmd]);
+    if (w.code !== 0) {
+      throw new Error(w.stderr || w.stdout || 'whisper failed');
+    }
+    const candidates = (await fsp.readdir(tempDir)).filter((entry) => entry.endsWith('.txt'));
+    if (!candidates.length) {
+      throw new Error('Trascrizione non trovata');
+    }
+    const preferred = candidates.find((entry) => entry.startsWith(baseName)) || candidates[0];
+    const transcriptPath = path.join(tempDir, preferred);
+    const transcript = await fsp.readFile(transcriptPath, 'utf8');
+    return transcript;
+  } finally {
+    await safeRemoveDir(tempDir);
+  }
+};
+
+const extractTextFromKnowledgeFile = async (file) => {
+  if (!file || !file.path) {
+    return '';
+  }
+  const originalName = typeof file.originalName === 'string' ? file.originalName : file.originalname;
+  const ext = path.extname(originalName || file.path).toLowerCase();
+  const mime = typeof file.mimetype === 'string' ? file.mimetype.toLowerCase() : '';
+
+  if (KNOWLEDGE_TEXT_EXTENSIONS.has(ext) || mime.startsWith('text/')) {
+    return await fsp.readFile(file.path, 'utf8');
+  }
+
+  if (KNOWLEDGE_PDF_EXTENSIONS.has(ext) || mime === 'application/pdf') {
+    const buffer = await fsp.readFile(file.path);
+    const parsed = await pdfParse(buffer);
+    return parsed?.text || '';
+  }
+
+  if (KNOWLEDGE_AUDIO_EXTENSIONS.has(ext) || mime.startsWith('audio/')) {
+    return await transcribeAudioForKnowledge(file.path);
+  }
+
+  return '';
+};
+
+const buildKnowledgeMetadata = (file, { ingestionId, chunkIndex, totalChunks }) => {
+  const originalName = typeof file.originalName === 'string' ? file.originalName : file.originalname;
+  const metadata = {
+    sourceFile: originalName || path.basename(file.path),
+    source: originalName || path.basename(file.path),
+    ingestionId,
+    chunkIndex: Number.isFinite(chunkIndex) ? chunkIndex : 0,
+    totalChunks: Number.isFinite(totalChunks) ? totalChunks : undefined,
+    ingestedAt: new Date().toISOString(),
+  };
+  if (file.mimetype) {
+    metadata.mimeType = file.mimetype;
+  }
+  if (Number.isFinite(file.size)) {
+    metadata.size = file.size;
+  }
+  return metadata;
+};
+
+const knowledgeIngestionQueue = [];
+let knowledgeIngestionProcessing = false;
+
+const processKnowledgeQueue = async () => {
+  if (knowledgeIngestionProcessing) {
+    return;
+  }
+  knowledgeIngestionProcessing = true;
+  while (knowledgeIngestionQueue.length) {
+    const task = knowledgeIngestionQueue.shift();
+    try {
+      await processKnowledgeTask(task);
+    } catch (error) {
+      console.error('Errore processo ingestion knowledge:', error);
+    }
+  }
+  knowledgeIngestionProcessing = false;
+};
+
+const enqueueKnowledgeIngestion = (task) => {
+  if (!task) {
+    return;
+  }
+  knowledgeIngestionQueue.push(task);
+  setImmediate(processKnowledgeQueue);
+};
+
+const cleanupKnowledgeFiles = async (files = []) => {
+  await Promise.all(
+    (Array.isArray(files) ? files : []).map(async (file) => {
+      try {
+        await safeUnlink(file.path);
+      } catch (error) {
+        if (error && error.code !== 'ENOENT') {
+          console.warn(`⚠️  Impossibile rimuovere file knowledge ${file.path}: ${error.message}`);
+        }
+      }
+    })
+  );
+};
+
+const processKnowledgeTask = async (task = {}) => {
+  const { workspaceId, files = [], ingestionId } = task;
+  if (!workspaceId || !Array.isArray(files) || !files.length) {
+    await cleanupKnowledgeFiles(files);
+    return;
+  }
+
+  if (!supabase) {
+    console.warn('⚠️  Supabase non configurato: impossibile salvare la knowledge base.');
+    await cleanupKnowledgeFiles(files);
+    return;
+  }
+
+  const openai = getOpenAIClient();
+  if (!openai) {
+    console.warn('⚠️  Client OpenAI non configurato: impossibile generare embedding per la knowledge base.');
+    await cleanupKnowledgeFiles(files);
+    return;
+  }
+
+  for (const file of files) {
+    const fileLabel = file?.originalName || file?.originalname || path.basename(file?.path || '') || 'file';
+    try {
+      const rawText = await extractTextFromKnowledgeFile(file);
+      const normalized = normalizeKnowledgeText(rawText);
+      const chunks = createKnowledgeChunks(normalized);
+      if (!chunks.length) {
+        console.warn(`⚠️  Nessun contenuto indicizzabile per ${fileLabel}`);
+        continue;
+      }
+
+      for (let start = 0; start < chunks.length; start += KNOWLEDGE_EMBED_BATCH_SIZE) {
+        const batch = chunks.slice(start, start + KNOWLEDGE_EMBED_BATCH_SIZE);
+        const embeddingResponse = await openai.embeddings.create({
+          model: OPENAI_EMBEDDING_MODEL,
+          input: batch,
+        });
+        if (!Array.isArray(embeddingResponse?.data) || embeddingResponse.data.length !== batch.length) {
+          throw new Error('Risposta embedding non valida');
+        }
+        const payload = batch.map((content, index) => ({
+          id: crypto.randomUUID(),
+          workspace_id: workspaceId,
+          content,
+          embedding: embeddingResponse.data[index].embedding,
+          metadata: buildKnowledgeMetadata(file, {
+            ingestionId,
+            chunkIndex: start + index + 1,
+            totalChunks: chunks.length,
+          }),
+        }));
+        const { error } = await supabase.from('knowledge_chunks').insert(payload);
+        if (error) {
+          throw new Error(error.message || 'Inserimento Supabase fallito');
+        }
+      }
+      console.log(`📚 Knowledge base aggiornata (${fileLabel} → ${chunks.length} chunk)`);
+    } catch (error) {
+      console.error(`Errore ingestione knowledge per ${fileLabel}:`, error);
+    } finally {
+      try {
+        await safeUnlink(file.path);
+      } catch (error) {
+        if (error && error.code !== 'ENOENT') {
+          console.warn(`⚠️  Impossibile rimuovere file knowledge ${file.path}: ${error.message}`);
+        }
+      }
     }
   }
 };
@@ -2700,6 +2958,139 @@ app.delete('/api/workspaces/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+
+app.post(
+  '/api/workspaces/:workspaceId/ingest',
+  knowledgeUpload.array('files', 20),
+  async (req, res) => {
+    const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+    const paramId = typeof req.params?.workspaceId === 'string' ? req.params.workspaceId.trim() : '';
+    const workspaceId = paramId || getWorkspaceIdFromRequest(req);
+
+    if (!workspaceId) {
+      await cleanupKnowledgeFiles(uploadedFiles);
+      return res.status(400).json({ ok: false, message: 'workspaceId obbligatorio' });
+    }
+
+    if (!supabase) {
+      await cleanupKnowledgeFiles(uploadedFiles);
+      return res
+        .status(503)
+        .json({ ok: false, message: 'Supabase non configurato: impossibile indicizzare la knowledge base.' });
+    }
+
+    if (!getOpenAIClient()) {
+      await cleanupKnowledgeFiles(uploadedFiles);
+      return res
+        .status(503)
+        .json({ ok: false, message: 'OpenAI non configurato: impossibile generare embedding per la knowledge base.' });
+    }
+
+    if (!uploadedFiles.length) {
+      return res.status(400).json({ ok: false, message: 'Carica almeno un file da indicizzare.' });
+    }
+
+    const ingestionId = crypto.randomUUID();
+    const normalizedFiles = uploadedFiles.map((file) => ({
+      path: file.path,
+      originalName: file.originalname || file.filename || path.basename(file.path),
+      mimetype: file.mimetype || '',
+      size: Number.isFinite(file.size) ? file.size : Number(file.size) || undefined,
+    }));
+
+    enqueueKnowledgeIngestion({
+      workspaceId: workspaceId.trim(),
+      files: normalizedFiles,
+      ingestionId,
+    });
+
+    res.status(202).json({
+      ok: true,
+      ingestionId,
+      filesQueued: normalizedFiles.length,
+      message: 'Ingestion avviata: la knowledge base verrà aggiornata in background.',
+    });
+  }
+);
+
+app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
+  const paramId = typeof req.params?.workspaceId === 'string' ? req.params.workspaceId.trim() : '';
+  const workspaceId = paramId || getWorkspaceIdFromRequest(req);
+
+  if (!workspaceId) {
+    return res.status(400).json({ ok: false, message: 'workspaceId obbligatorio' });
+  }
+
+  if (!supabase) {
+    return res
+      .status(503)
+      .json({ ok: false, message: 'Supabase non configurato: impossibile recuperare la knowledge base.' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('knowledge_chunks')
+      .select('metadata, created_at')
+      .eq('workspace_id', workspaceId.trim())
+      .order('created_at', { ascending: false, nullsLast: true })
+      .limit(2000);
+
+    if (error) {
+      return res
+        .status(500)
+        .json({ ok: false, message: error?.message || 'Impossibile recuperare la knowledge base.' });
+    }
+
+    const aggregated = new Map();
+    (Array.isArray(data) ? data : []).forEach((row) => {
+      const metadata = row?.metadata || {};
+      const fileName = extractSourceFileName(metadata);
+      if (!fileName) {
+        return;
+      }
+      const ingestedAt = metadata?.ingestedAt || row?.created_at || null;
+      const rawSize = Number(metadata?.size);
+      const size = Number.isFinite(rawSize) && rawSize > 0 ? rawSize : null;
+      const mimeType = typeof metadata?.mimeType === 'string' ? metadata.mimeType : '';
+
+      if (!aggregated.has(fileName)) {
+        aggregated.set(fileName, {
+          name: fileName,
+          chunkCount: 0,
+          lastIngestedAt: ingestedAt,
+          mimeType: mimeType || null,
+          size: size || null,
+        });
+      }
+
+      const entry = aggregated.get(fileName);
+      entry.chunkCount += 1;
+      if (ingestedAt) {
+        const current = entry.lastIngestedAt ? new Date(entry.lastIngestedAt).getTime() : 0;
+        const candidate = new Date(ingestedAt).getTime();
+        if (Number.isFinite(candidate) && candidate > current) {
+          entry.lastIngestedAt = ingestedAt;
+        }
+      }
+      if (!entry.mimeType && mimeType) {
+        entry.mimeType = mimeType;
+      }
+      if (!entry.size && size) {
+        entry.size = size;
+      }
+    });
+
+    const files = Array.from(aggregated.values()).sort((a, b) => {
+      const aTime = a.lastIngestedAt ? new Date(a.lastIngestedAt).getTime() : 0;
+      const bTime = b.lastIngestedAt ? new Date(b.lastIngestedAt).getTime() : 0;
+      return bTime - aTime;
+    });
+
+    res.json({ ok: true, files });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error?.message || 'Errore inatteso nella lettura della knowledge base.' });
   }
 });
 
