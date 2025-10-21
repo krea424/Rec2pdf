@@ -2,7 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
 import { Button, Input, Select } from "../ui";
-import { AlertCircle, FileText, Plus, RefreshCw, Trash2, Upload } from "../icons";
+import {
+  AlertCircle,
+  FileText,
+  Folder,
+  Lightbulb,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  Upload,
+  Users,
+} from "../icons";
 
 const emptyForm = {
   label: "",
@@ -27,6 +38,9 @@ const WorkspaceProfilesManager = () => {
     pdfTemplates,
     pdfTemplatesLoading,
     pdfTemplatesError,
+    DEFAULT_DEST_DIR,
+    openSetupAssistant,
+    handleSelectWorkspaceForPipeline,
   } = useAppContext();
 
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(
@@ -74,6 +88,11 @@ const WorkspaceProfilesManager = () => {
 
   const profiles = useMemo(
     () => (Array.isArray(activeWorkspace?.profiles) ? activeWorkspace.profiles : []),
+    [activeWorkspace]
+  );
+
+  const projectCount = useMemo(
+    () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects.length : 0),
     [activeWorkspace]
   );
 
@@ -325,8 +344,183 @@ const WorkspaceProfilesManager = () => {
 
   const currentLogoLabel = currentProfile?.pdfLogo?.originalName || "";
 
+  const hierarchyCards = useMemo(
+    () => [
+      {
+        key: "workspace",
+        title: "Workspace",
+        icon: Users,
+        description:
+          "Contenitore per cliente o business unit: raccoglie palette, stati di default e progetti collegati.",
+        meta: activeWorkspace
+          ? `Attivo: ${activeWorkspace.name || activeWorkspace.client || activeWorkspace.id}`
+          : "Seleziona un workspace per iniziare.",
+      },
+      {
+        key: "project",
+        title: "Progetto",
+        icon: Folder,
+        description:
+          "Raggruppa i deliverable all'interno del workspace e definisce cataloghi di stato specifici.",
+        meta:
+          projectCount > 0
+            ? `${projectCount} progetto${projectCount === 1 ? "" : "i"} configurat${
+                projectCount === 1 ? "o" : "i"
+              }`
+            : "Nessun progetto ancora registrato: verrà creato automaticamente dalla pipeline.",
+      },
+      {
+        key: "profile",
+        title: "Profilo",
+        icon: Sparkles,
+        description:
+          "Preset riutilizzabile per slug, cartella di destinazione, prompt e template PDF della pipeline.",
+        meta:
+          profiles.length > 0
+            ? `${profiles.length} profil${profiles.length === 1 ? "o" : "i"} salvati`
+            : "Crea un profilo per velocizzare i prossimi documenti.",
+      },
+    ],
+    [activeWorkspace, profiles.length, projectCount]
+  );
+
+  const prdPrompt = useMemo(() => promptMap.get("prompt_prd") || null, [promptMap]);
+
+  const quickPresets = useMemo(() => {
+    if (!prdPrompt) {
+      return [];
+    }
+    const normalizedDefaultDir =
+      typeof DEFAULT_DEST_DIR === "string" && DEFAULT_DEST_DIR.trim()
+        ? DEFAULT_DEST_DIR.replace(/\/$/, "")
+        : "";
+    return [
+      {
+        key: "consulting_prd",
+        label: "Profilo PRD consulting",
+        description:
+          "Precompila con prompt PRD, template consulting e cartella dedicata per i requisiti prodotto.",
+        promptId: "prompt_prd",
+        slug: "prd_consulting",
+        destDir: normalizedDefaultDir ? `${normalizedDefaultDir}/Consulting-PRD` : "",
+        pdfTemplate: "default.tex",
+        pdfTemplateType: "tex",
+      },
+    ];
+  }, [DEFAULT_DEST_DIR, prdPrompt]);
+
+  const handleApplyPreset = useCallback(
+    (preset) => {
+      if (!preset) return;
+      resetForm();
+      setFormState({
+        label: preset.label || "",
+        slug: preset.slug || "",
+        destDir: preset.destDir || "",
+        promptId: preset.promptId || "",
+        pdfTemplate: preset.pdfTemplate || "",
+        pdfTemplateType: preset.pdfTemplateType || "",
+        pdfTemplateCss: preset.pdfTemplateCss || "",
+      });
+      setUseCustomTemplate(Boolean(preset.useCustomTemplate));
+      setFeedback({
+        success: `Preset applicato: ${preset.label}`,
+        error: "",
+        details: [],
+      });
+    },
+    [resetForm, setFormState, setUseCustomTemplate, setFeedback]
+  );
+
   return (
     <div className="space-y-6 text-sm text-surface-200">
+      <div className="rounded-2xl border border-surface-700 bg-surface-900/60 p-5 shadow-sm shadow-black/20">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-surface-100">
+              Pianifica il setup prima di registrare un nuovo progetto
+            </div>
+            <p className="mt-1 text-xs text-surface-400">
+              Utilizza workspace, progetti e profili per mantenere branding, percorsi e prompt coerenti
+              con le aspettative del cliente.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              leadingIcon={Lightbulb}
+              onClick={() => openSetupAssistant?.()}
+            >
+              Avvia setup guidato
+            </Button>
+            {selectedWorkspaceId ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                leadingIcon={Folder}
+                onClick={() => handleSelectWorkspaceForPipeline?.(selectedWorkspaceId)}
+              >
+                Usa nel form pipeline
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+          {hierarchyCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <div
+                key={card.key}
+                className="flex h-full flex-col gap-2 rounded-xl border border-surface-700/80 bg-surface-900/70 p-4"
+              >
+                <Icon className="h-6 w-6 text-surface-300" />
+                <div className="text-sm font-semibold text-surface-100">{card.title}</div>
+                <p className="text-xs text-surface-400">{card.description}</p>
+                {card.meta ? (
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-surface-500">
+                    {card.meta}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+        {quickPresets.length ? (
+          <div className="mt-4 rounded-xl border border-brand-400/50 bg-brand-500/10 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-start gap-3">
+                <Sparkles className="mt-0.5 h-5 w-5 text-brand-200" />
+                <div>
+                  <div className="text-sm font-semibold text-brand-100">
+                    Acceleratore per nuovi PRD Consulting
+                  </div>
+                  <p className="mt-1 text-xs text-brand-100/80">
+                    Precompila il form con il prompt PRD in stile major consulting firm, includendo il
+                    template PDF dedicato.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {quickPresets.map((preset) => (
+                  <Button
+                    key={preset.key}
+                    type="button"
+                    size="sm"
+                    leadingIcon={Sparkles}
+                    onClick={() => handleApplyPreset(preset)}
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
       <div className="flex items-center justify-between gap-3">
         <Select
           label="Workspace"
