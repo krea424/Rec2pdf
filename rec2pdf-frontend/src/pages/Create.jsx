@@ -62,33 +62,7 @@ const ErrorBanner = () => {
   );
 };
 
-const CreatePage = () => {
-  const context = useAppContext();
-  const { trackEvent } = useAnalytics();
-
-  const hasAdvancedAccess =
-    typeof context.hasModeFlag === "function" ? context.hasModeFlag("MODE_ADVANCED") : false;
-
-  if (context.mode === "base") {
-    return <BaseHome />;
-  }
-
-  if (!hasAdvancedAccess) {
-    return (
-      <div className="mx-auto max-w-5xl space-y-4 p-6 text-sm text-zinc-300">
-        <div className="rounded-3xl border border-amber-500/40 bg-amber-500/10 p-6">
-          <h2 className="text-lg font-semibold text-amber-100">Modalità avanzata non disponibile</h2>
-          <p className="mt-2 text-amber-100/80">
-            Il tuo account non ha ancora accesso alla control room avanzata. Contatta l'amministratore per abilitare il flag
-            <code className="mx-1 rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-xs">MODE_ADVANCED</code> oppure torna
-            alla modalità base.
-          </p>
-        </div>
-        <BaseHome />
-      </div>
-    );
-  }
-
+const AdvancedCreatePage = ({ context, trackEvent }) => {
   const {
     theme,
     themes,
@@ -1640,6 +1614,36 @@ const CreatePage = () => {
       </div>
     </div>
   );
+};
+
+const CreatePage = () => {
+  const context = useAppContext();
+  const { trackEvent } = useAnalytics();
+
+  const hasAdvancedAccess =
+    typeof context.hasModeFlag === "function" ? context.hasModeFlag("MODE_ADVANCED") : false;
+
+  if (context.mode === "base") {
+    return <BaseHome />;
+  }
+
+  if (!hasAdvancedAccess) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-4 p-6 text-sm text-zinc-300">
+        <div className="rounded-3xl border border-amber-500/40 bg-amber-500/10 p-6">
+          <h2 className="text-lg font-semibold text-amber-100">Modalità avanzata non disponibile</h2>
+          <p className="mt-2 text-amber-100/80">
+            Il tuo account non ha ancora accesso alla control room avanzata. Contatta l'amministratore per abilitare il flag
+            <code className="mx-1 rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-xs">MODE_ADVANCED</code> oppure torna
+            alla modalità base.
+          </p>
+        </div>
+        <BaseHome />
+      </div>
+    );
+  }
+
+  return <AdvancedCreatePage context={context} trackEvent={trackEvent} />;
 };
 
 export default CreatePage;

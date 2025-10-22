@@ -62,7 +62,317 @@ const buildSearchHaystack = (entry) => {
     .toLowerCase();
 };
 
-export default function WorkspaceNavigator({
+const BaseWorkspaceNavigator = ({
+  entries = [],
+  onSelectionChange,
+  searchTerm = "",
+  onSearchChange,
+  onOpenPdf,
+  onOpenMd,
+  onRepublish,
+  onShowLogs,
+  onAssignWorkspace,
+  onAdoptSelection,
+  onRefresh,
+  loading = false,
+  themeStyles = {},
+}) => {
+  const [selectedEntryKey, setSelectedEntryKey] = useState(null);
+
+  const normalizedSearchTerm = useMemo(() => (searchTerm || "").toLowerCase().trim(), [searchTerm]);
+
+  const filteredEntries = useMemo(() => {
+    if (!normalizedSearchTerm) {
+      return entries;
+    }
+    return entries.filter((entry) => buildSearchHaystack(entry).includes(normalizedSearchTerm));
+  }, [entries, normalizedSearchTerm]);
+
+  useEffect(() => {
+    if (!filteredEntries.length) {
+      setSelectedEntryKey(null);
+      if (typeof onSelectionChange === "function") {
+        onSelectionChange({ workspaceId: "", projectId: "", projectName: "", status: "" });
+      }
+      return;
+    }
+
+    if (
+      selectedEntryKey &&
+      filteredEntries.some((entry) => {
+        const key = String(entry?.id || entry?.slug || "");
+        return key && key === selectedEntryKey;
+      })
+    ) {
+      return;
+    }
+
+    const nextEntry = filteredEntries[0];
+    const nextKey = String(nextEntry?.id || nextEntry?.slug || "");
+    setSelectedEntryKey(nextKey || null);
+    if (typeof onSelectionChange === "function") {
+      if (nextEntry?.workspace) {
+        onSelectionChange({
+          workspaceId: nextEntry.workspace.id || "",
+          projectId: nextEntry.workspace.projectId || "",
+          projectName: nextEntry.workspace.projectName || "",
+          status: nextEntry.workspace.status || "",
+        });
+      } else {
+        onSelectionChange({ workspaceId: "", projectId: "", projectName: "", status: "" });
+      }
+    }
+  }, [filteredEntries, onSelectionChange, selectedEntryKey]);
+
+  const selectedEntry = useMemo(() => {
+    if (!filteredEntries.length) return null;
+    if (!selectedEntryKey) return filteredEntries[0];
+    return (
+      filteredEntries.find((entry) => {
+        const key = String(entry?.id || entry?.slug || "");
+        return key && key === selectedEntryKey;
+      }) || filteredEntries[0]
+    );
+  }, [filteredEntries, selectedEntryKey]);
+
+  const handleSelect = useCallback(
+    (entry) => {
+      const entryKey = String(entry?.id || entry?.slug || "");
+      setSelectedEntryKey(entryKey || null);
+      if (typeof onSelectionChange === "function") {
+        if (entry?.workspace) {
+          onSelectionChange({
+            workspaceId: entry.workspace.id || "",
+            projectId: entry.workspace.projectId || "",
+            projectName: entry.workspace.projectName || "",
+            status: entry.workspace.status || "",
+          });
+        } else {
+          onSelectionChange({ workspaceId: "", projectId: "", projectName: "", status: "" });
+        }
+      }
+    },
+    [onSelectionChange]
+  );
+
+  const cardClass = classNames(
+    "rounded-2xl border border-white/10 bg-white/5 p-5 text-white",
+    themeStyles?.card
+  );
+
+  const entryTitle = selectedEntry?.title || selectedEntry?.slug || "Documento";
+  const workspace = selectedEntry?.workspace || null;
+  const prompt = selectedEntry?.prompt || null;
+  const updatedAt = selectedEntry?.timestamp || selectedEntry?.updatedAt;
+
+  const handlePdfOpen = useCallback(() => {
+    if (selectedEntry && typeof onOpenPdf === "function") {
+      onOpenPdf(selectedEntry);
+    }
+  }, [onOpenPdf, selectedEntry]);
+
+  const handleMdOpen = useCallback(() => {
+    if (selectedEntry && typeof onOpenMd === "function") {
+      onOpenMd(selectedEntry);
+    }
+  }, [onOpenMd, selectedEntry]);
+
+  const handleRepublishEntry = useCallback(() => {
+    if (selectedEntry && typeof onRepublish === "function") {
+      onRepublish(selectedEntry);
+    }
+  }, [onRepublish, selectedEntry]);
+
+  const handleShowLogs = useCallback(() => {
+    if (selectedEntry && typeof onShowLogs === "function") {
+      onShowLogs(selectedEntry);
+    }
+  }, [onShowLogs, selectedEntry]);
+
+  const handleAssignWorkspaceClick = useCallback(() => {
+    if (selectedEntry && typeof onAssignWorkspace === "function") {
+      onAssignWorkspace(selectedEntry);
+    }
+  }, [onAssignWorkspace, selectedEntry]);
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      <div className={cardClass}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.32em] text-white/70">Library</h3>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {typeof onRefresh === "function" ? (
+              <button
+                type="button"
+                onClick={onRefresh}
+                className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-white/70 transition hover:bg-white/10"
+              >
+                <RefreshCw className={classNames("h-3.5 w-3.5", loading ? "animate-spin" : "")} />
+                Aggiorna
+              </button>
+            ) : null}
+            {loading ? <span className="text-white/60">Sincronizzazione…</span> : null}
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => onSearchChange && onSearchChange(event.target.value)}
+            placeholder="Cerca titolo, workspace, tag…"
+            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/80 placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {loading ? (
+            Array.from({ length: 3 }).map((_, index) => (
+              <Skeleton key={`base-skeleton-${index}`} className="h-20 w-full rounded-2xl" />
+            ))
+          ) : filteredEntries.length === 0 ? (
+            <EmptyState
+              title="Nessun documento disponibile"
+              description="Quando carichi o generi un PDF lo troverai qui."
+              className="border-white/15 bg-black/20 text-white/70"
+            />
+          ) : (
+            filteredEntries.map((entry, index) => {
+              const entryKey = String(entry?.id || entry?.slug || `entry-${index}`);
+              const isActive =
+                (selectedEntry?.id || selectedEntry?.slug || "") === (entry?.id || entry?.slug || "");
+              const workspaceName = entry?.workspace?.name || entry?.workspace?.client || "Workspace";
+              const summary = entry?.prompt?.title || entry?.slug || "";
+              return (
+                <button
+                  type="button"
+                  key={entryKey}
+                  onClick={() => handleSelect(entry)}
+                  className={classNames(
+                    "w-full rounded-2xl border px-4 py-3 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+                    isActive
+                      ? "border-indigo-400/60 bg-indigo-500/15 text-white shadow-[0_12px_40px_-30px_rgba(129,140,248,0.9)]"
+                      : "border-white/10 bg-white/5 text-white/80 hover:border-indigo-400/40 hover:bg-indigo-500/10"
+                  )}
+                >
+                  <div className="flex items-center justify-between text-xs text-white/60">
+                    <span>{workspaceName}</span>
+                    <span>{formatTimestamp(entry?.timestamp || entry?.updatedAt)}</span>
+                  </div>
+                  <div className="mt-1 text-base font-semibold text-white/90">
+                    {entry?.title || entry?.slug || "Documento"}
+                  </div>
+                  {summary ? <div className="mt-1 text-xs text-white/60">{summary}</div> : null}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      <div className={cardClass}>
+        {selectedEntry ? (
+          <div className="flex h-full flex-col gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.32em] text-white/60">Dettagli</p>
+              <h4 className="mt-2 text-lg font-semibold text-white">{entryTitle}</h4>
+              <p className="text-xs text-white/60">Aggiornato {formatTimestamp(updatedAt)}</p>
+            </div>
+
+            <div className="space-y-3 text-sm text-white/80">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.32em] text-white/50">Workspace</p>
+                <p className="mt-1 text-sm text-white/80">
+                  {workspace ? workspace.name || workspace.client || workspace.id || "Workspace" : "Non assegnato"}
+                </p>
+                {workspace?.status ? <p className="text-xs text-white/60">Stato · {workspace.status}</p> : null}
+              </div>
+              {prompt ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.32em] text-white/50">Prompt</p>
+                  <p className="mt-1 text-sm text-white/80">{prompt.title || prompt.slug}</p>
+                </div>
+              ) : null}
+              {Array.isArray(selectedEntry?.tags) && selectedEntry.tags.length ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.32em] text-white/50">Tag</p>
+                  <p className="mt-1 text-xs text-white/70">{selectedEntry.tags.join(", ")}</p>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-auto space-y-2 text-sm">
+              <div className="flex flex-wrap gap-2">
+                {selectedEntry?.pdfPath ? (
+                  <button
+                    type="button"
+                    onClick={handlePdfOpen}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white transition hover:bg-white/20"
+                  >
+                    <Download className="h-4 w-4" /> Apri PDF
+                  </button>
+                ) : null}
+                {selectedEntry?.mdPath ? (
+                  <button
+                    type="button"
+                    onClick={handleMdOpen}
+                    className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white/80 transition hover:bg-white/20"
+                  >
+                    <FileText className="h-4 w-4" /> Markdown
+                  </button>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                {typeof onRepublish === "function" ? (
+                  <button
+                    type="button"
+                    onClick={handleRepublishEntry}
+                    className="rounded-xl border border-indigo-400/40 bg-indigo-500/20 px-3 py-1.5 text-indigo-100 transition hover:bg-indigo-500/30"
+                  >
+                    Ripubblica
+                  </button>
+                ) : null}
+                {typeof onShowLogs === "function" ? (
+                  <button
+                    type="button"
+                    onClick={handleShowLogs}
+                    className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-white/70 transition hover:bg-white/10"
+                  >
+                    Log
+                  </button>
+                ) : null}
+                {typeof onAssignWorkspace === "function" ? (
+                  <button
+                    type="button"
+                    onClick={handleAssignWorkspaceClick}
+                    className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-white/70 transition hover:bg-white/10"
+                  >
+                    Riassegna workspace
+                  </button>
+                ) : null}
+                {typeof onAdoptSelection === "function" ? (
+                  <button
+                    type="button"
+                    onClick={onAdoptSelection}
+                    className="rounded-xl border border-emerald-300/40 bg-emerald-500/20 px-3 py-1.5 text-emerald-100 transition hover:bg-emerald-500/30"
+                  >
+                    Allinea pipeline
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-white/60">
+            Seleziona un documento a sinistra per vedere i dettagli.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const AdvancedWorkspaceNavigator = ({
   entries = [],
   workspaces = [],
   selection,
@@ -84,19 +394,13 @@ export default function WorkspaceNavigator({
   onRefresh,
   pipelineSelection,
   onAdoptSelection,
-}) {
-  const appContext = useAppContext();
+}) => {
   const normalizedSelection = selection || {
     workspaceId: "",
     projectId: "",
     projectName: "",
     status: "",
   };
-  const mode = appContext?.mode || "advanced";
-  const hasModeFlag = appContext?.hasModeFlag;
-  const isBaseMode = mode === "base";
-  const advancedFiltersEnabled =
-    !isBaseMode || (typeof hasModeFlag === "function" && hasModeFlag(ADVANCED_FILTERS_FLAG));
   const [filterName, setFilterName] = useState("");
   const [selectedEntryId, setSelectedEntryId] = useState(null);
   const [previewState, setPreviewState] = useState({
@@ -119,37 +423,6 @@ export default function WorkspaceNavigator({
     () => (searchTerm || "").toLowerCase().trim(),
     [searchTerm]
   );
-
-  const baseEntries = useMemo(() => {
-    if (!normalizedSearchTerm) {
-      return entries;
-    }
-    return entries.filter((entry) => buildSearchHaystack(entry).includes(normalizedSearchTerm));
-  }, [entries, normalizedSearchTerm]);
-
-  useEffect(() => {
-    if (!isBaseMode || advancedFiltersEnabled) {
-      return;
-    }
-    if (!baseEntries.length) {
-      setSelectedEntryId(null);
-      return;
-    }
-    if (!baseEntries.some((entry) => entry && entry.id === selectedEntryId)) {
-      setSelectedEntryId(baseEntries[0]?.id || null);
-    }
-  }, [advancedFiltersEnabled, baseEntries, isBaseMode, selectedEntryId]);
-
-  const baseSelectedEntry = useMemo(() => {
-    if (!isBaseMode || advancedFiltersEnabled) {
-      return null;
-    }
-    if (!selectedEntryId && baseEntries.length) {
-      return baseEntries[0];
-    }
-    return baseEntries.find((entry) => entry?.id === selectedEntryId) || null;
-  }, [advancedFiltersEnabled, baseEntries, isBaseMode, selectedEntryId]);
-
   const togglePanel = (panelKey) => {
     setExpandedPanels((prev) => ({ ...prev, [panelKey]: !prev[panelKey] }));
   };
@@ -206,244 +479,6 @@ export default function WorkspaceNavigator({
     });
     return groups;
   }, [entries]);
-
-  const handleBaseEntrySelect = useCallback(
-    (entry) => {
-      const entryId = entry?.id || null;
-      setSelectedEntryId(entryId);
-      if (typeof onSelectionChange === "function") {
-        if (entry?.workspace) {
-          onSelectionChange({
-            workspaceId: entry.workspace.id || "",
-            projectId: entry.workspace.projectId || "",
-            projectName: entry.workspace.projectName || "",
-            status: entry.workspace.status || "",
-          });
-        } else {
-          onSelectionChange({ workspaceId: "", projectId: "", projectName: "", status: "" });
-        }
-      }
-    },
-    [onSelectionChange]
-  );
-
-  if (isBaseMode && !advancedFiltersEnabled) {
-    const workspace = baseSelectedEntry?.workspace || null;
-    const prompt = baseSelectedEntry?.prompt || null;
-    const entryTitle = baseSelectedEntry?.title || baseSelectedEntry?.slug || "Documento";
-    const updatedAt = baseSelectedEntry?.timestamp || baseSelectedEntry?.updatedAt;
-    const cardClass = classNames(
-      "rounded-2xl border border-white/10 bg-white/5 p-5 text-white",
-      themeStyles?.card
-    );
-
-    const handlePdfOpen = () => {
-      if (baseSelectedEntry && typeof onOpenPdf === "function") {
-        onOpenPdf(baseSelectedEntry);
-      }
-    };
-
-    const handleMdOpen = () => {
-      if (baseSelectedEntry && typeof onOpenMd === "function") {
-        onOpenMd(baseSelectedEntry);
-      }
-    };
-
-    const handleRepublishEntry = () => {
-      if (baseSelectedEntry && typeof onRepublish === "function") {
-        onRepublish(baseSelectedEntry);
-      }
-    };
-
-    const handleShowLogs = () => {
-      if (baseSelectedEntry && typeof onShowLogs === "function") {
-        onShowLogs(baseSelectedEntry);
-      }
-    };
-
-    const handleAssignWorkspaceClick = () => {
-      if (baseSelectedEntry && typeof onAssignWorkspace === "function") {
-        onAssignWorkspace(baseSelectedEntry);
-      }
-    };
-
-    return (
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-        <div className={cardClass}>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.32em] text-white/70">Library</h3>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              {typeof onRefresh === "function" ? (
-                <button
-                  type="button"
-                  onClick={onRefresh}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-white/70 transition hover:bg-white/10"
-                >
-                  <RefreshCw className={classNames("h-3.5 w-3.5", loading ? "animate-spin" : "")} />
-                  Aggiorna
-                </button>
-              ) : null}
-              {loading ? <span className="text-white/60">Sincronizzazione…</span> : null}
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <input
-              type="search"
-              value={searchTerm}
-              onChange={(event) => onSearchChange && onSearchChange(event.target.value)}
-              placeholder="Cerca titolo, workspace, tag…"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/80 placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            />
-          </div>
-
-          <div className="mt-4 space-y-2">
-            {loading ? (
-              Array.from({ length: 3 }).map((_, index) => (
-                <Skeleton key={`base-skeleton-${index}`} className="h-20 w-full rounded-2xl" />
-              ))
-            ) : baseEntries.length === 0 ? (
-              <EmptyState
-                title="Nessun documento disponibile"
-                description="Quando carichi o generi un PDF lo troverai qui."
-                className="border-white/15 bg-black/20 text-white/70"
-              />
-            ) : (
-              baseEntries.map((entry, index) => {
-                const entryKey = entry?.id || entry?.slug || `entry-${index}`;
-                const isActive = (baseSelectedEntry?.id || baseSelectedEntry?.slug) === (entry?.id || entry?.slug);
-                const workspaceName = entry?.workspace?.name || entry?.workspace?.client || "Workspace";
-                const summary = entry?.prompt?.title || entry?.slug || "";
-                return (
-                  <button
-                    type="button"
-                    key={entryKey}
-                    onClick={() => handleBaseEntrySelect(entry)}
-                    className={classNames(
-                      "w-full rounded-2xl border px-4 py-3 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-                      isActive
-                        ? "border-indigo-400/60 bg-indigo-500/15 text-white shadow-[0_12px_40px_-30px_rgba(129,140,248,0.9)]"
-                        : "border-white/10 bg-white/5 text-white/80 hover:border-indigo-400/40 hover:bg-indigo-500/10"
-                    )}
-                  >
-                    <div className="flex items-center justify-between text-xs text-white/60">
-                      <span>{workspaceName}</span>
-                      <span>{formatTimestamp(entry?.timestamp || entry?.updatedAt)}</span>
-                    </div>
-                    <div className="mt-1 text-base font-semibold text-white/90">
-                      {entry?.title || entry?.slug || "Documento"}
-                    </div>
-                    {summary ? <div className="mt-1 text-xs text-white/60">{summary}</div> : null}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        <div className={cardClass}>
-          {baseSelectedEntry ? (
-            <div className="flex h-full flex-col gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.32em] text-white/60">Dettagli</p>
-                <h4 className="mt-2 text-lg font-semibold text-white">{entryTitle}</h4>
-                <p className="text-xs text-white/60">Aggiornato {formatTimestamp(updatedAt)}</p>
-              </div>
-
-              <div className="space-y-3 text-sm text-white/80">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.32em] text-white/50">Workspace</p>
-                  <p className="mt-1 text-sm text-white/80">
-                    {workspace ? workspace.name || workspace.client || workspace.id || "Workspace" : "Non assegnato"}
-                  </p>
-                  {workspace?.status ? (
-                    <p className="text-xs text-white/60">Stato · {workspace.status}</p>
-                  ) : null}
-                </div>
-                {prompt ? (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.32em] text-white/50">Prompt</p>
-                    <p className="mt-1 text-sm text-white/80">{prompt.title || prompt.slug}</p>
-                  </div>
-                ) : null}
-                {Array.isArray(baseSelectedEntry?.tags) && baseSelectedEntry.tags.length ? (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.32em] text-white/50">Tag</p>
-                    <p className="mt-1 text-xs text-white/70">{baseSelectedEntry.tags.join(", ")}</p>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="mt-auto space-y-2 text-sm">
-                <div className="flex flex-wrap gap-2">
-                  {baseSelectedEntry?.pdfPath ? (
-                    <button
-                      type="button"
-                      onClick={handlePdfOpen}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white transition hover:bg-white/20"
-                    >
-                      <Download className="h-4 w-4" /> Apri PDF
-                    </button>
-                  ) : null}
-                  {baseSelectedEntry?.mdPath ? (
-                    <button
-                      type="button"
-                      onClick={handleMdOpen}
-                      className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white/80 transition hover:bg-white/20"
-                    >
-                      <FileText className="h-4 w-4" /> Markdown
-                    </button>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs">
-                  {typeof onRepublish === "function" ? (
-                    <button
-                      type="button"
-                      onClick={handleRepublishEntry}
-                      className="rounded-xl border border-indigo-400/40 bg-indigo-500/20 px-3 py-1.5 text-indigo-100 transition hover:bg-indigo-500/30"
-                    >
-                      Ripubblica
-                    </button>
-                  ) : null}
-                  {typeof onShowLogs === "function" ? (
-                    <button
-                      type="button"
-                      onClick={handleShowLogs}
-                      className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-white/70 transition hover:bg-white/10"
-                    >
-                      Log
-                    </button>
-                  ) : null}
-                  {typeof onAssignWorkspace === "function" ? (
-                    <button
-                      type="button"
-                      onClick={handleAssignWorkspaceClick}
-                      className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-white/70 transition hover:bg-white/10"
-                    >
-                      Riassegna workspace
-                    </button>
-                  ) : null}
-                  {typeof onAdoptSelection === "function" ? (
-                    <button
-                      type="button"
-                      onClick={onAdoptSelection}
-                      className="rounded-xl border border-emerald-300/40 bg-emerald-500/20 px-3 py-1.5 text-emerald-100 transition hover:bg-emerald-500/30"
-                    >
-                      Allinea pipeline
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex h-full items-center justify-center text-sm text-white/60">
-              Seleziona un documento a sinistra per vedere i dettagli.
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   const workspaceCatalog = useMemo(() => {
     const map = new Map();
@@ -1474,4 +1509,19 @@ export default function WorkspaceNavigator({
       )}
     </div>
   );
+};
+
+export default function WorkspaceNavigator(props) {
+  const appContext = useAppContext();
+  const mode = appContext?.mode || "advanced";
+  const hasModeFlag = appContext?.hasModeFlag;
+  const isBaseMode = mode === "base";
+  const advancedFiltersEnabled =
+    !isBaseMode || (typeof hasModeFlag === "function" && hasModeFlag(ADVANCED_FILTERS_FLAG));
+
+  if (isBaseMode && !advancedFiltersEnabled) {
+    return <BaseWorkspaceNavigator {...props} />;
+  }
+
+  return <AdvancedWorkspaceNavigator {...props} />;
 }
