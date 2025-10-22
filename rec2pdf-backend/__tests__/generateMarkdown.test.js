@@ -2,24 +2,16 @@ const fsp = require('fs/promises');
 const path = require('path');
 const tmp = require('tmp');
 
-const { EventEmitter } = require('events');
+const mockGenerateContent = jest.fn();
+const mockGenerateEmbedding = jest.fn();
+const mockGetAIService = jest.fn(() => ({
+  generateContent: mockGenerateContent,
+  generateEmbedding: mockGenerateEmbedding,
+}));
 
-const mockSpawn = jest.fn();
-
-jest.mock('child_process', () => {
-  const actual = jest.requireActual('child_process');
-  return {
-    ...actual,
-    spawn: (...args) => mockSpawn(...args),
-  };
-});
-
-const createMockChildProcess = () => {
-  const child = new EventEmitter();
-  child.stdout = new EventEmitter();
-  child.stderr = new EventEmitter();
-  return child;
-};
+jest.mock('../services/aiService', () => ({
+  getAIService: (...args) => mockGetAIService(...args),
+}));
 
 tmp.setGracefulCleanup();
 
@@ -68,7 +60,8 @@ describe('generateMarkdown prompt composition', () => {
   });
 
   beforeEach(() => {
-    mockSpawn.mockReset();
+    mockGetAIService.mockReset();
+    mockGenerateContent.mockReset();
   });
 
   it('includes knowledge base context before transcript', async () => {
@@ -78,21 +71,13 @@ describe('generateMarkdown prompt composition', () => {
     const knowledgeContext = 'Dato rilevante 1.\nDato rilevante 2.';
     let capturedPrompt = '';
 
-    mockSpawn.mockImplementation((cmd, args) => {
-      const child = createMockChildProcess();
-      if (cmd === 'gemini') {
-        capturedPrompt = args[0];
-        setImmediate(() => {
-          child.stdout.emit('data', '## Output finale');
-          child.emit('close', 0);
-        });
-      } else {
-        setImmediate(() => {
-          child.emit('close', 0);
-        });
-      }
-      return child;
-    });
+    mockGetAIService.mockImplementation(() => ({
+      generateContent: (prompt) => {
+        capturedPrompt = prompt;
+        return '## Output finale';
+      },
+      generateEmbedding: mockGenerateEmbedding,
+    }));
 
     const result = await generateMarkdown(transcriptPath, mdPath, null, knowledgeContext);
     expect(result.code).toBe(0);
@@ -114,21 +99,13 @@ describe('generateMarkdown prompt composition', () => {
     await fsp.writeFile(transcriptPath, 'Solo trascrizione.', 'utf8');
     let capturedPrompt = '';
 
-    mockSpawn.mockImplementation((cmd, args) => {
-      const child = createMockChildProcess();
-      if (cmd === 'gemini') {
-        capturedPrompt = args[0];
-        setImmediate(() => {
-          child.stdout.emit('data', '## Output senza contesto');
-          child.emit('close', 0);
-        });
-      } else {
-        setImmediate(() => {
-          child.emit('close', 0);
-        });
-      }
-      return child;
-    });
+    mockGetAIService.mockImplementation(() => ({
+      generateContent: (prompt) => {
+        capturedPrompt = prompt;
+        return '## Output senza contesto';
+      },
+      generateEmbedding: mockGenerateEmbedding,
+    }));
 
     const result = await generateMarkdown(transcriptPath, mdPath, null, '   ');
     expect(result.code).toBe(0);
