@@ -814,7 +814,7 @@ const CreatePage = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => context.setWorkspaceBuilderOpen((prev) => !prev)}
+                    onClick={() => context.openSettingsDrawer?.("workspace")}
                     className={classNames(
                       "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
                       themes[theme].input,
@@ -822,7 +822,7 @@ const CreatePage = () => {
                     )}
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    {context.workspaceBuilderOpen ? "Chiudi builder" : "Nuovo workspace"}
+                    Gestisci workspace
                   </button>
                 </div>
               </div>
@@ -862,99 +862,7 @@ const CreatePage = () => {
                   </div>
                 )}
               </div>
-              {context.workspaceBuilderOpen && (
-                <div className="space-y-3 rounded-lg border border-dashed border-zinc-700 p-3">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div>
-                      <label className="text-xs text-zinc-500">Nome</label>
-                      <input
-                        value={context.workspaceBuilder.name}
-                        onChange={(event) =>
-                          context.setWorkspaceBuilder((prev) => ({
-                            ...prev,
-                            name: event.target.value,
-                          }))
-                        }
-                        className={classNames(
-                          "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                          themes[theme].input,
-                        )}
-                        placeholder="Es. Portfolio Clienti"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-500">Cliente</label>
-                      <input
-                        value={context.workspaceBuilder.client}
-                        onChange={(event) =>
-                          context.setWorkspaceBuilder((prev) => ({
-                            ...prev,
-                            client: event.target.value,
-                          }))
-                        }
-                        className={classNames(
-                          "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                          themes[theme].input,
-                        )}
-                        placeholder="Es. Acme Corp"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-500">Colore</label>
-                      <div className="mt-2 flex items-center gap-2">
-                        <input
-                          type="color"
-                          value={context.workspaceBuilder.color}
-                          onChange={(event) =>
-                            context.setWorkspaceBuilder((prev) => ({
-                              ...prev,
-                              color: event.target.value,
-                            }))
-                          }
-                          className="h-9 w-12 rounded border border-zinc-700 bg-transparent"
-                        />
-                        <span className="font-mono text-xs text-zinc-400">
-                          {context.workspaceBuilder.color}
-                        </span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-500">
-                        Stati suggeriti (comma-separated)
-                      </label>
-                      <input
-                        value={context.workspaceBuilder.statuses}
-                        onChange={(event) =>
-                          context.setWorkspaceBuilder((prev) => ({
-                            ...prev,
-                            statuses: event.target.value,
-                          }))
-                        }
-                        className={classNames(
-                          "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
-                          themes[theme].input,
-                        )}
-                        placeholder="Bozza, In lavorazione, In review"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={context.handleWorkspaceBuilderSubmit}
-                      className={classNames(
-                        "flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
-                        themes[theme].button,
-                        !context.workspaceBuilder.name.trim() && "opacity-60 cursor-not-allowed",
-                      )}
-                      disabled={!context.workspaceBuilder.name.trim()}
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      Crea workspace
-                    </button>
-                  </div>
-                </div>
-              )}
+              
               {context.workspaceSelection.workspaceId && (
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>

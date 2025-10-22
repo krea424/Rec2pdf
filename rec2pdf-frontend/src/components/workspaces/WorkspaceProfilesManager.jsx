@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
-import { Button, Input, Select, Tabs, TabsContent, TabsList, TabsTrigger } from "../ui";
+import { Button, Input, Select, Tabs, TabsContent, TabsList, TabsTrigger, TextArea } from "../ui";
 import {
   AlertCircle,
   FileText,
@@ -9,12 +9,21 @@ import {
   Lightbulb,
   Plus,
   RefreshCw,
+  Settings,
   Sparkles,
   Trash2,
   Upload,
   Users,
 } from "../icons";
 import KnowledgeBaseManager from "./KnowledgeBaseManager";
+
+const FALLBACK_WORKSPACE_STATUSES = ["Bozza", "In lavorazione", "Da revisionare", "Completato"];
+
+const parseStatusList = (value) =>
+  String(value || "")
+    .split(",")
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
 
 const emptyForm = {
   label: "",
@@ -32,6 +41,9 @@ const WorkspaceProfilesManager = () => {
     workspaceSelection,
     prompts,
     handleRefreshWorkspaces,
+    handleCreateWorkspace,
+    handleUpdateWorkspace,
+    handleDeleteWorkspace,
     refreshPdfTemplates,
     createWorkspaceProfile,
     updateWorkspaceProfile,
@@ -40,6 +52,7 @@ const WorkspaceProfilesManager = () => {
     pdfTemplatesLoading,
     pdfTemplatesError,
     DEFAULT_DEST_DIR,
+    DEFAULT_WORKSPACE_STATUSES,
     openSetupAssistant,
     handleSelectWorkspaceForPipeline,
   } = useAppContext();
@@ -47,6 +60,21 @@ const WorkspaceProfilesManager = () => {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(
     workspaceSelection.workspaceId || (workspaces[0]?.id ?? "")
   );
+  const defaultStatusesString = useMemo(() => {
+    if (Array.isArray(DEFAULT_WORKSPACE_STATUSES) && DEFAULT_WORKSPACE_STATUSES.length) {
+      return DEFAULT_WORKSPACE_STATUSES.join(", ");
+    }
+    return FALLBACK_WORKSPACE_STATUSES.join(", ");
+  }, [DEFAULT_WORKSPACE_STATUSES]);
+  const [workspaceFormMode, setWorkspaceFormMode] = useState(null);
+  const [workspaceForm, setWorkspaceForm] = useState(() => ({
+    name: "",
+    client: "",
+    color: "#6366f1",
+    statuses: defaultStatusesString,
+  }));
+  const [workspaceFormPending, setWorkspaceFormPending] = useState(false);
+  const [workspaceManagerFeedback, setWorkspaceManagerFeedback] = useState({ type: "", message: "" });
   const [formState, setFormState] = useState(emptyForm);
   const [useCustomTemplate, setUseCustomTemplate] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
@@ -56,6 +84,38 @@ const WorkspaceProfilesManager = () => {
   const [feedback, setFeedback] = useState({ success: "", error: "", details: [] });
   const [activeTab, setActiveTab] = useState("profiles");
   const logoInputRef = useRef(null);
+  const resetWorkspaceForm = useCallback(() => {
+    setWorkspaceForm({
+      name: "",
+      client: "",
+      color: "#6366f1",
+      statuses: defaultStatusesString,
+    });
+  }, [defaultStatusesString]);
+
+  const handleWorkspaceFieldChange = useCallback(
+    (field) => (event) => {
+      const value = event.target.value;
+      setWorkspaceForm((prev) => ({ ...prev, [field]: value }));
+    },
+    []
+  );
+
+  const handleWorkspaceColorChange = useCallback((event) => {
+    const value = event.target.value;
+    setWorkspaceForm((prev) => ({ ...prev, color: value || "#6366f1" }));
+  }, []);
+
+  const openCreateWorkspaceForm = useCallback(() => {
+    setWorkspaceFormMode("create");
+    resetWorkspaceForm();
+    setWorkspaceManagerFeedback({ type: "", message: "" });
+  }, [resetWorkspaceForm]);
+
+  const handleCloseWorkspaceForm = useCallback(() => {
+    setWorkspaceFormMode(null);
+    resetWorkspaceForm();
+  }, [resetWorkspaceForm]);
 
   const resetForm = useCallback(() => {
     setFormState(emptyForm);
@@ -83,10 +143,36 @@ const WorkspaceProfilesManager = () => {
     }
   }, [workspaces, selectedWorkspaceId, workspaceSelection.workspaceId, resetForm]);
 
+  useEffect(() => {
+    if (workspaceFormMode === "create") {
+      setWorkspaceForm((prev) => ({
+        ...prev,
+        statuses: defaultStatusesString,
+      }));
+    }
+  }, [defaultStatusesString, workspaceFormMode]);
+
   const activeWorkspace = useMemo(
     () => workspaces.find((workspace) => workspace.id === selectedWorkspaceId) || null,
     [workspaces, selectedWorkspaceId]
   );
+
+  const openEditWorkspaceForm = useCallback(() => {
+    if (!activeWorkspace) {
+      return;
+    }
+    setWorkspaceFormMode("edit");
+    setWorkspaceForm({
+      name: activeWorkspace.name || "",
+      client: activeWorkspace.client || "",
+      color: activeWorkspace.color || "#6366f1",
+      statuses:
+        Array.isArray(activeWorkspace.defaultStatuses) && activeWorkspace.defaultStatuses.length
+          ? activeWorkspace.defaultStatuses.join(", ")
+          : defaultStatusesString,
+    });
+    setWorkspaceManagerFeedback({ type: "", message: "" });
+  }, [activeWorkspace, defaultStatusesString]);
 
   const workspaceProjects = useMemo(
     () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []),
@@ -102,6 +188,128 @@ const WorkspaceProfilesManager = () => {
     () => workspaceProjects.length,
     [workspaceProjects]
   );
+
+  const handleWorkspaceFormSubmit = useCallback(
+    async (event) => {
+      event.preventDefault();
+      if (!workspaceFormMode) {
+        return;
+      }
+      const trimmedName = workspaceForm.name.trim();
+      if (!trimmedName) {
+        setWorkspaceManagerFeedback({
+          type: "error",
+          message: "Il nome del workspace è obbligatorio.",
+        });
+        return;
+      }
+      const statusList = parseStatusList(workspaceForm.statuses);
+      const normalizedStatuses =
+        statusList.length
+          ? statusList
+          : Array.isArray(DEFAULT_WORKSPACE_STATUSES) && DEFAULT_WORKSPACE_STATUSES.length
+          ? DEFAULT_WORKSPACE_STATUSES
+          : FALLBACK_WORKSPACE_STATUSES;
+
+      setWorkspaceFormPending(true);
+      setWorkspaceManagerFeedback({ type: "", message: "" });
+
+      try {
+        if (workspaceFormMode === "create") {
+          const result = await handleCreateWorkspace({
+            name: trimmedName,
+            client: workspaceForm.client,
+            color: workspaceForm.color || "#6366f1",
+            statuses: normalizedStatuses,
+          });
+          if (!result.ok) {
+            setWorkspaceManagerFeedback({
+              type: "error",
+              message: result.message || "Creazione workspace non riuscita.",
+            });
+            return;
+          }
+          const created = result.workspace || {};
+          setWorkspaceManagerFeedback({
+            type: "success",
+            message: `Workspace creato: ${created.name || trimmedName}`,
+          });
+          if (created.id) {
+            setSelectedWorkspaceId(created.id);
+          }
+          resetForm();
+          handleCloseWorkspaceForm();
+        } else if (workspaceFormMode === "edit" && activeWorkspace) {
+          const result = await handleUpdateWorkspace(activeWorkspace.id, {
+            name: trimmedName,
+            client: workspaceForm.client,
+            color: workspaceForm.color || "#6366f1",
+            defaultStatuses: normalizedStatuses,
+          });
+          if (!result.ok) {
+            setWorkspaceManagerFeedback({
+              type: "error",
+              message: result.message || "Aggiornamento workspace non riuscito.",
+            });
+            return;
+          }
+          const updated = result.workspace || {};
+          setWorkspaceManagerFeedback({
+            type: "success",
+            message: `Workspace aggiornato: ${updated.name || trimmedName}`,
+          });
+          handleCloseWorkspaceForm();
+        }
+      } finally {
+        setWorkspaceFormPending(false);
+      }
+    },
+    [
+      workspaceFormMode,
+      workspaceForm,
+      handleCreateWorkspace,
+      DEFAULT_WORKSPACE_STATUSES,
+      handleUpdateWorkspace,
+      activeWorkspace,
+      resetForm,
+      handleCloseWorkspaceForm,
+      setSelectedWorkspaceId,
+    ]
+  );
+
+  const handleDeleteWorkspaceAction = useCallback(async () => {
+    if (!selectedWorkspaceId) {
+      return;
+    }
+    const target = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) || null;
+    const targetLabel = target?.name || target?.client || target?.id || selectedWorkspaceId;
+    const confirmed = window.confirm(`Eliminare il workspace "${targetLabel}"?`);
+    if (!confirmed) {
+      return;
+    }
+    setWorkspaceFormPending(true);
+    setWorkspaceManagerFeedback({ type: "", message: "" });
+    try {
+      const result = await handleDeleteWorkspace(selectedWorkspaceId);
+      if (!result.ok) {
+        setWorkspaceManagerFeedback({
+          type: "error",
+          message: result.message || "Eliminazione workspace non riuscita.",
+        });
+        return;
+      }
+      const nextWorkspace = workspaces.find((workspace) => workspace.id !== selectedWorkspaceId) || null;
+      setWorkspaceManagerFeedback({
+        type: "success",
+        message: `Workspace eliminato: ${targetLabel}`,
+      });
+      setSelectedWorkspaceId(nextWorkspace?.id || "");
+      resetForm();
+      handleCloseWorkspaceForm();
+    } finally {
+      setWorkspaceFormPending(false);
+    }
+  }, [selectedWorkspaceId, workspaces, handleDeleteWorkspace, resetForm, handleCloseWorkspaceForm, setSelectedWorkspaceId]);
 
   const promptMap = useMemo(() => {
     const map = new Map();
@@ -379,7 +587,7 @@ const WorkspaceProfilesManager = () => {
         title: "Workspace",
         icon: Users,
         description:
-          "Contenitore per cliente o business unit: raccoglie palette, stati di default e progetti collegati.",
+          "Contenitore per cliente o business unit. Gestiscilo qui: la pipeline lo usa in sola lettura per avviare le sessioni.",
         meta: activeWorkspace
           ? `Attivo: ${activeWorkspace.name || activeWorkspace.client || activeWorkspace.id}`
           : "Seleziona un workspace per iniziare.",
@@ -463,98 +671,226 @@ const WorkspaceProfilesManager = () => {
   return (
     <div className="space-y-6 text-sm text-surface-200">
       <div className="rounded-2xl border border-surface-700 bg-surface-900/60 p-5 shadow-sm shadow-black/20">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="text-sm font-semibold text-surface-100">
-              Pianifica il setup prima di registrare un nuovo progetto
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-surface-100">
+                Gestione workspace e profili
+              </div>
+              <p className="mt-1 text-xs text-surface-400">
+                Crea, modifica o elimina workspace, progetti e profili prima di lanciare la pipeline.
+                Nel form &ldquo;Crea&rdquo; potrai solo scegliere cosa usare.
+              </p>
             </div>
-            <p className="mt-1 text-xs text-surface-400">
-              Utilizza workspace, progetti e profili per mantenere branding, percorsi e prompt coerenti
-              con le aspettative del cliente.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              leadingIcon={Lightbulb}
-              onClick={() => openSetupAssistant?.()}
-            >
-              Avvia setup guidato
-            </Button>
-            {selectedWorkspaceId ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                leadingIcon={Plus}
+                onClick={openCreateWorkspaceForm}
+                disabled={workspaceFormPending}
+              >
+                Nuovo workspace
+              </Button>
+              {selectedWorkspaceId ? (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    leadingIcon={Settings}
+                    onClick={openEditWorkspaceForm}
+                    disabled={workspaceFormPending}
+                  >
+                    Modifica workspace
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="text-feedback-danger hover:text-white"
+                    leadingIcon={Trash2}
+                    onClick={handleDeleteWorkspaceAction}
+                    disabled={workspaceFormPending}
+                  >
+                    Elimina workspace
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    leadingIcon={Folder}
+                    onClick={() => handleSelectWorkspaceForPipeline?.(selectedWorkspaceId)}
+                    disabled={workspaceFormPending}
+                  >
+                    Usa nel form pipeline
+                  </Button>
+                </>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                leadingIcon={Folder}
-                onClick={() => handleSelectWorkspaceForPipeline?.(selectedWorkspaceId)}
+                leadingIcon={Lightbulb}
+                onClick={() => openSetupAssistant?.()}
+                disabled={workspaceFormPending}
               >
-                Usa nel form pipeline
+                Avvia setup guidato
               </Button>
-            ) : null}
-          </div>
-        </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-          {hierarchyCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <div
-                key={card.key}
-                className="flex h-full flex-col gap-2 rounded-xl border border-surface-700/80 bg-surface-900/70 p-4"
-              >
-                <Icon className="h-6 w-6 text-surface-300" />
-                <div className="text-sm font-semibold text-surface-100">{card.title}</div>
-                <p className="text-xs text-surface-400">{card.description}</p>
-                {card.meta ? (
-                  <div className="text-[11px] font-medium uppercase tracking-wide text-surface-500">
-                    {card.meta}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-        {quickPresets.length ? (
-          <div className="mt-4 rounded-xl border border-brand-400/50 bg-brand-500/10 p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-start gap-3">
-                <Sparkles className="mt-0.5 h-5 w-5 text-brand-200" />
-                <div>
-                  <div className="text-sm font-semibold text-brand-100">
-                    Acceleratore per nuovi PRD Consulting
-                  </div>
-                  <p className="mt-1 text-xs text-brand-100/80">
-                    Precompila il form con il prompt PRD in stile major consulting firm, includendo il
-                    template PDF dedicato.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {quickPresets.map((preset) => (
-                  <Button
-                    key={preset.key}
-                    type="button"
-                    size="sm"
-                    leadingIcon={Sparkles}
-                    onClick={() => handleApplyPreset(preset)}
-                  >
-                    {preset.label}
-                  </Button>
-                ))}
-              </div>
             </div>
           </div>
-        ) : null}
+
+          <div className="rounded-xl border border-surface-700/60 bg-surface-900/40 p-4 text-xs text-surface-300">
+            Le modifiche a workspace, progetti e profili avvengono qui nelle impostazioni. Prima di
+            eseguire la pipeline usa il form rapido per scegliere ciò che hai configurato.
+          </div>
+
+          {workspaceManagerFeedback.message ? (
+            <div
+              className={classNames(
+                "rounded-xl border p-3 text-xs transition",
+                workspaceManagerFeedback.type === "success"
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"
+                  : "border-feedback-danger/60 bg-feedback-danger/10 text-feedback-danger"
+              )}
+            >
+              {workspaceManagerFeedback.message}
+            </div>
+          ) : null}
+
+          {workspaceFormMode ? (
+            <form
+              className="space-y-4 rounded-xl border border-surface-700/70 bg-surface-900/50 p-4"
+              onSubmit={handleWorkspaceFormSubmit}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-surface-100">
+                  {workspaceFormMode === "create" ? "Nuovo workspace" : "Modifica workspace"}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleCloseWorkspaceForm}
+                  disabled={workspaceFormPending}
+                >
+                  Annulla
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Input
+                  label="Nome workspace"
+                  value={workspaceForm.name}
+                  onChange={handleWorkspaceFieldChange("name")}
+                  placeholder="Es. Portfolio Clienti"
+                  required
+                  disabled={workspaceFormPending}
+                />
+                <Input
+                  label="Cliente (opzionale)"
+                  value={workspaceForm.client}
+                  onChange={handleWorkspaceFieldChange("client")}
+                  placeholder="Es. ACME Corp"
+                  disabled={workspaceFormPending}
+                />
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-surface-200">Colore brand</span>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      aria-label="Colore brand"
+                      value={workspaceForm.color}
+                      onChange={handleWorkspaceColorChange}
+                      className="h-10 w-14 rounded border border-surface-700 bg-transparent"
+                      disabled={workspaceFormPending}
+                    />
+                    <span className="font-mono text-xs text-surface-400">{workspaceForm.color}</span>
+                  </div>
+                  <span className="text-xs text-surface-400">
+                    Utilizzato per badge, timeline e quick actions del workspace.
+                  </span>
+                </div>
+                <TextArea
+                  label="Stati di default"
+                  value={workspaceForm.statuses}
+                  onChange={handleWorkspaceFieldChange("statuses")}
+                  helperText="Separali con una virgola; verranno proposti quando crei progetti o stati."
+                  rows={3}
+                  disabled={workspaceFormPending}
+                />
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button type="submit" isLoading={workspaceFormPending}>
+                  {workspaceFormMode === "create" ? "Crea workspace" : "Salva workspace"}
+                </Button>
+              </div>
+            </form>
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {hierarchyCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <div
+                  key={card.key}
+                  className="flex h-full flex-col gap-2 rounded-xl border border-surface-700/80 bg-surface-900/70 p-4"
+                >
+                  <Icon className="h-6 w-6 text-surface-300" />
+                  <div className="text-sm font-semibold text-surface-100">{card.title}</div>
+                  <p className="text-xs text-surface-400">{card.description}</p>
+                  {card.meta ? (
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-surface-500">
+                      {card.meta}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+
+          {quickPresets.length ? (
+            <div className="mt-4 rounded-xl border border-brand-400/50 bg-brand-500/10 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-start gap-3">
+                  <Sparkles className="mt-0.5 h-5 w-5 text-brand-200" />
+                  <div>
+                    <div className="text-sm font-semibold text-brand-100">
+                      Acceleratore per nuovi PRD Consulting
+                    </div>
+                    <p className="mt-1 text-xs text-brand-100/80">
+                      Precompila il form con il prompt PRD in stile major consulting firm, includendo il
+                      template PDF dedicato.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {quickPresets.map((preset) => (
+                    <Button
+                      key={preset.key}
+                      type="button"
+                      size="sm"
+                      leadingIcon={Sparkles}
+                      onClick={() => handleApplyPreset(preset)}
+                    >
+                      {preset.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <Select
-          label="Workspace"
+          label="Workspace da gestire"
+          helperText="Scegli qui cosa modificare; nel form pipeline dovrai solo selezionare il workspace preparato."
           value={selectedWorkspaceId}
           onChange={handleWorkspaceChange}
           className="bg-transparent"
+          disabled={workspaceFormPending}
         >
           <option value="">Seleziona workspace</option>
           {workspaces.map((workspace) => (
@@ -563,15 +899,18 @@ const WorkspaceProfilesManager = () => {
             </option>
           ))}
         </Select>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleRefreshWorkspaces}
-          leadingIcon={RefreshCw}
-        >
-          Aggiorna
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleRefreshWorkspaces}
+            leadingIcon={RefreshCw}
+            disabled={workspaceFormPending}
+          >
+            Aggiorna
+          </Button>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>

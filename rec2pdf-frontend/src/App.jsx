@@ -1054,13 +1054,6 @@ function AppContent(){
     projectName: '',
     status: '',
   }));
-  const [workspaceBuilderOpen, setWorkspaceBuilderOpen] = useState(false);
-  const [workspaceBuilder, setWorkspaceBuilder] = useState({
-    name: '',
-    client: '',
-    color: '#6366f1',
-    statuses: DEFAULT_WORKSPACE_STATUSES.join(', '),
-  });
   const [projectDraft, setProjectDraft] = useState('');
   const [statusDraft, setStatusDraft] = useState('');
   const [projectCreationMode, setProjectCreationMode] = useState(false);
@@ -1762,6 +1755,132 @@ function AppContent(){
       }
     },
     [backendUrl, fetchWithAuth, pushLogs, workspaceSelection.workspaceId]
+  );
+
+  const handleUpdateWorkspace = useCallback(
+    async (workspaceId, updates = {}) => {
+      const normalized = normalizeBackendUrlValue(backendUrl);
+      if (!normalized) {
+        const message = 'Configura un backend valido per aggiornare i workspace.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const trimmedId = String(workspaceId || '').trim();
+      if (!trimmedId) {
+        const message = 'Workspace non valido.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+
+      const payload = {};
+      if (typeof updates.name === 'string') {
+        payload.name = updates.name.trim();
+      }
+      if (typeof updates.client === 'string') {
+        payload.client = updates.client.trim();
+      }
+      if (typeof updates.color === 'string' && updates.color.trim()) {
+        payload.color = updates.color.trim();
+      }
+      if (Array.isArray(updates.defaultStatuses)) {
+        payload.defaultStatuses = updates.defaultStatuses;
+      }
+
+      if (!Object.keys(payload).length) {
+        return { ok: true, skipped: true };
+      }
+
+      try {
+        const response = await fetchWithAuth(`${normalized}/api/workspaces/${trimmedId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        let body = {};
+        try {
+          body = await response.json();
+        } catch {
+          body = {};
+        }
+        if (!response.ok) {
+          const message = body?.message || `Aggiornamento workspace fallito (HTTP ${response.status})`;
+          pushLogs([`❌ ${message}`]);
+          return { ok: false, message };
+        }
+        if (body?.workspace) {
+          setWorkspaces((prev) =>
+            prev.map((ws) =>
+              ws.id === trimmedId
+                ? {
+                    ...body.workspace,
+                    profiles: normalizeWorkspaceProfiles(body.workspace),
+                  }
+                : ws
+            )
+          );
+          pushLogs([`✅ Workspace aggiornato: ${body.workspace.name || trimmedId}`]);
+        }
+        return { ok: true, workspace: body.workspace };
+      } catch (error) {
+        const message = error?.message || 'Errore aggiornamento workspace';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+    },
+    [backendUrl, fetchWithAuth, pushLogs]
+  );
+
+  const handleDeleteWorkspace = useCallback(
+    async (workspaceId) => {
+      const normalized = normalizeBackendUrlValue(backendUrl);
+      if (!normalized) {
+        const message = 'Configura un backend valido per eliminare i workspace.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const trimmedId = String(workspaceId || '').trim();
+      if (!trimmedId) {
+        const message = 'Workspace non valido.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      try {
+        const response = await fetchWithAuth(`${normalized}/api/workspaces/${trimmedId}`, {
+          method: 'DELETE',
+        });
+        let body = {};
+        try {
+          body = await response.json();
+        } catch {
+          body = {};
+        }
+        if (!response.ok) {
+          const message = body?.message || `Eliminazione workspace fallita (HTTP ${response.status})`;
+          pushLogs([`❌ ${message}`]);
+          return { ok: false, message };
+        }
+        setWorkspaces((prev) => prev.filter((ws) => ws.id !== trimmedId));
+        if (workspaceSelection.workspaceId === trimmedId) {
+          setWorkspaceSelection({ workspaceId: '', projectId: '', projectName: '', status: '' });
+          setWorkspaceProfileSelection({ workspaceId: '', profileId: '' });
+          setWorkspaceProfileLocked(false);
+        }
+        pushLogs([`✅ Workspace eliminato: ${trimmedId}`]);
+        return { ok: true };
+      } catch (error) {
+        const message = error?.message || 'Errore eliminazione workspace';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+    },
+    [
+      backendUrl,
+      fetchWithAuth,
+      pushLogs,
+      workspaceSelection.workspaceId,
+      setWorkspaceProfileSelection,
+      setWorkspaceProfileLocked,
+    ]
   );
 
   const handleEnsureWorkspaceProject = useCallback(
@@ -2644,28 +2763,6 @@ function AppContent(){
     setStatusCreationMode(false);
     fetchWorkspaces({ silent: true });
   }, [statusDraft, workspaceSelection.workspaceId, workspaceSelection.projectId, workspaceSelection.projectName, handleEnsureWorkspaceProject, fetchWorkspaces]);
-
-  const handleWorkspaceBuilderSubmit = useCallback(async () => {
-    const result = await handleCreateWorkspace({
-      name: workspaceBuilder.name,
-      client: workspaceBuilder.client,
-      color: workspaceBuilder.color,
-      statuses: workspaceBuilder.statuses
-        .split(',')
-        .map((chunk) => chunk.trim())
-        .filter(Boolean),
-    });
-    if (result.ok) {
-      setWorkspaceBuilder({
-        name: '',
-        client: '',
-        color: '#6366f1',
-        statuses: DEFAULT_WORKSPACE_STATUSES.join(', '),
-      });
-      setWorkspaceBuilderOpen(false);
-      fetchWorkspaces({ silent: true });
-    }
-  }, [handleCreateWorkspace, workspaceBuilder, fetchWorkspaces]);
 
   const processViaBackend=async()=>{
     const blob=audioBlob;
@@ -4142,6 +4239,9 @@ function AppContent(){
     secondsCap,
     setSecondsCap,
     handleRefreshWorkspaces,
+    handleCreateWorkspace,
+    handleUpdateWorkspace,
+    handleDeleteWorkspace,
     refreshPdfTemplates,
     createWorkspaceProfile,
     updateWorkspaceProfile,
@@ -4150,11 +4250,6 @@ function AppContent(){
     pdfTemplatesLoading,
     pdfTemplatesError,
     workspaceLoading,
-    setWorkspaceBuilderOpen,
-    workspaceBuilderOpen,
-    workspaceBuilder,
-    setWorkspaceBuilder,
-    handleWorkspaceBuilderSubmit,
     handleSelectWorkspaceForPipeline,
     workspaceSelection,
     workspaceProfileSelection,
@@ -4165,6 +4260,7 @@ function AppContent(){
     clearWorkspaceProfile,
     workspaces,
     activeWorkspace,
+    DEFAULT_WORKSPACE_STATUSES,
     projectCreationMode,
     workspaceProjects,
     handleSelectProjectForPipeline,
