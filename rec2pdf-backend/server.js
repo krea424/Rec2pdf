@@ -7,7 +7,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { execFile, exec } = require('child_process');
+const { spawn } = require('child_process');
 const pdfParse = require('pdf-parse');
 const { createClient } = require('@supabase/supabase-js');
 const { getOpenAIClient } = require('./openaiClient');
@@ -225,18 +225,47 @@ const DEFAULT_STATUSES = ['Bozza', 'In lavorazione', 'Da revisionare', 'Completa
 const sleep = (ms) =>
   new Promise((resolve) => setTimeout(resolve, Number.isFinite(ms) && ms > 0 ? ms : 0));
 
-const run = (cmd, args, opts = {}) => new Promise((resolve) => {
-  const child = execFile(cmd, args, opts, (err, stdout, stderr) => {
-    resolve({
-      code: err?.code || 0,
-      stdout: stdout.trim(),
-      stderr: stderr.trim(),
+const run = (cmd, args = [], opts = {}) =>
+  new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let child;
+
+    try {
+      child = spawn(cmd, Array.isArray(args) ? args : [], opts);
+    } catch (spawnError) {
+      return resolve({ code: -1, stdout: '', stderr: spawnError?.message || String(spawnError) });
+    }
+
+    if (child.stdout) {
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk.toString();
+      });
+    }
+
+    if (child.stderr) {
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
+    }
+
+    child.on('error', (error) => {
+      if (settled) return;
+      settled = true;
+      resolve({ code: -1, stdout, stderr: error?.message || String(error) });
+    });
+
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      resolve({
+        code: typeof code === 'number' ? code : 0,
+        stdout,
+        stderr,
+      });
     });
   });
-  child.on('error', (err) => {
-    resolve({ code: -1, stdout: '', stderr: err.message });
-  });
-});
 
 const zsh = (command, opts = {}) => run('zsh', ['-lc', command], opts);
 
@@ -3810,30 +3839,36 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       const downloadedAudio = await downloadFileFromBucket(SUPABASE_AUDIO_BUCKET, audioStoragePath);
       await fsp.writeFile(audioLocalPath, downloadedAudio);
 
+      const transcodeAndValidate = async (targetPath) => {
+        const ffmpegArgs = ['-y', '-i', audioLocalPath, '-ac', '1', '-ar', '16000', '-loglevel', 'error', targetPath];
+        const ff = await run('ffmpeg', ffmpegArgs);
+        if (ff.code !== 0) {
+          const ffMessage =
+            (typeof ff.stderr === 'string' && ff.stderr.trim()) ||
+            (typeof ff.stdout === 'string' && ff.stdout.trim()) ||
+            'ffmpeg ha restituito un codice di errore non-zero.';
+          out(ffMessage, 'transcode', 'failed');
+          throw new Error(`Transcodifica fallita: ${ff.stderr || ffMessage}`);
+        }
+
+        try {
+          const stats = await fsp.stat(targetPath);
+          if (stats.size < 1024) {
+            throw new Error('Il file WAV generato è vuoto o corrotto.');
+          }
+        } catch (statError) {
+          out(`Verifica del file WAV fallita: ${statError.message}`, 'transcode', 'failed');
+          throw new Error('Transcodifica fallita: il file WAV di output non è stato creato correttamente.');
+        }
+      };
+
       if (audioLocalPath === wavLocalPath) {
         const tempWavPath = registerTempFile(path.join(pipelineDir, `${baseName}_temp.wav`));
-        const ff = await run('ffmpeg', ['-y', '-i', audioLocalPath, '-ac', '1', '-ar', '16000', tempWavPath]);
-        if (ff.code !== 0) {
-          out(ff.stderr || 'ffmpeg failed', 'transcode', 'failed');
-          throw new Error('Transcodifica fallita');
-        }
+        await transcodeAndValidate(tempWavPath);
         await fsp.rename(tempWavPath, wavLocalPath);
       } else {
-              if (audioLocalPath === wavLocalPath) {
-                const tempWavPath = registerTempFile(path.join(pipelineDir, `${baseName}_temp.wav`));
-                const ff = await run('ffmpeg', ['-y', '-i', audioLocalPath, '-ac', '1', '-ar', '16000', tempWavPath]);
-                if (ff.code !== 0) {
-                  out(ff.stderr || 'ffmpeg failed', 'transcode', 'failed');
-                  throw new Error('Transcodifica fallita');
-                }
-                await fsp.rename(tempWavPath, wavLocalPath);
-              } else {
-                const ff = await run('ffmpeg', ['-y', '-i', audioLocalPath, '-ac', '1', '-ar', '16000', wavLocalPath]);
-                if (ff.code !== 0) {
-                  out(ff.stderr || 'ffmpeg failed', 'transcode', 'failed');
-                  throw new Error('Transcodifica fallita');
-                }
-              }      }
+        await transcodeAndValidate(wavLocalPath);
+      }
 
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,

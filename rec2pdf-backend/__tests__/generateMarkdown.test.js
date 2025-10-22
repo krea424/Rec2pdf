@@ -2,15 +2,24 @@ const fsp = require('fs/promises');
 const path = require('path');
 const tmp = require('tmp');
 
-const mockExecFile = jest.fn();
+const { EventEmitter } = require('events');
+
+const mockSpawn = jest.fn();
 
 jest.mock('child_process', () => {
   const actual = jest.requireActual('child_process');
   return {
     ...actual,
-    execFile: (...args) => mockExecFile(...args),
+    spawn: (...args) => mockSpawn(...args),
   };
 });
+
+const createMockChildProcess = () => {
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  return child;
+};
 
 tmp.setGracefulCleanup();
 
@@ -59,7 +68,7 @@ describe('generateMarkdown prompt composition', () => {
   });
 
   beforeEach(() => {
-    mockExecFile.mockReset();
+    mockSpawn.mockReset();
   });
 
   it('includes knowledge base context before transcript', async () => {
@@ -69,15 +78,20 @@ describe('generateMarkdown prompt composition', () => {
     const knowledgeContext = 'Dato rilevante 1.\nDato rilevante 2.';
     let capturedPrompt = '';
 
-    mockExecFile.mockImplementation((cmd, args, opts, callback) => {
-      const cb = typeof callback === 'function' ? callback : opts;
+    mockSpawn.mockImplementation((cmd, args) => {
+      const child = createMockChildProcess();
       if (cmd === 'gemini') {
         capturedPrompt = args[0];
-        setImmediate(() => cb(null, '## Output finale', ''));
+        setImmediate(() => {
+          child.stdout.emit('data', '## Output finale');
+          child.emit('close', 0);
+        });
       } else {
-        setImmediate(() => cb(null, '', ''));
+        setImmediate(() => {
+          child.emit('close', 0);
+        });
       }
-      return { on: () => {} };
+      return child;
     });
 
     const result = await generateMarkdown(transcriptPath, mdPath, null, knowledgeContext);
@@ -100,15 +114,20 @@ describe('generateMarkdown prompt composition', () => {
     await fsp.writeFile(transcriptPath, 'Solo trascrizione.', 'utf8');
     let capturedPrompt = '';
 
-    mockExecFile.mockImplementation((cmd, args, opts, callback) => {
-      const cb = typeof callback === 'function' ? callback : opts;
+    mockSpawn.mockImplementation((cmd, args) => {
+      const child = createMockChildProcess();
       if (cmd === 'gemini') {
         capturedPrompt = args[0];
-        setImmediate(() => cb(null, '## Output senza contesto', ''));
+        setImmediate(() => {
+          child.stdout.emit('data', '## Output senza contesto');
+          child.emit('close', 0);
+        });
       } else {
-        setImmediate(() => cb(null, '', ''));
+        setImmediate(() => {
+          child.emit('close', 0);
+        });
       }
-      return { on: () => {} };
+      return child;
     });
 
     const result = await generateMarkdown(transcriptPath, mdPath, null, '   ');
