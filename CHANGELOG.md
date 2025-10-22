@@ -3,12 +3,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 ### Added
-- Documentazione per l'architettura RAG multi-tenant, incluse variabili d'ambiente e flussi di ingest/retrieval.
+- Nothing yet.
 
 ### Changed
+- Nothing yet.
 
 ### Fixed
+- Nothing yet.
 
+
+## [4.0.0] - 2025-10-22
+### Added
+- Endpoint `POST /api/workspaces/:workspaceId/ingest` con coda di elaborazione e supporto multi-formato (testi, PDF, audio) per aggiornare la knowledge base RAG senza script manuali.
+- Vista "Knowledge Base" nel frontend con drag&drop, progress feedback e riepilogo dei documenti indicizzati per workspace.
+- Retrieval automatico del contesto RAG durante la generazione del Markdown, combinando prompt, note e trascrizioni per la chiamata a Gemini.
+### Changed
+- Pipeline audio orchestrata via Supabase Storage con retry su upload/download e validazione dei WAV per gestire in modo affidabile registrazioni lunghe.
+### Fixed
+- Corretto l'ordine degli hook in `CreatePage` e `WorkspaceNavigator` eliminando i warning di React DevTools in console.
 
 ## [3.0.0] - 2025-10-20
 ### Added
