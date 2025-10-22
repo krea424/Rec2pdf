@@ -8,9 +8,17 @@ const mockGetAIService = jest.fn(() => ({
   generateContent: mockGenerateContent,
   generateEmbedding: mockGenerateEmbedding,
 }));
+const mockResolveAiProvider = jest.fn(() => ({ id: 'gemini', apiKey: 'test-key' }));
 
 jest.mock('../services/aiService', () => ({
   getAIService: (...args) => mockGetAIService(...args),
+}));
+
+jest.mock('../services/aiProviders', () => ({
+  resolveProvider: (...args) => mockResolveAiProvider(...args),
+  sanitizeProviderInput: (value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''),
+  listProviders: jest.fn(() => []),
+  getDefaultProviderMap: jest.fn(() => ({ text: 'gemini', embedding: 'openai' })),
 }));
 
 tmp.setGracefulCleanup();
@@ -62,6 +70,8 @@ describe('generateMarkdown prompt composition', () => {
   beforeEach(() => {
     mockGetAIService.mockReset();
     mockGenerateContent.mockReset();
+    mockResolveAiProvider.mockReset();
+    mockResolveAiProvider.mockImplementation(() => ({ id: 'gemini', apiKey: 'test-key' }));
   });
 
   it('includes knowledge base context before transcript', async () => {
@@ -111,5 +121,29 @@ describe('generateMarkdown prompt composition', () => {
     expect(result.code).toBe(0);
     expect(capturedPrompt).not.toContain('INFORMAZIONI AGGIUNTIVE DALLA KNOWLEDGE BASE');
     expect(capturedPrompt).toContain('Solo trascrizione.');
+  });
+
+  it('forwards the text provider override to the resolver', async () => {
+    const transcriptPath = path.join(tempDir.name, 'override.txt');
+    const mdPath = path.join(tempDir.name, 'override.md');
+    await fsp.writeFile(transcriptPath, 'Override provider test.', 'utf8');
+
+    mockGetAIService.mockImplementation(() => ({
+      generateContent: () => '## Output',
+      generateEmbedding: mockGenerateEmbedding,
+    }));
+
+    mockResolveAiProvider.mockImplementation((type, override) => {
+      if (type === 'text' && override === 'openai') {
+        return { id: 'openai', apiKey: 'test-openai' };
+      }
+      return { id: 'gemini', apiKey: 'test-key' };
+    });
+
+    const result = await generateMarkdown(transcriptPath, mdPath, null, '', { textProvider: 'openai' });
+    expect(result.code).toBe(0);
+    expect(mockResolveAiProvider).toHaveBeenCalledWith('text', 'openai');
+    const written = await fsp.readFile(mdPath, 'utf8');
+    expect(written).toBe('## Output');
   });
 });

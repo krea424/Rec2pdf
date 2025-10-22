@@ -11,6 +11,12 @@ const { spawn } = require('child_process');
 const pdfParse = require('pdf-parse');
 const { createClient } = require('@supabase/supabase-js');
 const { getAIService } = require('./services/aiService');
+const {
+  listProviders: listAiProviders,
+  resolveProvider: resolveAiProvider,
+  getDefaultProviderMap: getDefaultAiProviderMap,
+  sanitizeProviderInput: sanitizeAiProviderInput,
+} = require('./services/aiProviders');
 
 const app = express();
 const PORT = process.env.PORT || 7788;
@@ -52,7 +58,28 @@ const getWorkspaceIdFromRequest = (req = {}) => {
   return '';
 };
 
-const retrieveRelevantContext = async (queryText, workspaceId) => {
+const extractAiProviderOverrides = (req = {}) => {
+  const body = req && typeof req === 'object' ? req.body || {} : {};
+  const query = req && typeof req === 'object' ? req.query || {} : {};
+  const headers = req && typeof req === 'object' ? req.headers || {} : {};
+
+  const textOverride =
+    sanitizeAiProviderInput(body.aiTextProvider || body.textProvider || query.aiTextProvider || headers['x-ai-text-provider']);
+  const embeddingOverride =
+    sanitizeAiProviderInput(
+      body.aiEmbeddingProvider ||
+        body.embeddingProvider ||
+        query.aiEmbeddingProvider ||
+        headers['x-ai-embedding-provider']
+    );
+
+  return {
+    text: textOverride,
+    embedding: embeddingOverride,
+  };
+};
+
+const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => {
   const normalizedWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
   if (!normalizedWorkspaceId) {
     return '';
@@ -69,10 +96,15 @@ const retrieveRelevantContext = async (queryText, workspaceId) => {
   }
 
   let aiEmbedder;
+  let embeddingProviderId = '';
   try {
-    aiEmbedder = getAIService('openai', process.env.OPENAI_API_KEY);
+    const embeddingProvider = resolveAiProvider('embedding', options.provider || options.embeddingProvider);
+    embeddingProviderId = embeddingProvider.id;
+    aiEmbedder = getAIService(embeddingProvider.id, embeddingProvider.apiKey);
   } catch (error) {
-    console.warn(`⚠️  Client OpenAI non disponibile: ${error.message}`);
+    const reason = error?.message ? `: ${error.message}` : '';
+    const providerLabel = embeddingProviderId || sanitizeAiProviderInput(options.provider || options.embeddingProvider) || 'default embedding';
+    console.warn(`⚠️  Client embedding (${providerLabel}) non disponibile${reason}`);
     return '';
   }
 
@@ -1112,7 +1144,7 @@ const loadTranscriptForPrompt = async (sourcePath) => {
   return raw;
 };
 
-const generateMarkdown = async (txtPath, mdFile, promptPayload, knowledgeContext = '') => {
+const generateMarkdown = async (txtPath, mdFile, promptPayload, knowledgeContext = '', options = {}) => {
   try {
     const transcript = await loadTranscriptForPrompt(txtPath);
 
@@ -1158,10 +1190,15 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload, knowledgeContext
     const fullPrompt = `${promptWithTranscript}${transcript}`;
 
     let aiGenerator;
+    let textProviderId = '';
     try {
-      aiGenerator = getAIService('gemini', process.env.GEMINI_API_KEY);
+      const textProvider = resolveAiProvider('text', options.textProvider || options.aiTextProvider);
+      textProviderId = textProvider.id;
+      aiGenerator = getAIService(textProvider.id, textProvider.apiKey);
     } catch (error) {
-      return { code: -1, stdout: '', stderr: `Gemini non disponibile: ${error.message}` };
+      const reason = error?.message ? `: ${error.message}` : '';
+      const providerLabel = textProviderId || sanitizeAiProviderInput(options.textProvider || options.aiTextProvider) || 'default text';
+      return { code: -1, stdout: '', stderr: `Provider testo (${providerLabel}) non disponibile${reason}` };
     }
 
     let generatedContent = '';
@@ -2265,12 +2302,15 @@ const processKnowledgeTask = async (task = {}) => {
   }
 
   let aiEmbedder;
+  let embeddingProviderId = '';
   try {
-    aiEmbedder = getAIService('openai', process.env.OPENAI_API_KEY);
+    const embeddingProvider = resolveAiProvider('embedding');
+    embeddingProviderId = embeddingProvider.id;
+    aiEmbedder = getAIService(embeddingProvider.id, embeddingProvider.apiKey);
   } catch (error) {
     const detail = error?.message ? ` ${error.message}` : '';
     console.warn(
-      `⚠️  Client OpenAI non configurato: impossibile generare embedding per la knowledge base.${detail}`
+      `⚠️  Client embedding (${embeddingProviderId || 'default'}) non configurato: impossibile generare embedding per la knowledge base.${detail}`
     );
     await cleanupKnowledgeFiles(files);
     return;
@@ -3494,6 +3534,23 @@ app.delete('/api/prompts/:id', async (req, res) => {
 
 app.get('/api/health', (req, res) => { res.json({ ok: true, ts: Date.now() }); });
 
+app.get('/api/ai/providers', (req, res) => {
+  try {
+    const providers = listAiProviders();
+    const defaults = getDefaultAiProviderMap();
+    const configured = providers.filter((provider) => provider.configured).map((provider) => provider.id);
+    return res.json({
+      providers,
+      defaults,
+      configured,
+      timestamp: Date.now(),
+    });
+  } catch (error) {
+    const message = error?.message || 'Impossibile recuperare i provider AI';
+    return res.status(500).json({ message });
+  }
+});
+
 app.get('/api/diag', async (req, res) => {
   const logs = [];
   const out = (s) => { logs.push(s); };
@@ -3596,6 +3653,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     }
 
     let slugInput = String(req.body?.slug || '').trim();
+    const aiOverrides = extractAiProviderOverrides(req);
+    res.locals.aiProviderOverrides = aiOverrides;
     const workspaceId = getWorkspaceIdFromRequest(req);
     const workspaceProjectId = String(req.body?.workspaceProjectId || '').trim();
     const workspaceProjectName = String(
@@ -4060,7 +4119,9 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         }
         const combinedQuery = queryParts.join('\n\n').slice(0, CONTEXT_QUERY_MAX_CHARS);
         if (combinedQuery) {
-          retrievedWorkspaceContext = await retrieveRelevantContext(combinedQuery, workspaceId);
+          retrievedWorkspaceContext = await retrieveRelevantContext(combinedQuery, workspaceId, {
+            provider: aiOverrides.embedding,
+          });
           if (retrievedWorkspaceContext) {
             res.locals.retrievedWorkspaceContext = retrievedWorkspaceContext;
           }
@@ -4071,7 +4132,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         transcriptLocalForMarkdown,
         mdLocalPath,
         promptRulePayload,
-        retrievedWorkspaceContext || res.locals?.retrievedWorkspaceContext || ''
+        retrievedWorkspaceContext || res.locals?.retrievedWorkspaceContext || '',
+        { textProvider: aiOverrides.text }
       );
       if (gm.code !== 0) {
         out(gm.stderr || gm.stdout || 'Generazione Markdown fallita', 'markdown', 'failed');
@@ -4785,6 +4847,8 @@ app.post(
       }
 
       const txtUpload = req.files.transcript[0];
+      const aiOverrides = extractAiProviderOverrides(req);
+      res.locals.aiProviderOverrides = aiOverrides;
       const originalName = txtUpload.originalname || 'trascrizione.txt';
       const lowerName = originalName.toLowerCase();
 
@@ -4931,7 +4995,8 @@ app.post(
           txtLocalPath,
           mdLocalPath,
           promptRulePayload,
-          res.locals?.retrievedWorkspaceContext || ''
+          res.locals?.retrievedWorkspaceContext || '',
+          { textProvider: aiOverrides.text }
         );
         if (gm.code !== 0) {
           const reason = gm.stderr || gm.stdout || 'Generazione Markdown fallita';

@@ -48,6 +48,7 @@ const WORKSPACE_SELECTION_KEY = 'rec2pdfWorkspaceSelection';
 const WORKSPACE_FILTERS_KEY = 'rec2pdfWorkspaceFilters';
 const PROMPT_SELECTION_KEY = 'rec2pdfPromptSelection';
 const PROMPT_FAVORITES_KEY = 'rec2pdfPromptFavorites';
+const AI_PROVIDER_PREFERENCES_KEY = 'rec2pdfAiPreferences';
 const HISTORY_TABS = [
   { key: 'history', label: 'Cronologia' },
   { key: 'cloud', label: 'Cloud library' },
@@ -186,6 +187,21 @@ const sanitizeSpeakerMapForSubmit = (speakers, mapping = {}) => {
     }
   });
   return sanitized;
+};
+
+const sanitizeAiProviderSelection = (value) => {
+  if (!value || typeof value !== 'object') {
+    return { text: '', embedding: '' };
+  }
+  const normalized = {};
+  const textRaw = typeof value.text === 'string' ? value.text : value.aiTextProvider;
+  const embeddingRaw = typeof value.embedding === 'string' ? value.embedding : value.aiEmbeddingProvider;
+  normalized.text = typeof textRaw === 'string' ? textRaw.trim().toLowerCase() : '';
+  normalized.embedding = typeof embeddingRaw === 'string' ? embeddingRaw.trim().toLowerCase() : '';
+  return {
+    text: normalized.text,
+    embedding: normalized.embedding,
+  };
 };
 
 const hasNamedSpeakers = (mapping = {}) =>
@@ -940,6 +956,20 @@ function AppContent(){
     },
     [setActiveSettingsSection, setShowSetupAssistant, setSettingsOpen],
   );
+  const setAiProviderSelection = useCallback((updater) => {
+    setAiProviderSelectionState((prev) => {
+      const base = sanitizeAiProviderSelection(prev);
+      const next = typeof updater === 'function' ? updater(base) : updater;
+      const sanitized = sanitizeAiProviderSelection(next);
+      if (sanitized.text === base.text && sanitized.embedding === base.embedding) {
+        return prev;
+      }
+      return sanitized;
+    });
+  }, []);
+  const resetAiProviderSelection = useCallback(() => {
+    setAiProviderSelectionState({ text: '', embedding: '' });
+  }, []);
   const [customLogo, setCustomLogo] = useState(null);
   const [customPdfLogo, setCustomPdfLogo] = useState(null);
   const [lastMarkdownUpload,setLastMarkdownUpload]=useState(null);
@@ -955,6 +985,29 @@ function AppContent(){
     } catch {
       return [];
     }
+  });
+  const [aiProviderSelectionState, setAiProviderSelectionState] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { text: '', embedding: '' };
+    }
+    try {
+      const raw = localStorage.getItem(AI_PROVIDER_PREFERENCES_KEY);
+      if (!raw) {
+        return { text: '', embedding: '' };
+      }
+      const parsed = JSON.parse(raw);
+      return sanitizeAiProviderSelection(parsed);
+    } catch (error) {
+      console.warn('Impossibile recuperare le preferenze AI salvate:', error);
+      return { text: '', embedding: '' };
+    }
+  });
+  const [aiProviderCatalog, setAiProviderCatalog] = useState({
+    providers: [],
+    defaults: { text: '', embedding: '' },
+    loading: false,
+    error: '',
+    lastFetchedAt: 0,
   });
   const [prompts, setPrompts] = useState([]);
   const [promptLoading, setPromptLoading] = useState(false);
@@ -1142,11 +1195,66 @@ function AppContent(){
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
+      const sanitized = sanitizeAiProviderSelection(aiProviderSelectionState);
+      if (!sanitized.text && !sanitized.embedding) {
+        localStorage.removeItem(AI_PROVIDER_PREFERENCES_KEY);
+      } else {
+        localStorage.setItem(AI_PROVIDER_PREFERENCES_KEY, JSON.stringify(sanitized));
+      }
+    } catch (error) {
+      console.warn('Impossibile salvare le preferenze AI:', error);
+    }
+  }, [aiProviderSelectionState]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
       localStorage.setItem(WORKSPACE_SELECTION_KEY, JSON.stringify(workspaceSelection));
     } catch {
       // Ignore persistence errors
     }
   }, [workspaceSelection]);
+
+  useEffect(() => {
+    setAiProviderSelectionState((prev) => {
+      const base = sanitizeAiProviderSelection(prev);
+      const map = new Map(
+        aiProviderCatalog.providers
+          .filter((provider) => provider && provider.id)
+          .map((provider) => [provider.id, provider])
+      );
+      let changed = false;
+      const next = { ...base };
+      if (next.text) {
+        const provider = map.get(next.text);
+        if (
+          !provider ||
+          !Array.isArray(provider.capabilities) ||
+          !provider.capabilities.includes('text') ||
+          !provider.configured
+        ) {
+          next.text = '';
+          changed = true;
+        }
+      }
+      if (next.embedding) {
+        const provider = map.get(next.embedding);
+        if (
+          !provider ||
+          !Array.isArray(provider.capabilities) ||
+          !provider.capabilities.includes('embedding') ||
+          !provider.configured
+        ) {
+          next.embedding = '';
+          changed = true;
+        }
+      }
+      if (!changed) {
+        return prev;
+      }
+      return next;
+    });
+  }, [aiProviderCatalog.providers]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1463,6 +1571,120 @@ function AppContent(){
     [applyAuthToOptions, refreshSessionIfNeeded]
   );
 
+
+  const refreshAiProviderCatalog = useCallback(
+    async (options = {}) => {
+      const normalized = normalizeBackendUrlValue(options.backendUrlOverride || backendUrl);
+      if (!normalized) {
+        setAiProviderCatalog((prev) => ({
+          ...prev,
+          providers: [],
+          defaults: { text: '', embedding: '' },
+          loading: false,
+          error: options?.silent ? prev.error : 'Backend non configurato',
+        }));
+        return { ok: false, status: 0, message: 'Backend non configurato', skipped: true };
+      }
+
+      setAiProviderCatalog((prev) => ({
+        ...prev,
+        loading: true,
+        error: options?.silent ? prev.error : '',
+      }));
+
+      try {
+        const result = await fetchBodyWithAuth(`${normalized}/api/ai/providers`, { method: 'GET' });
+        if (result.ok) {
+          const providers = Array.isArray(result.data?.providers) ? result.data.providers : [];
+          const defaults = result.data?.defaults || {};
+          setAiProviderCatalog({
+            providers,
+            defaults: {
+              text: typeof defaults.text === 'string' ? defaults.text : '',
+              embedding: typeof defaults.embedding === 'string' ? defaults.embedding : '',
+            },
+            loading: false,
+            error: '',
+            lastFetchedAt: Date.now(),
+          });
+        } else {
+          const message = result.data?.message || result.raw || `HTTP ${result.status || 0}`;
+          setAiProviderCatalog((prev) => ({
+            ...prev,
+            loading: false,
+            error: message,
+          }));
+        }
+        return result;
+      } catch (error) {
+        const message = error?.message || String(error);
+        setAiProviderCatalog((prev) => ({
+          ...prev,
+          loading: false,
+          error: message,
+        }));
+        return { ok: false, status: 0, message, error };
+      }
+    },
+    [backendUrl, fetchBodyWithAuth],
+  );
+
+  useEffect(() => {
+    if (!backendUrl || !sessionChecked) return;
+    refreshAiProviderCatalog({ silent: true });
+  }, [backendUrl, sessionChecked, refreshAiProviderCatalog]);
+
+  const aiProviderMap = useMemo(() => {
+    const map = new Map();
+    aiProviderCatalog.providers
+      .filter((provider) => provider && provider.id)
+      .forEach((provider) => {
+        map.set(provider.id, provider);
+      });
+    return map;
+  }, [aiProviderCatalog.providers]);
+
+  const aiProvidersEffective = useMemo(() => {
+    const defaults = aiProviderCatalog.defaults || { text: '', embedding: '' };
+    const resolve = (type) => {
+      const selection = aiProviderSelectionState[type] || '';
+      if (selection) {
+        const provider = aiProviderMap.get(selection);
+        if (
+          provider &&
+          Array.isArray(provider.capabilities) &&
+          provider.capabilities.includes(type) &&
+          provider.configured
+        ) {
+          return provider.id;
+        }
+      }
+      const defaultId = defaults[type] || '';
+      if (defaultId) {
+        const provider = aiProviderMap.get(defaultId);
+        if (
+          provider &&
+          Array.isArray(provider.capabilities) &&
+          provider.capabilities.includes(type) &&
+          provider.configured
+        ) {
+          return provider.id;
+        }
+      }
+      const fallback = aiProviderCatalog.providers.find((candidate) =>
+        candidate &&
+        candidate.configured &&
+        Array.isArray(candidate.capabilities) &&
+        candidate.capabilities.includes(type)
+      );
+      return fallback ? fallback.id : '';
+    };
+
+    return {
+      text: resolve('text'),
+      embedding: resolve('embedding'),
+    };
+  }, [aiProviderCatalog.defaults, aiProviderCatalog.providers, aiProviderMap, aiProviderSelectionState]);
   const requestSignedFileUrl = useCallback(
     async (backendUrl, filePath) => {
       const normalizedBackend = normalizeBackendUrlValue(backendUrl);
@@ -2814,6 +3036,12 @@ function AppContent(){
           fd.append('workspaceStatus', workspaceSelection.status);
         }
       }
+      if (aiProvidersEffective.text) {
+        fd.append('aiTextProvider', aiProvidersEffective.text);
+      }
+      if (aiProvidersEffective.embedding) {
+        fd.append('aiEmbeddingProvider', aiProvidersEffective.embedding);
+      }
       appendWorkspaceProfileDetails(fd, {
         selection: workspaceProfileSelection,
         profile: activeWorkspaceProfile,
@@ -3017,6 +3245,12 @@ function AppContent(){
         if (promptCompletedCues.length) {
           fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
         }
+      }
+      if (aiProvidersEffective.text) {
+        fd.append('aiTextProvider', aiProvidersEffective.text);
+      }
+      if (aiProvidersEffective.embedding) {
+        fd.append('aiEmbeddingProvider', aiProvidersEffective.embedding);
       }
       if(extraFormData&&typeof extraFormData==='object'){
         Object.entries(extraFormData).forEach(([key,value])=>{
@@ -4189,6 +4423,12 @@ function AppContent(){
     setCustomPdfLogo,
     backendUp,
     backendUrl,
+    aiProviderCatalog,
+    aiProviderSelection: aiProviderSelectionState,
+    setAiProviderSelection,
+    resetAiProviderSelection,
+    aiProvidersEffective,
+    refreshAiProviderCatalog,
     setBackendUrl,
     diagnostics,
     runDiagnostics,

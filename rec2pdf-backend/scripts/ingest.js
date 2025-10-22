@@ -8,6 +8,10 @@ const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
 const yaml = require('js-yaml');
 const { getAIService } = require('../services/aiService');
+const {
+    resolveProvider: resolveAiProvider,
+    sanitizeProviderInput: sanitizeAiProviderInput,
+} = require('../services/aiProviders');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
@@ -35,22 +39,33 @@ if (!knowledgeDir) {
     process.exit(1);
 }
 
-const requiredEnv = ['SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'OPENAI_API_KEY'];
+const requiredEnv = ['SUPABASE_URL', 'SUPABASE_SERVICE_KEY'];
 const missingEnv = requiredEnv.filter((key) => !process.env[key]);
 
 if (missingEnv.length > 0) {
-    console.error(`Errore: variabili mancanti (${missingEnv.join(', ')}). Aggiungile al file .env o all\'ambiente.`);
+    console.error(`Errore: variabili mancanti (${missingEnv.join(', ')}). Aggiungile al file .env o all'ambiente.`);
+    process.exit(1);
+}
+
+const embeddingProviderArg = parseEmbeddingProvider(process.argv.slice(2));
+let embeddingProvider;
+try {
+    embeddingProvider = resolveAiProvider('embedding', embeddingProviderArg);
+} catch (error) {
+    console.error(`Errore: ${error.message}`);
     process.exit(1);
 }
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 let aiEmbedder;
 try {
-    aiEmbedder = getAIService('openai', process.env.OPENAI_API_KEY);
+    aiEmbedder = getAIService(embeddingProvider.id, embeddingProvider.apiKey);
 } catch (error) {
-    console.error(`Errore: impossibile inizializzare il client OpenAI. ${error.message}`);
+    console.error(`Errore: impossibile inizializzare il client ${embeddingProvider.id}. ${error.message}`);
     process.exit(1);
 }
+
+console.log(`ℹ️  Provider embedding attivo: ${embeddingProvider.label} (${embeddingProvider.id})`);
 
 const CHUNK_SIZE = 250;
 const CHUNK_OVERLAP = 50;
@@ -156,6 +171,26 @@ function parseWorkspaceId(args) {
         }
     }
     return workspaceId;
+}
+
+function parseEmbeddingProvider(args) {
+    let provider;
+    for (let index = 0; index < args.length; index += 1) {
+        const arg = args[index];
+        if (arg === '--embeddingProvider' || arg === '--embedding-provider') {
+            provider = args[index + 1];
+            break;
+        }
+        if (arg.startsWith('--embeddingProvider=')) {
+            provider = arg.split('=')[1];
+            break;
+        }
+        if (arg.startsWith('--embedding-provider=')) {
+            provider = arg.split('=')[1];
+            break;
+        }
+    }
+    return sanitizeAiProviderInput(provider);
 }
 
 async function collectSourceFiles(dir, baseDir) {
