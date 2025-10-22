@@ -36,6 +36,9 @@ const renderComponent = (overrides = {}) => {
     workspaceSelection: { workspaceId: 'ws-1', projectId: '', projectName: '', status: '' },
     prompts: [],
     handleRefreshWorkspaces: vi.fn(),
+    handleCreateWorkspace: vi.fn().mockResolvedValue({ ok: true, workspace: { id: 'ws-2', name: 'New workspace' } }),
+    handleUpdateWorkspace: vi.fn().mockResolvedValue({ ok: true }),
+    handleDeleteWorkspace: vi.fn().mockResolvedValue({ ok: true }),
     refreshPdfTemplates: vi.fn(),
     createWorkspaceProfile: vi.fn(),
     updateWorkspaceProfile: vi.fn(),
@@ -43,6 +46,8 @@ const renderComponent = (overrides = {}) => {
     pdfTemplates: templatesFixture,
     pdfTemplatesLoading: false,
     pdfTemplatesError: null,
+    DEFAULT_DEST_DIR: '',
+    DEFAULT_WORKSPACE_STATUSES: ['Bozza', 'In lavorazione'],
     ...overrides,
   };
 
