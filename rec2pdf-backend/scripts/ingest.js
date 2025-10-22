@@ -7,7 +7,7 @@ const { randomUUID } = require('crypto');
 const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
 const yaml = require('js-yaml');
-const { getOpenAIClient } = require('../openaiClient');
+const { getAIService } = require('../services/aiService');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
@@ -44,10 +44,11 @@ if (missingEnv.length > 0) {
 }
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-const openai = getOpenAIClient();
-
-if (!openai) {
-    console.error('Errore: impossibile inizializzare il client OpenAI. Verifica OPENAI_API_KEY.');
+let aiEmbedder;
+try {
+    aiEmbedder = getAIService('openai', process.env.OPENAI_API_KEY);
+} catch (error) {
+    console.error(`Errore: impossibile inizializzare il client OpenAI. ${error.message}`);
     process.exit(1);
 }
 
@@ -95,16 +96,17 @@ const BATCH_SIZE = 50;
 
         for (let start = 0; start < chunks.length; start += BATCH_SIZE) {
             const batch = chunks.slice(start, start + BATCH_SIZE);
-            const embeddingResponse = await openai.embeddings.create({
-                model: 'text-embedding-3-small',
-                input: batch.map((item) => item.content)
-            });
+            const embeddings = await aiEmbedder.generateEmbedding(batch.map((item) => item.content));
+
+            if (!Array.isArray(embeddings) || embeddings.length !== batch.length) {
+                throw new Error('Risposta embedding non valida');
+            }
 
             const payload = batch.map((item, index) => ({
                 id: item.id,
                 workspace_id: item.workspace_id,
                 content: item.content,
-                embedding: embeddingResponse.data[index].embedding,
+                embedding: Array.isArray(embeddings[index]) ? embeddings[index] : [],
                 metadata: item.metadata
             }));
 
