@@ -1,7 +1,28 @@
 'use strict';
 
 const OpenAI = require('openai');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+const loadGeminiSdk = (() => {
+  let cachedPromise = null;
+  return () => {
+    if (!cachedPromise) {
+      cachedPromise = import('@google/generative-ai')
+        .then((module) => {
+          if (!module?.GoogleGenerativeAI) {
+            throw new Error('Modulo @google/generative-ai non valido.');
+          }
+          return module.GoogleGenerativeAI;
+        })
+        .catch((error) => {
+          const hint =
+            "Impossibile caricare l'SDK Gemini. Assicurati di aver eseguito `npm install` nel backend per installare @google/generative-ai.";
+          error.message = `${hint}\nDettagli originali: ${error.message}`;
+          throw error;
+        });
+    }
+    return cachedPromise;
+  };
+})();
 
 class AIService {
   async generateContent() {
@@ -20,30 +41,30 @@ class GeminiClient extends AIService {
       throw new Error('Gemini API key non configurata');
     }
     this.apiKey = apiKey;
-    this._client = null;
-    this._textModel = null;
-    this._embeddingModel = null;
+    this._clientPromise = null;
+    this._textModelPromise = null;
+    this._embeddingModelPromise = null;
   }
 
-  _ensureClient() {
-    if (!this._client) {
-      this._client = new GoogleGenerativeAI(this.apiKey);
+  async _ensureClient() {
+    if (!this._clientPromise) {
+      this._clientPromise = loadGeminiSdk().then((GoogleGenerativeAI) => new GoogleGenerativeAI(this.apiKey));
     }
-    return this._client;
+    return this._clientPromise;
   }
 
-  _getTextModel() {
-    if (!this._textModel) {
-      this._textModel = this._ensureClient().getGenerativeModel({ model: 'gemini-pro' });
+  async _getTextModel() {
+    if (!this._textModelPromise) {
+      this._textModelPromise = this._ensureClient().then((client) => client.getGenerativeModel({ model: 'gemini-pro' }));
     }
-    return this._textModel;
+    return this._textModelPromise;
   }
 
-  _getEmbeddingModel() {
-    if (!this._embeddingModel) {
-      this._embeddingModel = this._ensureClient().getGenerativeModel({ model: 'embedding-001' });
+  async _getEmbeddingModel() {
+    if (!this._embeddingModelPromise) {
+      this._embeddingModelPromise = this._ensureClient().then((client) => client.getGenerativeModel({ model: 'embedding-001' }));
     }
-    return this._embeddingModel;
+    return this._embeddingModelPromise;
   }
 
   async generateContent(prompt) {
@@ -52,7 +73,7 @@ class GeminiClient extends AIService {
       return '';
     }
 
-    const model = this._getTextModel();
+    const model = await this._getTextModel();
     const result = await model.generateContent(normalized);
     const text = typeof result?.response?.text === 'function' ? result.response.text() : '';
     return typeof text === 'string' ? text.trim() : '';
@@ -73,7 +94,7 @@ class GeminiClient extends AIService {
       return [];
     }
 
-    const model = this._getEmbeddingModel();
+    const model = await this._getEmbeddingModel();
     const response = await model.embedContent({
       content: { parts: [{ text: normalized }] },
     });
