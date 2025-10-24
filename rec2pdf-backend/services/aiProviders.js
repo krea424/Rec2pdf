@@ -3,12 +3,22 @@
 const PROVIDERS = [
   {
     id: 'gemini',
-    label: 'Google Gemini',
-    envKey: 'GEMINI_API_KEY',
-    description: 'Modelli Generative AI di Google Gemini',
+    label: 'Google Gemini Flash',
+    envKey: 'GOOGLE_API_KEY',  // ← IMPORTANTE: usa GOOGLE_API_KEY
+    description: 'Veloce ed economico (1.500/giorno FREE)',
     models: {
-      text: 'gemini-pro',
-      embedding: 'embedding-001',
+      text: 'gemini-2.5-flash',
+      embedding: 'text-embedding-004',
+    },
+  },
+  {
+    id: 'gemini-pro',  // ← AGGIUNGI QUESTO PROVIDER
+    label: 'Google Gemini Pro',
+    envKey: 'GOOGLE_API_KEY',  // ← Stesso envKey!
+    description: 'Massima qualità con thinking mode (50/giorno FREE)',
+    models: {
+      text: 'gemini-2.5-pro',
+      embedding: 'text-embedding-004',
     },
   },
   {
@@ -46,7 +56,7 @@ const getDefaultProviderId = (type) => {
     }
   }
 
-  const fallback = type === 'embedding' ? 'openai' : 'gemini';
+  const fallback = type === 'embedding' ? 'gemini' : 'gemini';  // ← Default a gemini (flash)
   if (PROVIDER_MAP.has(fallback)) {
     const candidate = PROVIDER_MAP.get(fallback);
     if (!type || !candidate.models || candidate.models[type]) {

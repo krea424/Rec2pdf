@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -1148,20 +1149,26 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload, knowledgeContext
   try {
     const transcript = await loadTranscriptForPrompt(txtPath);
 
+    // --- INIZIO BLOCCO PROMPT RICOSTRUITO E COMPLETO ---
     let promptLines = [
-      "Sei un assistente AI specializzato nell'analisi di trascrizioni di riunioni.",
-      "Il tuo compito è trasformare il testo grezzo in un documento Markdown ben strutturato, chiaro e utile.",
-      "Organizza il contenuto usando intestazioni (es. `## Argomento`), elenchi puntati (`-`) e paragrafi concisi.",
-      "L'output deve essere solo il Markdown, senza commenti o testo aggiuntivo.",
-      "La lingua del documento finale deve essere l'italiano.",
-      "Il testo potrebbe contenere etichette come `SPEAKER_00:` o `SPEAKER_01:`. Mantieni l'ordine delle battute, identifica chiaramente gli speaker e formatta i loro nomi in modo leggibile (es. `**Speaker 1:**`)."
+      "Sei un assistente AI specializzato nell'analisi di trascrizioni e appunti. Il tuo compito è trasformare il testo grezzo in un documento Markdown professionale, chiaro e utile.",
+      "L'output deve essere solo ed esclusivamente il codice Markdown, senza commenti, testo introduttivo o di chiusura.",
+      "La lingua del documento finale deve essere l'italiano."
     ];
 
+    // Aggiunge istruzioni dinamiche dal prompt selezionato nella UI
     if (promptPayload) {
       const { persona, description, markdownRules, focus, notes } = promptPayload;
       const rules = [];
-      if (persona) rules.push(`Agisci con la persona di un: ${persona}.`);
+
+      // Imposta la persona principale
+      if (persona) {
+        promptLines[0] = `Agisci con la persona di un ${persona}. ${promptLines[1]}`;
+      }
+      
       if (description) rules.push(`Il tuo obiettivo specifico è: ${description}.`);
+
+      // Aggiunge regole di stile dal prompt
       if (markdownRules) {
         if (markdownRules.tone) rules.push(`Usa un tono ${markdownRules.tone}.`);
         if (markdownRules.voice) rules.push(`Usa una voce in ${markdownRules.voice}.`);
@@ -1170,61 +1177,58 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload, knowledgeContext
         if (markdownRules.includeCallouts) rules.push("Includi callout/citazioni per evidenziare punti importanti.");
         if (markdownRules.pointOfView) rules.push(`Adotta questo punto di vista: ${markdownRules.pointOfView}.`);
       }
-      if (focus) rules.push(`Concentrati su: ${focus}.`);
-      if (notes) rules.push(`Considera queste note: ${notes}.`);
+
+      // Aggiunge istruzioni specifiche della sessione
+      if (focus) rules.push(`Durante la generazione, concentrati in particolare su: ${focus}.`);
+      if (notes) rules.push(`Considera anche queste note aggiuntive: ${notes}.`);
 
       if (rules.length > 0) {
-        promptLines.push("\nRegole specifiche da seguire:");
-        promptLines.push(...rules);
+        promptLines.push("\nSegui queste regole specifiche durante la generazione:");
+        promptLines.push(...rules.map(r => `- ${r}`));
       }
     }
 
-    const prompt = promptLines.join('\n');
-    const normalizedContext =
-      typeof knowledgeContext === 'string' ? knowledgeContext.trim() : '';
-    const promptWithContext = normalizedContext
-      ? `${prompt}\n\nINFORMAZIONI AGGIUNTIVE DALLA KNOWLEDGE BASE:\n---\n${normalizedContext}\n---\n`
-      : prompt;
-    const promptWithTranscript = `${promptWithContext}\nEcco la trascrizione da elaborare:\n---\n`;
+    // --- FINE BLOCCO PROMPT RICOSTRUITO E COMPLETO ---
 
+    const prompt = promptLines.join('\n');
+    const normalizedContext = typeof knowledgeContext === 'string' ? knowledgeContext.trim() : '';
+    
+    const promptWithContext = normalizedContext
+      ? `${prompt}\n\nINFORMAZIONI AGGIUNTIVE DALLA KNOWLEDGE BASE (usa questo contesto per arricchire la risposta):\n---\n${normalizedContext}\n---\n`
+      : prompt;
+      
+    const promptWithTranscript = `${promptWithContext}\nEcco la trascrizione da elaborare:\n---\n`;
     const fullPrompt = `${promptWithTranscript}${transcript}`;
 
     let aiGenerator;
-    let textProviderId = '';
     try {
       const textProvider = resolveAiProvider('text', options.textProvider || options.aiTextProvider);
-      textProviderId = textProvider.id;
       aiGenerator = getAIService(textProvider.id, textProvider.apiKey);
     } catch (error) {
       const reason = error?.message ? `: ${error.message}` : '';
-      const providerLabel = textProviderId || sanitizeAiProviderInput(options.textProvider || options.aiTextProvider) || 'default text';
-      return { code: -1, stdout: '', stderr: `Provider testo (${providerLabel}) non disponibile${reason}` };
+      return { code: -1, stdout: '', stderr: `Provider di testo non disponibile${reason}` };
     }
 
     let generatedContent = '';
     try {
       generatedContent = await aiGenerator.generateContent(fullPrompt);
     } catch (error) {
-      return { code: -1, stdout: '', stderr: error?.message || 'Errore generazione contenuto Gemini' };
+      // Restituisce l'errore specifico dell'API (es. il 404 di Gemini)
+      return { code: -1, stdout: '', stderr: error?.message || 'Errore durante la generazione del contenuto.' };
     }
 
-    // Post-processing: rimuovi wrapper markdown se presente
-    let cleanedContent = generatedContent || '';
-    // Rimuovi blocchi ```markdown all'inizio e ``` alla fine
-    cleanedContent = cleanedContent.replace(/^```markdown\s*/i, '');
-    cleanedContent = cleanedContent.replace(/\s*```\s*$/i, '');
-    // Rimuovi anche eventuali backticks tripli interni che wrappano tutto il contenuto
-    const lines = cleanedContent.split('\n');
-    if (lines.length > 2 && lines[0].trim() === '```markdown' && lines[lines.length - 1].trim() === '```') {
-      cleanedContent = lines.slice(1, -1).join('\n');
-    }
-
+    // Logica di pulizia
+    let cleanedContent = (generatedContent || '').replace(/^```(markdown)?\s*/i, '').replace(/\s*```\s*$/i, '');
     await fsp.writeFile(mdFile, cleanedContent, 'utf8');
+
     return { code: 0, stdout: '', stderr: '' };
   } catch (error) {
+    console.error("❌ Errore imprevisto in generateMarkdown:", error);
     return { code: -1, stdout: '', stderr: error.message };
   }
 };
+
+
 
 const readWorkspaces = async () => {
   await ensureDataStore();
