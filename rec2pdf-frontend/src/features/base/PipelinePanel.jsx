@@ -300,7 +300,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
       return "Pipeline completata. Scarica il PDF per continuare.";
     }
     if (!pipelineInFlight) {
-      return "Tutto pronto. Pubblica per avviare la pipeline automatica.";
+      return "Tutto pronto. Premi Ottieni PDF per avviare la pipeline automatica.";
     }
     if (activeStageDefinition) {
       return (
@@ -317,7 +317,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
       return "Pronto al download";
     }
     if (!pipelineInFlight) {
-      return "In attesa di pubblicazione";
+      return "In attesa di generazione";
     }
     if (activeStageDefinition) {
       return `${activeStageDefinition.label}: in corso`;
@@ -382,7 +382,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     <div className="flex h-full flex-col gap-5 rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-subtle">
       <div>
         <h2 className="flex items-center gap-2 text-lg font-semibold uppercase tracking-[0.32em] text-white/70">
-          <Sparkles className="h-4 w-4" /> Pubblica
+          <Sparkles className="h-4 w-4" /> Ottieni PDF
         </h2>
         <p className="mt-1 text-sm text-white/70">
           Avvia la pipeline automatizzata e ricevi il PDF pronto da condividere.
@@ -428,10 +428,10 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
           disabled={!canPublish}
           className={publishCtaClassName}
         >
-          <Cpu className="h-5 w-5" /> Pubblica
+          <Cpu className="h-5 w-5" /> Ottieni PDF
         </button>
         {!canPublish ? (
-          <p className="text-xs text-white/50">Carica o registra un audio per pubblicare.</p>
+          <p className="text-xs text-white/50">Carica o registra un audio per ottenere il PDF.</p>
         ) : null}
 
         {showDownloadActions ? (
@@ -595,7 +595,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
         </>
       ) : (
         <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-6 text-sm text-white/60">
-          Pubblica per seguire qui lo stato della pipeline e vedere avanzamento e fasi.
+          Ottieni PDF per seguire qui lo stato della pipeline e vedere avanzamento e fasi.
         </div>
       )}
 
