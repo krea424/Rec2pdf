@@ -2,24 +2,24 @@ const fsp = require('fs/promises');
 const path = require('path');
 const tmp = require('tmp');
 
-const { EventEmitter } = require('events');
+const mockGenerateContent = jest.fn();
+const mockGenerateEmbedding = jest.fn();
+const mockGetAIService = jest.fn(() => ({
+  generateContent: mockGenerateContent,
+  generateEmbedding: mockGenerateEmbedding,
+}));
+const mockResolveAiProvider = jest.fn(() => ({ id: 'gemini', apiKey: 'test-key' }));
 
-const mockSpawn = jest.fn();
+jest.mock('../services/aiService', () => ({
+  getAIService: (...args) => mockGetAIService(...args),
+}));
 
-jest.mock('child_process', () => {
-  const actual = jest.requireActual('child_process');
-  return {
-    ...actual,
-    spawn: (...args) => mockSpawn(...args),
-  };
-});
-
-const createMockChildProcess = () => {
-  const child = new EventEmitter();
-  child.stdout = new EventEmitter();
-  child.stderr = new EventEmitter();
-  return child;
-};
+jest.mock('../services/aiProviders', () => ({
+  resolveProvider: (...args) => mockResolveAiProvider(...args),
+  sanitizeProviderInput: (value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''),
+  listProviders: jest.fn(() => []),
+  getDefaultProviderMap: jest.fn(() => ({ text: 'gemini', embedding: 'openai' })),
+}));
 
 tmp.setGracefulCleanup();
 
@@ -68,7 +68,10 @@ describe('generateMarkdown prompt composition', () => {
   });
 
   beforeEach(() => {
-    mockSpawn.mockReset();
+    mockGetAIService.mockReset();
+    mockGenerateContent.mockReset();
+    mockResolveAiProvider.mockReset();
+    mockResolveAiProvider.mockImplementation(() => ({ id: 'gemini', apiKey: 'test-key' }));
   });
 
   it('includes knowledge base context before transcript', async () => {
@@ -78,21 +81,13 @@ describe('generateMarkdown prompt composition', () => {
     const knowledgeContext = 'Dato rilevante 1.\nDato rilevante 2.';
     let capturedPrompt = '';
 
-    mockSpawn.mockImplementation((cmd, args) => {
-      const child = createMockChildProcess();
-      if (cmd === 'gemini') {
-        capturedPrompt = args[0];
-        setImmediate(() => {
-          child.stdout.emit('data', '## Output finale');
-          child.emit('close', 0);
-        });
-      } else {
-        setImmediate(() => {
-          child.emit('close', 0);
-        });
-      }
-      return child;
-    });
+    mockGetAIService.mockImplementation(() => ({
+      generateContent: (prompt) => {
+        capturedPrompt = prompt;
+        return '## Output finale';
+      },
+      generateEmbedding: mockGenerateEmbedding,
+    }));
 
     const result = await generateMarkdown(transcriptPath, mdPath, null, knowledgeContext);
     expect(result.code).toBe(0);
@@ -114,25 +109,41 @@ describe('generateMarkdown prompt composition', () => {
     await fsp.writeFile(transcriptPath, 'Solo trascrizione.', 'utf8');
     let capturedPrompt = '';
 
-    mockSpawn.mockImplementation((cmd, args) => {
-      const child = createMockChildProcess();
-      if (cmd === 'gemini') {
-        capturedPrompt = args[0];
-        setImmediate(() => {
-          child.stdout.emit('data', '## Output senza contesto');
-          child.emit('close', 0);
-        });
-      } else {
-        setImmediate(() => {
-          child.emit('close', 0);
-        });
-      }
-      return child;
-    });
+    mockGetAIService.mockImplementation(() => ({
+      generateContent: (prompt) => {
+        capturedPrompt = prompt;
+        return '## Output senza contesto';
+      },
+      generateEmbedding: mockGenerateEmbedding,
+    }));
 
     const result = await generateMarkdown(transcriptPath, mdPath, null, '   ');
     expect(result.code).toBe(0);
     expect(capturedPrompt).not.toContain('INFORMAZIONI AGGIUNTIVE DALLA KNOWLEDGE BASE');
     expect(capturedPrompt).toContain('Solo trascrizione.');
+  });
+
+  it('forwards the text provider override to the resolver', async () => {
+    const transcriptPath = path.join(tempDir.name, 'override.txt');
+    const mdPath = path.join(tempDir.name, 'override.md');
+    await fsp.writeFile(transcriptPath, 'Override provider test.', 'utf8');
+
+    mockGetAIService.mockImplementation(() => ({
+      generateContent: () => '## Output',
+      generateEmbedding: mockGenerateEmbedding,
+    }));
+
+    mockResolveAiProvider.mockImplementation((type, override) => {
+      if (type === 'text' && override === 'openai') {
+        return { id: 'openai', apiKey: 'test-openai' };
+      }
+      return { id: 'gemini', apiKey: 'test-key' };
+    });
+
+    const result = await generateMarkdown(transcriptPath, mdPath, null, '', { textProvider: 'openai' });
+    expect(result.code).toBe(0);
+    expect(mockResolveAiProvider).toHaveBeenCalledWith('text', 'openai');
+    const written = await fsp.readFile(mdPath, 'utf8');
+    expect(written).toBe('## Output');
   });
 });
