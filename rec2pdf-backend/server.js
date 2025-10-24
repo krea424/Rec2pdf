@@ -24,7 +24,13 @@ const PORT = process.env.PORT || 7788;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const DEFAULT_HOST = '0.0.0.0';
 
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0:0:0:0:0:0:0:1']);
+const LOOPBACK_HOSTS = new Set([
+  'localhost',
+  '127.0.0.1',
+  '::1',
+  '0:0:0:0:0:0:0:1',
+  '::ffff:127.0.0.1',
+]);
 const normalizeHost = (value) => {
   if (!value || typeof value !== 'string') {
     return '';
@@ -34,12 +40,19 @@ const normalizeHost = (value) => {
 
 const requestedHost = normalizeHost(process.env.HOST);
 const isDevelopment = NODE_ENV === 'development';
-const HOST = isDevelopment && requestedHost ? requestedHost : DEFAULT_HOST;
+const normalizedRequestedHost = requestedHost.toLowerCase();
+const isLoopbackHost = requestedHost ? LOOPBACK_HOSTS.has(normalizedRequestedHost) : false;
+const shouldUseRequestedHost = isDevelopment && Boolean(requestedHost);
+const HOST = shouldUseRequestedHost ? requestedHost : DEFAULT_HOST;
 
-if (!isDevelopment && requestedHost && !LOOPBACK_HOSTS.has(requestedHost.toLowerCase())) {
-  console.warn(`ℹ️  Variabile HOST="${requestedHost}" ignorata perché il backend forza il bind su ${DEFAULT_HOST} fuori dallo sviluppo.`);
-} else if (!isDevelopment && requestedHost && LOOPBACK_HOSTS.has(requestedHost.toLowerCase())) {
-  console.warn(`ℹ️  Variabile HOST="${requestedHost}" non valida in produzione: il backend userà ${DEFAULT_HOST}.`);
+if (!isDevelopment && requestedHost) {
+  if (isLoopbackHost) {
+    console.warn(`ℹ️  Variabile HOST="${requestedHost}" non valida in produzione: il backend userà ${DEFAULT_HOST}.`);
+  } else if (normalizedRequestedHost !== DEFAULT_HOST) {
+    console.warn(
+      `ℹ️  Variabile HOST="${requestedHost}" ignorata perché il backend forza il bind su ${DEFAULT_HOST} fuori dallo sviluppo.`
+    );
+  }
 }
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -5323,21 +5336,41 @@ app.use((req, res, next) => {
   return next();
 });
 
+const formatHostForLog = (host) => {
+  if (!host || typeof host !== 'string') {
+    return DEFAULT_HOST;
+  }
+
+  if (host.includes(':') && !host.startsWith('[')) {
+    return `[${host}]`;
+  }
+
+  return host;
+};
+
+const logListeningAddress = (server) => {
+  const addressInfo = server.address();
+  let boundHost = HOST;
+  let boundPort = PORT;
+
+  if (addressInfo && typeof addressInfo === 'object') {
+    boundHost = addressInfo.address || boundHost;
+    boundPort = addressInfo.port || boundPort;
+  } else if (typeof addressInfo === 'string') {
+    boundHost = addressInfo;
+  }
+
+  const formattedHost = formatHostForLog(boundHost);
+  console.log(`rec2pdf backend in ascolto su http://${formattedHost}:${boundPort} (env: ${NODE_ENV})`);
+};
+
 const startServer = () => {
-  const server = app.listen(PORT, HOST, () => {
-    const addressInfo = server.address();
-    let boundHost = HOST;
-    let boundPort = PORT;
+  if (shouldUseRequestedHost) {
+    const server = app.listen(PORT, requestedHost, () => logListeningAddress(server));
+    return server;
+  }
 
-    if (addressInfo && typeof addressInfo === 'object') {
-      boundHost = addressInfo.address || boundHost;
-      boundPort = addressInfo.port || boundPort;
-    } else if (typeof addressInfo === 'string') {
-      boundHost = addressInfo;
-    }
-
-    console.log(`rec2pdf backend in ascolto su http://${boundHost}:${boundPort} (env: ${NODE_ENV})`);
-  });
+  const server = app.listen(PORT, () => logListeningAddress(server));
   return server;
 };
 
