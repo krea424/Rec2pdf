@@ -108,7 +108,7 @@ test.describe('Audio to PDF flow', () => {
     }
     await page.setInputFiles('input[type="file"][accept="audio/*"]', fakeAudioFile)
 
-    const startButton = page.getByRole('button', { name: 'Pubblica PDF', exact: true })
+    const startButton = page.getByRole('button', { name: 'Ottieni PDF', exact: true })
     await expect(startButton).toBeEnabled()
 
     await startButton.click()

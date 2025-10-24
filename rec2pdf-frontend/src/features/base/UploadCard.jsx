@@ -122,7 +122,7 @@ const UploadCard = ({ journeyStage = "record" }) => {
               {audioDetails}
             </div>
           ) : (
-            <p className="text-xs text-white/50">Carica un file o registra per attivare la pipeline, poi passa a Pubblica.</p>
+            <p className="text-xs text-white/50">Carica un file o registra per attivare la pipeline, poi passa a Ottieni PDF.</p>
           )}
         </div>
 
