@@ -21,7 +21,26 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 7788;
-const HOST = process.env.HOST || '0.0.0.0';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const DEFAULT_HOST = '0.0.0.0';
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0:0:0:0:0:0:0:1']);
+const normalizeHost = (value) => {
+  if (!value || typeof value !== 'string') {
+    return '';
+  }
+  return value.trim();
+};
+
+const requestedHost = normalizeHost(process.env.HOST);
+const isDevelopment = NODE_ENV === 'development';
+const HOST = isDevelopment && requestedHost ? requestedHost : DEFAULT_HOST;
+
+if (!isDevelopment && requestedHost && !LOOPBACK_HOSTS.has(requestedHost.toLowerCase())) {
+  console.warn(`ℹ️  Variabile HOST="${requestedHost}" ignorata perché il backend forza il bind su ${DEFAULT_HOST} fuori dallo sviluppo.`);
+} else if (!isDevelopment && requestedHost && LOOPBACK_HOSTS.has(requestedHost.toLowerCase())) {
+  console.warn(`ℹ️  Variabile HOST="${requestedHost}" non valida in produzione: il backend userà ${DEFAULT_HOST}.`);
+}
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const HUGGING_FACE_TOKEN = process.env.HUGGING_FACE_TOKEN || '';
@@ -5306,8 +5325,18 @@ app.use((req, res, next) => {
 
 const startServer = () => {
   const server = app.listen(PORT, HOST, () => {
-    const hostLabel = HOST === '0.0.0.0' ? '0.0.0.0' : HOST;
-    console.log(`rec2pdf backend in ascolto su http://${hostLabel}:${PORT}`);
+    const addressInfo = server.address();
+    let boundHost = HOST;
+    let boundPort = PORT;
+
+    if (addressInfo && typeof addressInfo === 'object') {
+      boundHost = addressInfo.address || boundHost;
+      boundPort = addressInfo.port || boundPort;
+    } else if (typeof addressInfo === 'string') {
+      boundHost = addressInfo;
+    }
+
+    console.log(`rec2pdf backend in ascolto su http://${boundHost}:${boundPort} (env: ${NODE_ENV})`);
   });
   return server;
 };
