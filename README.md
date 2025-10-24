@@ -142,6 +142,7 @@ which ppubr
    npm run dev   # espone le API su http://localhost:7788
    ```
    Il server Express usa `PORT`, `PROJECT_ROOT`, `PUBLISH_SCRIPT`, `TEMPLATES_DIR` e `ASSETS_DIR` se presenti nel `.env` ed esegue il publish script `Scripts/publish.sh` quando richiesto.【F:rec2pdf-backend/package.json†L1-L17】【F:rec2pdf-backend/server.js†L13-L83】
+   Nei deploy containerizzati (es. Cloud Run) non impostare `HOST=localhost`: in ambienti diversi dallo sviluppo il backend forza automaticamente il bind su `0.0.0.0` per essere raggiungibile dall'esterno.【F:rec2pdf-backend/server.js†L18-L42】【F:rec2pdf-backend/server.js†L5308-L5319】
    > Per sfruttare la diarizzazione installa prima `whisperx` e definisci il token Hugging Face:
    > ```bash
    > pip install git+https://github.com/m-bain/whisperX
