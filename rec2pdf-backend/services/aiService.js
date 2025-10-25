@@ -3,36 +3,90 @@
 const OpenAI = require('openai');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
+const GEMINI_FLASH_MODEL = 'gemini-2.5-flash';
+
+const isGoogleApiKeyInvalidError = (error) => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const message = typeof error.message === 'string' ? error.message : '';
+  if (/API\s*Key\s*not\s*found/i.test(message) || /API_KEY_INVALID/i.test(message)) {
+    return true;
+  }
+
+  const details = Array.isArray(error.errorDetails) ? error.errorDetails : [];
+  return details.some((detail) => {
+    if (!detail || typeof detail !== 'object') {
+      return false;
+    }
+    const reason = typeof detail.reason === 'string' ? detail.reason : '';
+    return reason.toUpperCase() === 'API_KEY_INVALID';
+  });
+};
+
+const buildGoogleApiKeyError = (modelName, originalError) => {
+  if (!isGoogleApiKeyInvalidError(originalError)) {
+    return originalError;
+  }
+
+  const detail = originalError && originalError.message ? ` Dettagli originali: ${originalError.message}` : '';
+  const error = new Error(
+    `Gemini API key non valida o mancante. Imposta una chiave valida in GOOGLE_API_KEY e assicurati che il modello "${modelName}" sia abilitato.${detail}`
+  );
+  error.code = 'GOOGLE_API_KEY_INVALID';
+  error.cause = originalError;
+  return error;
+};
+
+const shouldRetryWithFlash = (modelName, error) =>
+  modelName && modelName !== GEMINI_FLASH_MODEL && isGoogleApiKeyInvalidError(error);
+
 class AIService {
   async generateContent(prompt) { throw new Error('Metodo non implementato'); }
   async generateEmbedding(input) { throw new Error('Metodo non implementato'); }
 }
 
 class GeminiClient extends AIService {
-  constructor(apiKey, modelName = 'gemini-2.5-flash') {  // ← Aggiungi parametro modello
+  constructor(apiKey, modelName = GEMINI_FLASH_MODEL) {
     super();
     if (!apiKey) throw new Error('Gemini API key non configurata');
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.modelName = modelName;  // ← Salva il modello da usare
+    const normalizedModel = typeof modelName === 'string' ? modelName.trim() : '';
+    this.modelName = normalizedModel || GEMINI_FLASH_MODEL;
   }
 
   async generateContent(prompt) {
     try {
-      // Usa il modello specificato nel costruttore
       const model = this.genAI.getGenerativeModel({ model: this.modelName });
-  
+
       const result = await model.generateContent(prompt);
       const response = await result.response;
       return response.text();
     } catch (error) {
+      if (shouldRetryWithFlash(this.modelName, error)) {
+        console.warn(
+          `⚠️ Gemini ${this.modelName} ha restituito API_KEY_INVALID: tentativo automatico con ${GEMINI_FLASH_MODEL}.`
+        );
+        try {
+          const model = this.genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
+          const result = await model.generateContent(prompt);
+          const response = await result.response;
+          this.modelName = GEMINI_FLASH_MODEL;
+          return response.text();
+        } catch (fallbackError) {
+          console.error(`❌ Errore GeminiClient fallback (${GEMINI_FLASH_MODEL}):`, fallbackError);
+          throw buildGoogleApiKeyError(GEMINI_FLASH_MODEL, fallbackError);
+        }
+      }
+
       console.error(`❌ Errore GeminiClient (${this.modelName}):`, error);
-      throw error;
+      throw buildGoogleApiKeyError(this.modelName, error);
     }
   }
 
   async generateEmbedding(input) {
     try {
-      // Embedding usa sempre text-embedding-004
       const model = this.genAI.getGenerativeModel({ model: 'text-embedding-004' });
       
       if (Array.isArray(input)) {
@@ -47,8 +101,8 @@ class GeminiClient extends AIService {
       const result = await model.embedContent(input);
       return result.embedding.values;
     } catch (error) {
-      console.error("❌ Errore GeminiClient generateEmbedding:", error);
-      throw error;
+      console.error('❌ Errore GeminiClient generateEmbedding:', error);
+      throw buildGoogleApiKeyError('text-embedding-004', error);
     }
   }
 }
@@ -79,19 +133,21 @@ class OpenAIClient extends AIService {
 }
 
 // ⭐ QUESTA È LA PARTE CRUCIALE DA MODIFICARE
-const getAIService = (provider, apiKey) => {
+const getAIService = (provider, apiKey, model) => {
   const normalized = String(provider || '').trim().toLowerCase();
-  
+  const normalizedModel = typeof model === 'string' ? model.trim() : '';
+
   switch (normalized) {
     case 'gemini':
-      return new GeminiClient(apiKey, 'gemini-2.5-flash');  // ← Flash
-    
-    case 'gemini-pro':  // ← AGGIUNGI QUESTO CASE
-      return new GeminiClient(apiKey, 'gemini-2.5-pro');    // ← Pro
-    
+    case 'gemini-pro': {
+      const fallbackModel = normalized === 'gemini-pro' ? 'gemini-2.5-pro' : GEMINI_FLASH_MODEL;
+      const modelName = normalizedModel || fallbackModel;
+      return new GeminiClient(apiKey, modelName);
+    }
+
     case 'openai':
       return new OpenAIClient(apiKey);
-    
+
     default:
       throw new Error(`Provider AI non supportato: ${provider}`);
   }
