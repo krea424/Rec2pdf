@@ -21,7 +21,7 @@ describe('AI provider defaults', () => {
   });
 
   it('resolves gemini text model to gemini-2.5-flash', () => {
-    process.env.GOOGLE_API_KEY = 'test';
+    process.env.GEMINI_API_KEY = 'test';
     process.env.OPENAI_API_KEY = 'test';
     delete process.env.AI_TEXT_PROVIDER;
     const provider = resolveProvider('text');
@@ -29,7 +29,7 @@ describe('AI provider defaults', () => {
   });
 
   it('keeps explicit gemini-pro override untouched', () => {
-    process.env.GOOGLE_API_KEY = 'test';
+    process.env.GEMINI_API_KEY = 'test';
     process.env.OPENAI_API_KEY = 'test';
     process.env.AI_TEXT_PROVIDER = 'gemini-pro';
     const provider = resolveProvider('text');
