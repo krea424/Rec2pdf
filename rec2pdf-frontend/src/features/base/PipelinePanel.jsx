@@ -47,6 +47,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   const focusPublish = journeyStage === "publish" && !pipelineComplete;
   const [hasDownloaded, setHasDownloaded] = useState(false);
   const [hasUnlockedNextSteps, setHasUnlockedNextSteps] = useState(false);
+  const hasUnlockedNextStepsRef = useRef(false);
   const pipelineRevealState = baseJourneyVisibility?.pipeline ?? false;
   const [hasLaunchedPipeline, setHasLaunchedPipeline] = useState(() => pipelineRevealState);
   const focusDownload =
@@ -202,7 +203,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
 
   useEffect(() => {
     setHasDownloaded(false);
-    setHasUnlockedNextSteps(false);
+    setHasUnlockedNextSteps(hasUnlockedNextStepsRef.current);
   }, [entryId]);
 
   useEffect(() => {
@@ -242,6 +243,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     });
     handleOpenHistoryPdf(latestEntry);
     setHasDownloaded(true);
+    hasUnlockedNextStepsRef.current = true;
     setHasUnlockedNextSteps(true);
   }, [handleOpenHistoryPdf, latestEntry, trackEvent]);
 
@@ -255,6 +257,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     });
     handleOpenHistoryMd(latestEntry);
     setHasDownloaded(true);
+    hasUnlockedNextStepsRef.current = true;
     setHasUnlockedNextSteps(true);
   }, [handleOpenHistoryMd, latestEntry, trackEvent]);
 
@@ -264,6 +267,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
       hadAudio: Boolean(audioBlob),
     });
     setHasDownloaded(false);
+    hasUnlockedNextStepsRef.current = false;
     setHasUnlockedNextSteps(false);
     setHasLaunchedPipeline(false);
     resetAll();
