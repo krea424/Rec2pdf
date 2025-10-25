@@ -1685,6 +1685,10 @@ function AppContent(){
       embedding: resolve('embedding'),
     };
   }, [aiProviderCatalog.defaults, aiProviderCatalog.providers, aiProviderMap, aiProviderSelectionState]);
+  const aiProviderOverrides = useMemo(
+    () => sanitizeAiProviderSelection(aiProviderSelectionState),
+    [aiProviderSelectionState],
+  );
   const requestSignedFileUrl = useCallback(
     async (backendUrl, filePath) => {
       const normalizedBackend = normalizeBackendUrlValue(backendUrl);
@@ -3036,11 +3040,11 @@ function AppContent(){
           fd.append('workspaceStatus', workspaceSelection.status);
         }
       }
-      if (aiProvidersEffective.text) {
-        fd.append('aiTextProvider', aiProvidersEffective.text);
+      if (aiProviderOverrides.text) {
+        fd.append('aiTextProvider', aiProviderOverrides.text);
       }
-      if (aiProvidersEffective.embedding) {
-        fd.append('aiEmbeddingProvider', aiProvidersEffective.embedding);
+      if (aiProviderOverrides.embedding) {
+        fd.append('aiEmbeddingProvider', aiProviderOverrides.embedding);
       }
       appendWorkspaceProfileDetails(fd, {
         selection: workspaceProfileSelection,
@@ -3246,11 +3250,11 @@ function AppContent(){
           fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
         }
       }
-      if (aiProvidersEffective.text) {
-        fd.append('aiTextProvider', aiProvidersEffective.text);
+      if (aiProviderOverrides.text) {
+        fd.append('aiTextProvider', aiProviderOverrides.text);
       }
-      if (aiProvidersEffective.embedding) {
-        fd.append('aiEmbeddingProvider', aiProvidersEffective.embedding);
+      if (aiProviderOverrides.embedding) {
+        fd.append('aiEmbeddingProvider', aiProviderOverrides.embedding);
       }
       if(extraFormData&&typeof extraFormData==='object'){
         Object.entries(extraFormData).forEach(([key,value])=>{
