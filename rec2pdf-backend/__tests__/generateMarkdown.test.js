@@ -8,7 +8,7 @@ const mockGetAIService = jest.fn(() => ({
   generateContent: mockGenerateContent,
   generateEmbedding: mockGenerateEmbedding,
 }));
-const mockResolveAiProvider = jest.fn(() => ({ id: 'gemini', apiKey: 'test-key' }));
+const mockResolveAiProvider = jest.fn(() => ({ id: 'gemini', apiKey: 'test-key', model: 'gemini-2.5-flash' }));
 
 jest.mock('../services/aiService', () => ({
   getAIService: (...args) => mockGetAIService(...args),
@@ -71,7 +71,7 @@ describe('generateMarkdown prompt composition', () => {
     mockGetAIService.mockReset();
     mockGenerateContent.mockReset();
     mockResolveAiProvider.mockReset();
-    mockResolveAiProvider.mockImplementation(() => ({ id: 'gemini', apiKey: 'test-key' }));
+    mockResolveAiProvider.mockImplementation(() => ({ id: 'gemini', apiKey: 'test-key', model: 'gemini-2.5-flash' }));
   });
 
   it('includes knowledge base context before transcript', async () => {
@@ -135,9 +135,9 @@ describe('generateMarkdown prompt composition', () => {
 
     mockResolveAiProvider.mockImplementation((type, override) => {
       if (type === 'text' && override === 'openai') {
-        return { id: 'openai', apiKey: 'test-openai' };
+        return { id: 'openai', apiKey: 'test-openai', model: 'gpt-4o' };
       }
-      return { id: 'gemini', apiKey: 'test-key' };
+      return { id: 'gemini', apiKey: 'test-key', model: 'gemini-2.5-flash' };
     });
 
     const result = await generateMarkdown(transcriptPath, mdPath, null, '', { textProvider: 'openai' });
@@ -145,5 +145,29 @@ describe('generateMarkdown prompt composition', () => {
     expect(mockResolveAiProvider).toHaveBeenCalledWith('text', 'openai');
     const written = await fsp.readFile(mdPath, 'utf8');
     expect(written).toBe('## Output');
+  });
+
+  it('aggiorna il campo ai.model nel front matter con il modello attivo', async () => {
+    const transcriptPath = path.join(tempDir.name, 'frontmatter.txt');
+    const mdPath = path.join(tempDir.name, 'frontmatter.md');
+    await fsp.writeFile(transcriptPath, 'Contenuto trascritto.', 'utf8');
+
+    mockResolveAiProvider.mockImplementation(() => ({
+      id: 'gemini-pro',
+      apiKey: 'test-key',
+      model: 'gemini-2.5-pro',
+    }));
+
+    mockGetAIService.mockImplementation(() => ({
+      generateContent: () =>
+        ['---', 'title: Documento di test', 'ai.model: "gpt-4"', 'ai.prompt_id: prompt123', '---', '', '## Corpo'].join('\n'),
+      generateEmbedding: mockGenerateEmbedding,
+    }));
+
+    const result = await generateMarkdown(transcriptPath, mdPath, null, '');
+    expect(result.code).toBe(0);
+    const written = await fsp.readFile(mdPath, 'utf8');
+    expect(written).toContain('ai.model: "gemini-2.5-pro"');
+    expect(written).toContain('ai.prompt_id: prompt123');
   });
 });
