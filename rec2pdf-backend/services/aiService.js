@@ -79,19 +79,21 @@ class OpenAIClient extends AIService {
 }
 
 // ⭐ QUESTA È LA PARTE CRUCIALE DA MODIFICARE
-const getAIService = (provider, apiKey) => {
+const getAIService = (provider, apiKey, model) => {
   const normalized = String(provider || '').trim().toLowerCase();
-  
+  const normalizedModel = typeof model === 'string' ? model.trim() : '';
+
   switch (normalized) {
     case 'gemini':
-      return new GeminiClient(apiKey, 'gemini-2.5-flash');  // ← Flash
-    
-    case 'gemini-pro':  // ← AGGIUNGI QUESTO CASE
-      return new GeminiClient(apiKey, 'gemini-2.5-pro');    // ← Pro
-    
+    case 'gemini-pro': {
+      const fallbackModel = normalized === 'gemini-pro' ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+      const modelName = normalizedModel || fallbackModel;
+      return new GeminiClient(apiKey, modelName);
+    }
+
     case 'openai':
       return new OpenAIClient(apiKey);
-    
+
     default:
       throw new Error(`Provider AI non supportato: ${provider}`);
   }

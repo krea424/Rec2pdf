@@ -101,7 +101,7 @@ const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => 
   try {
     const embeddingProvider = resolveAiProvider('embedding', options.provider || options.embeddingProvider);
     embeddingProviderId = embeddingProvider.id;
-    aiEmbedder = getAIService(embeddingProvider.id, embeddingProvider.apiKey);
+    aiEmbedder = getAIService(embeddingProvider.id, embeddingProvider.apiKey, embeddingProvider.model);
   } catch (error) {
     const reason = error?.message ? `: ${error.message}` : '';
     const providerLabel = embeddingProviderId || sanitizeAiProviderInput(options.provider || options.embeddingProvider) || 'default embedding';
@@ -1236,7 +1236,7 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload, knowledgeContext
     let textProvider;
     try {
       textProvider = resolveAiProvider('text', options.textProvider || options.aiTextProvider);
-      aiGenerator = getAIService(textProvider.id, textProvider.apiKey);
+      aiGenerator = getAIService(textProvider.id, textProvider.apiKey, textProvider.model);
     } catch (error) {
       const reason = error?.message ? `: ${error.message}` : '';
       return { code: -1, stdout: '', stderr: `Provider di testo non disponibile${reason}` };
@@ -2346,7 +2346,7 @@ const processKnowledgeTask = async (task = {}) => {
   try {
     const embeddingProvider = resolveAiProvider('embedding');
     embeddingProviderId = embeddingProvider.id;
-    aiEmbedder = getAIService(embeddingProvider.id, embeddingProvider.apiKey);
+    aiEmbedder = getAIService(embeddingProvider.id, embeddingProvider.apiKey, embeddingProvider.model);
   } catch (error) {
     const detail = error?.message ? ` ${error.message}` : '';
     console.warn(
