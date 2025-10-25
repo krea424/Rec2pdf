@@ -59,7 +59,7 @@ try {
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 let aiEmbedder;
 try {
-    aiEmbedder = getAIService(embeddingProvider.id, embeddingProvider.apiKey);
+    aiEmbedder = getAIService(embeddingProvider.id, embeddingProvider.apiKey, embeddingProvider.model);
 } catch (error) {
     console.error(`Errore: impossibile inizializzare il client ${embeddingProvider.id}. ${error.message}`);
     process.exit(1);
