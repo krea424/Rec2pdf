@@ -170,4 +170,26 @@ describe('generateMarkdown prompt composition', () => {
     expect(written).toContain('ai.model: "gemini-2.5-pro"');
     expect(written).toContain('ai.prompt_id: prompt123');
   });
+
+  it('imposta ai.model su gemini-2.5-flash per il provider gemini predefinito', async () => {
+    const transcriptPath = path.join(tempDir.name, 'frontmatter-default.txt');
+    const mdPath = path.join(tempDir.name, 'frontmatter-default.md');
+    await fsp.writeFile(transcriptPath, 'Contenuto trascritto.', 'utf8');
+
+    mockResolveAiProvider.mockImplementation(() => ({
+      id: 'gemini',
+      apiKey: 'test-key',
+      model: 'gemini-2.5-flash',
+    }));
+
+    mockGetAIService.mockImplementation(() => ({
+      generateContent: () => ['---', 'title: Documento di test', '---', '', '## Corpo'].join('\n'),
+      generateEmbedding: mockGenerateEmbedding,
+    }));
+
+    const result = await generateMarkdown(transcriptPath, mdPath, null, '');
+    expect(result.code).toBe(0);
+    const written = await fsp.readFile(mdPath, 'utf8');
+    expect(written).toContain('ai.model: "gemini-2.5-flash"');
+  });
 });
