@@ -16,15 +16,17 @@ import {
   RefreshCw,
   Plus,
   Sparkles,
+  Settings,
 } from "../components/icons";
 import PromptLibrary from "../components/PromptLibrary";
 import { useAppContext } from "../hooks/useAppContext";
 import { classNames } from "../utils/classNames";
-import { Button, Toast } from "../components/ui";
+import { Button, Drawer, Toast } from "../components/ui";
 import BaseHome from "../features/base/BaseHome";
 import { useAnalytics } from "../context/AnalyticsContext";
 
-const AdvancedDashboard = lazy(() => import("../features/advanced/AdvancedDashboard"));
+const loadControlRoomModule = () => import("../features/advanced/AdvancedDashboard");
+const AdvancedDashboard = lazy(loadControlRoomModule);
 
 const truncateText = (value, limit = 80) => {
   if (typeof value !== "string") {
@@ -105,6 +107,7 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
 
   const [openInfo, setOpenInfo] = useState(null);
   const [showCompletionHighlight, setShowCompletionHighlight] = useState(false);
+  const [isControlRoomOpen, setIsControlRoomOpen] = useState(false);
   const pdfLogoInputRef = useRef(null);
 
   const toggleInfo = (section) => {
@@ -181,6 +184,21 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
 
   const shouldNeutralizePipelineStages =
     context.pipelineComplete && !showCompletionHighlight;
+
+  const handleControlRoomPrefetch = () => {
+    void loadControlRoomModule();
+  };
+
+  const handleOpenControlRoom = () => {
+    handleControlRoomPrefetch();
+    setIsControlRoomOpen(true);
+    trackEvent?.("advanced.control_room.open");
+  };
+
+  const handleCloseControlRoom = () => {
+    setIsControlRoomOpen(false);
+    trackEvent?.("advanced.control_room.close");
+  };
 
   const activeProject = useMemo(
     () =>
@@ -320,16 +338,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
 
       <ErrorBanner />
 
-      <Suspense
-        fallback={
-          <div className="mt-6 rounded-3xl border border-dashed border-zinc-800 bg-zinc-950/30 p-6 text-sm text-zinc-400">
-            Caricamento control room…
-          </div>
-        }
-      >
-        <AdvancedDashboard />
-      </Suspense>
-
       <section className="mt-6 space-y-4">
         <div
           className={classNames(
@@ -357,18 +365,31 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
                 >
                   Orchestrazione end-to-end in un pannello essenziale.
                 </h1>
-                <span
-                  className={classNames(
-                    "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide",
-                    stageStyleBadge,
-                    "shadow-sm"
-                  )}
-                >
-                  <HeaderIcon className="h-4 w-4" />
-                  {context.pipelineComplete
-                    ? "Completata"
-                    : context.STAGE_STATUS_LABELS[stageStatus] || stageStatus}
-                </span>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                  <span
+                    className={classNames(
+                      "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide",
+                      stageStyleBadge,
+                      "shadow-sm"
+                    )}
+                  >
+                    <HeaderIcon className="h-4 w-4" />
+                    {context.pipelineComplete
+                      ? "Completata"
+                      : context.STAGE_STATUS_LABELS[stageStatus] || stageStatus}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    leadingIcon={Settings}
+                    onClick={handleOpenControlRoom}
+                    onMouseEnter={handleControlRoomPrefetch}
+                    onFocus={handleControlRoomPrefetch}
+                    className="sm:ml-2"
+                  >
+                    Apri control room
+                  </Button>
+                </div>
               </div>
               <p className={classNames("text-sm leading-relaxed md:text-base", heroSubtitleClass)}>
                 Imposta il contesto, registra o carica la sessione e lascia che l&apos;AI generi un PDF
@@ -478,6 +499,23 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
           })}
         </div>
       </section>
+
+      <Drawer
+        open={isControlRoomOpen}
+        onClose={handleCloseControlRoom}
+        title="Advanced control room"
+        description="Gestisci workspace, destinazioni, branding e diagnostica senza uscire dall&apos;Executive create hub."
+      >
+        <Suspense
+          fallback={
+            <div className="rounded-3xl border border-dashed border-zinc-800 bg-zinc-950/30 p-6 text-sm text-zinc-400">
+              Caricamento control room…
+            </div>
+          }
+        >
+          <AdvancedDashboard />
+        </Suspense>
+      </Drawer>
 
       <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
         <div
