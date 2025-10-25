@@ -116,6 +116,8 @@ which ppubr
    HUGGING_FACE_TOKEN="<hf_token>"
    PROJECT_ROOT="$(pwd)"
    PUBLISH_SCRIPT="$(pwd)/Scripts/publish.sh"  # opzionale, default già corretto
+   PUBLISH_BUNDLE_ROOT="$(pwd)"                # opzionale, punta alla cartella che contiene Scripts/ e Templates/
+   WHISPER_MODEL=tiny  # es. per Cloud Run o container con memoria ridotta
    ```
    Il backend crea automaticamente il client Supabase, abilita l'autenticazione su tutte le rotte `/api` (eccetto `/api/health`) e mostra un warning se avviato senza credenziali o senza token Hugging Face, ricadendo in modalità sviluppo senza protezione o disattivando la diarizzazione.【rec2pdf-backend/server.js:13】【rec2pdf-backend/server.js:36】
 2. **Crea i bucket di storage** nel progetto Supabase chiamandoli `audio-uploads`, `text-uploads`, `processed-media` e abilita le policy di lettura/scrittura per il ruolo `service_role`; gli upload/download falliscono se il client non è configurato.【F:rec2pdf-backend/server.js†L710-L760】【F:rec2pdf-backend/server.js†L736-L760】
