@@ -51,6 +51,8 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   const focusDownload =
     journeyStage === "download" && pipelineComplete && latestEntry?.pdfPath && !hasDownloaded;
 
+  const shouldDimContent = focusPublish || focusDownload;
+
   const pipelineInFlight = busy && !pipelineComplete;
   const diarizationProfileKey = "nuovo_template_verbale";
   const previousProfileRef = useRef(null);
@@ -328,20 +330,20 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   const pipelineStatusAccent = pipelineComplete
     ? "border-white/10 bg-white/5 text-white/80"
     : pipelineInFlight
-      ? "border-indigo-400/40 bg-indigo-500/10 text-indigo-100"
+      ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100"
       : "border-white/10 bg-white/5 text-white/80";
 
   const StatusIcon = activeStageDefinition?.icon || Sparkles;
 
   const publishCtaClassName = classNames(
     "flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-base font-semibold",
-    "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+    "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
     focusPublish
       ? busy
-        ? "bg-indigo-500/50 text-indigo-50 shadow-[0_18px_60px_-30px_rgba(99,102,241,0.65)]"
+        ? "bg-emerald-500/40 text-emerald-50 shadow-[0_18px_60px_-30px_rgba(16,185,129,0.6)]"
         : canPublish
-          ? "bg-indigo-400 text-slate-950 shadow-[0_20px_60px_-35px_rgba(99,102,241,0.9)] hover:bg-indigo-300"
-          : "bg-indigo-500/30 text-indigo-100"
+          ? "bg-emerald-400 text-slate-950 shadow-[0_20px_60px_-35px_rgba(16,185,129,0.9)] hover:bg-emerald-300"
+          : "bg-emerald-500/30 text-emerald-100"
       : canPublish
         ? "border border-white/15 bg-white/5 text-white/75 hover:border-white/25 hover:bg-white/10"
         : "border border-white/10 bg-white/5 text-white/50",
@@ -381,22 +383,39 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   return (
     <div className="flex h-full flex-col gap-5 rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-subtle">
       <div>
-        <h2 className="flex items-center gap-2 text-lg font-semibold uppercase tracking-[0.32em] text-white/70">
+        <h2
+          className={classNames(
+            "flex items-center gap-2 text-lg font-semibold uppercase tracking-[0.32em]",
+            shouldDimContent ? "text-white/50" : "text-white/70"
+          )}
+        >
           <Sparkles className="h-4 w-4" /> Ottieni PDF
         </h2>
-        <p className="mt-1 text-sm text-white/70">
+        <p className={classNames("mt-1 text-sm", shouldDimContent ? "text-white/45" : "text-white/70")}>
           Avvia la pipeline automatizzata e ricevi il PDF pronto da condividere.
         </p>
       </div>
 
       <div className="space-y-3">
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+        <div
+          className={classNames(
+            "rounded-2xl border border-white/10 bg-white/5 px-4 py-3",
+            shouldDimContent ? "text-white/50" : "text-white"
+          )}
+        >
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="flex items-center gap-2 text-sm font-semibold text-white">
+              <p
+                className={classNames(
+                  "flex items-center gap-2 text-sm font-semibold",
+                  shouldDimContent ? "text-white/60" : "text-white"
+                )}
+              >
                 <Users className="h-4 w-4" /> Identifica speaker multipli (per riunioni)
               </p>
-              <p className="mt-1 text-xs text-white/60">
+              <p
+                className={classNames("mt-1 text-xs", shouldDimContent ? "text-white/40" : "text-white/60")}
+              >
                 Attiva questa opzione per separare le voci in una conversazione. L&apos;elaborazione potrebbe richiedere più tempo.
               </p>
             </div>
@@ -430,7 +449,11 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
         >
           <Cpu className="h-5 w-5" /> Ottieni PDF
         </button>
-        {!canPublish ? (
+        {pipelineInFlight ? (
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200">
+            Attendere
+          </p>
+        ) : !canPublish ? (
           <p className="text-xs text-white/50">Carica o registra un audio per ottenere il PDF.</p>
         ) : null}
 
@@ -495,11 +518,11 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
             role="status"
             aria-live="polite"
           >
-            <div className="flex items-start gap-3">
-              <div className="relative flex h-11 w-11 flex-none items-center justify-center">
-                {pipelineInFlight ? (
-                  <span className="absolute h-11 w-11 animate-ping rounded-full bg-indigo-300/20" aria-hidden="true" />
-                ) : null}
+              <div className="flex items-start gap-3">
+                <div className="relative flex h-11 w-11 flex-none items-center justify-center">
+                  {pipelineInFlight ? (
+                    <span className="absolute h-11 w-11 animate-ping rounded-full bg-emerald-300/20" aria-hidden="true" />
+                  ) : null}
                 <span className="absolute inset-0 rounded-full bg-white/5" aria-hidden="true" />
                 <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-black/20">
                   <StatusIcon className="h-4 w-4" />
@@ -523,8 +546,21 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
           </div>
 
           <div className="space-y-4">
+            {pipelineInFlight ? (
+              <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-50">
+                <p className="text-sm font-semibold uppercase tracking-[0.3em] text-emerald-200">Attendere</p>
+                <p className="mt-1 text-emerald-50/80">
+                  Stiamo generando il PDF e aggiorneremo qui ogni fase del processo.
+                </p>
+              </div>
+            ) : null}
             <div>
-              <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-white/60">
+              <div
+                className={classNames(
+                  "flex items-center justify-between text-xs uppercase tracking-[0.3em]",
+                  shouldDimContent ? "text-white/45" : "text-white/60"
+                )}
+              >
                 <span>Progress</span>
                 <span>{progressPercent}%</span>
               </div>
@@ -553,7 +589,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
                 const stageSurfaceClass = pipelineComplete
                   ? "border-white/10 bg-white/5"
                   : isActive
-                    ? "border-indigo-400/50 bg-indigo-500/15 shadow-[0_12px_40px_-28px_rgba(99,102,241,0.9)]"
+                    ? "border-emerald-400/60 bg-emerald-500/15 shadow-[0_12px_40px_-28px_rgba(16,185,129,0.85)]"
                     : isCompleted
                       ? "border-emerald-400/40 bg-emerald-500/10"
                       : isFailed
