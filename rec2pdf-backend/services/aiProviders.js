@@ -56,7 +56,7 @@ const getDefaultProviderId = (type) => {
     }
   }
 
-  const fallback = type === 'embedding' ? 'gemini' : 'gemini';  // ← Default a gemini (flash)
+  const fallback = type === 'embedding' ? 'openai' : 'gemini';
   if (PROVIDER_MAP.has(fallback)) {
     const candidate = PROVIDER_MAP.get(fallback);
     if (!type || !candidate.models || candidate.models[type]) {

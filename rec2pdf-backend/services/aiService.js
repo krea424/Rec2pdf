@@ -9,16 +9,16 @@ class AIService {
 }
 
 class GeminiClient extends AIService {
-  constructor(apiKey, modelName = 'gemini-2.5-flash') {  // ← Aggiungi parametro modello
+  constructor(apiKey, modelName = 'gemini-2.5-flash') {
     super();
     if (!apiKey) throw new Error('Gemini API key non configurata');
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.modelName = modelName;  // ← Salva il modello da usare
+    const normalizedModel = typeof modelName === 'string' ? modelName.trim() : '';
+    this.modelName = normalizedModel || 'gemini-2.5-flash';
   }
 
   async generateContent(prompt) {
     try {
-      // Usa il modello specificato nel costruttore
       const model = this.genAI.getGenerativeModel({ model: this.modelName });
   
       const result = await model.generateContent(prompt);
@@ -32,7 +32,6 @@ class GeminiClient extends AIService {
 
   async generateEmbedding(input) {
     try {
-      // Embedding usa sempre text-embedding-004
       const model = this.genAI.getGenerativeModel({ model: 'text-embedding-004' });
       
       if (Array.isArray(input)) {
