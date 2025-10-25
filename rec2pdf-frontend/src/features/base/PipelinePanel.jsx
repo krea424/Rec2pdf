@@ -43,13 +43,15 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     handleSelectWorkspaceForPipeline,
   } = context;
 
-  const canPublish = Boolean(audioBlob) && !busy && backendUp !== false;
+  const pipelineRevealState = baseJourneyVisibility?.pipeline ?? false;
+  const [hasLaunchedPipeline, setHasLaunchedPipeline] = useState(() => pipelineRevealState);
+  const canPublish =
+    Boolean(audioBlob) && !busy && backendUp !== false && !hasLaunchedPipeline;
+  const publishLocked = hasLaunchedPipeline;
   const focusPublish = journeyStage === "publish" && !pipelineComplete;
   const [hasDownloaded, setHasDownloaded] = useState(false);
   const [hasUnlockedNextSteps, setHasUnlockedNextSteps] = useState(false);
   const hasUnlockedNextStepsRef = useRef(false);
-  const pipelineRevealState = baseJourneyVisibility?.pipeline ?? false;
-  const [hasLaunchedPipeline, setHasLaunchedPipeline] = useState(() => pipelineRevealState);
   const focusDownload =
     journeyStage === "download" && pipelineComplete && latestEntry?.pdfPath && !hasDownloaded;
 
@@ -348,16 +350,20 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     "flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-base font-semibold",
     "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
     focusPublish
-      ? busy
-        ? "bg-emerald-500/40 text-emerald-50 shadow-[0_18px_60px_-30px_rgba(16,185,129,0.6)]"
+      ? publishLocked
+        ? "border border-white/10 bg-white/5 text-white/45"
         : canPublish
           ? "bg-emerald-400 text-slate-950 shadow-[0_20px_60px_-35px_rgba(16,185,129,0.9)] hover:bg-emerald-300"
-          : "bg-emerald-500/30 text-emerald-100"
+          : busy
+            ? "bg-emerald-500/40 text-emerald-50 shadow-[0_18px_60px_-30px_rgba(16,185,129,0.6)]"
+            : "bg-emerald-500/30 text-emerald-100"
       : canPublish
         ? "border border-white/15 bg-white/5 text-white/75 hover:border-white/25 hover:bg-white/10"
-        : "border border-white/10 bg-white/5 text-white/50",
+        : publishLocked
+          ? "border border-white/10 bg-white/5 text-white/45"
+          : "border border-white/10 bg-white/5 text-white/50",
     focusDownload ? "opacity-50" : null,
-    !canPublish && "cursor-not-allowed"
+    (!canPublish || publishLocked) && "cursor-not-allowed"
   );
 
   const downloadButtonClass = classNames(
@@ -462,7 +468,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200">
             Attendere
           </p>
-        ) : !canPublish ? (
+        ) : !canPublish && !publishLocked ? (
           <p className="text-xs text-white/50">Carica o registra un audio per ottenere il PDF.</p>
         ) : null}
 
