@@ -1145,6 +1145,38 @@ const loadTranscriptForPrompt = async (sourcePath) => {
   return raw;
 };
 
+const FRONT_MATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n)?/;
+
+const applyAiModelToFrontMatter = (markdown, modelName) => {
+  if (!modelName || typeof markdown !== 'string' || !markdown.startsWith('---')) {
+    return markdown;
+  }
+  const match = FRONT_MATTER_REGEX.exec(markdown);
+  if (!match) {
+    return markdown;
+  }
+
+  const newline = match[0].includes('\r\n') ? '\r\n' : '\n';
+  const trailingNewline = typeof match[2] === 'string' ? match[2] : '';
+  const frontMatterLines = match[1].split(/\r?\n/);
+  let replaced = false;
+
+  const updatedLines = frontMatterLines.map((line) => {
+    if (/^\s*ai\.model\s*:/i.test(line)) {
+      replaced = true;
+      return `ai.model: "${modelName}"`;
+    }
+    return line;
+  });
+
+  if (!replaced) {
+    updatedLines.push(`ai.model: "${modelName}"`);
+  }
+
+  const updatedFrontMatter = `---${newline}${updatedLines.join(newline)}${newline}---${trailingNewline}`;
+  return `${updatedFrontMatter}${markdown.slice(match[0].length)}`;
+};
+
 const generateMarkdown = async (txtPath, mdFile, promptPayload, knowledgeContext = '', options = {}) => {
   try {
     const transcript = await loadTranscriptForPrompt(txtPath);
@@ -1201,8 +1233,9 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload, knowledgeContext
     const fullPrompt = `${promptWithTranscript}${transcript}`;
 
     let aiGenerator;
+    let textProvider;
     try {
-      const textProvider = resolveAiProvider('text', options.textProvider || options.aiTextProvider);
+      textProvider = resolveAiProvider('text', options.textProvider || options.aiTextProvider);
       aiGenerator = getAIService(textProvider.id, textProvider.apiKey);
     } catch (error) {
       const reason = error?.message ? `: ${error.message}` : '';
@@ -1219,7 +1252,10 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload, knowledgeContext
 
     // Logica di pulizia
     let cleanedContent = (generatedContent || '').replace(/^```(markdown)?\s*/i, '').replace(/\s*```\s*$/i, '');
-    await fsp.writeFile(mdFile, cleanedContent, 'utf8');
+    const activeModelName = textProvider?.model || aiGenerator?.modelName || '';
+    const finalContent = applyAiModelToFrontMatter(cleanedContent, activeModelName);
+
+    await fsp.writeFile(mdFile, finalContent, 'utf8');
 
     return { code: 0, stdout: '', stderr: '' };
   } catch (error) {
