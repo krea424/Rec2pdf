@@ -4,7 +4,7 @@ const PROVIDERS = [
   {
     id: 'gemini',
     label: 'Google Gemini Flash',
-    envKey: 'GEMINI_API_KEY',
+    envKey: 'GOOGLE_API_KEY',
     description: 'Veloce ed economico (1.500/giorno FREE)',
     models: {
       text: 'gemini-2.5-flash',
@@ -14,7 +14,7 @@ const PROVIDERS = [
   {
     id: 'gemini-pro',
     label: 'Google Gemini Pro',
-    envKey: 'GEMINI_API_KEY',
+    envKey: 'GOOGLE_API_KEY',
     description: 'Massima qualità con thinking mode (50/giorno FREE)',
     models: {
       text: 'gemini-2.5-pro',

@@ -49,6 +49,7 @@ const WORKSPACE_FILTERS_KEY = 'rec2pdfWorkspaceFilters';
 const PROMPT_SELECTION_KEY = 'rec2pdfPromptSelection';
 const PROMPT_FAVORITES_KEY = 'rec2pdfPromptFavorites';
 const AI_PROVIDER_PREFERENCES_KEY = 'rec2pdfAiPreferences';
+const AI_PROVIDER_PREFERENCES_VERSION = 2;
 const HISTORY_TABS = [
   { key: 'history', label: 'Cronologia' },
   { key: 'cloud', label: 'Cloud library' },
@@ -202,6 +203,36 @@ const sanitizeAiProviderSelection = (value) => {
     text: normalized.text,
     embedding: normalized.embedding,
   };
+};
+
+const readStoredAiProviderSelection = () => {
+  if (typeof window === 'undefined') {
+    return { text: '', embedding: '' };
+  }
+  try {
+    const raw = localStorage.getItem(AI_PROVIDER_PREFERENCES_KEY);
+    if (!raw) {
+      return { text: '', embedding: '' };
+    }
+    const parsed = JSON.parse(raw);
+    const sanitized = sanitizeAiProviderSelection(parsed);
+    const versionRaw = parsed && typeof parsed.version !== 'undefined' ? Number(parsed.version) : NaN;
+    const version = Number.isFinite(versionRaw) ? versionRaw : 1;
+    if (version < AI_PROVIDER_PREFERENCES_VERSION) {
+      const migrated = { ...sanitized };
+      if (migrated.text === 'gemini-pro') {
+        migrated.text = '';
+      }
+      if (migrated.embedding === 'gemini-pro') {
+        migrated.embedding = '';
+      }
+      return migrated;
+    }
+    return sanitized;
+  } catch (error) {
+    console.warn('Impossibile recuperare le preferenze AI salvate:', error);
+    return { text: '', embedding: '' };
+  }
 };
 
 const hasNamedSpeakers = (mapping = {}) =>
@@ -986,22 +1017,7 @@ function AppContent(){
       return [];
     }
   });
-  const [aiProviderSelectionState, setAiProviderSelectionState] = useState(() => {
-    if (typeof window === 'undefined') {
-      return { text: '', embedding: '' };
-    }
-    try {
-      const raw = localStorage.getItem(AI_PROVIDER_PREFERENCES_KEY);
-      if (!raw) {
-        return { text: '', embedding: '' };
-      }
-      const parsed = JSON.parse(raw);
-      return sanitizeAiProviderSelection(parsed);
-    } catch (error) {
-      console.warn('Impossibile recuperare le preferenze AI salvate:', error);
-      return { text: '', embedding: '' };
-    }
-  });
+  const [aiProviderSelectionState, setAiProviderSelectionState] = useState(() => readStoredAiProviderSelection());
   const [aiProviderCatalog, setAiProviderCatalog] = useState({
     providers: [],
     defaults: { text: '', embedding: '' },
@@ -1199,7 +1215,10 @@ function AppContent(){
       if (!sanitized.text && !sanitized.embedding) {
         localStorage.removeItem(AI_PROVIDER_PREFERENCES_KEY);
       } else {
-        localStorage.setItem(AI_PROVIDER_PREFERENCES_KEY, JSON.stringify(sanitized));
+        localStorage.setItem(
+          AI_PROVIDER_PREFERENCES_KEY,
+          JSON.stringify({ ...sanitized, version: AI_PROVIDER_PREFERENCES_VERSION })
+        );
       }
     } catch (error) {
       console.warn('Impossibile salvare le preferenze AI:', error);
