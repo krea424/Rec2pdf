@@ -46,6 +46,8 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   const canPublish = Boolean(audioBlob) && !busy && backendUp !== false;
   const focusPublish = journeyStage === "publish" && !pipelineComplete;
   const [hasDownloaded, setHasDownloaded] = useState(false);
+  const [hasUnlockedNextSteps, setHasUnlockedNextSteps] = useState(false);
+  const hasUnlockedNextStepsRef = useRef(false);
   const pipelineRevealState = baseJourneyVisibility?.pipeline ?? false;
   const [hasLaunchedPipeline, setHasLaunchedPipeline] = useState(() => pipelineRevealState);
   const focusDownload =
@@ -201,6 +203,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
 
   useEffect(() => {
     setHasDownloaded(false);
+    setHasUnlockedNextSteps(hasUnlockedNextStepsRef.current);
   }, [entryId]);
 
   useEffect(() => {
@@ -240,6 +243,8 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     });
     handleOpenHistoryPdf(latestEntry);
     setHasDownloaded(true);
+    hasUnlockedNextStepsRef.current = true;
+    setHasUnlockedNextSteps(true);
   }, [handleOpenHistoryPdf, latestEntry, trackEvent]);
 
   const handleModifyPdf = useCallback(() => {
@@ -252,6 +257,8 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     });
     handleOpenHistoryMd(latestEntry);
     setHasDownloaded(true);
+    hasUnlockedNextStepsRef.current = true;
+    setHasUnlockedNextSteps(true);
   }, [handleOpenHistoryMd, latestEntry, trackEvent]);
 
   const handleResetSession = useCallback(() => {
@@ -260,6 +267,8 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
       hadAudio: Boolean(audioBlob),
     });
     setHasDownloaded(false);
+    hasUnlockedNextStepsRef.current = false;
+    setHasUnlockedNextSteps(false);
     setHasLaunchedPipeline(false);
     resetAll();
   }, [audioBlob, pipelineComplete, resetAll, trackEvent]);
@@ -376,7 +385,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   );
 
   const showDownloadActions = pipelineComplete && latestEntry?.pdfPath;
-  const showNextSteps = showDownloadActions && hasDownloaded;
+  const showNextSteps = showDownloadActions && hasUnlockedNextSteps;
   const showPipelineDetails =
     hasLaunchedPipeline || pipelineInFlight || pipelineComplete || showDownloadActions;
 
