@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const pdfParse = require('pdf-parse');
 const { createClient } = require('@supabase/supabase-js');
+const { z } = require('zod');
 const yaml = require('js-yaml'); // <-- Importato js-yaml
 const { getAIService } = require('./services/aiService');
 const {
@@ -253,11 +254,12 @@ app.use('/api', (req, res, next) => {
   return authenticateRequest(req, res, next);
 });
 
-const DATA_DIR = path.join(os.homedir(), '.rec2pdf');
-const WORKSPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
-const PROFILE_LOGO_ROOT = path.join(DATA_DIR, 'logos');
-const PROFILE_TEMPLATE_CACHE = path.join(DATA_DIR, 'templates');
 const DEFAULT_STATUSES = ['Bozza', 'In lavorazione', 'Da revisionare', 'Completato'];
+const DEFAULT_VERSIONING_POLICY = {
+  retentionLimit: 10,
+  freezeOnPublish: false,
+  namingConvention: 'timestamped',
+};
 
 const sleep = (ms) =>
   new Promise((resolve) => setTimeout(resolve, Number.isFinite(ms) && ms > 0 ? ms : 0));
@@ -1257,16 +1259,16 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
         title: parsed.title || '',
         summary: parsed.summary || '',
         author: parsed.author || '',
-        content: parsed.body || '',
+        content: applyAiModelToFrontMatter(parsed.body || '', activeModelName),
         modelName: activeModelName,
       };
     } catch (jsonError) {
       console.warn('⚠️  L\'output AI non era un JSON valido. Trattato come solo corpo.', jsonError.message);
       return {
-        title: '', 
+        title: '',
         summary: '',
         author: '',
-        content: generatedContent, // Ritorna il contenuto grezzo in caso di errore
+        content: applyAiModelToFrontMatter(generatedContent, activeModelName),
         modelName: activeModelName,
       };
     }
@@ -1276,96 +1278,6 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
     throw error;
   }
 };
-
-
-
-const readWorkspaces = async () => {
-  await ensureDataStore();
-  try {
-    const raw = await fsp.readFile(WORKSPACES_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (parsed && Array.isArray(parsed.workspaces)) {
-      const workspaces = parsed.workspaces.map((workspace) => {
-        if (!workspace || typeof workspace !== 'object') {
-          return workspace;
-        }
-        const normalized = { ...workspace };
-        if (!Array.isArray(normalized.profiles)) {
-          normalized.profiles = [];
-        }
-        return normalized;
-      });
-
-      let mutated = false;
-      const now = Date.now();
-
-      for (const workspace of workspaces) {
-        if (!workspace || !Array.isArray(workspace.profiles)) {
-          continue;
-        }
-        let workspaceMutated = false;
-        for (const profile of workspace.profiles) {
-          if (!profile || typeof profile !== 'object' || profile.pdfLogoPath) {
-            continue;
-          }
-          const repairedPath = discoverStoredProfileLogoPath(workspace.id || '', profile);
-          if (!repairedPath) {
-            continue;
-          }
-          profile.pdfLogoPath = repairedPath;
-          if (profile.pdfLogo && typeof profile.pdfLogo === 'object') {
-            profile.pdfLogo.fileName = sanitizeStorageFileName(
-              profile.pdfLogo.fileName || path.basename(repairedPath),
-              path.basename(repairedPath)
-            );
-            if (!profile.pdfLogo.originalName) {
-              profile.pdfLogo.originalName = profile.pdfLogo.fileName;
-            }
-            if (!Number.isFinite(profile.pdfLogo.updatedAt)) {
-              profile.pdfLogo.updatedAt = now;
-            }
-          } else {
-            profile.pdfLogo = {
-              fileName: path.basename(repairedPath),
-              originalName: path.basename(repairedPath),
-              updatedAt: now,
-            };
-          }
-          profile.updatedAt = now;
-          workspaceMutated = true;
-        }
-        if (workspaceMutated) {
-          workspace.updatedAt = now;
-          mutated = true;
-        }
-      }
-
-      if (mutated) {
-        try {
-          await writeWorkspaces(workspaces);
-        } catch (persistError) {
-          console.warn(
-            'Impossibile aggiornare workspaces.json con i loghi ripristinati:',
-            persistError.message || persistError
-          );
-        }
-      }
-
-      return workspaces;
-    }
-  } catch (error) {
-    console.warn('Impossibile leggere workspaces.json:', error.message || error);
-  }
-  return [];
-};
-
-const writeWorkspaces = async (workspaces = []) => {
-  await ensureDataStore();
-  const payload = { workspaces, updatedAt: Date.now() };
-  await fsp.writeFile(WORKSPACES_FILE, JSON.stringify(payload, null, 2));
-  return payload;
-};
-
 const generateId = (prefix) => {
   if (crypto.randomUUID) {
     return `${prefix}_${crypto.randomUUID()}`;
@@ -1402,124 +1314,491 @@ const sanitizeStorageFileName = (value, fallback = 'file') => {
   return `${safeName}${safeExt}`;
 };
 
-const resolveDataRelativePath = (candidate, { allowAbsolute = false } = {}) => {
-  if (!candidate) return '';
-  const raw = String(candidate).trim();
-  if (!raw) return '';
-  if (path.isAbsolute(raw)) {
-    if (!allowAbsolute) {
-      return '';
-    }
-    return raw;
+const workspaceMetadataSchema = z
+  .object({
+    client: z.string().trim().min(1).optional(),
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/)
+      .optional(),
+    versioningPolicy: z
+      .object({
+        retentionLimit: z.number().int().min(1).optional(),
+        freezeOnPublish: z.boolean().optional(),
+        namingConvention: z.string().trim().min(1).optional(),
+      })
+      .partial()
+      .optional(),
+  })
+  .passthrough()
+  .optional();
+
+const workspaceRowSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().nullable().optional(),
+  logo_path: z.string().nullable().optional(),
+  metadata: z.any().optional(),
+  projects: z.any().optional(),
+  default_statuses: z.any().optional(),
+  created_at: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
+});
+
+const versioningPolicySchema = z
+  .object({
+    retentionLimit: z.number().int().min(1).optional(),
+    freezeOnPublish: z.boolean().optional(),
+    namingConvention: z.string().trim().min(1).optional(),
+  })
+  .partial();
+
+const projectSchema = z
+  .object({
+    id: z.string().trim().min(1).optional(),
+    name: z.string().trim().min(1),
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/)
+      .optional(),
+    statuses: z.array(z.string().trim().min(1)).optional(),
+    createdAt: z.number().int().nonnegative().optional(),
+    updatedAt: z.number().int().nonnegative().optional(),
+  })
+  .passthrough();
+
+const profileMetadataSchema = z
+  .object({
+    label: z.string().trim().min(1).optional(),
+    promptId: z.string().trim().optional(),
+    pdfTemplate: z.string().trim().optional(),
+    pdfLogo: z
+      .object({
+        fileName: z.string().trim().min(1),
+        originalName: z.string().trim().optional(),
+        updatedAt: z.number().int().nonnegative().optional(),
+      })
+      .nullable()
+      .optional(),
+    pdfLogoPath: z.string().trim().optional(),
+  })
+  .passthrough()
+  .optional();
+
+const profileRowSchema = z.object({
+  id: z.string().uuid(),
+  workspace_id: z.string().uuid().nullable().optional(),
+  slug: z.string().trim().min(1),
+  dest_dir: z.string().trim().nullable().optional(),
+  pdf_logo_url: z.string().trim().nullable().optional(),
+  metadata: z.any().optional(),
+  created_at: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
+});
+
+const profileInputSchema = z
+  .object({
+    id: z.string().trim().optional(),
+    label: z.string().trim().min(1),
+    slug: z.string().trim().optional(),
+    destDir: z.string().trim().optional(),
+    promptId: z.string().trim().optional(),
+    pdfTemplate: z.string().trim().optional(),
+    pdfLogoPath: z.string().trim().optional(),
+    pdfLogo: z
+      .object({
+        fileName: z.string().trim().min(1),
+        originalName: z.string().trim().optional(),
+        updatedAt: z.number().int().nonnegative().optional(),
+      })
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+
+const workspaceInputSchema = z
+  .object({
+    name: z.string().trim().min(1),
+    client: z.string().trim().optional(),
+    color: z.string().trim().optional(),
+    slug: z.string().trim().optional(),
+    versioningPolicy: versioningPolicySchema.optional(),
+    defaultStatuses: z.array(z.string().trim()).optional(),
+    projects: z.array(projectSchema.partial({ id: true, createdAt: true, updatedAt: true })).optional(),
+    profiles: z.array(profileInputSchema).optional(),
+  })
+  .passthrough();
+
+const workspaceUpdateSchema = workspaceInputSchema.partial();
+
+const dateToTimestamp = (value) => {
+  if (!value) {
+    return Date.now();
   }
-  return raw.replace(/\\+/g, '/');
+  const parsed = new Date(value).getTime();
+  if (!Number.isFinite(parsed)) {
+    return Date.now();
+  }
+  return parsed;
 };
 
-const resolveProfileLogoAbsolutePath = (storedPath) => {
-  const rel = resolveDataRelativePath(storedPath, { allowAbsolute: true });
-  if (!rel) return '';
-  const base = path.isAbsolute(rel) ? rel : path.join(DATA_DIR, rel);
-  const normalized = path.normalize(base);
-  if (!normalized.startsWith(path.normalize(DATA_DIR + path.sep)) && normalized !== path.normalize(DATA_DIR)) {
-    return '';
+const normalizeProjects = (projects = [], { fallbackColor, fallbackStatuses } = {}) => {
+  if (!Array.isArray(projects)) {
+    return [];
   }
-  return normalized;
+  return projects
+    .map((project) => {
+      const result = projectSchema.safeParse(project);
+      if (!result.success) {
+        return null;
+      }
+      const data = result.data;
+      return {
+        id: data.id || generateId('proj'),
+        name: data.name,
+        color: data.color || fallbackColor || '#6366f1',
+        statuses: Array.isArray(data.statuses) && data.statuses.length ? data.statuses : fallbackStatuses || [],
+        createdAt: data.createdAt || Date.now(),
+        updatedAt: data.updatedAt || Date.now(),
+      };
+    })
+    .filter(Boolean);
 };
 
-const VALID_LOGO_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.svg']);
+const normalizeDefaultStatuses = (statuses) => {
+  if (!Array.isArray(statuses)) {
+    return [...DEFAULT_STATUSES];
+  }
+  const normalized = statuses
+    .map((status) => String(status || '').trim())
+    .filter(Boolean);
+  return normalized.length ? normalized : [...DEFAULT_STATUSES];
+};
 
-const storeProfileLogo = async ({ workspaceId, profileId, tmpPath, originalName }) => {
-  if (!workspaceId || !profileId || !tmpPath) {
+const mapProfileRowToDomain = (row) => {
+  const parsed = profileRowSchema.safeParse(row);
+  if (!parsed.success) {
+    console.warn('Profilo Supabase non valido, ignorato:', parsed.error.flatten());
     return null;
   }
-  const safeWorkspace = sanitizeSlug(workspaceId, 'workspace');
-  const safeProfile = sanitizeSlug(profileId, 'profile');
-  const fileLabel = sanitizeStorageFileName(originalName || 'logo.pdf', 'logo.pdf');
-  const targetDir = path.join(PROFILE_LOGO_ROOT, safeWorkspace, safeProfile);
-  try {
-    await fsp.rm(targetDir, { recursive: true, force: true });
-  } catch {}
-  await fsp.mkdir(targetDir, { recursive: true });
-  const destination = path.join(targetDir, fileLabel);
-  await fsp.rename(tmpPath, destination);
-  const relativePath = path.relative(DATA_DIR, destination).replace(/\\+/g, '/');
+  const value = parsed.data;
+  const metadataResult = profileMetadataSchema.safeParse(value.metadata || {});
+  const metadata = metadataResult.success ? metadataResult.data : {};
+  const label = metadata?.label || value.slug || value.id;
   return {
-    absolutePath: destination,
-    relativePath,
-    fileName: fileLabel,
+    id: value.id,
+    label,
+    slug: value.slug,
+    destDir: value.dest_dir || '',
+    promptId: metadata?.promptId || '',
+    pdfTemplate: metadata?.pdfTemplate || '',
+    pdfLogoPath: value.pdf_logo_url || metadata?.pdfLogoPath || '',
+    pdfLogo: metadata?.pdfLogo || null,
+    createdAt: dateToTimestamp(value.created_at),
+    updatedAt: dateToTimestamp(value.updated_at),
   };
 };
 
-const removeStoredProfileLogo = async (storedPath) => {
-  const absolutePath = resolveProfileLogoAbsolutePath(storedPath);
-  if (!absolutePath) {
-    return;
+const mapWorkspaceRowToDomain = (row, profileRows = []) => {
+  const parsed = workspaceRowSchema.safeParse(row);
+  if (!parsed.success) {
+    console.warn('Workspace Supabase non valido, ignorato:', parsed.error.flatten());
+    return null;
   }
-  const targetDir = path.dirname(absolutePath);
-  try {
-    await fsp.rm(targetDir, { recursive: true, force: true });
-  } catch (error) {
-    if (error?.code !== 'ENOENT') {
-      console.warn(`⚠️  Impossibile rimuovere il logo profilo ${targetDir}: ${error.message || error}`);
-    }
-  }
+  const value = parsed.data;
+  const metadataResult = workspaceMetadataSchema.safeParse(value.metadata || {});
+  const metadata = metadataResult.success ? metadataResult.data : {};
+  const color = normalizeColor(metadata?.color || '');
+  const versioning = versioningPolicySchema.safeParse(metadata?.versioningPolicy || {}).success
+    ? {
+        retentionLimit: metadata.versioningPolicy?.retentionLimit || DEFAULT_VERSIONING_POLICY.retentionLimit,
+        freezeOnPublish:
+          metadata.versioningPolicy?.freezeOnPublish ?? DEFAULT_VERSIONING_POLICY.freezeOnPublish,
+        namingConvention:
+          metadata.versioningPolicy?.namingConvention || DEFAULT_VERSIONING_POLICY.namingConvention,
+      }
+    : { ...DEFAULT_VERSIONING_POLICY };
+
+  const defaultStatuses = normalizeDefaultStatuses(value.default_statuses);
+  const projects = normalizeProjects(value.projects, {
+    fallbackColor: color,
+    fallbackStatuses: defaultStatuses,
+  });
+
+  const profiles = Array.isArray(profileRows)
+    ? profileRows.map(mapProfileRowToDomain).filter(Boolean)
+    : [];
+
+  return {
+    id: value.id,
+    supabaseId: value.id,
+    slug: value.slug,
+    name: value.name,
+    client: metadata?.client || value.description || value.name,
+    color,
+    versioningPolicy: versioning,
+    defaultStatuses,
+    projects,
+    profiles,
+    createdAt: dateToTimestamp(value.created_at),
+    updatedAt: dateToTimestamp(value.updated_at),
+  };
 };
 
-const discoverStoredProfileLogoPath = (workspaceId, profile) => {
-  if (!workspaceId || !profile || !profile.id) {
-    return '';
+const workspaceToDbPayload = (workspace) => {
+  if (!workspace || typeof workspace !== 'object') {
+    return null;
   }
+  const clientName = typeof workspace.client === 'string' && workspace.client.trim()
+    ? workspace.client.trim()
+    : workspace.name;
+  const metadata = {
+    client: clientName,
+    color: normalizeColor(workspace.color || ''),
+    versioningPolicy: {
+      retentionLimit: workspace.versioningPolicy?.retentionLimit || DEFAULT_VERSIONING_POLICY.retentionLimit,
+      freezeOnPublish:
+        workspace.versioningPolicy?.freezeOnPublish ?? DEFAULT_VERSIONING_POLICY.freezeOnPublish,
+      namingConvention:
+        workspace.versioningPolicy?.namingConvention || DEFAULT_VERSIONING_POLICY.namingConvention,
+    },
+  };
 
-  const safeWorkspace = sanitizeSlug(workspaceId, 'workspace');
-  const safeProfile = sanitizeSlug(profile.id, 'profile');
-  if (!safeWorkspace || !safeProfile) {
-    return '';
+  const defaultStatuses = normalizeDefaultStatuses(workspace.defaultStatuses);
+  const projects = normalizeProjects(workspace.projects, {
+    fallbackColor: metadata.color,
+    fallbackStatuses: defaultStatuses,
+  });
+
+  return {
+    slug: sanitizeSlug(workspace.slug || workspace.name, workspace.name),
+    name: workspace.name,
+    description: clientName,
+    logo_path: workspace.logoPath || null,
+    metadata,
+    projects,
+    default_statuses: defaultStatuses,
+  };
+};
+
+const profileToDbPayload = (workspaceId, profile) => {
+  if (!workspaceId || !profile || typeof profile !== 'object') {
+    return null;
   }
+  const metadata = {
+    label: profile.label || profile.slug || profile.id,
+    promptId: profile.promptId || '',
+    pdfTemplate: profile.pdfTemplate || '',
+    pdfLogo: profile.pdfLogo || null,
+    pdfLogoPath: profile.pdfLogoPath || '',
+  };
 
-  const targetDir = path.join(PROFILE_LOGO_ROOT, safeWorkspace, safeProfile);
-  try {
-    const entries = fs.readdirSync(targetDir, { withFileTypes: true });
-    const files = entries
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name)
-      .filter((name) => VALID_LOGO_EXTENSIONS.has(path.extname(name).toLowerCase()));
-    if (!files.length) {
-      return '';
-    }
+  return {
+    workspace_id: workspaceId,
+    slug: sanitizeSlug(profile.slug || metadata.label || 'profilo', metadata.label || 'profilo'),
+    dest_dir: profile.destDir || null,
+    pdf_logo_url: profile.pdfLogoPath || null,
+    metadata,
+  };
+};
 
-    const preferredNameRaw =
-      (profile.pdfLogo && typeof profile.pdfLogo === 'object' && profile.pdfLogo.fileName) ||
-      (profile.pdfLogoPath ? path.basename(profile.pdfLogoPath) : '') ||
-      (profile.pdfLogo && typeof profile.pdfLogo === 'object' && profile.pdfLogo.originalName) ||
-      '';
-    const preferredName = preferredNameRaw
-      ? sanitizeStorageFileName(preferredNameRaw, preferredNameRaw)
-      : '';
-
-    let resolvedFile = '';
-    if (preferredName && files.includes(preferredName)) {
-      resolvedFile = preferredName;
-    } else {
-      resolvedFile = files[0];
-    }
-    if (!resolvedFile) {
-      return '';
-    }
-
-    const relativePath = path.join('logos', safeWorkspace, safeProfile, resolvedFile).replace(/\\+/g, '/');
-    const absolutePath = resolveProfileLogoAbsolutePath(relativePath);
-    if (!absolutePath) {
-      return '';
-    }
-    try {
-      fs.accessSync(absolutePath, fs.constants.R_OK);
-      return relativePath;
-    } catch {
-      return '';
-    }
-  } catch {
-    return '';
+const fetchProfilesGroupedByWorkspace = async (workspaceIds) => {
+  if (!Array.isArray(workspaceIds) || !workspaceIds.length) {
+    return new Map();
   }
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from('profiles')
+    .select('*')
+    .in('workspace_id', workspaceIds);
+  if (error) {
+    throw new Error(error.message || 'Impossibile leggere i profili dal database');
+  }
+  const grouped = new Map();
+  (Array.isArray(data) ? data : []).forEach((row) => {
+    const workspaceId = row?.workspace_id;
+    if (!workspaceId) {
+      return;
+    }
+    if (!grouped.has(workspaceId)) {
+      grouped.set(workspaceId, []);
+    }
+    grouped.get(workspaceId).push(row);
+  });
+  return grouped;
+};
+
+const listWorkspacesFromDb = async () => {
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from('workspaces')
+    .select('*')
+    .order('created_at', { ascending: true, nullsLast: true });
+  if (error) {
+    throw new Error(error.message || 'Impossibile recuperare i workspace');
+  }
+  const rows = Array.isArray(data) ? data : [];
+  const ids = rows.map((row) => row.id);
+  const profileMap = await fetchProfilesGroupedByWorkspace(ids);
+  return rows
+    .map((row) => mapWorkspaceRowToDomain(row, profileMap.get(row.id)))
+    .filter(Boolean);
+};
+
+const getWorkspaceFromDb = async (workspaceId) => {
+  if (!workspaceId) {
+    return null;
+  }
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from('workspaces')
+    .select('*')
+    .eq('id', workspaceId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message || 'Impossibile recuperare il workspace');
+  }
+  if (!data) {
+    return null;
+  }
+  const profileMap = await fetchProfilesGroupedByWorkspace([workspaceId]);
+  return mapWorkspaceRowToDomain(data, profileMap.get(workspaceId));
+};
+
+const insertWorkspaceIntoDb = async (payload) => {
+  const client = getSupabaseClient();
+  const workspacePayload = workspaceToDbPayload(payload);
+  if (!workspacePayload) {
+    throw new Error('Payload workspace non valido');
+  }
+  const { data, error } = await client
+    .from('workspaces')
+    .insert(workspacePayload)
+    .select('*')
+    .single();
+  if (error) {
+    throw new Error(error.message || 'Impossibile creare il workspace');
+  }
+  return mapWorkspaceRowToDomain(data, []);
+};
+
+const updateWorkspaceInDb = async (workspaceId, workspace) => {
+  if (!workspaceId) {
+    throw new Error('workspaceId obbligatorio');
+  }
+  const client = getSupabaseClient();
+  const workspacePayload = workspaceToDbPayload(workspace);
+  if (!workspacePayload) {
+    throw new Error('Workspace non valido');
+  }
+  const { data, error } = await client
+    .from('workspaces')
+    .update(workspacePayload)
+    .eq('id', workspaceId)
+    .select('*')
+    .single();
+  if (error) {
+    throw new Error(error.message || 'Impossibile aggiornare il workspace');
+  }
+  const profileMap = await fetchProfilesGroupedByWorkspace([workspaceId]);
+  return mapWorkspaceRowToDomain(data, profileMap.get(workspaceId));
+};
+
+const deleteWorkspaceFromDb = async (workspaceId) => {
+  if (!workspaceId) {
+    throw new Error('workspaceId obbligatorio');
+  }
+  const client = getSupabaseClient();
+  const { error } = await client.from('workspaces').delete().eq('id', workspaceId);
+  if (error) {
+    throw new Error(error.message || 'Impossibile eliminare il workspace');
+  }
+  return true;
+};
+
+const listProfilesForWorkspace = async (workspaceId) => {
+  if (!workspaceId) {
+    return [];
+  }
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from('profiles')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .order('created_at', { ascending: true, nullsLast: true });
+  if (error) {
+    throw new Error(error.message || 'Impossibile recuperare i profili del workspace');
+  }
+  return (Array.isArray(data) ? data : []).map(mapProfileRowToDomain).filter(Boolean);
+};
+
+const insertProfileIntoDb = async (workspaceId, profile) => {
+  const client = getSupabaseClient();
+  const dbPayload = profileToDbPayload(workspaceId, profile);
+  if (!dbPayload) {
+    throw new Error('Profilo non valido');
+  }
+  const { data, error } = await client
+    .from('profiles')
+    .insert(dbPayload)
+    .select('*')
+    .single();
+  if (error) {
+    throw new Error(error.message || 'Impossibile creare il profilo');
+  }
+  return mapProfileRowToDomain(data);
+};
+
+const updateProfileInDb = async (workspaceId, profileId, profile) => {
+  const client = getSupabaseClient();
+  const dbPayload = profileToDbPayload(workspaceId, profile);
+  if (!dbPayload) {
+    throw new Error('Profilo non valido');
+  }
+  const { data, error } = await client
+    .from('profiles')
+    .update(dbPayload)
+    .eq('id', profileId)
+    .eq('workspace_id', workspaceId)
+    .select('*')
+    .single();
+  if (error) {
+    throw new Error(error.message || 'Impossibile aggiornare il profilo');
+  }
+  return mapProfileRowToDomain(data);
+};
+
+const deleteProfileFromDb = async (workspaceId, profileId) => {
+  const client = getSupabaseClient();
+  const { error } = await client
+    .from('profiles')
+    .delete()
+    .eq('id', profileId)
+    .eq('workspace_id', workspaceId);
+  if (error) {
+    throw new Error(error.message || 'Impossibile eliminare il profilo');
+  }
+  return true;
+};
+
+const findWorkspaceByProfileId = async (profileId) => {
+  if (!profileId) {
+    return null;
+  }
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from('profiles')
+    .select('*')
+    .eq('id', profileId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message || 'Impossibile recuperare il profilo richiesto');
+  }
+  if (!data?.workspace_id) {
+    return null;
+  }
+  return getWorkspaceFromDb(data.workspace_id);
 };
 
 const normalizeWorkspaceProfiles = (profiles, { existingProfiles } = {}) => {
@@ -1702,12 +1981,14 @@ const profileForResponse = (workspaceId, profile) => {
   if (!profile || typeof profile !== 'object') {
     return null;
   }
-  const logoDownloadPath = profile.pdfLogoPath
-    ? `/api/workspaces/${workspaceId}/profiles/${profile.id}/logo`
+  const rawLogoPath = typeof profile.pdfLogoPath === 'string' ? profile.pdfLogoPath.trim() : '';
+  const logoDownloadPath = /^https?:\/\//i.test(rawLogoPath)
+    ? rawLogoPath
     : '';
   return {
     ...profile,
     logoDownloadPath,
+    pdfLogoUrl: rawLogoPath,
   };
 };
 
@@ -1718,11 +1999,6 @@ const profilesForResponse = (workspaceId, profiles = []) => {
   return profiles
     .map((profile) => profileForResponse(workspaceId, profile))
     .filter(Boolean);
-};
-
-const findWorkspaceById = (workspaces, id) => {
-  if (!id) return null;
-  return workspaces.find((ws) => ws.id === id) || null;
 };
 
 const upsertProjectInWorkspace = (workspace, { projectId, projectName, status }) => {
@@ -2961,30 +3237,6 @@ const promptToDbRecord = (prompt) => {
   };
 };
 
-const ensureDataStore = async () => {
-  await fsp.mkdir(DATA_DIR, { recursive: true });
-  try {
-    await fsp.access(WORKSPACES_FILE, fs.constants.F_OK);
-  } catch {
-    await fsp.writeFile(
-      WORKSPACES_FILE,
-      JSON.stringify({ workspaces: [], updatedAt: Date.now() }, null, 2)
-    );
-  }
-
-  try {
-    await fsp.mkdir(PROFILE_LOGO_ROOT, { recursive: true });
-  } catch (error) {
-    console.warn('Impossibile creare la cartella per i loghi profilo:', error.message || error);
-  }
-
-  try {
-    await fsp.mkdir(PROFILE_TEMPLATE_CACHE, { recursive: true });
-  } catch (error) {
-    console.warn('Impossibile creare la cartella template profilo:', error.message || error);
-  }
-};
-
 const mergeWorkspaceUpdate = (workspace, patch) => {
   const updated = { ...workspace };
   updated.profiles = Array.isArray(workspace.profiles)
@@ -3037,103 +3289,160 @@ const mergeWorkspaceUpdate = (workspace, patch) => {
 };
 
 app.get('/api/workspaces', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
+  }
   try {
-    const workspaces = await readWorkspaces();
-    res.json({ ok: true, workspaces });
+    const workspaces = await listWorkspacesFromDb();
+    const payload = workspaces.map((workspace) => ({
+      ...workspace,
+      profiles: profilesForResponse(workspace.id, workspace.profiles || []),
+    }));
+    res.json({ ok: true, workspaces: payload });
   } catch (error) {
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
   }
 });
 
 app.post('/api/workspaces', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
+  }
   try {
-    const name = String(req.body?.name || '').trim();
-    if (!name) {
-      return res.status(400).json({ ok: false, message: 'Nome workspace obbligatorio' });
+    const parsed = workspaceInputSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, message: 'Dati workspace non validi', details: parsed.error.flatten() });
     }
 
-    const workspaces = await readWorkspaces();
+    const data = parsed.data;
     const prompts = await listPrompts();
-    const normalizedProfiles = normalizeWorkspaceProfiles(req.body?.profiles);
+    const normalizedProfiles = Array.isArray(data.profiles)
+      ? data.profiles.map((profile) => ({
+          id: profile.id || '',
+          label: profile.label,
+          slug: profile.slug || profile.label,
+          destDir: profile.destDir || '',
+          promptId: profile.promptId || '',
+          pdfTemplate: profile.pdfTemplate || '',
+          pdfLogoPath: profile.pdfLogoPath || '',
+          pdfLogo: profile.pdfLogo || null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }))
+      : [];
     const profileErrors = await validateWorkspaceProfiles(normalizedProfiles, { prompts });
     if (profileErrors.length) {
       return res.status(400).json({ ok: false, message: 'Profilo non valido', details: profileErrors });
     }
-    const workspaceId = generateId('ws');
-    const workspace = {
-      id: workspaceId,
-      name,
-      client: String(req.body?.client || name).trim(),
-      color: normalizeColor(req.body?.color || '#6366f1'),
-      slug: String(req.body?.slug || name.toLowerCase().replace(/\s+/g, '-')).replace(/[^a-zA-Z0-9._-]/g, '_'),
-      versioningPolicy: {
-        retentionLimit: Number.isFinite(req.body?.versioningPolicy?.retentionLimit)
-          ? Math.max(1, Number(req.body.versioningPolicy.retentionLimit))
-          : 10,
-        freezeOnPublish: Boolean(req.body?.versioningPolicy?.freezeOnPublish),
-        namingConvention: req.body?.versioningPolicy?.namingConvention || 'timestamped',
-      },
-      defaultStatuses: Array.isArray(req.body?.defaultStatuses) && req.body.defaultStatuses.length
-        ? req.body.defaultStatuses.map((status) => String(status).trim()).filter(Boolean)
-        : [...DEFAULT_STATUSES],
-      projects: Array.isArray(req.body?.projects)
-        ? req.body.projects.map((project) => ({
-          id: project.id || generateId('proj'),
-          name: String(project.name || 'Project').trim(),
-          color: normalizeColor(project.color || req.body?.color || '#6366f1'),
-          statuses: Array.isArray(project.statuses) && project.statuses.length
-            ? project.statuses.map((status) => String(status).trim()).filter(Boolean)
-            : [...DEFAULT_STATUSES],
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        }))
-        : [],
-      profiles: normalizedProfiles || [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+
+    const color = normalizeColor(data.color || '');
+    const defaultStatuses = normalizeDefaultStatuses(data.defaultStatuses);
+    const workspacePayload = {
+      id: '',
+      name: data.name.trim(),
+      client: data.client || data.name.trim(),
+      color,
+      slug: sanitizeSlug(data.slug || data.name, data.name),
+      versioningPolicy: data.versioningPolicy
+        ? {
+            retentionLimit: data.versioningPolicy.retentionLimit || DEFAULT_VERSIONING_POLICY.retentionLimit,
+            freezeOnPublish:
+              data.versioningPolicy.freezeOnPublish ?? DEFAULT_VERSIONING_POLICY.freezeOnPublish,
+            namingConvention:
+              data.versioningPolicy.namingConvention || DEFAULT_VERSIONING_POLICY.namingConvention,
+          }
+        : { ...DEFAULT_VERSIONING_POLICY },
+      defaultStatuses,
+      projects: normalizeProjects(data.projects, { fallbackColor: color, fallbackStatuses: defaultStatuses }),
+      profiles: [],
     };
 
-    workspaces.push(workspace);
-    await writeWorkspaces(workspaces);
-    res.status(201).json({ ok: true, workspace });
+    const createdWorkspace = await insertWorkspaceIntoDb(workspacePayload);
+
+    let createdProfiles = [];
+    if (normalizedProfiles.length) {
+      try {
+        const promises = normalizedProfiles.map((profile) =>
+          insertProfileIntoDb(createdWorkspace.id, profile)
+        );
+        createdProfiles = await Promise.all(promises);
+      } catch (profileError) {
+        await deleteWorkspaceFromDb(createdWorkspace.id);
+        throw profileError;
+      }
+    }
+
+    const responseWorkspace = createdProfiles.length
+      ? { ...createdWorkspace, profiles: createdProfiles }
+      : createdWorkspace;
+
+    const normalizedWorkspace = {
+      ...responseWorkspace,
+      profiles: profilesForResponse(responseWorkspace.id, responseWorkspace.profiles || []),
+    };
+
+    res.status(201).json({ ok: true, workspace: normalizedWorkspace });
   } catch (error) {
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
   }
 });
 
 app.put('/api/workspaces/:id', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
+  }
   try {
-    const workspaces = await readWorkspaces();
-    const index = workspaces.findIndex((workspace) => workspace.id === req.params.id);
-    if (index === -1) {
+    const workspaceId = String(req.params?.id || '').trim();
+    if (!workspaceId) {
+      return res.status(400).json({ ok: false, message: 'Workspace non valido' });
+    }
+
+    const existing = await getWorkspaceFromDb(workspaceId);
+    if (!existing) {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
 
+    const parsed = workspaceUpdateSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, message: 'Dati workspace non validi', details: parsed.error.flatten() });
+    }
+
+    const patch = parsed.data;
+    const merged = mergeWorkspaceUpdate(existing, patch);
     const prompts = await listPrompts();
-    const merged = mergeWorkspaceUpdate(workspaces[index], req.body || {});
     const profileErrors = await validateWorkspaceProfiles(merged.profiles, { prompts });
     if (profileErrors.length) {
       return res.status(400).json({ ok: false, message: 'Profilo non valido', details: profileErrors });
     }
-    workspaces[index] = merged;
-    await writeWorkspaces(workspaces);
-    res.json({ ok: true, workspace: merged });
+
+    const updated = await updateWorkspaceInDb(workspaceId, merged);
+    const normalizedWorkspace = {
+      ...updated,
+      profiles: profilesForResponse(updated.id, updated.profiles || []),
+    };
+    res.json({ ok: true, workspace: normalizedWorkspace });
   } catch (error) {
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
   }
 });
 
 app.delete('/api/workspaces/:id', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
+  }
   try {
-    const workspaces = await readWorkspaces();
-    const next = workspaces.filter((workspace) => workspace.id !== req.params.id);
-    if (next.length === workspaces.length) {
+    const workspaceId = String(req.params?.id || '').trim();
+    if (!workspaceId) {
+      return res.status(400).json({ ok: false, message: 'Workspace non valido' });
+    }
+    const existing = await getWorkspaceFromDb(workspaceId);
+    if (!existing) {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
-    await writeWorkspaces(next);
+    await deleteWorkspaceFromDb(workspaceId);
     res.json({ ok: true });
   } catch (error) {
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
   }
 });
 
@@ -3275,86 +3584,83 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
 const workspaceProfilesRouter = express.Router({ mergeParams: true });
 
 workspaceProfilesRouter.get('/', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
+  }
   try {
-    const workspaces = await readWorkspaces();
-    const workspace = findWorkspaceById(workspaces, req.params.workspaceId);
+    const workspaceId = String(req.params?.workspaceId || '').trim();
+    if (!workspaceId) {
+      return res.status(400).json({ ok: false, message: 'Workspace non valido' });
+    }
+    const workspace = await getWorkspaceFromDb(workspaceId);
     if (!workspace) {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
     res.json({ ok: true, profiles: profilesForResponse(workspace.id, workspace.profiles || []) });
   } catch (error) {
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
   }
 });
 
 workspaceProfilesRouter.post('/', optionalProfileUpload, async (req, res) => {
-  let uploadedPath = '';
+  if (!supabase) {
+    if (req.file?.path) {
+      await safeUnlink(req.file.path);
+    }
+    return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
+  }
   try {
-    const workspaces = await readWorkspaces();
-    const index = workspaces.findIndex((workspace) => workspace.id === req.params.workspaceId);
-    if (index === -1) {
+    const workspaceId = String(req.params?.workspaceId || '').trim();
+    if (!workspaceId) {
+      if (req.file?.path) {
+        await safeUnlink(req.file.path);
+      }
+      return res.status(400).json({ ok: false, message: 'Workspace non valido' });
+    }
+
+    const workspace = await getWorkspaceFromDb(workspaceId);
+    if (!workspace) {
+      if (req.file?.path) {
+        await safeUnlink(req.file.path);
+      }
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
 
-    const prompts = await listPrompts();
-    const workspace = { ...workspaces[index] };
-    const payload = extractProfilePayload(req.body);
-    const profileId = payload.id || generateId('profile');
-    const baseProfiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
-    const withoutProfile = baseProfiles.filter((profile) => profile.id !== profileId);
-
-    const candidateProfiles = normalizeWorkspaceProfiles(
-      [...withoutProfile, { ...payload, id: profileId }],
-      { existingProfiles: baseProfiles }
-    );
-    const createdIndex = candidateProfiles.findIndex((profile) => profile.id === profileId);
-    if (createdIndex === -1) {
-      return res.status(400).json({ ok: false, message: 'Impossibile creare il profilo' });
-    }
-    const createdProfile = { ...candidateProfiles[createdIndex] };
-
-    if (req.file) {
-      await ensureTempFileHasExtension(req.file);
-      const stored = await storeProfileLogo({
-        workspaceId: workspace.id,
-        profileId: createdProfile.id,
-        tmpPath: req.file.path,
-        originalName: req.file.originalname,
-      });
-      if (stored) {
-        uploadedPath = stored.relativePath;
-        createdProfile.pdfLogoPath = stored.relativePath;
-        createdProfile.pdfLogo = {
-          fileName: stored.fileName,
-          originalName: req.file.originalname || stored.fileName,
-          updatedAt: Date.now(),
-        };
+    const parsed = profileInputSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      if (req.file?.path) {
+        await safeUnlink(req.file.path);
       }
+      return res.status(400).json({ ok: false, message: 'Profilo non valido', details: parsed.error.flatten() });
     }
 
-    const validationErrors = await validateWorkspaceProfiles([createdProfile], { prompts });
+    const payload = parsed.data;
+    const profilePayload = {
+      id: payload.id || '',
+      label: payload.label,
+      slug: sanitizeSlug(payload.slug || payload.label, payload.label),
+      destDir: payload.destDir || '',
+      promptId: payload.promptId || '',
+      pdfTemplate: payload.pdfTemplate || '',
+      pdfLogoPath: payload.pdfLogoPath || '',
+      pdfLogo: payload.pdfLogo || null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const prompts = await listPrompts();
+    const validationErrors = await validateWorkspaceProfiles([profilePayload], { prompts });
     if (validationErrors.length) {
-      if (uploadedPath) {
-        await removeStoredProfileLogo(uploadedPath);
+      if (req.file?.path) {
+        await safeUnlink(req.file.path);
       }
       return res.status(400).json({ ok: false, message: 'Profilo non valido', details: validationErrors });
     }
 
-    candidateProfiles[createdIndex] = createdProfile;
-    const nextWorkspace = {
-      ...workspace,
-      profiles: candidateProfiles,
-      updatedAt: Date.now(),
-    };
-    workspaces[index] = nextWorkspace;
-    await writeWorkspaces(workspaces);
-
-    res.status(201).json({ ok: true, profile: profileForResponse(nextWorkspace.id, createdProfile) });
+    const created = await insertProfileIntoDb(workspaceId, profilePayload);
+    res.status(201).json({ ok: true, profile: profileForResponse(workspaceId, created) });
   } catch (error) {
-    if (uploadedPath) {
-      await removeStoredProfileLogo(uploadedPath);
-    }
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
   } finally {
     if (req.file?.path) {
       await safeUnlink(req.file.path);
@@ -3363,85 +3669,72 @@ workspaceProfilesRouter.post('/', optionalProfileUpload, async (req, res) => {
 });
 
 workspaceProfilesRouter.put('/:profileId', optionalProfileUpload, async (req, res) => {
-  let uploadedPath = '';
+  if (!supabase) {
+    if (req.file?.path) {
+      await safeUnlink(req.file.path);
+    }
+    return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
+  }
   try {
-    const workspaces = await readWorkspaces();
-    const index = workspaces.findIndex((workspace) => workspace.id === req.params.workspaceId);
-    if (index === -1) {
+    const workspaceId = String(req.params?.workspaceId || '').trim();
+    const profileId = String(req.params?.profileId || '').trim();
+    if (!workspaceId || !profileId) {
+      if (req.file?.path) {
+        await safeUnlink(req.file.path);
+      }
+      return res.status(400).json({ ok: false, message: 'Identificativi non validi' });
+    }
+
+    const workspace = await getWorkspaceFromDb(workspaceId);
+    if (!workspace) {
+      if (req.file?.path) {
+        await safeUnlink(req.file.path);
+      }
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
 
-    const workspace = { ...workspaces[index] };
-    const baseProfiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
-    const existingIndex = baseProfiles.findIndex((profile) => profile.id === req.params.profileId);
-    if (existingIndex === -1) {
+    const existingProfile = (workspace.profiles || []).find((profile) => profile.id === profileId);
+    if (!existingProfile) {
+      if (req.file?.path) {
+        await safeUnlink(req.file.path);
+      }
       return res.status(404).json({ ok: false, message: 'Profilo non trovato' });
     }
 
-    const prompts = await listPrompts();
-    const payload = extractProfilePayload(req.body);
-    payload.id = req.params.profileId;
-
-    const withoutProfile = baseProfiles.filter((profile) => profile.id !== req.params.profileId);
-    const normalizedProfiles = normalizeWorkspaceProfiles(
-      [...withoutProfile, { ...baseProfiles[existingIndex], ...payload }],
-      { existingProfiles: baseProfiles }
-    );
-    const updatedIndex = normalizedProfiles.findIndex((profile) => profile.id === req.params.profileId);
-    if (updatedIndex === -1) {
-      return res.status(400).json({ ok: false, message: 'Impossibile aggiornare il profilo' });
-    }
-    const updatedProfile = { ...normalizedProfiles[updatedIndex] };
-
-    if (payload.removePdfLogo && updatedProfile.pdfLogoPath) {
-      await removeStoredProfileLogo(updatedProfile.pdfLogoPath);
-      updatedProfile.pdfLogoPath = '';
-      updatedProfile.pdfLogo = null;
-    }
-
-    if (req.file) {
-      await ensureTempFileHasExtension(req.file);
-      await removeStoredProfileLogo(updatedProfile.pdfLogoPath);
-      const stored = await storeProfileLogo({
-        workspaceId: workspace.id,
-        profileId: updatedProfile.id,
-        tmpPath: req.file.path,
-        originalName: req.file.originalname,
-      });
-      if (stored) {
-        uploadedPath = stored.relativePath;
-        updatedProfile.pdfLogoPath = stored.relativePath;
-        updatedProfile.pdfLogo = {
-          fileName: stored.fileName,
-          originalName: req.file.originalname || stored.fileName,
-          updatedAt: Date.now(),
-        };
+    const parsed = profileInputSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      if (req.file?.path) {
+        await safeUnlink(req.file.path);
       }
+      return res.status(400).json({ ok: false, message: 'Profilo non valido', details: parsed.error.flatten() });
     }
 
+    const payload = parsed.data;
+    const updatedProfile = {
+      ...existingProfile,
+      label: payload.label || existingProfile.label,
+      slug: sanitizeSlug(payload.slug || existingProfile.slug || existingProfile.label, existingProfile.label),
+      destDir: payload.destDir ?? existingProfile.destDir,
+      promptId: payload.promptId ?? existingProfile.promptId,
+      pdfTemplate: payload.pdfTemplate ?? existingProfile.pdfTemplate,
+      pdfLogoPath: payload.pdfLogoPath ?? existingProfile.pdfLogoPath,
+      pdfLogo: payload.pdfLogo ?? existingProfile.pdfLogo,
+      updatedAt: Date.now(),
+    };
+
+    const prompts = await listPrompts();
     const validationErrors = await validateWorkspaceProfiles([updatedProfile], { prompts });
     if (validationErrors.length) {
-      if (uploadedPath) {
-        await removeStoredProfileLogo(uploadedPath);
+      if (req.file?.path) {
+        await safeUnlink(req.file.path);
       }
       return res.status(400).json({ ok: false, message: 'Profilo non valido', details: validationErrors });
     }
 
-    normalizedProfiles[updatedIndex] = updatedProfile;
-    const nextWorkspace = {
-      ...workspace,
-      profiles: normalizedProfiles,
-      updatedAt: Date.now(),
-    };
-    workspaces[index] = nextWorkspace;
-    await writeWorkspaces(workspaces);
-
-    res.json({ ok: true, profile: profileForResponse(nextWorkspace.id, updatedProfile) });
+    const saved = await updateProfileInDb(workspaceId, profileId, updatedProfile);
+    res.json({ ok: true, profile: profileForResponse(workspaceId, saved) });
   } catch (error) {
-    if (uploadedPath) {
-      await removeStoredProfileLogo(uploadedPath);
-    }
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
   } finally {
     if (req.file?.path) {
       await safeUnlink(req.file.path);
@@ -3450,64 +3743,32 @@ workspaceProfilesRouter.put('/:profileId', optionalProfileUpload, async (req, re
 });
 
 workspaceProfilesRouter.delete('/:profileId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
+  }
   try {
-    const workspaces = await readWorkspaces();
-    const index = workspaces.findIndex((workspace) => workspace.id === req.params.workspaceId);
-    if (index === -1) {
+    const workspaceId = String(req.params?.workspaceId || '').trim();
+    const profileId = String(req.params?.profileId || '').trim();
+    if (!workspaceId || !profileId) {
+      return res.status(400).json({ ok: false, message: 'Identificativi non validi' });
+    }
+    const workspace = await getWorkspaceFromDb(workspaceId);
+    if (!workspace) {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
-    const workspace = { ...workspaces[index] };
-    const baseProfiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
-    const existing = baseProfiles.find((profile) => profile.id === req.params.profileId);
-    if (!existing) {
+    const existingProfile = (workspace.profiles || []).find((profile) => profile.id === profileId);
+    if (!existingProfile) {
       return res.status(404).json({ ok: false, message: 'Profilo non trovato' });
     }
-
-    if (existing.pdfLogoPath) {
-      await removeStoredProfileLogo(existing.pdfLogoPath);
-    }
-
-    const nextWorkspace = {
-      ...workspace,
-      profiles: baseProfiles.filter((profile) => profile.id !== req.params.profileId),
-      updatedAt: Date.now(),
-    };
-    workspaces[index] = nextWorkspace;
-    await writeWorkspaces(workspaces);
-
+    await deleteProfileFromDb(workspaceId, profileId);
     res.json({ ok: true });
   } catch (error) {
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
   }
 });
 
 workspaceProfilesRouter.get('/:profileId/logo', async (req, res) => {
-  try {
-    const workspaces = await readWorkspaces();
-    const workspace = findWorkspaceById(workspaces, req.params.workspaceId);
-    if (!workspace) {
-      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
-    }
-    const profile = Array.isArray(workspace.profiles)
-      ? workspace.profiles.find((item) => item.id === req.params.profileId)
-      : null;
-    if (!profile || !profile.pdfLogoPath) {
-      return res.status(404).json({ ok: false, message: 'Logo non disponibile' });
-    }
-
-    const absolutePath = resolveProfileLogoAbsolutePath(profile.pdfLogoPath);
-    if (!absolutePath) {
-      return res.status(404).json({ ok: false, message: 'Logo non trovato' });
-    }
-    try {
-      await fsp.access(absolutePath, fs.constants.R_OK);
-    } catch {
-      return res.status(404).json({ ok: false, message: 'Logo non accessibile' });
-    }
-    res.sendFile(absolutePath);
-  } catch (error) {
-    res.status(500).json({ ok: false, message: error && error.message ? error.message : String(error) });
-  }
+  res.status(404).json({ ok: false, message: 'Logo non disponibile' });
 });
 
 app.use('/api/workspaces/:workspaceId/profiles', workspaceProfilesRouter);
@@ -3919,55 +4180,76 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     let workspaceMeta = null;
     let workspaceProject = null;
     let workspaceProfile = null;
-    if (workspaceId) {
-      const workspaces = await readWorkspaces();
-      const foundWorkspace = findWorkspaceById(workspaces, workspaceId);
-      if (!foundWorkspace) {
-        out(`⚠️ Workspace ${workspaceId} non trovato`, 'upload', 'info');
-      } else {
-        const { workspace: updatedWorkspace, changed, project } = upsertProjectInWorkspace(foundWorkspace, {
-          projectId: workspaceProjectId,
-          projectName: workspaceProjectName,
-          status: workspaceStatus,
-        });
-        workspaceMeta = updatedWorkspace;
-        workspaceProject = project;
-        if (workspaceProfileId) {
-          const profiles = Array.isArray(updatedWorkspace.profiles) ? updatedWorkspace.profiles : [];
-          workspaceProfile = profiles.find((profile) => profile.id === workspaceProfileId) || null;
-          if (!workspaceProfile) {
-            out(`⚠️ Profilo ${workspaceProfileId} non trovato nel workspace ${updatedWorkspace.name}`, 'upload', 'info');
-          } else {
-            out(`✨ Profilo applicato: ${workspaceProfile.label || workspaceProfile.id}`, 'upload', 'info');
+    if (workspaceId && supabase) {
+      try {
+        const foundWorkspace = await getWorkspaceFromDb(workspaceId);
+        if (!foundWorkspace) {
+          out(`⚠️ Workspace ${workspaceId} non trovato`, 'upload', 'info');
+        } else {
+          const { workspace: updatedWorkspace, changed, project } = upsertProjectInWorkspace(foundWorkspace, {
+            projectId: workspaceProjectId,
+            projectName: workspaceProjectName,
+            status: workspaceStatus,
+          });
+          workspaceMeta = updatedWorkspace;
+          workspaceProject = project;
+          if (workspaceProfileId) {
+            const profiles = Array.isArray(updatedWorkspace.profiles) ? updatedWorkspace.profiles : [];
+            workspaceProfile = profiles.find((profile) => profile.id === workspaceProfileId) || null;
+            if (!workspaceProfile) {
+              out(`⚠️ Profilo ${workspaceProfileId} non trovato nel workspace ${updatedWorkspace.name}`, 'upload', 'info');
+            } else {
+              out(`✨ Profilo applicato: ${workspaceProfile.label || workspaceProfile.id}`, 'upload', 'info');
+            }
+          }
+          if (changed) {
+            try {
+              workspaceMeta = await updateWorkspaceInDb(updatedWorkspace.id, updatedWorkspace);
+              out(
+                `📁 Workspace aggiornato con il progetto ${project?.name || workspaceProjectName || workspaceProjectId}`,
+                'upload',
+                'info'
+              );
+            } catch (persistError) {
+              out(
+                `⚠️ Aggiornamento workspace non riuscito: ${persistError?.message || persistError}`,
+                'upload',
+                'warning'
+              );
+            }
           }
         }
-        if (changed) {
-          const next = workspaces.map((ws) => (ws.id === updatedWorkspace.id ? updatedWorkspace : ws));
-          await writeWorkspaces(next);
-          out(
-            `📁 Workspace aggiornato con il progetto ${project?.name || workspaceProjectName || workspaceProjectId}`,
-            'upload',
-            'info'
-          );
-        }
+      } catch (workspaceError) {
+        out(
+          `⚠️ Errore nel recupero del workspace ${workspaceId}: ${workspaceError?.message || workspaceError}`,
+          'upload',
+          'warning'
+        );
       }
+    } else if (workspaceId && !supabase) {
+      out('⚠️ Supabase non configurato: impossibile recuperare i workspace.', 'upload', 'warning');
     }
 
-    if (!workspaceMeta && workspaceProfileId && !workspaceProfile) {
-      const workspaces = await readWorkspaces();
-      const fallbackWorkspace = workspaces.find((ws) =>
-        Array.isArray(ws.profiles) && ws.profiles.some((profile) => profile.id === workspaceProfileId)
-      );
-      if (fallbackWorkspace) {
-        workspaceMeta = fallbackWorkspace;
-        workspaceProfile = fallbackWorkspace.profiles.find((profile) => profile.id === workspaceProfileId) || null;
-        if (workspaceProfile) {
-          out(
-            `✨ Profilo applicato da workspace ${fallbackWorkspace.name}: ${workspaceProfile.label || workspaceProfile.id}`,
-            'upload',
-            'info'
-          );
+    if (!workspaceMeta && workspaceProfileId && !workspaceProfile && supabase) {
+      try {
+        const fallbackWorkspace = await findWorkspaceByProfileId(workspaceProfileId);
+        if (fallbackWorkspace) {
+          workspaceMeta = fallbackWorkspace;
+          workspaceProfile = (fallbackWorkspace.profiles || []).find((profile) => profile.id === workspaceProfileId) || null;
+          if (workspaceProfile) {
+            out(
+              `✨ Profilo applicato da workspace ${fallbackWorkspace.name}: ${workspaceProfile.label || workspaceProfile.id}`,
+              'upload',
+              'info'
+            );
+          }
         }
+      } catch (fallbackError) {
+        out(
+          `⚠️ Errore nel recupero del profilo ${workspaceProfileId}: ${fallbackError?.message || fallbackError}`,
+          'upload',
+          'warning'
+        );
       }
     }
 
@@ -4408,17 +4690,6 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       customLogoPath = await ensureTempFileHasExtension(req.files.pdfLogo[0]);
       if (customLogoPath) {
         out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
-      }
-    } else if (workspaceProfile?.pdfLogoPath) {
-      const profileLogo = resolveProfileLogoAbsolutePath(workspaceProfile.pdfLogoPath);
-      if (profileLogo) {
-        try {
-          await fsp.access(profileLogo, fs.constants.R_OK);
-          customLogoPath = profileLogo;
-          out(`🎨 Logo da profilo: ${path.basename(profileLogo)}`, 'publish', 'info');
-        } catch (logoError) {
-          out(`⚠️ Logo profilo non accessibile: ${logoError?.message || logoError}`, 'publish', 'warning');
-        }
       }
     }
 
@@ -4924,29 +5195,45 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
 
     let workspaceMeta = null;
     let workspaceProject = null;
-    if (workspaceId) {
-      const workspaces = await readWorkspaces();
-      const foundWorkspace = findWorkspaceById(workspaces, workspaceId);
-      if (!foundWorkspace) {
-        out(`⚠️ Workspace ${workspaceId} non trovato`, 'upload', 'info');
-      } else {
-        const { workspace: updatedWorkspace, changed, project } = upsertProjectInWorkspace(foundWorkspace, {
-          projectId: workspaceProjectId,
-          projectName: workspaceProjectName,
-          status: workspaceStatus,
-        });
-        workspaceMeta = updatedWorkspace;
-        workspaceProject = project;
-        if (changed) {
-          const next = workspaces.map((ws) => (ws.id === updatedWorkspace.id ? updatedWorkspace : ws));
-          await writeWorkspaces(next);
-          out(
-            `📁 Workspace aggiornato con il progetto ${project?.name || workspaceProjectName || workspaceProjectId}`,
-            'upload',
-            'info'
-          );
+    if (workspaceId && supabase) {
+      try {
+        const foundWorkspace = await getWorkspaceFromDb(workspaceId);
+        if (!foundWorkspace) {
+          out(`⚠️ Workspace ${workspaceId} non trovato`, 'upload', 'info');
+        } else {
+          const { workspace: updatedWorkspace, changed, project } = upsertProjectInWorkspace(foundWorkspace, {
+            projectId: workspaceProjectId,
+            projectName: workspaceProjectName,
+            status: workspaceStatus,
+          });
+          workspaceMeta = updatedWorkspace;
+          workspaceProject = project;
+          if (changed) {
+            try {
+              workspaceMeta = await updateWorkspaceInDb(updatedWorkspace.id, updatedWorkspace);
+              out(
+                `📁 Workspace aggiornato con il progetto ${project?.name || workspaceProjectName || workspaceProjectId}`,
+                'upload',
+                'info'
+              );
+            } catch (persistError) {
+              out(
+                `⚠️ Aggiornamento workspace non riuscito: ${persistError?.message || persistError}`,
+                'upload',
+                'warning'
+              );
+            }
+          }
         }
+      } catch (workspaceError) {
+        out(
+          `⚠️ Errore nel recupero del workspace ${workspaceId}: ${workspaceError?.message || workspaceError}`,
+          'upload',
+          'warning'
+        );
       }
+    } else if (workspaceId && !supabase) {
+      out('⚠️ Supabase non configurato: impossibile recuperare i workspace.', 'upload', 'warning');
     }
 
     const baseName = workspaceMeta
@@ -5151,29 +5438,45 @@ app.post(
 
       let workspaceMeta = null;
       let workspaceProject = null;
-      if (workspaceId) {
-        const workspaces = await readWorkspaces();
-        const foundWorkspace = findWorkspaceById(workspaces, workspaceId);
-        if (!foundWorkspace) {
-          out(`⚠️ Workspace ${workspaceId} non trovato`, 'upload', 'info');
-        } else {
-          const { workspace: updatedWorkspace, changed, project } = upsertProjectInWorkspace(foundWorkspace, {
-            projectId: workspaceProjectId,
-            projectName: workspaceProjectName,
-            status: workspaceStatus,
-          });
-          workspaceMeta = updatedWorkspace;
-          workspaceProject = project;
-          if (changed) {
-            const next = workspaces.map((ws) => (ws.id === updatedWorkspace.id ? updatedWorkspace : ws));
-            await writeWorkspaces(next);
-            out(
-              `📁 Workspace aggiornato con il progetto ${project?.name || workspaceProjectName || workspaceProjectId}`,
-              'upload',
-              'info'
-            );
+      if (workspaceId && supabase) {
+        try {
+          const foundWorkspace = await getWorkspaceFromDb(workspaceId);
+          if (!foundWorkspace) {
+            out(`⚠️ Workspace ${workspaceId} non trovato`, 'upload', 'info');
+          } else {
+            const { workspace: updatedWorkspace, changed, project } = upsertProjectInWorkspace(foundWorkspace, {
+              projectId: workspaceProjectId,
+              projectName: workspaceProjectName,
+              status: workspaceStatus,
+            });
+            workspaceMeta = updatedWorkspace;
+            workspaceProject = project;
+            if (changed) {
+              try {
+                workspaceMeta = await updateWorkspaceInDb(updatedWorkspace.id, updatedWorkspace);
+                out(
+                  `📁 Workspace aggiornato con il progetto ${project?.name || workspaceProjectName || workspaceProjectId}`,
+                  'upload',
+                  'info'
+                );
+              } catch (persistError) {
+                out(
+                  `⚠️ Aggiornamento workspace non riuscito: ${persistError?.message || persistError}`,
+                  'upload',
+                  'warning'
+                );
+              }
+            }
           }
+        } catch (workspaceError) {
+          out(
+            `⚠️ Errore nel recupero del workspace ${workspaceId}: ${workspaceError?.message || workspaceError}`,
+            'upload',
+            'warning'
+          );
         }
+      } else if (workspaceId && !supabase) {
+        out('⚠️ Supabase non configurato: impossibile recuperare i workspace.', 'upload', 'warning');
       }
 
       let destDir = DEFAULT_DEST_DIR;
