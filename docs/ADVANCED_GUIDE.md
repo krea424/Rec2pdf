@@ -30,3 +30,16 @@ La modalità **Advanced** estende Rec2PDF con una control room boardroom che uni
 6. **Chiudi con KPI** – Mostra nella command palette i comandi rapidi e ricorda che tutti gli eventi chiave finiscono su `trackEvent`, facilitando la definizione di metriche quali tasso di completamento pipeline e tempo medio di configurazione prompt.【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L59-L190】【F:rec2pdf-frontend/src/utils/analytics.ts†L29-L60】
 
 Seguendo la scaletta puoi dimostrare come la modalità Advanced mantenga compatibilità con la Base, introducendo al contempo strumenti decisionali per manager e team operations.
+
+## Bootstrap Supabase per ambienti Advanced
+
+Per demo executive o rollout multi-team assicurati che l'istanza Supabase sia allineata con lo schema cloud introdotto dalla migrazione.
+
+1. **Applica le migrazioni SQL** presenti in `rec2pdf-backend/supabase/migrations/` (`supabase db push`) per creare tabelle `profiles`, `workspaces`, `prompts`, la colonna `metadata` e il bucket `logos` con policy dedicate.【F:rec2pdf-backend/supabase/migrations/20240725_draft_prompts_workspaces_profiles.sql†L1-L146】【F:rec2pdf-backend/supabase/migrations/20240801_add_metadata_to_workspaces.sql†L1-L12】【F:rec2pdf-backend/supabase/migrations/20240815_create_logos_bucket.sql†L1-L28】
+2. **Sincronizza i dati legacy** con gli script CLI:
+   - `node rec2pdf-backend/scripts/migrate-prompts.js [--dry-run]` per importare la libreria prompt da `~/.rec2pdf/prompts.json` con normalizzazione di checklist e regole PDF.【F:rec2pdf-backend/scripts/migrate-prompts.js†L1-L132】【F:rec2pdf-backend/scripts/migrate-prompts.js†L146-L198】
+   - `node rec2pdf-backend/scripts/migrate-workspaces.js [--dry-run|--file]` per portare workspace/profili su Supabase, generando un manifest dei loghi locali da caricare manualmente.【F:rec2pdf-backend/scripts/migrate-workspaces.js†L1-L200】【F:rec2pdf-backend/scripts/migrate-workspaces.js†L240-L334】
+   - `node rec2pdf-backend/scripts/migrate-logos.js` per pubblicare i loghi storici nel bucket `logos` e aggiornare `pdf_logo_url` nei profili.【F:rec2pdf-backend/scripts/migrate-logos.js†L1-L175】
+3. **Verifica le policy RLS** collegate alla modalità Advanced (owner → workspace/profili/prompt) e aggiorna i flag utente tramite Supabase Auth per abilitare i toggles nel frontend.【F:rec2pdf-backend/supabase/migrations/20240725_draft_prompts_workspaces_profiles.sql†L53-L75】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L21-L205】
+
+Con il database bootstrapato e i dati migrati puoi presentare la control room advanced con workspace, progetti e branding già sincronizzati nel cloud.
