@@ -16,6 +16,7 @@ Rec2PDF automatizza il flusso **voce → trascrizione → documento editoriale**
 - [Prerequisiti](#prerequisiti)
 - [Autenticazione & Supabase](#autenticazione--supabase)
 - [Quick start](#quick-start)
+- [Bootstrap Supabase](#bootstrap-supabase)
 - [Backend HTTP](#backend-http)
 - [Interfaccia web](#interfaccia-web)
 - [Scorciatoie da tastiera](#scorciatoie-da-tastiera)
@@ -164,6 +165,36 @@ which ppubr
    L'opzione `VITE_BYPASS_AUTH` attiva il bypass login per demo locali, mentre i flag di default rendono disponibili entrambe le modalità fin dal primo avvio. Se dimentichi di impostare `VITE_DEFAULT_MODE_FLAGS`, il frontend usa automaticamente `MODE_BASE,MODE_ADVANCED` per evitare che il toggle sparisca; per limitare l'accesso puoi specificare esplicitamente solo `MODE_BASE` e affidarti a Supabase per abilitare l'advanced agli utenti selezionati.【F:rec2pdf-frontend/src/App.jsx†L17-L195】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L21-L205】
 4. Apri il browser sull'URL servito da Vite, configura se necessario l'endpoint backend (`http://localhost:7788` è il default) e lancia la diagnostica dall'onboarding banner.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L16-L53】【F:rec2pdf-frontend/src/hooks/useBackendDiagnostics.js†L1-L86】
 5. Cambia modalità direttamente dal toggle in header o dalla command palette per testare base e advanced senza ricaricare la pagina.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L56-L156】【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L59-L190】
+
+## Bootstrap Supabase
+
+1. **Applica le migrazioni** contenute in `rec2pdf-backend/supabase/migrations/` per creare tabelle, policy RLS e bucket `logos`.
+   ```bash
+   cd rec2pdf-backend
+   supabase db push
+   ```
+   Le migrazioni `20240725_draft_prompts_workspaces_profiles.sql`, `20240801_add_metadata_to_workspaces.sql` e `20240815_create_logos_bucket.sql`
+   impostano lo schema di base (profili, workspaces, prompts), aggiungono il campo `metadata` e assicurano la presenza del bucket pubblico per i loghi.【F:rec2pdf-backend/supabase/migrations/20240725_draft_prompts_workspaces_profiles.sql†L1-L146】【F:rec2pdf-backend/supabase/migrations/20240801_add_metadata_to_workspaces.sql†L1-L12】【F:rec2pdf-backend/supabase/migrations/20240815_create_logos_bucket.sql†L1-L28】
+2. **Migra i prompt locali** (opzionale ma consigliato) eseguendo lo script CLI:
+   ```bash
+   cd rec2pdf-backend
+   node scripts/migrate-prompts.js             # usa ~/.rec2pdf/prompts.json
+   node scripts/migrate-prompts.js --dry-run   # valida senza scrivere su Supabase
+   ```
+   Lo script normalizza slug, checklist e regole PDF/Markdown, controlla duplicati e sincronizza i record via Admin API.【F:rec2pdf-backend/scripts/migrate-prompts.js†L1-L132】【F:rec2pdf-backend/scripts/migrate-prompts.js†L146-L198】
+3. **Porta nel cloud workspaces e profili** (inclusi stati e progetti) da `~/.rec2pdf/workspaces.json`:
+   ```bash
+   cd rec2pdf-backend
+   node scripts/migrate-workspaces.js
+   node scripts/migrate-workspaces.js --dry-run --file scripts/__fixtures__/workspaces.sample.json
+   ```
+   Il tool converte slug, versioning policy e percorsi, blocca la procedura in presenza di duplicati e genera un manifest con i loghi locali che richiedono upload manuale.【F:rec2pdf-backend/scripts/migrate-workspaces.js†L1-L200】【F:rec2pdf-backend/scripts/migrate-workspaces.js†L240-L334】
+4. **Carica i loghi storici** salvati in `~/.rec2pdf/logos/<workspaceId>/<profileId>/` sfruttando il bucket `logos`:
+   ```bash
+   cd rec2pdf-backend
+   node scripts/migrate-logos.js
+   ```
+   Lo script esplora il filesystem, valida le estensioni supportate e aggiorna `pdf_logo_url`/metadata dei profili su Supabase con l’URL pubblico risultante.【F:rec2pdf-backend/scripts/migrate-logos.js†L1-L175】
 
 ## Backend HTTP
 - **Server principale**: `rec2pdf-backend/server.js`.
