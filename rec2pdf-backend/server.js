@@ -45,6 +45,15 @@ const getSupabaseClient = () => {
   return supabase;
 };
 
+const VALID_LOGO_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.svg', '.pdf']);
+const LOGO_CONTENT_TYPE_MAP = new Map([
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.svg', 'image/svg+xml'],
+  ['.pdf', 'application/pdf'],
+]);
+
 const CONTEXT_SEPARATOR = '\n\n---\n\n';
 const CONTEXT_QUERY_MAX_CHARS = 4000;
 
@@ -1378,6 +1387,7 @@ const profileMetadataSchema = z
         fileName: z.string().trim().min(1),
         originalName: z.string().trim().optional(),
         updatedAt: z.number().int().nonnegative().optional(),
+        storagePath: z.string().trim().optional(),
       })
       .nullable()
       .optional(),
@@ -1411,6 +1421,7 @@ const profileInputSchema = z
         fileName: z.string().trim().min(1),
         originalName: z.string().trim().optional(),
         updatedAt: z.number().int().nonnegative().optional(),
+        storagePath: z.string().trim().optional(),
       })
       .nullable()
       .optional(),
@@ -1486,6 +1497,14 @@ const mapProfileRowToDomain = (row) => {
   const metadataResult = profileMetadataSchema.safeParse(value.metadata || {});
   const metadata = metadataResult.success ? metadataResult.data : {};
   const label = metadata?.label || value.slug || value.id;
+  let pdfLogo = null;
+  if (metadata?.pdfLogo && typeof metadata.pdfLogo === 'object') {
+    const sanitized = { ...metadata.pdfLogo };
+    if (typeof sanitized.storagePath === 'string') {
+      sanitized.storagePath = sanitized.storagePath.trim();
+    }
+    pdfLogo = sanitized;
+  }
   return {
     id: value.id,
     label,
@@ -1494,7 +1513,7 @@ const mapProfileRowToDomain = (row) => {
     promptId: metadata?.promptId || '',
     pdfTemplate: metadata?.pdfTemplate || '',
     pdfLogoPath: value.pdf_logo_url || metadata?.pdfLogoPath || '',
-    pdfLogo: metadata?.pdfLogo || null,
+    pdfLogo,
     createdAt: dateToTimestamp(value.created_at),
     updatedAt: dateToTimestamp(value.updated_at),
   };
@@ -1590,7 +1609,16 @@ const profileToDbPayload = (workspaceId, profile) => {
     label: profile.label || profile.slug || profile.id,
     promptId: profile.promptId || '',
     pdfTemplate: profile.pdfTemplate || '',
-    pdfLogo: profile.pdfLogo || null,
+    pdfLogo: (() => {
+      if (!profile.pdfLogo || typeof profile.pdfLogo !== 'object') {
+        return null;
+      }
+      const descriptor = { ...profile.pdfLogo };
+      if (typeof descriptor.storagePath === 'string') {
+        descriptor.storagePath = descriptor.storagePath.trim();
+      }
+      return descriptor;
+    })(),
     pdfLogoPath: profile.pdfLogoPath || '',
   };
 
@@ -1857,13 +1885,25 @@ const normalizeWorkspaceProfiles = (profiles, { existingProfiles } = {}) => {
           : '';
       const pdfLogo = profile.pdfLogo && typeof profile.pdfLogo === 'object'
         ? {
-            fileName: sanitizeStorageFileName(profile.pdfLogo.fileName || profile.pdfLogoPath || previous?.pdfLogo?.fileName || 'logo.pdf', 'logo.pdf'),
-            originalName: String(profile.pdfLogo.originalName || profile.pdfLogo.fileName || previous?.pdfLogo?.originalName || '').trim(),
+            fileName: sanitizeStorageFileName(
+              profile.pdfLogo.fileName || profile.pdfLogoPath || previous?.pdfLogo?.fileName || 'logo.pdf',
+              'logo.pdf'
+            ),
+            originalName: String(
+              profile.pdfLogo.originalName ||
+                profile.pdfLogo.fileName ||
+                previous?.pdfLogo?.originalName ||
+                ''
+            ).trim(),
             updatedAt: Number.isFinite(profile.pdfLogo.updatedAt)
               ? Number(profile.pdfLogo.updatedAt)
               : Number.isFinite(previous?.pdfLogo?.updatedAt)
                 ? Number(previous.pdfLogo.updatedAt)
                 : now,
+            storagePath:
+              typeof profile.pdfLogo.storagePath === 'string' && profile.pdfLogo.storagePath.trim()
+                ? profile.pdfLogo.storagePath.trim()
+                : previous?.pdfLogo?.storagePath || '',
           }
         : previous?.pdfLogo && typeof previous.pdfLogo === 'object'
           ? { ...previous.pdfLogo }
@@ -2641,6 +2681,118 @@ const uploadFileToBucket = async (bucket, objectPath, buffer, contentType) => {
   if (error) {
     throw new Error(`Upload fallito su Supabase (${bucket}/${objectPath}): ${error.message}`);
   }
+};
+
+const buildSupabasePublicUrl = (bucket, objectPath) => {
+  const normalizedBucket = String(bucket || '').trim();
+  const normalizedPath = String(objectPath || '').trim().replace(/^\/+/, '');
+  if (!normalizedBucket || !normalizedPath) {
+    throw new Error('Percorso storage non valido per URL pubblico');
+  }
+  if (!SUPABASE_URL) {
+    throw new Error('SUPABASE_URL non configurato: impossibile generare URL pubblico');
+  }
+  try {
+    const origin = new URL(SUPABASE_URL);
+    return new URL(`/storage/v1/object/public/${normalizedBucket}/${normalizedPath}`, origin).toString();
+  } catch (error) {
+    const message = error?.message || 'URL Supabase non valido';
+    throw new Error(`Impossibile generare URL pubblico: ${message}`);
+  }
+};
+
+const extractLogoStoragePath = (value) => {
+  if (!value) return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      const bucketIndex = segments.findIndex((segment) => segment === 'logos');
+      if (bucketIndex >= 0 && bucketIndex < segments.length - 1) {
+        return segments.slice(bucketIndex + 1).join('/');
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  }
+  return raw.replace(/^logos\//i, '').replace(/^\/+/, '');
+};
+
+const SUPABASE_LOGO_BUCKET = 'logos';
+
+const deleteProfileLogoFromSupabase = async (storagePathOrUrl) => {
+  if (!storagePathOrUrl) {
+    return false;
+  }
+  if (!supabase) {
+    throw new Error('Supabase client is not configured');
+  }
+  const objectPath = extractLogoStoragePath(storagePathOrUrl);
+  if (!objectPath) {
+    return false;
+  }
+  const { error } = await supabase.storage.from(SUPABASE_LOGO_BUCKET).remove([objectPath]);
+  if (error && error.statusCode !== 404) {
+    throw new Error(`Impossibile eliminare il logo Supabase (${objectPath}): ${error.message}`);
+  }
+  return true;
+};
+
+const guessLogoContentType = (fileName, fallbackType = 'application/octet-stream') => {
+  if (!fileName) {
+    return fallbackType;
+  }
+  const ext = path.extname(String(fileName)).toLowerCase();
+  return LOGO_CONTENT_TYPE_MAP.get(ext) || fallbackType;
+};
+
+const uploadProfileLogoToSupabase = async (filePath, options = {}) => {
+  if (!supabase) {
+    throw new Error('Supabase client is not configured');
+  }
+  if (!filePath) {
+    throw new Error('Percorso file logo non valido');
+  }
+
+  const workspaceSegment = sanitizeSlug(options.workspaceId || 'workspace', 'workspace');
+  const profileSegment = sanitizeSlug(options.profileId || options.slug || 'profile', 'profile');
+  const safeFileName = sanitizeStorageFileName(options.fileName || path.basename(filePath) || 'logo.pdf', 'logo.pdf');
+  const timestamp = Date.now().toString(36);
+  const objectPath = `${workspaceSegment}/${profileSegment}/${timestamp}_${safeFileName}`;
+  const buffer = await fsp.readFile(filePath);
+  const resolvedContentType = guessLogoContentType(options.fileName, options.contentType || 'application/octet-stream');
+
+  const { error } = await supabase.storage.from(SUPABASE_LOGO_BUCKET).upload(objectPath, buffer, {
+    cacheControl: '86400',
+    contentType: resolvedContentType,
+    upsert: true,
+  });
+
+  if (error) {
+    throw new Error(`Upload logo su Supabase fallito (${objectPath}): ${error.message}`);
+  }
+
+  if (options.previousStoragePath) {
+    try {
+      const previousPath = extractLogoStoragePath(options.previousStoragePath);
+      if (previousPath && previousPath !== objectPath) {
+        await deleteProfileLogoFromSupabase(previousPath);
+      }
+    } catch (cleanupError) {
+      console.warn('⚠️  Impossibile eliminare il logo precedente:', cleanupError?.message || cleanupError);
+    }
+  }
+
+  const publicUrl = buildSupabasePublicUrl(SUPABASE_LOGO_BUCKET, objectPath);
+  return {
+    storagePath: objectPath,
+    publicUrl,
+    fileName: safeFileName,
+    contentType: resolvedContentType,
+  };
 };
 
 const DEFAULT_SUPABASE_DOWNLOAD_ATTEMPTS = 3;
@@ -3609,6 +3761,7 @@ workspaceProfilesRouter.post('/', optionalProfileUpload, async (req, res) => {
     }
     return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
   }
+  let uploadResult = null;
   try {
     const workspaceId = String(req.params?.workspaceId || '').trim();
     if (!workspaceId) {
@@ -3635,22 +3788,74 @@ workspaceProfilesRouter.post('/', optionalProfileUpload, async (req, res) => {
     }
 
     const payload = parsed.data;
+    const now = Date.now();
+    const resolvedProfileId = typeof payload.id === 'string' && payload.id.trim() ? payload.id.trim() : generateId('profile');
+    const slug = sanitizeSlug(payload.slug || payload.label, payload.label);
+    const basePdfLogo = payload.pdfLogo && typeof payload.pdfLogo === 'object'
+      ? {
+          fileName: sanitizeStorageFileName(
+            payload.pdfLogo.fileName || payload.pdfLogoPath || 'logo.pdf',
+            'logo.pdf'
+          ),
+          originalName: String(payload.pdfLogo.originalName || payload.pdfLogo.fileName || '').trim(),
+          storagePath:
+            typeof payload.pdfLogo.storagePath === 'string' && payload.pdfLogo.storagePath.trim()
+              ? payload.pdfLogo.storagePath.trim()
+              : '',
+          updatedAt: Number.isFinite(payload.pdfLogo.updatedAt)
+            ? Number(payload.pdfLogo.updatedAt)
+            : now,
+        }
+      : null;
+
     const profilePayload = {
-      id: payload.id || '',
+      id: resolvedProfileId,
       label: payload.label,
-      slug: sanitizeSlug(payload.slug || payload.label, payload.label),
+      slug,
       destDir: payload.destDir || '',
       promptId: payload.promptId || '',
       pdfTemplate: payload.pdfTemplate || '',
-      pdfLogoPath: payload.pdfLogoPath || '',
-      pdfLogo: payload.pdfLogo || null,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      pdfLogoPath: typeof payload.pdfLogoPath === 'string' ? payload.pdfLogoPath.trim() : '',
+      pdfLogo: basePdfLogo,
+      createdAt: now,
+      updatedAt: now,
     };
+
+    if (req.file) {
+      const tempPath = await ensureTempFileHasExtension(req.file, VALID_LOGO_EXTENSIONS);
+      try {
+        uploadResult = await uploadProfileLogoToSupabase(tempPath, {
+          workspaceId,
+          profileId: resolvedProfileId,
+          slug,
+          fileName: req.file.originalname,
+          contentType: req.file.mimetype,
+        });
+      } catch (uploadError) {
+        const message = uploadError?.message || 'Caricamento logo su Supabase non riuscito';
+        return res.status(500).json({ ok: false, message });
+      }
+
+      const originalLabel = String(req.file.originalname || payload.label || slug || 'logo.pdf').trim();
+      profilePayload.pdfLogoPath = uploadResult.publicUrl;
+      profilePayload.pdfLogo = {
+        fileName: uploadResult.fileName,
+        originalName: originalLabel,
+        storagePath: uploadResult.storagePath,
+        updatedAt: now,
+      };
+    }
 
     const prompts = await listPrompts();
     const validationErrors = await validateWorkspaceProfiles([profilePayload], { prompts });
     if (validationErrors.length) {
+      if (uploadResult?.storagePath) {
+        try {
+          await deleteProfileLogoFromSupabase(uploadResult.storagePath);
+        } catch (cleanupError) {
+          console.warn('⚠️  Pulizia logo fallita dopo la validazione:', cleanupError?.message || cleanupError);
+        }
+      }
       if (req.file?.path) {
         await safeUnlink(req.file.path);
       }
@@ -3660,6 +3865,13 @@ workspaceProfilesRouter.post('/', optionalProfileUpload, async (req, res) => {
     const created = await insertProfileIntoDb(workspaceId, profilePayload);
     res.status(201).json({ ok: true, profile: profileForResponse(workspaceId, created) });
   } catch (error) {
+    if (uploadResult?.storagePath) {
+      try {
+        await deleteProfileLogoFromSupabase(uploadResult.storagePath);
+      } catch (cleanupError) {
+        console.warn('⚠️  Pulizia logo fallita dopo errore:', cleanupError?.message || cleanupError);
+      }
+    }
     res.status(500).json({ ok: false, message: error?.message || String(error) });
   } finally {
     if (req.file?.path) {
@@ -3675,6 +3887,7 @@ workspaceProfilesRouter.put('/:profileId', optionalProfileUpload, async (req, re
     }
     return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
   }
+  let uploadResult = null;
   try {
     const workspaceId = String(req.params?.workspaceId || '').trim();
     const profileId = String(req.params?.profileId || '').trim();
@@ -3710,21 +3923,110 @@ workspaceProfilesRouter.put('/:profileId', optionalProfileUpload, async (req, re
     }
 
     const payload = parsed.data;
+    const now = Date.now();
+    const slug = sanitizeSlug(payload.slug || existingProfile.slug || existingProfile.label, existingProfile.label);
+    const rawRemove = req.body?.removePdfLogo;
+    const removePdfLogo = (() => {
+      if (typeof rawRemove === 'boolean') return rawRemove;
+      if (typeof rawRemove === 'string') {
+        const normalized = rawRemove.trim().toLowerCase();
+        return ['1', 'true', 'yes', 'on'].includes(normalized);
+      }
+      if (typeof rawRemove === 'number') {
+        return Number(rawRemove) === 1;
+      }
+      return false;
+    })();
+
+    const basePdfLogo = payload.pdfLogo && typeof payload.pdfLogo === 'object'
+      ? {
+          fileName: sanitizeStorageFileName(
+            payload.pdfLogo.fileName || payload.pdfLogoPath || existingProfile.pdfLogo?.fileName || 'logo.pdf',
+            'logo.pdf'
+          ),
+          originalName: String(
+            payload.pdfLogo.originalName ||
+              payload.pdfLogo.fileName ||
+              existingProfile.pdfLogo?.originalName ||
+              ''
+          ).trim(),
+          storagePath:
+            typeof payload.pdfLogo.storagePath === 'string' && payload.pdfLogo.storagePath.trim()
+              ? payload.pdfLogo.storagePath.trim()
+              : existingProfile.pdfLogo?.storagePath || '',
+          updatedAt: Number.isFinite(payload.pdfLogo.updatedAt)
+            ? Number(payload.pdfLogo.updatedAt)
+            : Number.isFinite(existingProfile.pdfLogo?.updatedAt)
+              ? Number(existingProfile.pdfLogo.updatedAt)
+              : now,
+        }
+      : existingProfile.pdfLogo
+        ? { ...existingProfile.pdfLogo }
+        : null;
+
     const updatedProfile = {
       ...existingProfile,
       label: payload.label || existingProfile.label,
-      slug: sanitizeSlug(payload.slug || existingProfile.slug || existingProfile.label, existingProfile.label),
+      slug,
       destDir: payload.destDir ?? existingProfile.destDir,
       promptId: payload.promptId ?? existingProfile.promptId,
       pdfTemplate: payload.pdfTemplate ?? existingProfile.pdfTemplate,
-      pdfLogoPath: payload.pdfLogoPath ?? existingProfile.pdfLogoPath,
-      pdfLogo: payload.pdfLogo ?? existingProfile.pdfLogo,
-      updatedAt: Date.now(),
+      pdfLogoPath:
+        typeof payload.pdfLogoPath === 'string'
+          ? payload.pdfLogoPath.trim()
+          : existingProfile.pdfLogoPath,
+      pdfLogo: basePdfLogo,
+      updatedAt: now,
     };
+
+    const previousStoragePath = existingProfile?.pdfLogo?.storagePath || existingProfile?.pdfLogoPath || '';
+
+    if (req.file) {
+      const tempPath = await ensureTempFileHasExtension(req.file, VALID_LOGO_EXTENSIONS);
+      try {
+        uploadResult = await uploadProfileLogoToSupabase(tempPath, {
+          workspaceId,
+          profileId,
+          slug,
+          fileName: req.file.originalname,
+          contentType: req.file.mimetype,
+        });
+      } catch (uploadError) {
+        const message = uploadError?.message || 'Caricamento logo su Supabase non riuscito';
+        return res.status(500).json({ ok: false, message });
+      }
+
+      const originalLabel = String(
+        req.file.originalname ||
+          payload.pdfLogo?.originalName ||
+          existingProfile.pdfLogo?.originalName ||
+          slug ||
+          'logo.pdf'
+      ).trim();
+      updatedProfile.pdfLogoPath = uploadResult.publicUrl;
+      updatedProfile.pdfLogo = {
+        fileName: uploadResult.fileName,
+        originalName: originalLabel,
+        storagePath: uploadResult.storagePath,
+        updatedAt: now,
+      };
+    }
+
+    if (removePdfLogo && !uploadResult) {
+      updatedProfile.pdfLogoPath = '';
+      updatedProfile.pdfLogo = null;
+    }
 
     const prompts = await listPrompts();
     const validationErrors = await validateWorkspaceProfiles([updatedProfile], { prompts });
     if (validationErrors.length) {
+      if (uploadResult?.storagePath) {
+        try {
+          await deleteProfileLogoFromSupabase(uploadResult.storagePath);
+        } catch (cleanupError) {
+          console.warn('⚠️  Pulizia logo fallita dopo la validazione (update):', cleanupError?.message || cleanupError);
+        }
+      }
       if (req.file?.path) {
         await safeUnlink(req.file.path);
       }
@@ -3732,8 +4034,30 @@ workspaceProfilesRouter.put('/:profileId', optionalProfileUpload, async (req, re
     }
 
     const saved = await updateProfileInDb(workspaceId, profileId, updatedProfile);
+
+    if (removePdfLogo && previousStoragePath) {
+      try {
+        await deleteProfileLogoFromSupabase(previousStoragePath);
+      } catch (cleanupError) {
+        console.warn('⚠️  Impossibile eliminare il logo precedente:', cleanupError?.message || cleanupError);
+      }
+    } else if (uploadResult && previousStoragePath) {
+      try {
+        await deleteProfileLogoFromSupabase(previousStoragePath);
+      } catch (cleanupError) {
+        console.warn('⚠️  Impossibile eliminare il logo precedente:', cleanupError?.message || cleanupError);
+      }
+    }
+
     res.json({ ok: true, profile: profileForResponse(workspaceId, saved) });
   } catch (error) {
+    if (uploadResult?.storagePath) {
+      try {
+        await deleteProfileLogoFromSupabase(uploadResult.storagePath);
+      } catch (cleanupError) {
+        console.warn('⚠️  Pulizia logo fallita dopo errore (update):', cleanupError?.message || cleanupError);
+      }
+    }
     res.status(500).json({ ok: false, message: error?.message || String(error) });
   } finally {
     if (req.file?.path) {
@@ -3760,7 +4084,15 @@ workspaceProfilesRouter.delete('/:profileId', async (req, res) => {
     if (!existingProfile) {
       return res.status(404).json({ ok: false, message: 'Profilo non trovato' });
     }
+    const logoStoragePath = existingProfile?.pdfLogo?.storagePath || existingProfile?.pdfLogoPath || '';
     await deleteProfileFromDb(workspaceId, profileId);
+    if (logoStoragePath) {
+      try {
+        await deleteProfileLogoFromSupabase(logoStoragePath);
+      } catch (cleanupError) {
+        console.warn('⚠️  Impossibile eliminare il logo del profilo rimosso:', cleanupError?.message || cleanupError);
+      }
+    }
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ ok: false, message: error?.message || String(error) });

@@ -32,7 +32,7 @@ Extend workspace records with a `profiles` array. Each profile keeps only projec
 - `destDir`: Absolute or workspace-relative path the pipeline writes to; validate existence before saving.
 - `promptId`: References an entry from the prompt library; ensure the prompt is accessible to the current workspace.
 - `pdfTemplate`: Identifier for the document template that the backend can load when rendering PDFs.
-- `pdfLogoPath`: Stored under `DATA_DIR/logos/<workspaceId>/<profileId>/` and surfaced to the frontend when applying the profile.
+- `pdfLogoPath`: Stores the public URL of the Supabase Storage bucket `logos` (object path `logos/<workspace>/<profile>/...`). Legacy local assets under `~/.rec2pdf/logos/<workspaceId>/<profileId>/` can be migrated with `node rec2pdf-backend/scripts/migrate-logos.js`.
 
 ## API Requirements
 1. **Workspace payloads**: Update create/update endpoints to accept profile data alongside base workspace fields.

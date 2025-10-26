@@ -144,6 +144,22 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
     return "Logo personalizzato";
   }, [context.customPdfLogo]);
 
+  const pdfLogoPreviewUrl = useMemo(() => {
+    const value = context.customPdfLogo;
+    if (value && typeof value === "object" && value.source === "workspace-profile") {
+      if (value.downloadUrl && /^https?:\/\//i.test(value.downloadUrl)) {
+        return value.downloadUrl;
+      }
+      if (value.path && /^https?:\/\//i.test(value.path)) {
+        return value.path;
+      }
+    }
+    if (typeof value === "string" && /^https?:\/\//i.test(value)) {
+      return value;
+    }
+    return "";
+  }, [context.customPdfLogo]);
+
   const hasWorkspaceProfiles = activeWorkspaceProfiles.length > 0;
 
   const handleWorkspaceProfileSelect = (event) => {
@@ -787,6 +803,16 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
               {pdfLogoLabel && (
                 <div className="mt-2 truncate text-xs text-zinc-500" title={pdfLogoLabel}>
                   {pdfLogoLabel}
+                </div>
+              )}
+              {pdfLogoPreviewUrl && (
+                <div className="mt-3 rounded-lg border border-zinc-700/60 bg-zinc-900/60 p-3">
+                  <div className="text-[11px] uppercase tracking-wide text-zinc-500">Anteprima logo</div>
+                  <img
+                    src={pdfLogoPreviewUrl}
+                    alt="Anteprima logo profilo PDF"
+                    className="mt-2 h-16 w-auto max-w-full object-contain"
+                  />
                 </div>
               )}
             </div>
