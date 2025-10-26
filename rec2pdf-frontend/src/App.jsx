@@ -490,6 +490,9 @@ const buildWorkspaceProfileLogoDescriptor = (workspaceId, profile, options = {})
   const baseUrl = typeof options.backendUrl === 'string' ? options.backendUrl.trim() : '';
 
   let downloadUrl = rawDownload;
+  if (!downloadUrl && /^https?:\/\//i.test(rawPath)) {
+    downloadUrl = rawPath;
+  }
   if (downloadUrl && !/^https?:\/\//i.test(downloadUrl) && baseUrl) {
     const normalizedBase = baseUrl.replace(/\/+$/, '');
     const normalizedPath = downloadUrl.replace(/^\/+/, '');

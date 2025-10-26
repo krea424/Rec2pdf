@@ -579,6 +579,13 @@ const WorkspaceProfilesManager = () => {
   );
 
   const currentLogoLabel = currentProfile?.pdfLogo?.originalName || "";
+  const currentLogoUrl = useMemo(() => {
+    const rawPath = typeof currentProfile?.pdfLogoPath === "string" ? currentProfile.pdfLogoPath.trim() : "";
+    if (rawPath && /^https?:\/\//i.test(rawPath)) {
+      return rawPath;
+    }
+    return "";
+  }, [currentProfile]);
 
   const hierarchyCards = useMemo(
     () => [
@@ -944,6 +951,10 @@ const WorkspaceProfilesManager = () => {
                   {profiles.map((profile) => {
                     const prompt = promptMap.get(profile.promptId);
                     const isEditing = profile.id === editingProfileId;
+                    const logoPreviewUrl =
+                      typeof profile.pdfLogoPath === "string" && /^https?:\/\//i.test(profile.pdfLogoPath)
+                        ? profile.pdfLogoPath.trim()
+                        : "";
                     return (
                       <li
                         key={profile.id}
@@ -977,6 +988,16 @@ const WorkspaceProfilesManager = () => {
                                 Logo: {profile.pdfLogo?.originalName || (profile.pdfLogoPath ? "Caricato" : "—")}
                               </span>
                             </div>
+                            {logoPreviewUrl ? (
+                              <div className="mt-3 rounded-xl border border-surface-700/60 bg-surface-900/30 p-3">
+                                <div className="text-[11px] uppercase tracking-wide text-surface-500">Anteprima logo</div>
+                                <img
+                                  src={logoPreviewUrl}
+                                  alt={`Logo salvato per ${profile.label || profile.id}`}
+                                  className="mt-2 h-14 w-auto max-w-full object-contain"
+                                />
+                              </div>
+                            ) : null}
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
                             <Button
@@ -1212,6 +1233,16 @@ const WorkspaceProfilesManager = () => {
                         />
                         Rimuovi il logo salvato
                       </label>
+                    )}
+                    {currentLogoUrl && !logoFile && !removePdfLogo && (
+                      <div className="mt-3 rounded-xl border border-surface-700/60 bg-surface-900/30 p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-surface-500">Anteprima logo salvato</div>
+                        <img
+                          src={currentLogoUrl}
+                          alt="Anteprima logo profilo"
+                          className="mt-2 h-16 w-auto max-w-full object-contain"
+                        />
+                      </div>
                     )}
                   </div>
                 </div>
