@@ -140,3 +140,7 @@ frontend.log
 *.jpeg
 *.html
 *.json
+
+# Eccezioni per snapshot controllati
+!backups/.rec2pdf_snapshot/prompts.json
+!backups/.rec2pdf_snapshot/workspaces.json

@@ -1,0 +1,3 @@
+Rec2PDF Demo Logo
+==================
+Questo file rappresenta un placeholder testuale per il logo del workspace demo.
