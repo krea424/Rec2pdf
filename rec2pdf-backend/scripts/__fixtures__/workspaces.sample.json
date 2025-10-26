@@ -1,0 +1,48 @@
+{
+  "updatedAt": "2024-07-31T11:00:00.000Z",
+  "workspaces": [
+    {
+      "id": "ws-local-acme",
+      "slug": "acme-consulting",
+      "name": "Acme Consulting",
+      "client": "Acme Consulting",
+      "color": "#4f46e5",
+      "logoPath": "./logos/acme-workspace.png",
+      "versioningPolicy": {
+        "retentionLimit": 5,
+        "freezeOnPublish": false,
+        "namingConvention": "timestamped"
+      },
+      "defaultStatuses": ["Bozza", "In lavorazione", "Approvato"],
+      "projects": [
+        {
+          "id": "proj-123",
+          "name": "Discovery",
+          "color": "#4f46e5",
+          "statuses": ["In corso"],
+          "createdAt": "2024-07-01T08:00:00.000Z",
+          "updatedAt": "2024-07-10T17:00:00.000Z"
+        }
+      ],
+      "profiles": [
+        {
+          "id": "profile-local-default",
+          "label": "Profilo default",
+          "destDir": "~/Documents/Rec2pdf",
+          "promptId": "prompt_custom",
+          "pdfTemplate": "bold.tex",
+          "pdfLogoPath": "./logos/acme-profile.png",
+          "pdfLogo": {
+            "fileName": "acme-profile.png",
+            "originalName": "acme.png",
+            "updatedAt": 1722410700000
+          },
+          "createdAt": "2024-07-31T10:05:00.000Z",
+          "updatedAt": "2024-07-31T10:05:00.000Z"
+        }
+      ],
+      "createdAt": "2024-07-31T10:00:00.000Z",
+      "updatedAt": "2024-07-31T10:10:00.000Z"
+    }
+  ]
+}
