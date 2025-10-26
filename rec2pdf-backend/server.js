@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const pdfParse = require('pdf-parse');
 const { createClient } = require('@supabase/supabase-js');
+const yaml = require('js-yaml'); // <-- Importato js-yaml
 const { getAIService } = require('./services/aiService');
 const {
   listProviders: listAiProviders,
@@ -1177,60 +1178,55 @@ const applyAiModelToFrontMatter = (markdown, modelName) => {
   return `${updatedFrontMatter}${markdown.slice(match[0].length)}`;
 };
 
-const generateMarkdown = async (txtPath, mdFile, promptPayload, knowledgeContext = '', options = {}) => {
+const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', options = {}) => {
   try {
     const transcript = await loadTranscriptForPrompt(txtPath);
 
-    // --- INIZIO BLOCCO PROMPT RICOSTRUITO E COMPLETO ---
     let promptLines = [
-      "Sei un assistente AI specializzato nell'analisi di trascrizioni e appunti. Il tuo compito è trasformare il testo grezzo in un documento Markdown professionale, chiaro e utile.",
-      "L'output deve essere solo ed esclusivamente il codice Markdown, senza commenti, testo introduttivo o di chiusura.",
-      "La lingua del documento finale deve essere l'italiano."
+      "Sei un assistente AI specializzato nell'analisi di trascrizioni e appunti. Il tuo compito è analizzare il testo fornito e generare contenuti per un documento professionale.",
+      "Il tuo output DEVE essere un singolo oggetto JSON valido, senza codice Markdown o testo attorno ad esso.",
+      "L'oggetto JSON deve avere ESATTAMENTE le seguenti quattro chiavi: `title`, `summary`, `author`, `body`.",
+      "- `title`: Un titolo breve, accattivante e pertinente per il documento (massimo 15 parole).",
+      "- `summary`: Un sommario esecutivo conciso del contenuto (massimo 3 frasi).",
+      "- `author`: Il ruolo professionale dell'autore del documento (es. 'Analista Finanziario', 'Marketing Strategist').",
+      "- `body`: Il corpo completo del documento, formattato in Markdown, in lingua italiana.",
+      "Il `body` deve iniziare con il primo titolo (es. `# Introduzione`) e non deve contenere il front-matter YAML."
     ];
 
-    // Aggiunge istruzioni dinamiche dal prompt selezionato nella UI
     if (promptPayload) {
       const { persona, description, markdownRules, focus, notes } = promptPayload;
       const rules = [];
 
-      // Imposta la persona principale
       if (persona) {
-        promptLines[0] = `Agisci con la persona di un ${persona}. ${promptLines[1]}`;
+        promptLines[0] = `Agisci con la persona di un ${persona}. ${promptLines[0]}`;
       }
       
-      if (description) rules.push(`Il tuo obiettivo specifico è: ${description}.`);
+      if (description) rules.push(`Obiettivo del documento: ${description}.`);
 
-      // Aggiunge regole di stile dal prompt
       if (markdownRules) {
-        if (markdownRules.tone) rules.push(`Usa un tono ${markdownRules.tone}.`);
-        if (markdownRules.voice) rules.push(`Usa una voce in ${markdownRules.voice}.`);
-        if (markdownRules.bulletStyle) rules.push(`Per gli elenchi, usa lo stile: ${markdownRules.bulletStyle}.`);
-        if (markdownRules.summaryStyle) rules.push(`Includi un sommario in stile: ${markdownRules.summaryStyle}.`);
-        if (markdownRules.includeCallouts) rules.push("Includi callout/citazioni per evidenziare punti importanti.");
-        if (markdownRules.pointOfView) rules.push(`Adotta questo punto di vista: ${markdownRules.pointOfView}.`);
+        if (markdownRules.tone) rules.push(`Tono: ${markdownRules.tone}.`);
+        if (markdownRules.voice) rules.push(`Voce: ${markdownRules.voice}.`);
+        if (markdownRules.bulletStyle) rules.push(`Stile elenchi: ${markdownRules.bulletStyle}.`);
+        if (markdownRules.summaryStyle) rules.push(`Stile sommario: ${markdownRules.summaryStyle}.`);
       }
 
-      // Aggiunge istruzioni specifiche della sessione
-      if (focus) rules.push(`Durante la generazione, concentrati in particolare su: ${focus}.`);
-      if (notes) rules.push(`Considera anche queste note aggiuntive: ${notes}.`);
+      if (focus) rules.push(`Focus particolare: ${focus}.`);
+      if (notes) rules.push(`Note aggiuntive: ${notes}.`);
 
       if (rules.length > 0) {
-        promptLines.push("\nSegui queste regole specifiche durante la generazione:");
+        promptLines.push("\nSegui queste regole specifiche per il contenuto del `body`:");
         promptLines.push(...rules.map(r => `- ${r}`));
       }
     }
-
-    // --- FINE BLOCCO PROMPT RICOSTRUITO E COMPLETO ---
 
     const prompt = promptLines.join('\n');
     const normalizedContext = typeof knowledgeContext === 'string' ? knowledgeContext.trim() : '';
     
     const promptWithContext = normalizedContext
-      ? `${prompt}\n\nINFORMAZIONI AGGIUNTIVE DALLA KNOWLEDGE BASE (usa questo contesto per arricchire la risposta):\n---\n${normalizedContext}\n---\n`
+      ? `${prompt}\n\nCONTESTO AGGIUNTIVO DALLA KNOWLEDGE BASE:\n---\n${normalizedContext}\n---\n`
       : prompt;
       
-    const promptWithTranscript = `${promptWithContext}\nEcco la trascrizione da elaborare:\n---\n`;
-    const fullPrompt = `${promptWithTranscript}${transcript}`;
+    const fullPrompt = `${promptWithContext}\n\nTRASCRIZIONE DA ELABORARE:\n---\n${transcript}`;
 
     let aiGenerator;
     let textProvider;
@@ -1239,28 +1235,42 @@ const generateMarkdown = async (txtPath, mdFile, promptPayload, knowledgeContext
       aiGenerator = getAIService(textProvider.id, textProvider.apiKey, textProvider.model);
     } catch (error) {
       const reason = error?.message ? `: ${error.message}` : '';
-      return { code: -1, stdout: '', stderr: `Provider di testo non disponibile${reason}` };
+      throw new Error(`Provider di testo non disponibile${reason}`);
     }
 
     let generatedContent = '';
     try {
       generatedContent = await aiGenerator.generateContent(fullPrompt);
     } catch (error) {
-      // Restituisce l'errore specifico dell'API (es. il 404 di Gemini)
-      return { code: -1, stdout: '', stderr: error?.message || 'Errore durante la generazione del contenuto.' };
+      throw new Error(error?.message || 'Errore durante la generazione del contenuto.');
     }
 
-    // Logica di pulizia
-    let cleanedContent = (generatedContent || '').replace(/^```(markdown)?\s*/i, '').replace(/\s*```\s*$/i, '');
     const activeModelName = textProvider?.model || aiGenerator?.modelName || '';
-    const finalContent = applyAiModelToFrontMatter(cleanedContent, activeModelName);
+    const cleanedJsonString = generatedContent.replace(/^```(json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
 
-    await fsp.writeFile(mdFile, finalContent, 'utf8');
+    try {
+      const parsed = JSON.parse(cleanedJsonString);
+      return {
+        title: parsed.title || '',
+        summary: parsed.summary || '',
+        author: parsed.author || '',
+        content: parsed.body || '',
+        modelName: activeModelName,
+      };
+    } catch (jsonError) {
+      console.warn('⚠️  L\'output AI non era un JSON valido. Trattato come solo corpo.', jsonError.message);
+      return {
+        title: '', 
+        summary: '',
+        author: '',
+        content: generatedContent, // Ritorna il contenuto grezzo in caso di errore
+        modelName: activeModelName,
+      };
+    }
 
-    return { code: 0, stdout: '', stderr: '' };
   } catch (error) {
     console.error("❌ Errore imprevisto in generateMarkdown:", error);
-    return { code: -1, stdout: '', stderr: error.message };
+    throw error;
   }
 };
 
@@ -2002,76 +2012,7 @@ const applySpeakerMapToContent = (content, mapping = {}) => {
   return result;
 };
 
-const ensureTemplateFrontMatter = async (mdPath, descriptor) => {
-  if (!descriptor || !mdPath) return;
-  const templateName = path.basename(descriptor.path || '').toLowerCase();
-  if (templateName !== 'verbale_meeting.html') {
-    return;
-  }
 
-  try {
-    let content = await fsp.readFile(mdPath, 'utf8');
-    const cssRelative = descriptor.cssFileName
-      ? (descriptor.cssFileName.startsWith('Templates/')
-          ? descriptor.cssFileName
-          : `Templates/${descriptor.cssFileName}`)
-      : 'Templates/verbale_meeting.css';
-    const styleLine = `styles.css: ${cssRelative}`;
-    const layoutLines = ['pdfRules:', '  layout: verbale_meeting'];
-
-    const hasFrontMatter = content.startsWith('---');
-    if (hasFrontMatter) {
-      const secondDelimIndex = content.indexOf('\n---', 3);
-      if (secondDelimIndex !== -1) {
-        let frontMatterBlock = content.slice(0, secondDelimIndex);
-        const closing = content.slice(secondDelimIndex, secondDelimIndex + 4);
-        const body = content.slice(secondDelimIndex + 4);
-        const lines = frontMatterBlock.split('\n');
-        const closingIndex = lines.length - 1;
-        let changed = false;
-
-        const hasStyles = lines.some((line) => line.trim().startsWith('styles.css:'));
-        if (!hasStyles) {
-          lines.splice(closingIndex, 0, styleLine);
-          changed = true;
-        }
-
-        const pdfRulesIndex = lines.findIndex((line) => line.trim().startsWith('pdfRules:'));
-        if (pdfRulesIndex === -1) {
-          lines.splice(closingIndex, 0, ...layoutLines);
-          changed = true;
-        } else {
-          const layoutExists = lines.some(
-            (line, index) => index > pdfRulesIndex && line.trim().startsWith('layout:')
-          );
-          if (!layoutExists) {
-            lines.splice(pdfRulesIndex + 1, 0, layoutLines[1]);
-            changed = true;
-          }
-        }
-
-        if (changed) {
-          frontMatterBlock = lines.join('\n');
-          content = `${frontMatterBlock}${closing}${body}`;
-          await fsp.writeFile(mdPath, content, 'utf8');
-        }
-        return;
-      }
-    }
-
-    const injectedFrontMatter = [
-      '---',
-      styleLine,
-      ...layoutLines,
-      '---',
-      '',
-    ].join('\n');
-    content = `${injectedFrontMatter}${content}`;
-    await fsp.writeFile(mdPath, content, 'utf8');
-  } catch (error) {
-    console.warn(`⚠️  Impossibile aggiornare il front matter per ${mdPath}:`, error?.message || error);
-  }
-};
 
 const extractLayoutFromMarkdown = (content = '') => {
   if (typeof content !== 'string' || !content.startsWith('---')) return '';
@@ -2693,7 +2634,7 @@ const DEFAULT_PROMPTS = [
     title: 'Format base',
     summary: 'Trasforma gli appunti in un documento Markdown professionale.',
     description:
-      "Trasforma gli appunti in un documento Markdown professionale. Inserire all'inizio del file un blocco YAML senza righe vuote sopra, evita di inserire all'inizio del file markdownaltri segni,simboli o termini che non siano i 3 trattininella prima riga solo 3 trattini e 3 trattini alla fine del blocco YAML, con i campi nell’ordine seguente: title, author, owner, project_name, project_code, artifact_type, version, identifier, location, summary, usageterms, ssot, status, created, updated, tags, ai.generated, ai.model, ai.prompt_id. Versioni in forma SemVer con underscore (es. v1_0_0). La struttura del documento DEVE includere sezioni con i titoli esatti: 'Executive Summary', 'Punti Chiave', 'Analisi Dettagliata', 'Prossime Azioni'. Inserisci almeno una tabella con un massimo di 4 colonne e una tabella dei 3 principali rischi. NON usare backticks di codice.",
+      "Trasforma gli appunti in un documento Markdown professionale. La struttura del documento DEVE includere sezioni con i titoli esatti: 'Introduzione', 'Punti Chiave', 'Analisi Dettagliata', 'Prossime Azioni'. Inserisci almeno una tabella con un massimo di 4 colonne e una tabella dei 3 principali rischi. NON usare backticks di codice per l'intero blocco di codice.",
     persona: 'Senior consultant',
     color: '#00FF00',
     tags: ['test', 'beta'],
@@ -4167,24 +4108,75 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
           }
         }
       }
+      
       mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
-      const gm = await generateMarkdown(
+
+      const { title: aiTitle, summary: aiSummary, author: aiAuthor, content: markdownBody, modelName: aiModel } = await generateMarkdown(
         transcriptLocalForMarkdown,
-        mdLocalPath,
         promptRulePayload,
         retrievedWorkspaceContext || res.locals?.retrievedWorkspaceContext || '',
         { textProvider: aiOverrides.text }
       );
-      if (gm.code !== 0) {
-        out(gm.stderr || gm.stdout || 'Generazione Markdown fallita', 'markdown', 'failed');
-        throw new Error('Generazione Markdown fallita: ' + (gm.stderr || gm.stdout));
-      }
-      if (activeTemplateDescriptor) {
-        await ensureTemplateFrontMatter(mdLocalPath, activeTemplateDescriptor);
-      }
+
+      // Costruisci i metadati in un oggetto JS
+      const now = new Date();
+      const localTimestamp = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, -1);
+
+      const metadata = {
+        title: aiTitle || String(req.body?.title || baseName).trim(),
+        author: aiAuthor || req.user?.email || 'rec2pdf',
+        owner: workspaceProject?.name || workspaceMeta?.client || '',
+        project_name: workspaceProject?.name || workspaceProjectName || '',
+        project_code: workspaceMeta?.slug || workspaceId || '',
+        artifact_type: 'Report',
+        version: 'v1_0_0',
+        identifier: baseName,
+        location: destDir,
+        summary: aiSummary || String(req.body?.summary || '').trim(),
+        usageterms: '',
+        ssot: false,
+        status: workspaceStatus || '',
+        created: localTimestamp,
+        updated: localTimestamp,
+        tags: selectedPrompt?.tags || [],
+        ai: {
+          generated: true,
+          model: aiModel || '',
+          prompt_id: selectedPrompt?.id || '',
+        },
+      };
+
+      // Aggiungi variabili specifiche per i template LaTeX
+      metadata.BLDTitle = metadata.title;
+      metadata.BLDVersion = metadata.version;
+      metadata.BLDUpdated = now.toLocaleDateString('it-IT', { year: 'numeric', month: '2-digit', day: '2-digit' });
+      metadata.BLDAuthor = metadata.author;
+      metadata.BLDProject = metadata.project_name;
+
+      // Rimuovi chiavi vuote per un YAML pulito
+      Object.keys(metadata).forEach(key => {
+        const value = metadata[key];
+        if (value === '' || value === null || (Array.isArray(value) && value.length === 0)) {
+          delete metadata[key];
+        }
+      });
+
+      // Genera il blocco YAML in modo sicuro
+      const yamlFrontMatter = yaml.dump(metadata);
+
+      // Pulisci il corpo del Markdown da eventuali front-matter e blocchi di codice iniziali
+      const CODE_BLOCK_REGEX = /^\s*```[\s\S]*?```\s*/;
+      let cleanedMarkdownBody = markdownBody.replace(FRONT_MATTER_REGEX, '').trim();
+      cleanedMarkdownBody = cleanedMarkdownBody.replace(CODE_BLOCK_REGEX, '').trim();
+
+      // Unisci front-matter e corpo e scrivi il file finale
+      const finalMarkdownContent = `---\n${yamlFrontMatter}---\n\n${cleanedMarkdownBody}`;
+      await fsp.writeFile(mdLocalPath, finalMarkdownContent, 'utf8');
+
       if (!fs.existsSync(mdLocalPath)) {
         throw new Error(`Markdown non trovato: ${mdLocalPath}`);
       }
+      
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,
         mdStoragePath,

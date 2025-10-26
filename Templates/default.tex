@@ -10,6 +10,7 @@
 \usepackage{xcolor}
 \definecolor{BrightLedgerBlue}{HTML}{0033A0}
 \definecolor{BrightLedgerGrey}{HTML}{666666}
+\definecolor{McKinseyBlue}{HTML}{00529B} % Definisco il nuovo colore blu
 
 \usepackage{fontspec}
 % Font sostituito per supportare un range più ampio di caratteri Unicode (es. emoji, simboli tecnici)
@@ -32,6 +33,7 @@
 \usepackage{array}
 \usepackage{calc}
 \usepackage{amssymb}
+\usepackage{textcomp} % Aggiunto per supportare simboli come il pipe |
 \providecommand{\real}[1]{#1}
 
 % Riduci la dimensione del font all'interno delle tabelle per migliorare la leggibilità
@@ -39,11 +41,11 @@
 \usepackage{seqsplit} % Per spezzare le stringhe lunghe nelle tabelle
 \AtBeginEnvironment{longtable}{\footnotesize\sloppy}
 
-% Sezioni (nero), sottosezioni (grigio più chiaro)
+% Sezioni (blu), sottosezioni (grigio)
 \titleformat{\section}
-  {\Large\bfseries\sffamily\color{black}}{\thesection}{0.8em}{}
+  {\Large\bfseries\sffamily\color{McKinseyBlue}}{\thesection}{0.8em}{}
 \titleformat{\subsection}
-  {\large\bfseries\sffamily\color{BrightLedgerGrey}}{\thesubsection}{0.8em}{}
+  {\large\bfseries\sffamily\color{McKinseyBlue}}{\thesubsection}{0.8em}{}
 \titleformat{\subsubsection}
   {\normalsize\bfseries\sffamily\color{BrightLedgerGrey}}{\thesubsubsection}{0.8em}{}
 

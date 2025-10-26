@@ -13,17 +13,17 @@
   \fi
 
   % Titolo e metadati
-  {\sffamily\bfseries\LARGE \ifdefined\BLDTitle \BLDTitle\else Documento BrightLedger\fi \par}
+  {\sffamily\bfseries\Large \ifdefined\BLDTitle \BLDTitle\else Documento ThinkDoc\fi \par}
   \vspace{6mm}
-  {\sffamily\large
+  {\sffamily\small
     \ifdefined\BLDVersion Versione: \BLDVersion\fi
     \ifdefined\BLDUpdated \quad|\quad Updated: \BLDUpdated\fi
     \par
   }
   \vspace{2mm}
   {\sffamily
-    \ifdefined\BLDAuthor \large Autore: \BLDAuthor\par\fi
-    \ifdefined\BLDProject \large Progetto: \BLDProject\par\fi
+    \ifdefined\BLDAuthor \small Autore: \BLDAuthor\par\fi
+    \ifdefined\BLDProject \small Progetto: \BLDProject\par\fi
   }
 
   \vfill
