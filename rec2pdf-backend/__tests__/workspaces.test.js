@@ -43,6 +43,8 @@ describe('GET /api/workspaces with Supabase data', () => {
   let mockAuth;
   let workspaceRow;
   let profileRow;
+  let workspaceSelectBuilder;
+  const ownerId = '123e4567-e89b-12d3-a456-426614174000';
 
   beforeAll(() => {
     process.env.SUPABASE_URL = 'https://example.supabase.co';
@@ -52,6 +54,7 @@ describe('GET /api/workspaces with Supabase data', () => {
 
     workspaceRow = {
       id: '7e1c91f4-4328-4a71-8f90-8c4be0d07d31',
+      owner_id: ownerId,
       slug: 'acme-consulting',
       name: 'Acme Consulting',
       description: 'Acme Consulting',
@@ -96,14 +99,21 @@ describe('GET /api/workspaces with Supabase data', () => {
     };
 
     const mockWorkspaceOrder = jest.fn(() => Promise.resolve({ data: [workspaceRow], error: null }));
-    const mockWorkspaceSelect = jest.fn(() => ({ order: mockWorkspaceOrder }));
+    workspaceSelectBuilder = {
+      eq: jest.fn(() => workspaceSelectBuilder),
+      order: mockWorkspaceOrder,
+      maybeSingle: jest.fn(() => Promise.resolve({ data: workspaceRow, error: null })),
+    };
+    workspaceSelectBuilder.eq.mockImplementation(() => workspaceSelectBuilder);
 
     const mockProfilesIn = jest.fn(() => Promise.resolve({ data: [profileRow], error: null }));
     const mockProfilesSelect = jest.fn(() => ({ in: mockProfilesIn }));
 
     mockFrom = jest.fn((table) => {
       if (table === 'workspaces') {
-        return { select: mockWorkspaceSelect };
+        return {
+          select: jest.fn(() => workspaceSelectBuilder),
+        };
       }
       if (table === 'profiles') {
         return { select: mockProfilesSelect };
@@ -112,7 +122,7 @@ describe('GET /api/workspaces with Supabase data', () => {
     });
 
     mockAuth = {
-      getUser: jest.fn(() => Promise.resolve({ data: { user: { id: 'user-123' } }, error: null })),
+      getUser: jest.fn(() => Promise.resolve({ data: { user: { id: ownerId } }, error: null })),
     };
 
     jest.resetModules();
@@ -155,9 +165,121 @@ describe('GET /api/workspaces with Supabase data', () => {
       promptId: 'prompt_custom',
       pdfLogoUrl: 'https://cdn.example.com/logo.png',
     });
+    expect(workspace.ownerId).toBe(ownerId);
     expect(createClient).toHaveBeenCalled();
     expect(mockAuth.getUser).toHaveBeenCalledWith('test-token');
     expect(mockFrom).toHaveBeenCalledWith('workspaces');
     expect(mockFrom).toHaveBeenCalledWith('profiles');
+    expect(workspaceSelectBuilder.eq).toHaveBeenCalledWith('owner_id', ownerId);
+  });
+});
+
+describe('POST /api/workspaces', () => {
+  let app;
+  let request;
+  let mockFrom;
+  let mockAuth;
+  let workspaceRow;
+  let insertSpy;
+  const ownerId = '123e4567-e89b-12d3-a456-426614174000';
+
+  beforeEach(() => {
+    process.env.SUPABASE_URL = 'https://example.supabase.co';
+    process.env.SUPABASE_SERVICE_KEY = 'service-key';
+    process.env.PORT = '0';
+    process.env.TEMPLATES_DIR = path.join(__dirname, '..', '..', 'Templates');
+
+    workspaceRow = {
+      id: '9f74a6aa-1c73-4d9b-8fc1-a2d6209ed995',
+      owner_id: ownerId,
+      slug: 'nuovo-workspace',
+      name: 'Nuovo Workspace',
+      description: 'Nuovo Workspace',
+      logo_path: null,
+      metadata: { client: 'Nuovo Workspace', color: '#4f46e5' },
+      projects: [],
+      default_statuses: ['Bozza', 'In lavorazione'],
+      created_at: '2024-08-20T10:00:00.000Z',
+      updated_at: '2024-08-20T10:00:00.000Z',
+    };
+
+    const mockWorkspaceOrder = jest.fn(() => Promise.resolve({ data: [workspaceRow], error: null }));
+    const workspaceSelectBuilder = {
+      eq: jest.fn(() => workspaceSelectBuilder),
+      order: mockWorkspaceOrder,
+      maybeSingle: jest.fn(() => Promise.resolve({ data: workspaceRow, error: null })),
+    };
+    workspaceSelectBuilder.eq.mockImplementation(() => workspaceSelectBuilder);
+
+    insertSpy = jest.fn((payload) => ({
+      select: jest.fn(() => ({
+        single: jest.fn(() =>
+          Promise.resolve({
+            data: { ...workspaceRow, ...payload, owner_id: ownerId },
+            error: null,
+          })
+        ),
+      })),
+    }));
+
+    mockAuth = {
+      getUser: jest.fn(() => Promise.resolve({ data: { user: { id: ownerId } }, error: null })),
+    };
+
+    mockFrom = jest.fn((table) => {
+      if (table === 'workspaces') {
+        return {
+          select: jest.fn(() => workspaceSelectBuilder),
+          insert: insertSpy,
+        };
+      }
+      if (table === 'profiles') {
+        return {
+          select: jest.fn(() => ({ in: jest.fn(() => Promise.resolve({ data: [], error: null })) })),
+        };
+      }
+      if (table === 'prompts') {
+        return {
+          select: jest.fn(() => ({
+            order: jest.fn(() => Promise.resolve({ data: [], error: null })),
+          })),
+        };
+      }
+      return { select: jest.fn(() => ({ order: jest.fn(() => Promise.resolve({ data: [], error: null })) })) };
+    });
+
+    jest.resetModules();
+    ({ createClient } = require('@supabase/supabase-js'));
+    createClient.mockReset();
+    createClient.mockReturnValue({ from: mockFrom, auth: mockAuth });
+
+    ({ app } = require('../server'));
+    request = supertest(app);
+  });
+
+  afterEach(() => {
+    delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_SERVICE_KEY;
+    delete process.env.PORT;
+    delete process.env.TEMPLATES_DIR;
+    createClient.mockReset();
+  });
+
+  it('crea un workspace associando owner_id all’utente autenticato', async () => {
+    const response = await request
+      .post('/api/workspaces')
+      .set('Authorization', 'Bearer test-token')
+      .send({ name: 'Nuovo Workspace', color: '#4f46e5' });
+
+    expect(response.status).toBe(201);
+    expect(response.body.ok).toBe(true);
+    expect(response.body.workspace).toMatchObject({
+      name: 'Nuovo Workspace',
+      ownerId,
+    });
+    expect(insertSpy).toHaveBeenCalledTimes(1);
+    const [payload] = insertSpy.mock.calls[0];
+    expect(payload.owner_id).toBe(ownerId);
+    expect(mockAuth.getUser).toHaveBeenCalledWith('test-token');
   });
 });

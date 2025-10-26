@@ -1344,6 +1344,7 @@ const workspaceMetadataSchema = z
 
 const workspaceRowSchema = z.object({
   id: z.string().uuid(),
+  owner_id: z.string().uuid(),
   slug: z.string().min(1),
   name: z.string().min(1),
   description: z.string().nullable().optional(),
@@ -1552,6 +1553,7 @@ const mapWorkspaceRowToDomain = (row, profileRows = []) => {
   return {
     id: value.id,
     supabaseId: value.id,
+    ownerId: value.owner_id,
     slug: value.slug,
     name: value.name,
     client: metadata?.client || value.description || value.name,
@@ -1565,7 +1567,7 @@ const mapWorkspaceRowToDomain = (row, profileRows = []) => {
   };
 };
 
-const workspaceToDbPayload = (workspace) => {
+const workspaceToDbPayload = (workspace, { ownerId } = {}) => {
   if (!workspace || typeof workspace !== 'object') {
     return null;
   }
@@ -1590,7 +1592,20 @@ const workspaceToDbPayload = (workspace) => {
     fallbackStatuses: defaultStatuses,
   });
 
-  return {
+  const normalizedOwnerId = (() => {
+    if (typeof ownerId === 'string' && ownerId.trim()) {
+      return ownerId.trim();
+    }
+    if (typeof workspace.ownerId === 'string' && workspace.ownerId.trim()) {
+      return workspace.ownerId.trim();
+    }
+    if (typeof workspace.owner_id === 'string' && workspace.owner_id.trim()) {
+      return workspace.owner_id.trim();
+    }
+    return '';
+  })();
+
+  const payload = {
     slug: sanitizeSlug(workspace.slug || workspace.name, workspace.name),
     name: workspace.name,
     description: clientName,
@@ -1599,6 +1614,12 @@ const workspaceToDbPayload = (workspace) => {
     projects,
     default_statuses: defaultStatuses,
   };
+
+  if (normalizedOwnerId) {
+    payload.owner_id = normalizedOwnerId;
+  }
+
+  return payload;
 };
 
 const profileToDbPayload = (workspaceId, profile) => {
@@ -1657,12 +1678,13 @@ const fetchProfilesGroupedByWorkspace = async (workspaceIds) => {
   return grouped;
 };
 
-const listWorkspacesFromDb = async () => {
+const listWorkspacesFromDb = async (ownerId) => {
   const client = getSupabaseClient();
-  const { data, error } = await client
-    .from('workspaces')
-    .select('*')
-    .order('created_at', { ascending: true, nullsLast: true });
+  let query = client.from('workspaces').select('*');
+  if (typeof ownerId === 'string' && ownerId.trim()) {
+    query = query.eq('owner_id', ownerId.trim());
+  }
+  const { data, error } = await query.order('created_at', { ascending: true, nullsLast: true });
   if (error) {
     throw new Error(error.message || 'Impossibile recuperare i workspace');
   }
@@ -1674,16 +1696,16 @@ const listWorkspacesFromDb = async () => {
     .filter(Boolean);
 };
 
-const getWorkspaceFromDb = async (workspaceId) => {
+const getWorkspaceFromDb = async (workspaceId, { ownerId } = {}) => {
   if (!workspaceId) {
     return null;
   }
   const client = getSupabaseClient();
-  const { data, error } = await client
-    .from('workspaces')
-    .select('*')
-    .eq('id', workspaceId)
-    .maybeSingle();
+  let query = client.from('workspaces').select('*').eq('id', workspaceId);
+  if (typeof ownerId === 'string' && ownerId.trim()) {
+    query = query.eq('owner_id', ownerId.trim());
+  }
+  const { data, error } = await query.maybeSingle();
   if (error) {
     throw new Error(error.message || 'Impossibile recuperare il workspace');
   }
@@ -1694,9 +1716,9 @@ const getWorkspaceFromDb = async (workspaceId) => {
   return mapWorkspaceRowToDomain(data, profileMap.get(workspaceId));
 };
 
-const insertWorkspaceIntoDb = async (payload) => {
+const insertWorkspaceIntoDb = async (payload, { ownerId } = {}) => {
   const client = getSupabaseClient();
-  const workspacePayload = workspaceToDbPayload(payload);
+  const workspacePayload = workspaceToDbPayload(payload, { ownerId });
   if (!workspacePayload) {
     throw new Error('Payload workspace non valido');
   }
@@ -1711,12 +1733,12 @@ const insertWorkspaceIntoDb = async (payload) => {
   return mapWorkspaceRowToDomain(data, []);
 };
 
-const updateWorkspaceInDb = async (workspaceId, workspace) => {
+const updateWorkspaceInDb = async (workspaceId, workspace, { ownerId } = {}) => {
   if (!workspaceId) {
     throw new Error('workspaceId obbligatorio');
   }
   const client = getSupabaseClient();
-  const workspacePayload = workspaceToDbPayload(workspace);
+  const workspacePayload = workspaceToDbPayload(workspace, { ownerId });
   if (!workspacePayload) {
     throw new Error('Workspace non valido');
   }
@@ -3445,7 +3467,11 @@ app.get('/api/workspaces', async (req, res) => {
     return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
   }
   try {
-    const workspaces = await listWorkspacesFromDb();
+    const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+    if (!ownerId) {
+      return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
+    }
+    const workspaces = await listWorkspacesFromDb(ownerId);
     const payload = workspaces.map((workspace) => ({
       ...workspace,
       profiles: profilesForResponse(workspace.id, workspace.profiles || []),
@@ -3461,6 +3487,10 @@ app.post('/api/workspaces', async (req, res) => {
     return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
   }
   try {
+    const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+    if (!ownerId) {
+      return res.status(403).json({ ok: false, message: 'Utente non autorizzato a creare workspace' });
+    }
     const parsed = workspaceInputSchema.safeParse(req.body || {});
     if (!parsed.success) {
       return res.status(400).json({ ok: false, message: 'Dati workspace non validi', details: parsed.error.flatten() });
@@ -3491,6 +3521,7 @@ app.post('/api/workspaces', async (req, res) => {
     const defaultStatuses = normalizeDefaultStatuses(data.defaultStatuses);
     const workspacePayload = {
       id: '',
+      ownerId,
       name: data.name.trim(),
       client: data.client || data.name.trim(),
       color,
@@ -3509,7 +3540,7 @@ app.post('/api/workspaces', async (req, res) => {
       profiles: [],
     };
 
-    const createdWorkspace = await insertWorkspaceIntoDb(workspacePayload);
+    const createdWorkspace = await insertWorkspaceIntoDb(workspacePayload, { ownerId });
 
     let createdProfiles = [];
     if (normalizedProfiles.length) {
@@ -3549,7 +3580,11 @@ app.put('/api/workspaces/:id', async (req, res) => {
       return res.status(400).json({ ok: false, message: 'Workspace non valido' });
     }
 
-    const existing = await getWorkspaceFromDb(workspaceId);
+    const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+    if (!ownerId) {
+      return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
+    }
+    const existing = await getWorkspaceFromDb(workspaceId, { ownerId });
     if (!existing) {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
@@ -3567,7 +3602,7 @@ app.put('/api/workspaces/:id', async (req, res) => {
       return res.status(400).json({ ok: false, message: 'Profilo non valido', details: profileErrors });
     }
 
-    const updated = await updateWorkspaceInDb(workspaceId, merged);
+    const updated = await updateWorkspaceInDb(workspaceId, merged, { ownerId: existing.ownerId });
     const normalizedWorkspace = {
       ...updated,
       profiles: profilesForResponse(updated.id, updated.profiles || []),
@@ -3587,7 +3622,11 @@ app.delete('/api/workspaces/:id', async (req, res) => {
     if (!workspaceId) {
       return res.status(400).json({ ok: false, message: 'Workspace non valido' });
     }
-    const existing = await getWorkspaceFromDb(workspaceId);
+    const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+    if (!ownerId) {
+      return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
+    }
+    const existing = await getWorkspaceFromDb(workspaceId, { ownerId });
     if (!existing) {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
@@ -3631,6 +3670,23 @@ app.post(
       return res.status(400).json({ ok: false, message: 'Carica almeno un file da indicizzare.' });
     }
 
+    const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+    if (!ownerId) {
+      await cleanupKnowledgeFiles(uploadedFiles);
+      return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
+    }
+
+    try {
+      const workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
+      if (!workspace) {
+        await cleanupKnowledgeFiles(uploadedFiles);
+        return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
+      }
+    } catch (workspaceError) {
+      await cleanupKnowledgeFiles(uploadedFiles);
+      return res.status(500).json({ ok: false, message: workspaceError?.message || 'Recupero workspace non riuscito' });
+    }
+
     const ingestionId = crypto.randomUUID();
     const normalizedFiles = uploadedFiles.map((file) => ({
       path: file.path,
@@ -3666,6 +3722,20 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
     return res
       .status(503)
       .json({ ok: false, message: 'Supabase non configurato: impossibile recuperare la knowledge base.' });
+  }
+
+  const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+  if (!ownerId) {
+    return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
+  }
+
+  try {
+    const workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
+    if (!workspace) {
+      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
+    }
+  } catch (workspaceError) {
+    return res.status(500).json({ ok: false, message: workspaceError?.message || 'Recupero workspace non riuscito' });
   }
 
   try {
@@ -3744,7 +3814,11 @@ workspaceProfilesRouter.get('/', async (req, res) => {
     if (!workspaceId) {
       return res.status(400).json({ ok: false, message: 'Workspace non valido' });
     }
-    const workspace = await getWorkspaceFromDb(workspaceId);
+    const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+    if (!ownerId) {
+      return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
+    }
+    const workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
     if (!workspace) {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
@@ -3771,7 +3845,14 @@ workspaceProfilesRouter.post('/', optionalProfileUpload, async (req, res) => {
       return res.status(400).json({ ok: false, message: 'Workspace non valido' });
     }
 
-    const workspace = await getWorkspaceFromDb(workspaceId);
+    const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+    if (!ownerId) {
+      if (req.file?.path) {
+        await safeUnlink(req.file.path);
+      }
+      return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
+    }
+    const workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
     if (!workspace) {
       if (req.file?.path) {
         await safeUnlink(req.file.path);
@@ -3898,7 +3979,14 @@ workspaceProfilesRouter.put('/:profileId', optionalProfileUpload, async (req, re
       return res.status(400).json({ ok: false, message: 'Identificativi non validi' });
     }
 
-    const workspace = await getWorkspaceFromDb(workspaceId);
+    const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+    if (!ownerId) {
+      if (req.file?.path) {
+        await safeUnlink(req.file.path);
+      }
+      return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
+    }
+    const workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
     if (!workspace) {
       if (req.file?.path) {
         await safeUnlink(req.file.path);
@@ -4076,7 +4164,11 @@ workspaceProfilesRouter.delete('/:profileId', async (req, res) => {
     if (!workspaceId || !profileId) {
       return res.status(400).json({ ok: false, message: 'Identificativi non validi' });
     }
-    const workspace = await getWorkspaceFromDb(workspaceId);
+    const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+    if (!ownerId) {
+      return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
+    }
+    const workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
     if (!workspace) {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
@@ -4514,7 +4606,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     let workspaceProfile = null;
     if (workspaceId && supabase) {
       try {
-        const foundWorkspace = await getWorkspaceFromDb(workspaceId);
+        const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+        const foundWorkspace = await getWorkspaceFromDb(workspaceId, ownerId ? { ownerId } : {});
         if (!foundWorkspace) {
           out(`⚠️ Workspace ${workspaceId} non trovato`, 'upload', 'info');
         } else {
@@ -5529,7 +5622,8 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     let workspaceProject = null;
     if (workspaceId && supabase) {
       try {
-        const foundWorkspace = await getWorkspaceFromDb(workspaceId);
+        const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+        const foundWorkspace = await getWorkspaceFromDb(workspaceId, ownerId ? { ownerId } : {});
         if (!foundWorkspace) {
           out(`⚠️ Workspace ${workspaceId} non trovato`, 'upload', 'info');
         } else {
