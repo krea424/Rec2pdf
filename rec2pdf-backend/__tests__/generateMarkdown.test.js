@@ -76,7 +76,6 @@ describe('generateMarkdown prompt composition', () => {
 
   it('includes knowledge base context before transcript', async () => {
     const transcriptPath = path.join(tempDir.name, 'input.txt');
-    const mdPath = path.join(tempDir.name, 'output.md');
     await fsp.writeFile(transcriptPath, 'Trascrizione di test.', 'utf8');
     const knowledgeContext = 'Dato rilevante 1.\nDato rilevante 2.';
     let capturedPrompt = '';
@@ -89,14 +88,12 @@ describe('generateMarkdown prompt composition', () => {
       generateEmbedding: mockGenerateEmbedding,
     }));
 
-    const result = await generateMarkdown(transcriptPath, mdPath, null, knowledgeContext);
-    expect(result.code).toBe(0);
-    const written = await fsp.readFile(mdPath, 'utf8');
-    expect(written).toBe('## Output finale');
-    expect(capturedPrompt).toContain('INFORMAZIONI AGGIUNTIVE DALLA KNOWLEDGE BASE');
+    const result = await generateMarkdown(transcriptPath, null, knowledgeContext);
+    expect(result).toMatchObject({ content: '## Output finale', modelName: 'gemini-2.5-flash' });
+    expect(capturedPrompt).toContain('CONTESTO AGGIUNTIVO DALLA KNOWLEDGE BASE');
     expect(capturedPrompt).toContain(knowledgeContext);
-    const knowledgeIndex = capturedPrompt.indexOf('INFORMAZIONI AGGIUNTIVE DALLA KNOWLEDGE BASE');
-    const transcriptIndex = capturedPrompt.indexOf('Ecco la trascrizione da elaborare:');
+    const knowledgeIndex = capturedPrompt.indexOf('CONTESTO AGGIUNTIVO DALLA KNOWLEDGE BASE');
+    const transcriptIndex = capturedPrompt.indexOf('TRASCRIZIONE DA ELABORARE:');
     expect(knowledgeIndex).toBeGreaterThan(-1);
     expect(transcriptIndex).toBeGreaterThan(-1);
     expect(knowledgeIndex).toBeLessThan(transcriptIndex);
@@ -105,7 +102,6 @@ describe('generateMarkdown prompt composition', () => {
 
   it('omits knowledge base block when context is empty', async () => {
     const transcriptPath = path.join(tempDir.name, 'empty-context.txt');
-    const mdPath = path.join(tempDir.name, 'empty-context.md');
     await fsp.writeFile(transcriptPath, 'Solo trascrizione.', 'utf8');
     let capturedPrompt = '';
 
@@ -117,15 +113,14 @@ describe('generateMarkdown prompt composition', () => {
       generateEmbedding: mockGenerateEmbedding,
     }));
 
-    const result = await generateMarkdown(transcriptPath, mdPath, null, '   ');
-    expect(result.code).toBe(0);
+    const result = await generateMarkdown(transcriptPath, null, '   ');
+    expect(result).toMatchObject({ content: '## Output senza contesto' });
     expect(capturedPrompt).not.toContain('INFORMAZIONI AGGIUNTIVE DALLA KNOWLEDGE BASE');
     expect(capturedPrompt).toContain('Solo trascrizione.');
   });
 
   it('forwards the text provider override to the resolver', async () => {
     const transcriptPath = path.join(tempDir.name, 'override.txt');
-    const mdPath = path.join(tempDir.name, 'override.md');
     await fsp.writeFile(transcriptPath, 'Override provider test.', 'utf8');
 
     mockGetAIService.mockImplementation(() => ({
@@ -140,16 +135,13 @@ describe('generateMarkdown prompt composition', () => {
       return { id: 'gemini', apiKey: 'test-key', model: 'gemini-2.5-flash' };
     });
 
-    const result = await generateMarkdown(transcriptPath, mdPath, null, '', { textProvider: 'openai' });
-    expect(result.code).toBe(0);
+    const result = await generateMarkdown(transcriptPath, null, '', { textProvider: 'openai' });
+    expect(result).toMatchObject({ content: '## Output', modelName: 'gpt-4o' });
     expect(mockResolveAiProvider).toHaveBeenCalledWith('text', 'openai');
-    const written = await fsp.readFile(mdPath, 'utf8');
-    expect(written).toBe('## Output');
   });
 
   it('aggiorna il campo ai.model nel front matter con il modello attivo', async () => {
     const transcriptPath = path.join(tempDir.name, 'frontmatter.txt');
-    const mdPath = path.join(tempDir.name, 'frontmatter.md');
     await fsp.writeFile(transcriptPath, 'Contenuto trascritto.', 'utf8');
 
     mockResolveAiProvider.mockImplementation(() => ({
@@ -164,16 +156,13 @@ describe('generateMarkdown prompt composition', () => {
       generateEmbedding: mockGenerateEmbedding,
     }));
 
-    const result = await generateMarkdown(transcriptPath, mdPath, null, '');
-    expect(result.code).toBe(0);
-    const written = await fsp.readFile(mdPath, 'utf8');
-    expect(written).toContain('ai.model: "gemini-2.5-pro"');
-    expect(written).toContain('ai.prompt_id: prompt123');
+    const result = await generateMarkdown(transcriptPath, null, '');
+    expect(result.content).toContain('ai.model: "gemini-2.5-pro"');
+    expect(result.content).toContain('ai.prompt_id: prompt123');
   });
 
   it('imposta ai.model su gemini-2.5-flash per il provider gemini predefinito', async () => {
     const transcriptPath = path.join(tempDir.name, 'frontmatter-default.txt');
-    const mdPath = path.join(tempDir.name, 'frontmatter-default.md');
     await fsp.writeFile(transcriptPath, 'Contenuto trascritto.', 'utf8');
 
     mockResolveAiProvider.mockImplementation(() => ({
@@ -187,9 +176,7 @@ describe('generateMarkdown prompt composition', () => {
       generateEmbedding: mockGenerateEmbedding,
     }));
 
-    const result = await generateMarkdown(transcriptPath, mdPath, null, '');
-    expect(result.code).toBe(0);
-    const written = await fsp.readFile(mdPath, 'utf8');
-    expect(written).toContain('ai.model: "gemini-2.5-flash"');
+    const result = await generateMarkdown(transcriptPath, null, '');
+    expect(result.content).toContain('ai.model: "gemini-2.5-flash"');
   });
 });
