@@ -2,13 +2,15 @@
     "name": "rec2pdf-backend",
     "version": "1.0.0",
     "private": true,
-    "description": "Backend HTTP per pipeline Rec→Whisper→genMD→PPUBR",
+    "description": "Backend HTTP per pipeline Rec\u2192Whisper\u2192genMD\u2192PPUBR",
     "main": "server.js",
     "scripts": {
         "start": "node server.js",
         "dev": "NODE_ENV=development node server.js",
         "test": "jest",
-        "ingest": "node scripts/ingest.js"
+        "ingest": "node scripts/ingest.js",
+        "prestart": "node scripts/checkDependencies.js",
+        "predev": "node scripts/checkDependencies.js"
     },
     "dependencies": {
         "@google/generative-ai": "^0.11.5",
