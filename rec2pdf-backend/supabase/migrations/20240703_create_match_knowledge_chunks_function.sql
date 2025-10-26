@@ -1,3 +1,4 @@
+SET LOCAL search_path = public, extensions;
 BEGIN;
 
 CREATE OR REPLACE FUNCTION public.match_knowledge_chunks(
