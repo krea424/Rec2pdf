@@ -1,16 +1,26 @@
 import { test, expect } from '@playwright/test'
 const promptsPayload = {
+  ok: true,
   prompts: [
     {
       id: 'prompt-1',
+      legacyId: 'prompt-1',
+      supabaseId: '11111111-2222-3333-4444-555555555555',
       slug: 'meeting-recap',
       title: 'Meeting recap',
+      summary: 'Template di esempio',
       description: 'Template di esempio',
       persona: 'PM',
       color: '#6366f1',
       tags: ['meeting'],
       cueCards: [],
-      checklist: { sections: [] },
+      checklist: { sections: ['Introduzione'], focusPrompts: ['Sintesi meeting'] },
+      focusPrompts: ['Sintesi meeting'],
+      markdownRules: { tone: 'Professionale' },
+      pdfRules: { layout: 'standard' },
+      builtIn: false,
+      createdAt: '2024-07-28T12:00:00.000Z',
+      updatedAt: '2024-07-28T12:30:00.000Z',
     },
   ],
 }

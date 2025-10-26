@@ -13,6 +13,16 @@ import supabase from "./supabaseClient";
 import { AppProvider } from "./hooks/useAppContext";
 import { ModeProvider, useMode } from "./context/ModeContext";
 import { useAnalytics } from "./context/AnalyticsContext";
+import {
+  collectPromptIdentifiers,
+  findPromptByIdentifier,
+  normalizePromptEntry,
+  parsePromptResponse,
+  parsePromptsResponse,
+  removePromptEntry,
+  upsertPromptEntry,
+} from "./api/prompts.js";
+import { PromptsProvider } from "./context/PromptsContext.jsx";
 
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
 const DEFAULT_DEST_DIR = '/Users/';
@@ -295,53 +305,6 @@ const normalizeStructureMeta = (structure) => {
             : null,
         }
       : null,
-  };
-};
-
-export const normalizePromptEntry = (prompt) => {
-  if (!prompt || typeof prompt !== 'object') {
-    return null;
-  }
-  const cueCards = Array.isArray(prompt.cueCards)
-    ? prompt.cueCards
-        .map((card, index) => {
-          if (!card || typeof card !== 'object') return null;
-          const title = String(card.title || card.label || '').trim();
-          if (!title) return null;
-          return {
-            key: card.key || card.id || `cue_${index}`,
-            title,
-            hint: String(card.hint || card.description || '').trim(),
-          };
-        })
-        .filter(Boolean)
-    : [];
-  const checklistSections = Array.isArray(prompt?.checklist?.sections)
-    ? prompt.checklist.sections.map((section) => String(section || '').trim()).filter(Boolean)
-    : Array.isArray(prompt?.checklist)
-    ? prompt.checklist.map((section) => String(section || '').trim()).filter(Boolean)
-    : [];
-  const completedCues = Array.isArray(prompt.completedCues)
-    ? prompt.completedCues.map((item) => String(item || '').trim()).filter(Boolean)
-    : [];
-
-  return {
-    id: prompt.id || '',
-    slug: prompt.slug || '',
-    title: prompt.title || '',
-    summary: typeof prompt.summary === 'string' ? prompt.summary.trim() : '',
-    description: prompt.description || '',
-    persona: prompt.persona || '',
-    color: prompt.color || '#6366f1',
-    tags: Array.isArray(prompt.tags) ? prompt.tags.filter(Boolean) : [],
-    cueCards,
-    checklist: { sections: checklistSections },
-    markdownRules: prompt.markdownRules || null,
-    pdfRules: prompt.pdfRules || null,
-    focus: prompt.focus || '',
-    notes: prompt.notes || '',
-    completedCues,
-    builtIn: Boolean(prompt.builtIn),
   };
 };
 
@@ -1320,7 +1283,7 @@ function AppContent(){
 
   useEffect(() => {
     if (!promptState.promptId) return;
-    const exists = prompts.some((prompt) => prompt.id === promptState.promptId);
+    const exists = Boolean(findPromptByIdentifier(prompts, promptState.promptId));
     if (!exists) {
       setPromptState(buildPromptState());
     }
@@ -1847,9 +1810,10 @@ function AppContent(){
       }
       try {
         const result = await fetchBodyWithAuth(`${normalized}/api/prompts`, { method: 'GET' });
-        if (result.ok && Array.isArray(result.data?.prompts)) {
-          setPrompts(result.data.prompts);
-        } else if (!result.ok && !options?.silent) {
+        if (result.ok) {
+          const { prompts: parsedPrompts } = parsePromptsResponse(result.data || {});
+          setPrompts(parsedPrompts);
+        } else if (!options?.silent) {
           const message = result.data?.message || result.raw || 'Impossibile caricare i prompt.';
           pushLogs([`⚠️ API prompt: ${message}`]);
         }
@@ -2690,13 +2654,12 @@ function AppContent(){
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (result.ok && result.data?.prompt) {
-        setPrompts((prev) => {
-          const next = prev.filter((item) => item.id !== result.data.prompt.id);
-          next.unshift(result.data.prompt);
-          return next;
-        });
-        return { ok: true, prompt: result.data.prompt };
+      if (result.ok) {
+        const { prompt } = parsePromptResponse(result.data || {});
+        if (prompt) {
+          setPrompts((prev) => upsertPromptEntry(prev, prompt));
+          return { ok: true, prompt };
+        }
       }
       const message = result.data?.message || result.raw || 'Impossibile creare il prompt.';
       return { ok: false, message };
@@ -2710,17 +2673,26 @@ function AppContent(){
       if (!normalized) {
         return { ok: false, message: 'Backend non configurato' };
       }
+      const existingPrompt = findPromptByIdentifier(prompts, promptId);
       const result = await fetchBodyWithAuth(`${normalized}/api/prompts/${encodeURIComponent(promptId)}`, {
         method: 'DELETE',
       });
       if (result.ok) {
-        setPrompts((prev) => prev.filter((prompt) => prompt.id !== promptId));
-        setPromptFavorites((prev) => prev.filter((id) => id !== promptId));
-        setPromptState((prev) => (prev.promptId === promptId ? buildPromptState() : prev));
+        const identifiersToClear = (() => {
+          if (!existingPrompt) {
+            return new Set([promptId]);
+          }
+          return new Set(collectPromptIdentifiers(existingPrompt));
+        })();
+        setPrompts((prev) => removePromptEntry(prev, promptId));
+        setPromptFavorites((prev) => prev.filter((id) => !identifiersToClear.has(id)));
+        setPromptState((prev) =>
+          identifiersToClear.has(prev.promptId) ? buildPromptState() : prev
+        );
       }
       return result;
     },
-    [backendUrl, fetchBodyWithAuth]
+    [backendUrl, fetchBodyWithAuth, prompts]
   );
 
   const handleAdoptNavigatorSelection = useCallback(() => {
@@ -4380,7 +4352,7 @@ function AppContent(){
       .map(([key]) => key);
   }, [promptState.cueProgress]);
   const activePrompt = useMemo(
-    () => prompts.find((prompt) => prompt.id === promptState.promptId) || null,
+    () => findPromptByIdentifier(prompts, promptState.promptId) || null,
     [prompts, promptState.promptId]
   );
 
@@ -4625,17 +4597,19 @@ function AppContent(){
 
   return (
     <ModeProvider session={session} syncWithSupabase={!BYPASS_AUTH}>
-      <AppContextComposer baseValue={baseContextValue}>
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route index element={<Navigate to="/create" replace />} />
-            <Route path="/create" element={<CreatePage />} />
-            <Route path="/library" element={<LibraryPage />} />
-            <Route path="/editor" element={<EditorPage />} />
-            <Route path="*" element={<Navigate to="/create" replace />} />
-          </Route>
-        </Routes>
-      </AppContextComposer>
+      <PromptsProvider prompts={prompts}>
+        <AppContextComposer baseValue={baseContextValue}>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route index element={<Navigate to="/create" replace />} />
+              <Route path="/create" element={<CreatePage />} />
+              <Route path="/library" element={<LibraryPage />} />
+              <Route path="/editor" element={<EditorPage />} />
+              <Route path="*" element={<Navigate to="/create" replace />} />
+            </Route>
+          </Routes>
+        </AppContextComposer>
+      </PromptsProvider>
     </ModeProvider>
   );
 }
