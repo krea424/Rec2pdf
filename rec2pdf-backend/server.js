@@ -37,6 +37,13 @@ const supabase =
       })
     : null;
 
+const getSupabaseClient = () => {
+  if (!supabase) {
+    throw new Error('Supabase non configurato');
+  }
+  return supabase;
+};
+
 const CONTEXT_SEPARATOR = '\n\n---\n\n';
 const CONTEXT_QUERY_MAX_CHARS = 4000;
 
@@ -248,7 +255,6 @@ app.use('/api', (req, res, next) => {
 
 const DATA_DIR = path.join(os.homedir(), '.rec2pdf');
 const WORKSPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
-const PROMPTS_FILE = path.join(DATA_DIR, 'prompts.json');
 const PROFILE_LOGO_ROOT = path.join(DATA_DIR, 'logos');
 const PROFILE_TEMPLATE_CACHE = path.join(DATA_DIR, 'templates');
 const DEFAULT_STATUSES = ['Bozza', 'In lavorazione', 'Da revisionare', 'Completato'];
@@ -881,22 +887,19 @@ const resolveDestinationDirectory = async (rawDest) => {
   return { dir: targetDir, isCustom: !!sanitized };
 };
 
-
-
-
-
-
-
-const writePrompts = async (prompts = []) => {
-  await ensureDataStore();
-  const payload = { prompts, updatedAt: Date.now() };
-  await fsp.writeFile(PROMPTS_FILE, JSON.stringify(payload, null, 2));
-  return payload;
-};
-
 const findPromptById = (prompts, id) => {
   if (!id) return null;
-  return (prompts || []).find((prompt) => prompt.id === id) || null;
+  const normalized = String(id).trim();
+  if (!normalized) return null;
+  return (
+    (prompts || []).find((prompt) => {
+      if (!prompt || typeof prompt !== 'object') return false;
+      if (prompt.id === normalized) return true;
+      if (prompt.legacyId && prompt.legacyId === normalized) return true;
+      if (prompt.supabaseId && prompt.supabaseId === normalized) return true;
+      return false;
+    }) || null
+  );
 };
 
 const normalizeCueCards = (value = []) => {
@@ -2702,111 +2705,260 @@ const DEFAULT_PROMPTS = [
   },
 ];
 
-const DEFAULT_PROMPTS_BY_ID = new Map(
-  DEFAULT_PROMPTS.filter((prompt) => prompt && prompt.id).map((prompt) => [prompt.id, prompt])
-);
+const SUPABASE_PROMPT_COLUMNS = [
+  'id',
+  'legacy_id',
+  'workspace_id',
+  'slug',
+  'title',
+  'summary',
+  'description',
+  'persona',
+  'color',
+  'tags',
+  'cue_cards',
+  'markdown_rules',
+  'pdf_rules',
+  'checklist',
+  'built_in',
+  'created_at',
+  'updated_at',
+].join(', ');
 
-const DEFAULT_PROMPTS_BY_SLUG = new Map(
-  DEFAULT_PROMPTS.filter((prompt) => prompt && prompt.slug).map((prompt) => [prompt.slug, prompt])
-);
-
-const bootstrapDefaultPrompts = () => {
-  const now = Date.now();
-  return DEFAULT_PROMPTS.map((prompt, index) => ({
-    ...prompt,
-    createdAt: prompt.createdAt || now + index,
-    updatedAt: prompt.updatedAt || now + index,
-  }));
+const parseJsonArray = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 };
 
-const applyPromptMigrations = (prompts = []) => {
-  let changed = false;
-  const upgraded = [];
-  const existingById = new Map();
-  const existingBySlug = new Map();
-
-  for (const prompt of prompts || []) {
-    if (!prompt || typeof prompt !== 'object') {
-      upgraded.push(prompt);
-      continue;
-    }
-
-    const defaults = prompt.builtIn
-      ? DEFAULT_PROMPTS_BY_ID.get(prompt.id) ||
-        (prompt.slug ? DEFAULT_PROMPTS_BY_SLUG.get(prompt.slug) : null)
-      : null;
-
-    const next = { ...prompt };
-
-    if (defaults) {
-      if (!next.summary && defaults.summary) {
-        next.summary = defaults.summary;
-        changed = true;
-      }
-
-      if (!next.builtIn) {
-        next.builtIn = true;
-        changed = true;
-      }
-
-      if (defaults.pdfRules && typeof defaults.pdfRules === 'object') {
-        const currentPdfRules =
-          next.pdfRules && typeof next.pdfRules === 'object' ? { ...next.pdfRules } : {};
-        let pdfRulesChanged = false;
-        for (const [key, value] of Object.entries(defaults.pdfRules)) {
-          if (currentPdfRules[key] === undefined) {
-            currentPdfRules[key] = value;
-            pdfRulesChanged = true;
-          }
-        }
-        if (pdfRulesChanged || (!next.pdfRules && Object.keys(currentPdfRules).length)) {
-          next.pdfRules = currentPdfRules;
-          changed = true;
-        }
-      }
-    }
-
-    upgraded.push(next);
-
-    if (next && typeof next === 'object') {
-      if (next.id) {
-        existingById.set(next.id, next);
-      }
-      if (next.slug) {
-        existingBySlug.set(next.slug, next);
-      }
+const parseJsonObject = (value) => {
+  if (!value) return null;
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return { ...value };
+  }
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
     }
   }
+  return null;
+};
 
-  for (const defaults of DEFAULT_PROMPTS) {
-    if (!defaults || !defaults.builtIn) {
-      continue;
-    }
-    const alreadyPresent =
-      (defaults.id && existingById.get(defaults.id)) ||
-      (defaults.slug && existingBySlug.get(defaults.slug));
-    if (alreadyPresent) {
-      continue;
-    }
-
-    const timestamp = Date.now();
-    const injected = {
-      ...defaults,
-      createdAt: defaults.createdAt || timestamp,
-      updatedAt: defaults.updatedAt || timestamp,
-    };
-
-    upgraded.push(injected);
-    if (injected.id) {
-      existingById.set(injected.id, injected);
-    }
-    if (injected.slug) {
-      existingBySlug.set(injected.slug, injected);
-    }
-    changed = true;
+const formatPromptForResponse = (record, { fallback = false } = {}) => {
+  if (!record || typeof record !== 'object') {
+    return null;
   }
 
-  return { prompts: upgraded, changed };
+  const rawTags = record.tags;
+  const tags = parseJsonArray(rawTags)
+    .map((tag) => String(tag || '').trim())
+    .filter(Boolean);
+
+  const rawCueCards = fallback ? record.cueCards : record.cue_cards;
+  const cueCards = normalizeCueCards(parseJsonArray(rawCueCards));
+
+  const checklistSource = (() => {
+    if (fallback) {
+      return record.checklist;
+    }
+    const parsed = parseJsonObject(record.checklist);
+    if (parsed) {
+      return parsed;
+    }
+    const asArray = parseJsonArray(record.checklist);
+    return asArray.length ? { sections: asArray } : null;
+  })();
+  const checklistSections = normalizeChecklistSections(
+    (checklistSource && (checklistSource.sections || checklistSource)) || []
+  );
+
+  let focusPrompts = [];
+  if (checklistSource && (checklistSource.focusPrompts || checklistSource.focus_prompts)) {
+    focusPrompts = parseJsonArray(checklistSource.focusPrompts || checklistSource.focus_prompts);
+  }
+  if (!focusPrompts.length && Array.isArray(record.focusPrompts)) {
+    focusPrompts = record.focusPrompts;
+  }
+  focusPrompts = focusPrompts.map((item) => String(item || '').trim()).filter(Boolean);
+
+  const markdownRules = (() => {
+    if (fallback) {
+      return record.markdownRules ? { ...record.markdownRules } : null;
+    }
+    const parsed = parseJsonObject(record.markdown_rules);
+    return parsed ? parsed : null;
+  })();
+
+  const pdfRules = (() => {
+    if (fallback) {
+      return record.pdfRules ? { ...record.pdfRules } : null;
+    }
+    const parsed = parseJsonObject(record.pdf_rules);
+    return parsed ? parsed : null;
+  })();
+
+  const id = fallback ? record.id : record.legacy_id || record.id;
+  const legacyId = fallback ? record.id : record.legacy_id || null;
+  const supabaseId = fallback ? null : record.id || null;
+
+  const checklist = { sections: checklistSections };
+  if (focusPrompts.length) {
+    checklist.focusPrompts = focusPrompts;
+  }
+
+  const prompt = {
+    id,
+    legacyId,
+    supabaseId,
+    workspaceId: fallback ? record.workspaceId || null : record.workspace_id || null,
+    slug: record.slug || '',
+    title: record.title || '',
+    summary: record.summary || '',
+    description: record.description || '',
+    persona: record.persona || '',
+    color: record.color ? normalizeColor(record.color) : '#6366f1',
+    tags,
+    cueCards,
+    markdownRules,
+    pdfRules,
+    checklist,
+    builtIn: Boolean(fallback ? record.builtIn : record.built_in),
+    createdAt: fallback ? record.createdAt || null : record.created_at || null,
+    updatedAt: fallback ? record.updatedAt || null : record.updated_at || null,
+  };
+
+  if (focusPrompts.length) {
+    prompt.focusPrompts = focusPrompts;
+  }
+
+  return prompt;
+};
+
+const listPrompts = async () => {
+  if (!supabase) {
+    return DEFAULT_PROMPTS.map((prompt) => formatPromptForResponse(prompt, { fallback: true })).filter(Boolean);
+  }
+
+  try {
+    const client = getSupabaseClient();
+    const { data, error } = await client
+      .from('prompts')
+      .select(SUPABASE_PROMPT_COLUMNS)
+      .order('created_at', { ascending: true, nullsLast: true });
+
+    if (error) {
+      throw error;
+    }
+
+    if (!Array.isArray(data) || data.length === 0) {
+      return DEFAULT_PROMPTS.map((prompt) => formatPromptForResponse(prompt, { fallback: true })).filter(Boolean);
+    }
+
+    return data.map((row) => formatPromptForResponse(row)).filter(Boolean);
+  } catch (error) {
+    console.error('Errore durante il recupero dei prompt da Supabase:', error?.message || error);
+    throw error;
+  }
+};
+
+const fetchPromptByIdentifier = async (identifier) => {
+  const normalized = typeof identifier === 'string' ? identifier.trim() : '';
+  if (!normalized) {
+    return null;
+  }
+
+  if (!supabase) {
+    const prompts = await listPrompts();
+    return findPromptById(prompts, normalized);
+  }
+
+  const client = getSupabaseClient();
+  const baseQuery = () =>
+    client
+      .from('prompts')
+      .select(SUPABASE_PROMPT_COLUMNS);
+
+  const byLegacy = await baseQuery().eq('legacy_id', normalized).maybeSingle();
+  if (byLegacy.error) {
+    throw byLegacy.error;
+  }
+  if (byLegacy.data) {
+    return formatPromptForResponse(byLegacy.data);
+  }
+
+  const byId = await baseQuery().eq('id', normalized).maybeSingle();
+  if (byId.error) {
+    throw byId.error;
+  }
+  return byId.data ? formatPromptForResponse(byId.data) : null;
+};
+
+const promptToDbRecord = (prompt) => {
+  if (!prompt || typeof prompt !== 'object') {
+    return {};
+  }
+
+  const normalizedTags = Array.isArray(prompt.tags)
+    ? prompt.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
+    : [];
+
+  const normalizedCueCards = Array.isArray(prompt.cueCards)
+    ? prompt.cueCards
+    : [];
+
+  const baseChecklist =
+    prompt.checklist && typeof prompt.checklist === 'object' ? { ...prompt.checklist } : {};
+  const sections = normalizeChecklistSections(baseChecklist.sections || baseChecklist);
+  let focusPrompts = [];
+  if (Array.isArray(prompt.focusPrompts)) {
+    focusPrompts = prompt.focusPrompts;
+  } else if (Array.isArray(baseChecklist.focusPrompts)) {
+    focusPrompts = baseChecklist.focusPrompts;
+  } else if (Array.isArray(baseChecklist.focus_prompts)) {
+    focusPrompts = baseChecklist.focus_prompts;
+  }
+  const normalizedFocusPrompts = focusPrompts
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+  const checklistPayload = {
+    ...baseChecklist,
+    sections,
+  };
+  delete checklistPayload.focus_prompts;
+  if (normalizedFocusPrompts.length) {
+    checklistPayload.focusPrompts = normalizedFocusPrompts;
+  } else {
+    delete checklistPayload.focusPrompts;
+  }
+
+  return {
+    legacy_id: prompt.legacyId || prompt.id || null,
+    workspace_id: prompt.workspaceId || null,
+    slug: prompt.slug || null,
+    title: prompt.title || null,
+    summary: prompt.summary || null,
+    description: prompt.description || null,
+    persona: prompt.persona || null,
+    color: prompt.color || null,
+    tags: normalizedTags,
+    cue_cards: normalizedCueCards,
+    markdown_rules: prompt.markdownRules || null,
+    pdf_rules: prompt.pdfRules || null,
+    checklist: checklistPayload,
+    built_in: Boolean(prompt.builtIn),
+  };
 };
 
 const ensureDataStore = async () => {
@@ -2817,15 +2969,6 @@ const ensureDataStore = async () => {
     await fsp.writeFile(
       WORKSPACES_FILE,
       JSON.stringify({ workspaces: [], updatedAt: Date.now() }, null, 2)
-    );
-  }
-  try {
-    await fsp.access(PROMPTS_FILE, fs.constants.F_OK);
-  } catch {
-    const prompts = bootstrapDefaultPrompts();
-    await fsp.writeFile(
-      PROMPTS_FILE,
-      JSON.stringify({ prompts, updatedAt: Date.now() }, null, 2)
     );
   }
 
@@ -2840,26 +2983,6 @@ const ensureDataStore = async () => {
   } catch (error) {
     console.warn('Impossibile creare la cartella template profilo:', error.message || error);
   }
-};
-
-const readPrompts = async () => {
-  await ensureDataStore();
-  try {
-    const raw = await fsp.readFile(PROMPTS_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (parsed && Array.isArray(parsed.prompts)) {
-      const { prompts, changed } = applyPromptMigrations(parsed.prompts);
-      if (changed) {
-        await writePrompts(prompts);
-      }
-      return prompts;
-    }
-  } catch (error) {
-    console.warn('Impossibile leggere prompts.json:', error.message || error);
-  }
-  const prompts = bootstrapDefaultPrompts();
-  await writePrompts(prompts);
-  return prompts;
 };
 
 const mergeWorkspaceUpdate = (workspace, patch) => {
@@ -2930,7 +3053,7 @@ app.post('/api/workspaces', async (req, res) => {
     }
 
     const workspaces = await readWorkspaces();
-    const prompts = await readPrompts();
+    const prompts = await listPrompts();
     const normalizedProfiles = normalizeWorkspaceProfiles(req.body?.profiles);
     const profileErrors = await validateWorkspaceProfiles(normalizedProfiles, { prompts });
     if (profileErrors.length) {
@@ -2986,7 +3109,7 @@ app.put('/api/workspaces/:id', async (req, res) => {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
 
-    const prompts = await readPrompts();
+    const prompts = await listPrompts();
     const merged = mergeWorkspaceUpdate(workspaces[index], req.body || {});
     const profileErrors = await validateWorkspaceProfiles(merged.profiles, { prompts });
     if (profileErrors.length) {
@@ -3173,7 +3296,7 @@ workspaceProfilesRouter.post('/', optionalProfileUpload, async (req, res) => {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
 
-    const prompts = await readPrompts();
+    const prompts = await listPrompts();
     const workspace = { ...workspaces[index] };
     const payload = extractProfilePayload(req.body);
     const profileId = payload.id || generateId('profile');
@@ -3255,7 +3378,7 @@ workspaceProfilesRouter.put('/:profileId', optionalProfileUpload, async (req, re
       return res.status(404).json({ ok: false, message: 'Profilo non trovato' });
     }
 
-    const prompts = await readPrompts();
+    const prompts = await listPrompts();
     const payload = extractProfilePayload(req.body);
     payload.id = req.params.profileId;
 
@@ -3391,7 +3514,7 @@ app.use('/api/workspaces/:workspaceId/profiles', workspaceProfilesRouter);
 
 app.get('/api/prompts', async (req, res) => {
   try {
-    const prompts = await readPrompts();
+    const prompts = await listPrompts();
     res.json({ ok: true, prompts });
   } catch (error) {
     res
@@ -3412,13 +3535,18 @@ app.get('/api/templates', async (req, res) => {
 });
 
 app.post('/api/prompts', async (req, res) => {
+  if (!supabase) {
+    return res
+      .status(503)
+      .json({ ok: false, message: 'Supabase non configurato: impossibile creare nuovi prompt.' });
+  }
+
   try {
     const title = String(req.body?.title || '').trim();
     if (!title) {
       return res.status(400).json({ ok: false, message: 'Titolo prompt obbligatorio' });
     }
 
-    const prompts = await readPrompts();
     const slug = sanitizeSlug(req.body?.slug || title, title);
     const tags = Array.isArray(req.body?.tags)
       ? req.body.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
@@ -3437,10 +3565,17 @@ app.post('/api/prompts', async (req, res) => {
     const focusPrompts = Array.isArray(req.body?.focusPrompts)
       ? req.body.focusPrompts.map((item) => String(item || '').trim()).filter(Boolean)
       : [];
+    const workspaceId =
+      typeof req.body?.workspaceId === 'string' ? req.body.workspaceId.trim() || null : null;
 
-    const now = Date.now();
-    const prompt = {
-      id: generateId('prompt'),
+    const legacyId =
+      String(req.body?.id || req.body?.legacyId || '').trim() || generateId('prompt');
+    const timestamp = new Date().toISOString();
+
+    const promptPayload = {
+      id: legacyId,
+      legacyId,
+      workspaceId,
       slug,
       title,
       summary: String(req.body?.summary || '').trim(),
@@ -3453,61 +3588,139 @@ app.post('/api/prompts', async (req, res) => {
       markdownRules: markdownRules || null,
       pdfRules: pdfRules || null,
       focusPrompts,
-      builtIn: Boolean(req.body?.builtIn && req.body.builtIn === true ? true : false),
-      createdAt: now,
-      updatedAt: now,
+      builtIn: Boolean(req.body?.builtIn === true),
     };
 
-    prompts.push(prompt);
-    await writePrompts(prompts);
-    res.status(201).json({ ok: true, prompt });
+    if (focusPrompts.length) {
+      promptPayload.checklist.focusPrompts = focusPrompts;
+    }
+
+    const dbPayload = promptToDbRecord(promptPayload);
+    const { data, error } = await getSupabaseClient()
+      .from('prompts')
+      .insert({ ...dbPayload, created_at: timestamp, updated_at: timestamp })
+      .select(SUPABASE_PROMPT_COLUMNS)
+      .maybeSingle();
+
+    if (error) {
+      const status = error.code === '23505' ? 409 : 500;
+      const message =
+        error.code === '23505'
+          ? 'Slug o identificatore prompt già esistente.'
+          : error.message || 'Impossibile creare il prompt.';
+      return res.status(status).json({ ok: false, message });
+    }
+
+    if (!data) {
+      return res.status(500).json({ ok: false, message: 'Impossibile creare il prompt.' });
+    }
+
+    const prompt = formatPromptForResponse(data) || promptPayload;
+    return res.status(201).json({ ok: true, prompt });
   } catch (error) {
-    res
+    return res
       .status(500)
       .json({ ok: false, message: error && error.message ? error.message : String(error) });
   }
 });
 
 app.put('/api/prompts/:id', async (req, res) => {
+  if (!supabase) {
+    return res
+      .status(503)
+      .json({ ok: false, message: 'Supabase non configurato: impossibile aggiornare i prompt.' });
+  }
+
   try {
-    const prompts = await readPrompts();
-    const index = prompts.findIndex((prompt) => prompt.id === req.params.id);
-    if (index === -1) {
+    const existing = await fetchPromptByIdentifier(req.params.id);
+    if (!existing) {
       return res.status(404).json({ ok: false, message: 'Prompt non trovato' });
     }
 
-    const merged = mergePromptUpdate(prompts[index], req.body || {});
-    prompts[index] = merged;
-    await writePrompts(prompts);
-    res.json({ ok: true, prompt: merged });
+    const merged = mergePromptUpdate(existing, req.body || {});
+    merged.legacyId = existing.legacyId || existing.id;
+    merged.workspaceId =
+      typeof req.body?.workspaceId === 'string'
+        ? req.body.workspaceId.trim() || existing.workspaceId || null
+        : existing.workspaceId || null;
+
+    const dbPayload = promptToDbRecord(merged);
+    let updateQuery = getSupabaseClient()
+      .from('prompts')
+      .update({ ...dbPayload, updated_at: new Date().toISOString() });
+
+    if (existing.supabaseId) {
+      updateQuery = updateQuery.eq('id', existing.supabaseId);
+    } else if (existing.legacyId) {
+      updateQuery = updateQuery.eq('legacy_id', existing.legacyId);
+    } else {
+      updateQuery = updateQuery.eq('legacy_id', existing.id);
+    }
+
+    const { data, error } = await updateQuery.select(SUPABASE_PROMPT_COLUMNS).maybeSingle();
+
+    if (error) {
+      const status = error.code === '23505' ? 409 : 500;
+      const message =
+        error.code === '23505'
+          ? 'Slug o identificatore prompt già esistente.'
+          : error.message || 'Impossibile aggiornare il prompt.';
+      return res.status(status).json({ ok: false, message });
+    }
+
+    if (!data) {
+      return res.status(500).json({ ok: false, message: 'Impossibile aggiornare il prompt.' });
+    }
+
+    const prompt = formatPromptForResponse(data) || merged;
+    return res.json({ ok: true, prompt });
   } catch (error) {
-    res
+    return res
       .status(500)
       .json({ ok: false, message: error && error.message ? error.message : String(error) });
   }
 });
 
 app.delete('/api/prompts/:id', async (req, res) => {
+  if (!supabase) {
+    return res
+      .status(503)
+      .json({ ok: false, message: 'Supabase non configurato: impossibile eliminare i prompt.' });
+  }
+
   try {
-    const prompts = await readPrompts();
-    const prompt = findPromptById(prompts, req.params.id);
+    const prompt = await fetchPromptByIdentifier(req.params.id);
     if (!prompt) {
       return res.status(404).json({ ok: false, message: 'Prompt non trovato' });
     }
-    const force = String(req.query?.force || '')
-      .toLowerCase()
-      .trim();
+
+    const force = String(req.query?.force || '').toLowerCase().trim();
     const isForceEnabled = force && ['1', 'true', 'yes', 'on'].includes(force);
     if (prompt.builtIn && !isForceEnabled) {
       return res
         .status(400)
         .json({ ok: false, message: 'I template predefiniti non possono essere eliminati' });
     }
-    const next = prompts.filter((item) => item.id !== prompt.id);
-    await writePrompts(next);
-    res.json({ ok: true });
+
+    let deleteQuery = getSupabaseClient().from('prompts').delete();
+    if (prompt.supabaseId) {
+      deleteQuery = deleteQuery.eq('id', prompt.supabaseId);
+    } else if (prompt.legacyId) {
+      deleteQuery = deleteQuery.eq('legacy_id', prompt.legacyId);
+    } else {
+      deleteQuery = deleteQuery.eq('legacy_id', prompt.id);
+    }
+
+    const { error } = await deleteQuery;
+    if (error) {
+      return res
+        .status(500)
+        .json({ ok: false, message: error.message || 'Impossibile eliminare il prompt.' });
+    }
+
+    return res.json({ ok: true });
   } catch (error) {
-    res
+    return res
       .status(500)
       .json({ ok: false, message: error && error.message ? error.message : String(error) });
   }
@@ -3686,7 +3899,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
 
     let promptId = String(req.body?.promptId || '').trim();
     if (promptId) {
-      const prompts = await readPrompts();
+      const prompts = await listPrompts();
       selectedPrompt = findPromptById(prompts, promptId);
       if (!selectedPrompt) {
         out(`⚠️ Prompt ${promptId} non trovato`, 'upload', 'info');
@@ -4672,7 +4885,7 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
 
     const promptId = String(req.body?.promptId || '').trim();
     if (promptId) {
-      const prompts = await readPrompts();
+      const prompts = await listPrompts();
       selectedPrompt = findPromptById(prompts, promptId);
       if (!selectedPrompt) {
         out(`⚠️ Prompt ${promptId} non trovato`, 'upload', 'info');
@@ -4919,7 +5132,7 @@ app.post(
 
       const promptId = String(req.body?.promptId || '').trim();
       if (promptId) {
-        const prompts = await readPrompts();
+        const prompts = await listPrompts();
         selectedPrompt = findPromptById(prompts, promptId);
         if (!selectedPrompt) {
           out(`⚠️ Prompt ${promptId} non trovato`, 'upload', 'info');
