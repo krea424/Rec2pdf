@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "exported_at": "2024-07-25T00:00:00Z",
+  "workspaces": [
+    {
+      "id": "demo-workspace",
+      "name": "Workspace Demo",
+      "owner": "draft-owner",
+      "description": "Workspace di test allineato con la bozza Supabase",
+      "status_lists": [
+        "Da lavorare",
+        "In revisione",
+        "Completato"
+      ],
+      "default_prompt": "draft-intake",
+      "branding": {
+        "logo_file": "logos/demo-logo.txt",
+        "theme": "classic"
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "exported_at": "2024-07-25T00:00:00Z",
+  "prompts": [
+    {
+      "id": "draft-intake",
+      "workspace": "demo-workspace",
+      "title": "Verbale default",
+      "body": "## Outline\n- Saluto\n- Sommario\n- Azioni",
+      "metadata": {
+        "language": "it-IT",
+        "tags": ["demo", "default"]
+      }
+    }
+  ]
+}
