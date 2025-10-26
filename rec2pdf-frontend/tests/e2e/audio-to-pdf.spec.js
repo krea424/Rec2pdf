@@ -29,14 +29,26 @@ const workspacesPayload = {
   workspaces: [
     {
       id: 'ws-1',
+      slug: 'acme-workspace',
       name: 'ACME Workspace',
-      client: 'ACME Corp',
-      color: '#6366f1',
-      statusCatalog: ['Bozza', 'In lavorazione', 'Completato'],
-      projects: [
-        { id: 'proj-1', name: 'Kickoff', color: '#6366f1', statuses: ['Bozza', 'Completato'] },
-      ],
-      defaultStatuses: ['Bozza', 'In lavorazione', 'Completato'],
+      metadata: {
+        client: 'ACME Corp',
+        color: '#6366f1',
+      },
+      default_statuses: ['Bozza', 'In lavorazione', 'Completato'],
+      projects: JSON.stringify([
+        {
+          id: 'proj-1',
+          name: 'Kickoff',
+          color: '#6366f1',
+          statuses: ['Bozza', 'Completato'],
+          created_at: '2024-07-01T09:00:00.000Z',
+          updated_at: '2024-07-05T10:00:00.000Z',
+        },
+      ]),
+      profiles: [],
+      created_at: '2024-07-01T09:00:00.000Z',
+      updated_at: '2024-07-10T09:30:00.000Z',
     },
   ],
 }

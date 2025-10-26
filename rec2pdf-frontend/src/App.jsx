@@ -23,6 +23,11 @@ import {
   upsertPromptEntry,
 } from "./api/prompts.js";
 import { PromptsProvider } from "./context/PromptsContext.jsx";
+import {
+  DEFAULT_WORKSPACE_STATUSES,
+  parseWorkspaceResponse,
+  parseWorkspacesResponse,
+} from "./api/workspaces.js";
 
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
 const DEFAULT_DEST_DIR = '/Users/';
@@ -64,7 +69,6 @@ const HISTORY_TABS = [
   { key: 'history', label: 'Cronologia' },
   { key: 'cloud', label: 'Cloud library' },
 ];
-const DEFAULT_WORKSPACE_STATUSES = ['Bozza', 'In lavorazione', 'Da revisionare', 'Completato'];
 const EMPTY_EDITOR_STATE = {
   open: false,
   entry: null,
@@ -1867,8 +1871,9 @@ function AppContent(){
       setWorkspaceLoading(true);
       try {
         const result = await fetchBodyWithAuth(`${normalized}/api/workspaces`, { method: 'GET' });
-        if (result.ok && Array.isArray(result.data?.workspaces)) {
-          const sanitized = result.data.workspaces.map((workspace) => ({
+        if (result.ok) {
+          const { workspaces: parsedWorkspaces } = parseWorkspacesResponse(result.data || {});
+          const sanitized = parsedWorkspaces.map((workspace) => ({
             ...workspace,
             profiles: normalizeWorkspaceProfiles(workspace),
           }));
@@ -1943,20 +1948,27 @@ function AppContent(){
           pushLogs([`❌ ${message}`]);
           return { ok: false, message };
         }
-        if (payload?.workspace) {
-          setWorkspaces((prev) => [
-            ...prev,
-            {
-              ...payload.workspace,
-              profiles: normalizeWorkspaceProfiles(payload.workspace),
-            },
-          ]);
-          pushLogs([`✅ Workspace creato: ${payload.workspace.name}`]);
-          if (!workspaceSelection.workspaceId) {
-            setWorkspaceSelection({ workspaceId: payload.workspace.id, projectId: '', projectName: '', status: '' });
+        const { workspace: parsedWorkspace } = parseWorkspaceResponse(payload);
+        if (parsedWorkspace) {
+          const normalizedWorkspace = {
+            ...parsedWorkspace,
+            profiles: normalizeWorkspaceProfiles(parsedWorkspace),
+          };
+          setWorkspaces((prev) => [...prev, normalizedWorkspace]);
+          pushLogs([`✅ Workspace creato: ${normalizedWorkspace.name}`]);
+          if (!workspaceSelection.workspaceId && normalizedWorkspace.id) {
+            setWorkspaceSelection({
+              workspaceId: normalizedWorkspace.id,
+              projectId: '',
+              projectName: '',
+              status: '',
+            });
           }
+          return { ok: true, workspace: normalizedWorkspace };
         }
-        return { ok: true, workspace: payload.workspace };
+        const message = 'Il workspace restituito dal backend non è valido.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
       } catch (error) {
         const message = error?.message || 'Errore creazione workspace';
         pushLogs([`❌ ${message}`]);
@@ -2016,20 +2028,21 @@ function AppContent(){
           pushLogs([`❌ ${message}`]);
           return { ok: false, message };
         }
-        if (body?.workspace) {
+        const { workspace: parsedWorkspace } = parseWorkspaceResponse(body);
+        if (parsedWorkspace) {
+          const normalizedWorkspace = {
+            ...parsedWorkspace,
+            profiles: normalizeWorkspaceProfiles(parsedWorkspace),
+          };
           setWorkspaces((prev) =>
-            prev.map((ws) =>
-              ws.id === trimmedId
-                ? {
-                    ...body.workspace,
-                    profiles: normalizeWorkspaceProfiles(body.workspace),
-                  }
-                : ws
-            )
+            prev.map((ws) => (ws.id === trimmedId ? normalizedWorkspace : ws))
           );
-          pushLogs([`✅ Workspace aggiornato: ${body.workspace.name || trimmedId}`]);
+          pushLogs([`✅ Workspace aggiornato: ${normalizedWorkspace.name || trimmedId}`]);
+          return { ok: true, workspace: normalizedWorkspace };
         }
-        return { ok: true, workspace: body.workspace };
+        const message = 'Il workspace aggiornato non è valido.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
       } catch (error) {
         const message = error?.message || 'Errore aggiornamento workspace';
         pushLogs([`❌ ${message}`]);
@@ -2190,15 +2203,18 @@ function AppContent(){
           pushLogs([`❌ ${message}`]);
           return { ok: false, message };
         }
-        if (payload?.workspace) {
-          setWorkspaces((prev) => prev.map((ws) => (ws.id === workspaceId
-            ? {
-                ...payload.workspace,
-                profiles: normalizeWorkspaceProfiles(payload.workspace),
-              }
-            : ws)));
+        const { workspace: parsedWorkspace } = parseWorkspaceResponse(payload);
+        if (parsedWorkspace) {
+          const normalizedWorkspace = {
+            ...parsedWorkspace,
+            profiles: normalizeWorkspaceProfiles(parsedWorkspace),
+          };
+          setWorkspaces((prev) =>
+            prev.map((ws) => (ws.id === workspaceId ? normalizedWorkspace : ws))
+          );
+          return { ok: true, workspace: normalizedWorkspace, updated: true };
         }
-        return { ok: true, workspace: payload.workspace || targetWorkspace, updated: true };
+        return { ok: true, workspace: targetWorkspace, updated: true };
       } catch (error) {
         const message = error?.message || 'Errore aggiornamento workspace';
         pushLogs([`❌ ${message}`]);
