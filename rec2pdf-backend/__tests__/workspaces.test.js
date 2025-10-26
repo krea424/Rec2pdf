@@ -181,6 +181,7 @@ describe('POST /api/workspaces', () => {
   let mockAuth;
   let workspaceRow;
   let insertSpy;
+  let profileUpsert;
   const ownerId = '123e4567-e89b-12d3-a456-426614174000';
 
   beforeEach(() => {
@@ -211,7 +212,8 @@ describe('POST /api/workspaces', () => {
     };
     workspaceSelectBuilder.eq.mockImplementation(() => workspaceSelectBuilder);
 
-    insertSpy = jest.fn((payload) => ({
+    insertSpy = jest.fn();
+    insertSpy.mockImplementation((payload) => ({
       select: jest.fn(() => ({
         single: jest.fn(() =>
           Promise.resolve({
@@ -221,6 +223,9 @@ describe('POST /api/workspaces', () => {
         ),
       })),
     }));
+
+    profileUpsert = jest.fn(() => Promise.resolve({ data: [{ id: ownerId }], error: null }));
+    const profileSelect = jest.fn(() => ({ in: jest.fn(() => Promise.resolve({ data: [], error: null })) }));
 
     mockAuth = {
       getUser: jest.fn(() => Promise.resolve({ data: { user: { id: ownerId } }, error: null })),
@@ -235,7 +240,8 @@ describe('POST /api/workspaces', () => {
       }
       if (table === 'profiles') {
         return {
-          select: jest.fn(() => ({ in: jest.fn(() => Promise.resolve({ data: [], error: null })) })),
+          select: profileSelect,
+          upsert: profileUpsert,
         };
       }
       if (table === 'prompts') {
@@ -281,5 +287,48 @@ describe('POST /api/workspaces', () => {
     const [payload] = insertSpy.mock.calls[0];
     expect(payload.owner_id).toBe(ownerId);
     expect(mockAuth.getUser).toHaveBeenCalledWith('test-token');
+    expect(profileUpsert).toHaveBeenCalledTimes(1);
+    expect(profileUpsert).toHaveBeenCalledWith(
+      {
+        id: ownerId,
+        email: null,
+        full_name: null,
+      },
+      { onConflict: 'id', ignoreDuplicates: false }
+    );
+  });
+
+  it('ritenta la creazione quando la prima insert fallisce per politiche RLS', async () => {
+    let attempts = 0;
+    insertSpy.mockImplementation((payload) => ({
+      select: jest.fn(() => ({
+        single: jest.fn(() => {
+          attempts += 1;
+          if (attempts === 1) {
+            return Promise.resolve({
+              data: null,
+              error: {
+                message: 'new row violates row-level security policy for table "workspaces"',
+              },
+            });
+          }
+          return Promise.resolve({
+            data: { ...workspaceRow, ...payload, owner_id: ownerId },
+            error: null,
+          });
+        }),
+      })),
+    }));
+
+    const response = await request
+      .post('/api/workspaces')
+      .set('Authorization', 'Bearer test-token')
+      .send({ name: 'Workspace con retry' });
+
+    expect(response.status).toBe(201);
+    expect(response.body.ok).toBe(true);
+    expect(response.body.workspace.ownerId).toBe(ownerId);
+    expect(insertSpy).toHaveBeenCalledTimes(2);
+    expect(profileUpsert).toHaveBeenCalledTimes(2);
   });
 });

@@ -45,6 +45,34 @@ const getSupabaseClient = () => {
   return supabase;
 };
 
+const ensureProfileForUser = async (req) => {
+  if (!supabase) {
+    return null;
+  }
+
+  const userId = typeof req?.user?.id === 'string' ? req.user.id.trim() : '';
+  if (!userId) {
+    throw new Error('Utente non valido');
+  }
+
+  const client = getSupabaseClient();
+  const payload = {
+    id: userId,
+    email: req.user?.email ?? null,
+    full_name: req.user?.user_metadata?.full_name ?? null,
+  };
+
+  const { error } = await client
+    .from('profiles')
+    .upsert(payload, { onConflict: 'id', ignoreDuplicates: false });
+
+  if (error) {
+    throw new Error(error.message || 'Impossibile sincronizzare il profilo utente');
+  }
+
+  return payload;
+};
+
 const VALID_LOGO_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.svg', '.pdf']);
 const LOGO_CONTENT_TYPE_MAP = new Map([
   ['.png', 'image/png'],
@@ -3462,6 +3490,20 @@ const mergeWorkspaceUpdate = (workspace, patch) => {
   return updated;
 };
 
+const shouldRetryWorkspaceCreation = (error) => {
+  if (!error) {
+    return false;
+  }
+
+  const message = (error?.message || String(error || '')).toLowerCase();
+  return (
+    message.includes('row-level security') ||
+    message.includes('foreign key constraint') ||
+    message.includes('owner_id') ||
+    message.includes('profiles')
+  );
+};
+
 app.get('/api/workspaces', async (req, res) => {
   if (!supabase) {
     return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
@@ -3491,6 +3533,7 @@ app.post('/api/workspaces', async (req, res) => {
     if (!ownerId) {
       return res.status(403).json({ ok: false, message: 'Utente non autorizzato a creare workspace' });
     }
+    await ensureProfileForUser(req);
     const parsed = workspaceInputSchema.safeParse(req.body || {});
     if (!parsed.success) {
       return res.status(400).json({ ok: false, message: 'Dati workspace non validi', details: parsed.error.flatten() });
@@ -3540,7 +3583,18 @@ app.post('/api/workspaces', async (req, res) => {
       profiles: [],
     };
 
-    const createdWorkspace = await insertWorkspaceIntoDb(workspacePayload, { ownerId });
+    const attemptInsert = async () => insertWorkspaceIntoDb(workspacePayload, { ownerId });
+
+    let createdWorkspace;
+    try {
+      createdWorkspace = await attemptInsert();
+    } catch (workspaceError) {
+      if (!shouldRetryWorkspaceCreation(workspaceError)) {
+        throw workspaceError;
+      }
+      await ensureProfileForUser(req);
+      createdWorkspace = await attemptInsert();
+    }
 
     let createdProfiles = [];
     if (normalizedProfiles.length) {
@@ -3584,6 +3638,7 @@ app.put('/api/workspaces/:id', async (req, res) => {
     if (!ownerId) {
       return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
     }
+    await ensureProfileForUser(req);
     const existing = await getWorkspaceFromDb(workspaceId, { ownerId });
     if (!existing) {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
@@ -3626,6 +3681,7 @@ app.delete('/api/workspaces/:id', async (req, res) => {
     if (!ownerId) {
       return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
     }
+    await ensureProfileForUser(req);
     const existing = await getWorkspaceFromDb(workspaceId, { ownerId });
     if (!existing) {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
