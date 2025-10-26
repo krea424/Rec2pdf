@@ -24,6 +24,8 @@ create table if not exists public.workspaces (
     name text not null,
     description text,
     logo_path text,
+    projects jsonb not null default '[]'::jsonb, -- <-- COLONNA AGGIUNTA
+    default_statuses jsonb not null default '[]'::jsonb, -- <-- COLONNA AGGIUNTA
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
