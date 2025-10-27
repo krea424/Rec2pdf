@@ -22,8 +22,7 @@ const {
 } = require('./services/aiProviders');
 
 const app = express();
-const PORT = process.env.PORT || 7788;
-const HOST = process.env.HOST || '0.0.0.0';
+const PORT = process.env.PORT || 10000;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const HUGGING_FACE_TOKEN = process.env.HUGGING_FACE_TOKEN || '';
@@ -6364,9 +6363,8 @@ app.use((req, res, next) => {
 });
 
 const startServer = () => {
-  const server = app.listen(PORT, HOST, () => {
-    const hostLabel = HOST === '0.0.0.0' ? '0.0.0.0' : HOST;
-    console.log(`rec2pdf backend in ascolto su http://${hostLabel}:${PORT}`);
+  const server = app.listen(PORT, () => {
+    console.log(`rec2pdf backend in ascolto sulla porta ${PORT}`);
   });
   return server;
 };
