@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import CloudLibraryPanel from "../components/CloudLibraryPanel";
 import WorkspaceNavigator from "../components/WorkspaceNavigator";
 import { useAppContext } from "../hooks/useAppContext";
@@ -5,14 +6,71 @@ import { Tabs, TabsList, TabsTrigger } from "../components/ui";
 
 const LibraryPage = () => {
   const context = useAppContext();
-  const { theme, themes } = context;
+  const {
+    theme,
+    themes,
+    mode,
+    HISTORY_TABS,
+    historyTab,
+    setHistoryTab,
+  } = context;
+
+  const availableTabs = HISTORY_TABS;
+
+  const manualSelectionRef = useRef(false);
+
+  const normalizedHistoryTab = useMemo(() => {
+    if (availableTabs.some((tab) => tab.key === historyTab)) {
+      return historyTab;
+    }
+
+    return availableTabs[0]?.key;
+  }, [availableTabs, historyTab]);
+
+  const cloudTabKey = useMemo(
+    () => availableTabs.find((tab) => tab.key === "cloud")?.key,
+    [availableTabs]
+  );
+
+  const activeTab = useMemo(() => {
+    if (mode === "base" && !manualSelectionRef.current && cloudTabKey) {
+      return cloudTabKey;
+    }
+
+    return normalizedHistoryTab;
+  }, [cloudTabKey, mode, normalizedHistoryTab]);
+
+  const handleTabChange = useCallback(
+    (nextValue) => {
+      manualSelectionRef.current = true;
+      if (typeof setHistoryTab === "function") {
+        setHistoryTab(nextValue);
+      }
+    },
+    [setHistoryTab]
+  );
+
+  useEffect(() => {
+    if (mode !== "base") {
+      manualSelectionRef.current = false;
+      return;
+    }
+
+    if (!cloudTabKey || manualSelectionRef.current) {
+      return;
+    }
+
+    if (typeof setHistoryTab === "function" && historyTab !== cloudTabKey) {
+      setHistoryTab(cloudTabKey);
+    }
+  }, [cloudTabKey, historyTab, mode, setHistoryTab]);
 
   return (
     <div className="mt-8">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-2">
-        <Tabs value={context.historyTab} onValueChange={context.setHistoryTab}>
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
           <TabsList className="flex gap-2 border-none bg-transparent p-0">
-            {context.HISTORY_TABS.map((tab) => (
+            {availableTabs.map((tab) => (
               <TabsTrigger key={tab.key} value={tab.key} className="px-4">
                 {tab.label}
               </TabsTrigger>
@@ -21,7 +79,7 @@ const LibraryPage = () => {
         </Tabs>
       </div>
       <div className="mt-5">
-        {context.historyTab === "history" ? (
+        {activeTab === "history" ? (
           <WorkspaceNavigator
             entries={context.history}
             workspaces={context.workspaces}
