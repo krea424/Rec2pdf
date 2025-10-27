@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import CloudLibraryPanel from "../components/CloudLibraryPanel";
 import WorkspaceNavigator from "../components/WorkspaceNavigator";
 import { useAppContext } from "../hooks/useAppContext";
@@ -17,33 +17,58 @@ const LibraryPage = () => {
 
   const availableTabs = HISTORY_TABS;
 
-  const activeTab =
-    availableTabs.some((tab) => tab.key === historyTab)
-      ? historyTab
-      : availableTabs[0]?.key;
+  const manualSelectionRef = useRef(false);
 
-  const hasSyncedBaseDefaultRef = useRef(false);
+  const normalizedHistoryTab = useMemo(() => {
+    if (availableTabs.some((tab) => tab.key === historyTab)) {
+      return historyTab;
+    }
+
+    return availableTabs[0]?.key;
+  }, [availableTabs, historyTab]);
+
+  const cloudTabKey = useMemo(
+    () => availableTabs.find((tab) => tab.key === "cloud")?.key,
+    [availableTabs]
+  );
+
+  const activeTab = useMemo(() => {
+    if (mode === "base" && !manualSelectionRef.current && cloudTabKey) {
+      return cloudTabKey;
+    }
+
+    return normalizedHistoryTab;
+  }, [cloudTabKey, mode, normalizedHistoryTab]);
+
+  const handleTabChange = useCallback(
+    (nextValue) => {
+      manualSelectionRef.current = true;
+      if (typeof setHistoryTab === "function") {
+        setHistoryTab(nextValue);
+      }
+    },
+    [setHistoryTab]
+  );
 
   useEffect(() => {
-    if (mode === "base") {
-      if (!hasSyncedBaseDefaultRef.current) {
-        hasSyncedBaseDefaultRef.current = true;
-
-        if (typeof setHistoryTab === "function" && historyTab !== "cloud") {
-          setHistoryTab("cloud");
-        }
-      }
-
+    if (mode !== "base") {
+      manualSelectionRef.current = false;
       return;
     }
 
-    hasSyncedBaseDefaultRef.current = false;
-  }, [historyTab, mode, setHistoryTab]);
+    if (!cloudTabKey || manualSelectionRef.current) {
+      return;
+    }
+
+    if (typeof setHistoryTab === "function" && historyTab !== cloudTabKey) {
+      setHistoryTab(cloudTabKey);
+    }
+  }, [cloudTabKey, historyTab, mode, setHistoryTab]);
 
   return (
     <div className="mt-8">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-2">
-        <Tabs value={activeTab} onValueChange={setHistoryTab}>
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
           <TabsList className="flex gap-2 border-none bg-transparent p-0">
             {availableTabs.map((tab) => (
               <TabsTrigger key={tab.key} value={tab.key} className="px-4">
