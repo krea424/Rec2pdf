@@ -303,9 +303,6 @@ function normalizeProfiles(profiles, { baseDir, datasetUpdated, workspaceSlug })
       );
 
       const metadataPayload = cleanMetadata({
-        label,
-        promptId,
-        pdfTemplate: pdfTemplate || undefined,
         pdfLogo: pdfLogoMetadata.pdfLogo || undefined,
         pdfLogoPath: pdfLogoMetadata.pdfLogoPath || undefined,
         pdfLogoLocalPath: pdfLogoMetadata.pdfLogoLocalPath || undefined,
@@ -313,7 +310,10 @@ function normalizeProfiles(profiles, { baseDir, datasetUpdated, workspaceSlug })
 
       const record = {
         slug,
+        label,
         dest_dir: destDirInfo.path || null,
+        prompt_id: promptId || null,
+        pdf_template: pdfTemplate || null,
         pdf_logo_url: logoInfo.remotePath || null,
         metadata: metadataPayload,
         created_at: createdAtIso || datasetUpdated || new Date().toISOString(),

@@ -87,12 +87,16 @@ describe('GET /api/workspaces with Supabase data', () => {
       id: '0d6494d2-6d58-4f19-a43d-6157b4fdd991',
       workspace_id: workspaceRow.id,
       slug: 'default-profile',
+      label: 'Profilo default',
       dest_dir: '/tmp/output',
+      prompt_id: 'prompt_custom',
+      pdf_template: 'template.tex',
       pdf_logo_url: 'https://cdn.example.com/logo.png',
       metadata: {
-        label: 'Profilo default',
-        promptId: 'prompt_custom',
-        pdfTemplate: 'template.tex',
+        pdfLogo: {
+          storagePath: 'logos/default-profile.png',
+        },
+        extraField: 'keep-me',
       },
       created_at: '2024-07-31T10:05:00.000Z',
       updated_at: '2024-07-31T10:05:00.000Z',
@@ -169,6 +173,7 @@ describe('GET /api/workspaces with Supabase data', () => {
       id: profileRow.id,
       label: 'Profilo default',
       promptId: 'prompt_custom',
+      pdfTemplate: 'template.tex',
       pdfLogoUrl: 'https://cdn.example.com/logo.png',
     });
     expect(workspace.ownerId).toBe(ownerId);
