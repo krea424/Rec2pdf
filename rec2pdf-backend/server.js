@@ -1408,7 +1408,8 @@ const projectSchema = z
 
 const profileMetadataSchema = z
   .object({
-    label: z.string().trim().min(1).optional(),
+    label: z.string().trim().min(1).nullable().optional(),
+    slug: z.string().trim().min(1).optional(),
     promptId: z.string().trim().optional(),
     pdfTemplate: z.string().trim().optional(),
     pdfLogo: z
@@ -1429,8 +1430,8 @@ const profileRowSchema = z
   .object({
     id: z.string().uuid(),
     workspace_id: z.string().uuid().nullable().optional(),
-    slug: z.string().trim().min(1),
-    label: z.string().trim().min(1).optional(),
+    slug: z.string().trim().min(1).nullable().optional(),
+    label: z.string().trim().min(1).nullable().optional(),
     dest_dir: z.string().trim().nullable().optional(),
     prompt_id: z.string().trim().nullable().optional(),
     pdf_template: z.string().trim().nullable().optional(),
@@ -1535,6 +1536,10 @@ const mapProfileRowToDomain = (row) => {
   const metadata = metadataResult.success ? metadataResult.data : {};
   const labelFromRow = typeof value.label === 'string' ? value.label.trim() : '';
   const label = labelFromRow || metadata?.label || value.slug || value.id;
+  const slugFromRow = typeof value.slug === 'string' ? value.slug.trim() : '';
+  const slugFromMetadata = typeof metadata?.slug === 'string' ? metadata.slug.trim() : '';
+  const slugSource = slugFromRow || slugFromMetadata || label || value.id;
+  const slug = sanitizeSlug(slugSource, value.id);
   const promptIdFromRow = typeof value.prompt_id === 'string' ? value.prompt_id.trim() : '';
   const pdfTemplateFromRow = typeof value.pdf_template === 'string' ? value.pdf_template.trim() : '';
   const pdfLogoPathFromRow = typeof value.pdf_logo_url === 'string' ? value.pdf_logo_url.trim() : '';
@@ -1549,7 +1554,8 @@ const mapProfileRowToDomain = (row) => {
   return {
     id: value.id,
     label,
-    slug: value.slug,
+    slug,
+    workspaceId: typeof value.workspace_id === 'string' ? value.workspace_id : '',
     destDir: value.dest_dir || '',
     promptId: promptIdFromRow || metadata?.promptId || '',
     pdfTemplate: pdfTemplateFromRow || metadata?.pdfTemplate || '',

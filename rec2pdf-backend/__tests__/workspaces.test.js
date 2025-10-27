@@ -43,6 +43,7 @@ describe('GET /api/workspaces with Supabase data', () => {
   let mockAuth;
   let workspaceRow;
   let profileRow;
+  let legacyProfileRow;
   let workspaceSelectBuilder;
   const ownerId = '123e4567-e89b-12d3-a456-426614174000';
 
@@ -94,12 +95,31 @@ describe('GET /api/workspaces with Supabase data', () => {
       pdf_logo_url: 'https://cdn.example.com/logo.png',
       metadata: {
         pdfLogo: {
+          fileName: 'default-profile.png',
+          originalName: 'default-profile.png',
+          updatedAt: 1722410700000,
           storagePath: 'logos/default-profile.png',
         },
         extraField: 'keep-me',
       },
       created_at: '2024-07-31T10:05:00.000Z',
       updated_at: '2024-07-31T10:05:00.000Z',
+    };
+
+    legacyProfileRow = {
+      id: '11111111-2222-3333-4444-555555555555',
+      workspace_id: workspaceRow.id,
+      slug: null,
+      label: null,
+      dest_dir: null,
+      prompt_id: null,
+      pdf_template: null,
+      pdf_logo_url: null,
+      metadata: {
+        label: 'Profilo legacy',
+      },
+      created_at: '2024-07-31T10:06:00.000Z',
+      updated_at: '2024-07-31T10:06:00.000Z',
     };
 
     const mockWorkspaceOrder = jest.fn(() => Promise.resolve({ data: [workspaceRow], error: null }));
@@ -110,7 +130,7 @@ describe('GET /api/workspaces with Supabase data', () => {
     };
     workspaceSelectBuilder.eq.mockImplementation(() => workspaceSelectBuilder);
 
-    const mockProfilesIn = jest.fn(() => Promise.resolve({ data: [profileRow], error: null }));
+    const mockProfilesIn = jest.fn(() => Promise.resolve({ data: [profileRow, legacyProfileRow], error: null }));
     const mockProfilesSelect = jest.fn(() => ({ in: mockProfilesIn }));
 
     mockFrom = jest.fn((table) => {
@@ -163,18 +183,33 @@ describe('GET /api/workspaces with Supabase data', () => {
     const [workspace] = res.body.workspaces;
     expect(workspace).toMatchObject({
       id: workspaceRow.id,
+      slug: 'acme-consulting',
       name: 'Acme Consulting',
       client: 'Acme Consulting',
       color: '#4f46e5',
       defaultStatuses: ['Bozza', 'In lavorazione'],
     });
-    expect(workspace.profiles).toHaveLength(1);
+    expect(workspace.profiles).toHaveLength(2);
     expect(workspace.profiles[0]).toMatchObject({
       id: profileRow.id,
       label: 'Profilo default',
+      slug: 'default-profile',
+      destDir: '/tmp/output',
       promptId: 'prompt_custom',
       pdfTemplate: 'template.tex',
+      pdfLogoPath: 'https://cdn.example.com/logo.png',
       pdfLogoUrl: 'https://cdn.example.com/logo.png',
+      logoDownloadPath: 'https://cdn.example.com/logo.png',
+      workspaceId: workspaceRow.id,
+      pdfLogo: {
+        storagePath: 'logos/default-profile.png',
+      },
+    });
+    expect(workspace.profiles[1]).toMatchObject({
+      id: legacyProfileRow.id,
+      label: 'Profilo legacy',
+      slug: 'profilo_legacy',
+      workspaceId: workspaceRow.id,
     });
     expect(workspace.ownerId).toBe(ownerId);
     expect(createClient).toHaveBeenCalled();
