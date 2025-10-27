@@ -94,6 +94,9 @@ describe('GET /api/workspaces with Supabase data', () => {
       pdf_logo_url: 'https://cdn.example.com/logo.png',
       metadata: {
         pdfLogo: {
+          fileName: 'default-profile.png',
+          originalName: 'default-profile.png',
+          updatedAt: 1722410700000,
           storagePath: 'logos/default-profile.png',
         },
         extraField: 'keep-me',
@@ -163,6 +166,7 @@ describe('GET /api/workspaces with Supabase data', () => {
     const [workspace] = res.body.workspaces;
     expect(workspace).toMatchObject({
       id: workspaceRow.id,
+      slug: 'acme-consulting',
       name: 'Acme Consulting',
       client: 'Acme Consulting',
       color: '#4f46e5',
@@ -172,9 +176,16 @@ describe('GET /api/workspaces with Supabase data', () => {
     expect(workspace.profiles[0]).toMatchObject({
       id: profileRow.id,
       label: 'Profilo default',
+      slug: 'default-profile',
+      destDir: '/tmp/output',
       promptId: 'prompt_custom',
       pdfTemplate: 'template.tex',
+      pdfLogoPath: 'https://cdn.example.com/logo.png',
       pdfLogoUrl: 'https://cdn.example.com/logo.png',
+      logoDownloadPath: 'https://cdn.example.com/logo.png',
+      pdfLogo: {
+        storagePath: 'logos/default-profile.png',
+      },
     });
     expect(workspace.ownerId).toBe(ownerId);
     expect(createClient).toHaveBeenCalled();
