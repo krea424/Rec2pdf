@@ -115,8 +115,14 @@ describe('GET /api/workspaces with Supabase data', () => {
           select: jest.fn(() => workspaceSelectBuilder),
         };
       }
-      if (table === 'profiles') {
+      if (table === 'workspace_profiles') {
         return { select: mockProfilesSelect };
+      }
+      if (table === 'profiles') {
+        return {
+          upsert: jest.fn(() => Promise.resolve({ data: [{ id: ownerId }], error: null })),
+          select: mockProfilesSelect,
+        };
       }
       return { select: jest.fn(() => ({ order: jest.fn(() => Promise.resolve({ data: [], error: null })) })) };
     });
@@ -169,7 +175,7 @@ describe('GET /api/workspaces with Supabase data', () => {
     expect(createClient).toHaveBeenCalled();
     expect(mockAuth.getUser).toHaveBeenCalledWith('test-token');
     expect(mockFrom).toHaveBeenCalledWith('workspaces');
-    expect(mockFrom).toHaveBeenCalledWith('profiles');
+    expect(mockFrom).toHaveBeenCalledWith('workspace_profiles');
     expect(workspaceSelectBuilder.eq).toHaveBeenCalledWith('owner_id', ownerId);
   });
 });
@@ -238,10 +244,16 @@ describe('POST /api/workspaces', () => {
           insert: insertSpy,
         };
       }
-      if (table === 'profiles') {
+      if (table === 'workspace_profiles') {
         return {
           select: profileSelect,
           upsert: profileUpsert,
+        };
+      }
+      if (table === 'profiles') {
+        return {
+          upsert: profileUpsert,
+          select: jest.fn(() => ({ upsert: profileUpsert })),
         };
       }
       if (table === 'prompts') {
