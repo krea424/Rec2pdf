@@ -1686,7 +1686,7 @@ const fetchProfilesGroupedByWorkspace = async (workspaceIds) => {
   }
   const client = getSupabaseClient();
   const { data, error } = await client
-    .from('profiles')
+    .from('workspace_profiles')
     .select('*')
     .in('workspace_id', workspaceIds);
   if (error) {
@@ -1801,7 +1801,7 @@ const listProfilesForWorkspace = async (workspaceId) => {
   }
   const client = getSupabaseClient();
   const { data, error } = await client
-    .from('profiles')
+    .from('workspace_profiles')
     .select('*')
     .eq('workspace_id', workspaceId)
     .order('created_at', { ascending: true, nullsLast: true });
@@ -1818,7 +1818,7 @@ const insertProfileIntoDb = async (workspaceId, profile) => {
     throw new Error('Profilo non valido');
   }
   const { data, error } = await client
-    .from('profiles')
+    .from('workspace_profiles')
     .insert(dbPayload)
     .select('*')
     .single();
@@ -1835,7 +1835,7 @@ const updateProfileInDb = async (workspaceId, profileId, profile) => {
     throw new Error('Profilo non valido');
   }
   const { data, error } = await client
-    .from('profiles')
+    .from('workspace_profiles')
     .update(dbPayload)
     .eq('id', profileId)
     .eq('workspace_id', workspaceId)
@@ -1850,7 +1850,7 @@ const updateProfileInDb = async (workspaceId, profileId, profile) => {
 const deleteProfileFromDb = async (workspaceId, profileId) => {
   const client = getSupabaseClient();
   const { error } = await client
-    .from('profiles')
+    .from('workspace_profiles')
     .delete()
     .eq('id', profileId)
     .eq('workspace_id', workspaceId);
@@ -1866,7 +1866,7 @@ const findWorkspaceByProfileId = async (profileId) => {
   }
   const client = getSupabaseClient();
   const { data, error } = await client
-    .from('profiles')
+    .from('workspace_profiles')
     .select('*')
     .eq('id', profileId)
     .maybeSingle();
