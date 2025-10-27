@@ -1,3 +1,4 @@
+import { useEffect, useMemo } from "react";
 import CloudLibraryPanel from "../components/CloudLibraryPanel";
 import WorkspaceNavigator from "../components/WorkspaceNavigator";
 import { useAppContext } from "../hooks/useAppContext";
@@ -5,14 +6,41 @@ import { Tabs, TabsList, TabsTrigger } from "../components/ui";
 
 const LibraryPage = () => {
   const context = useAppContext();
-  const { theme, themes } = context;
+  const {
+    theme,
+    themes,
+    mode,
+    HISTORY_TABS,
+    historyTab,
+    setHistoryTab,
+  } = context;
+
+  const availableTabs = useMemo(() => {
+    if (mode === "base") {
+      return HISTORY_TABS.filter((tab) => tab.key === "cloud");
+    }
+
+    return HISTORY_TABS;
+  }, [HISTORY_TABS, mode]);
+
+  const activeTab = mode === "base" ? "cloud" : historyTab;
+
+  useEffect(() => {
+    if (mode !== "base") {
+      return;
+    }
+
+    if (typeof setHistoryTab === "function" && historyTab !== "cloud") {
+      setHistoryTab("cloud");
+    }
+  }, [historyTab, mode, setHistoryTab]);
 
   return (
     <div className="mt-8">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-2">
-        <Tabs value={context.historyTab} onValueChange={context.setHistoryTab}>
+        <Tabs value={activeTab} onValueChange={setHistoryTab}>
           <TabsList className="flex gap-2 border-none bg-transparent p-0">
-            {context.HISTORY_TABS.map((tab) => (
+            {availableTabs.map((tab) => (
               <TabsTrigger key={tab.key} value={tab.key} className="px-4">
                 {tab.label}
               </TabsTrigger>
@@ -21,7 +49,7 @@ const LibraryPage = () => {
         </Tabs>
       </div>
       <div className="mt-5">
-        {context.historyTab === "history" ? (
+        {activeTab === "history" ? (
           <WorkspaceNavigator
             entries={context.history}
             workspaces={context.workspaces}
