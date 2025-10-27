@@ -1425,16 +1425,24 @@ const profileMetadataSchema = z
   .passthrough()
   .optional();
 
-const profileRowSchema = z.object({
-  id: z.string().uuid(),
-  workspace_id: z.string().uuid().nullable().optional(),
-  slug: z.string().trim().min(1),
-  dest_dir: z.string().trim().nullable().optional(),
-  pdf_logo_url: z.string().trim().nullable().optional(),
-  metadata: z.any().optional(),
-  created_at: z.string().nullable().optional(),
-  updated_at: z.string().nullable().optional(),
-});
+const profileRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    workspace_id: z.string().uuid().nullable().optional(),
+    slug: z.string().trim().min(1),
+    label: z.string().trim().min(1).optional(),
+    dest_dir: z.string().trim().nullable().optional(),
+    prompt_id: z.string().trim().nullable().optional(),
+    pdf_template: z.string().trim().nullable().optional(),
+    pdf_logo_url: z.string().trim().nullable().optional(),
+    metadata: z
+      .record(z.any())
+      .nullable()
+      .optional(),
+    created_at: z.string().nullable().optional(),
+    updated_at: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 const profileInputSchema = z
   .object({
@@ -1523,9 +1531,13 @@ const mapProfileRowToDomain = (row) => {
     return null;
   }
   const value = parsed.data;
-  const metadataResult = profileMetadataSchema.safeParse(value.metadata || {});
+  const metadataResult = profileMetadataSchema.safeParse(value.metadata ?? {});
   const metadata = metadataResult.success ? metadataResult.data : {};
-  const label = metadata?.label || value.slug || value.id;
+  const labelFromRow = typeof value.label === 'string' ? value.label.trim() : '';
+  const label = labelFromRow || metadata?.label || value.slug || value.id;
+  const promptIdFromRow = typeof value.prompt_id === 'string' ? value.prompt_id.trim() : '';
+  const pdfTemplateFromRow = typeof value.pdf_template === 'string' ? value.pdf_template.trim() : '';
+  const pdfLogoPathFromRow = typeof value.pdf_logo_url === 'string' ? value.pdf_logo_url.trim() : '';
   let pdfLogo = null;
   if (metadata?.pdfLogo && typeof metadata.pdfLogo === 'object') {
     const sanitized = { ...metadata.pdfLogo };
@@ -1539,9 +1551,9 @@ const mapProfileRowToDomain = (row) => {
     label,
     slug: value.slug,
     destDir: value.dest_dir || '',
-    promptId: metadata?.promptId || '',
-    pdfTemplate: metadata?.pdfTemplate || '',
-    pdfLogoPath: value.pdf_logo_url || metadata?.pdfLogoPath || '',
+    promptId: promptIdFromRow || metadata?.promptId || '',
+    pdfTemplate: pdfTemplateFromRow || metadata?.pdfTemplate || '',
+    pdfLogoPath: pdfLogoPathFromRow || metadata?.pdfLogoPath || '',
     pdfLogo,
     createdAt: dateToTimestamp(value.created_at),
     updatedAt: dateToTimestamp(value.updated_at),
@@ -1654,29 +1666,44 @@ const profileToDbPayload = (workspaceId, profile) => {
   if (!workspaceId || !profile || typeof profile !== 'object') {
     return null;
   }
-  const metadata = {
-    label: profile.label || profile.slug || profile.id,
-    promptId: profile.promptId || '',
-    pdfTemplate: profile.pdfTemplate || '',
-    pdfLogo: (() => {
-      if (!profile.pdfLogo || typeof profile.pdfLogo !== 'object') {
-        return null;
-      }
-      const descriptor = { ...profile.pdfLogo };
-      if (typeof descriptor.storagePath === 'string') {
-        descriptor.storagePath = descriptor.storagePath.trim();
-      }
-      return descriptor;
-    })(),
-    pdfLogoPath: profile.pdfLogoPath || '',
-  };
+  const label = (() => {
+    if (typeof profile.label === 'string' && profile.label.trim()) {
+      return profile.label.trim();
+    }
+    if (typeof profile.slug === 'string' && profile.slug.trim()) {
+      return profile.slug.trim();
+    }
+    if (typeof profile.id === 'string' && profile.id.trim()) {
+      return profile.id.trim();
+    }
+    return 'Profilo';
+  })();
+
+  const promptId = typeof profile.promptId === 'string' ? profile.promptId.trim() : '';
+  const pdfTemplate = typeof profile.pdfTemplate === 'string' ? profile.pdfTemplate.trim() : '';
+  const pdfLogoPath = typeof profile.pdfLogoPath === 'string' ? profile.pdfLogoPath.trim() : '';
+
+  const metadata = {};
+  if (profile.pdfLogo && typeof profile.pdfLogo === 'object') {
+    const descriptor = { ...profile.pdfLogo };
+    if (typeof descriptor.storagePath === 'string') {
+      descriptor.storagePath = descriptor.storagePath.trim();
+    }
+    metadata.pdfLogo = descriptor;
+  }
+  if (pdfLogoPath) {
+    metadata.pdfLogoPath = pdfLogoPath;
+  }
 
   return {
     workspace_id: workspaceId,
-    slug: sanitizeSlug(profile.slug || metadata.label || 'profilo', metadata.label || 'profilo'),
+    slug: sanitizeSlug(profile.slug || label || 'profilo', label || 'profilo'),
+    label,
     dest_dir: profile.destDir || null,
-    pdf_logo_url: profile.pdfLogoPath || null,
-    metadata,
+    prompt_id: promptId,
+    pdf_template: pdfTemplate,
+    pdf_logo_url: pdfLogoPath || null,
+    metadata: Object.keys(metadata).length ? metadata : {},
   };
 };
 
