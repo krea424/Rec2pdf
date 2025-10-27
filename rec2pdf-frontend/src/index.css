@@ -12,3 +12,25 @@
   background-image: linear-gradient(to right, #4f46e5 0%, #818cf8 50%, #4f46e5 100%);
   background-size: 200% 100%;
 }
+
+@layer base {
+  select {
+    color: theme("colors.surface.50");
+  }
+
+  select:disabled {
+    color: theme("colors.surface.400");
+  }
+
+  select option {
+    color: theme("colors.surface.25");
+    background-color: theme("colors.surface.900");
+  }
+
+  select option:checked,
+  select option:hover,
+  select option:focus {
+    color: theme("colors.surface.25");
+    background-color: theme("colors.brand.700");
+  }
+}

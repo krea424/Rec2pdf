@@ -630,9 +630,13 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
               </div>
               <select
                 className={classNames(
-                  "mt-3 w-full rounded-lg border px-3 py-2 text-sm outline-none",
+                  "mt-3 w-full rounded-lg border px-3 py-2 text-sm text-surface-50 outline-none transition-colors",
+                  "focus:border-brand-400 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
+                  "disabled:cursor-not-allowed disabled:opacity-60",
                   themes[theme].input,
-                  !hasWorkspaceProfiles || !context.workspaceSelection.workspaceId ? 'opacity-60' : ''
+                  !hasWorkspaceProfiles || !context.workspaceSelection.workspaceId
+                    ? "cursor-not-allowed opacity-60"
+                    : ""
                 )}
                 value={workspaceProfileSelection?.profileId || ''}
                 onChange={handleWorkspaceProfileSelect}
@@ -873,13 +877,15 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
                       context.handleSelectWorkspaceForPipeline(event.target.value)
                     }
                     className={classNames(
-                      "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
+                      "mt-2 w-full rounded-lg border px-3 py-2 text-sm text-surface-50 outline-none transition-colors",
+                      "focus:border-brand-400 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
+                      "disabled:cursor-not-allowed disabled:opacity-60",
                       themes[theme].input,
                     )}
                   >
                     <option value="">Nessun workspace</option>
                     {context.workspaces.map((workspace) => (
-                      <option key={workspace.id} value={workspace.id} className="bg-zinc-900">
+                      <option key={workspace.id} value={workspace.id}>
                         {workspace.name} · {workspace.client || "—"}
                       </option>
                     ))}
@@ -913,13 +919,15 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
                         context.handleSelectProjectForPipeline(event.target.value)
                       }
                       className={classNames(
-                        "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
+                        "mt-2 w-full rounded-lg border px-3 py-2 text-sm text-surface-50 outline-none transition-colors",
+                        "focus:border-brand-400 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
+                        "disabled:cursor-not-allowed disabled:opacity-60",
                         themes[theme].input,
                       )}
                     >
                       <option value="">Nessun progetto</option>
                       {context.workspaceProjects.map((project) => (
-                        <option key={project.id} value={project.id} className="bg-zinc-900">
+                        <option key={project.id} value={project.id}>
                           {project.name}
                         </option>
                       ))}
@@ -988,13 +996,15 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
                         context.handleSelectStatusForPipeline(event.target.value)
                       }
                       className={classNames(
-                        "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm",
+                        "mt-2 w-full rounded-lg border px-3 py-2 text-sm text-surface-50 outline-none transition-colors",
+                        "focus:border-brand-400 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
+                        "disabled:cursor-not-allowed disabled:opacity-60",
                         themes[theme].input,
                       )}
                     >
                       <option value="">Nessuno stato</option>
                       {context.availableStatuses.map((status) => (
-                        <option key={status} value={status} className="bg-zinc-900">
+                        <option key={status} value={status}>
                           {status}
                         </option>
                       ))}
