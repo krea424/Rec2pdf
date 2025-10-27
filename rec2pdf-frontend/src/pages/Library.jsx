@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useRef } from "react";
 import CloudLibraryPanel from "../components/CloudLibraryPanel";
 import WorkspaceNavigator from "../components/WorkspaceNavigator";
 import { useAppContext } from "../hooks/useAppContext";
@@ -15,24 +15,29 @@ const LibraryPage = () => {
     setHistoryTab,
   } = context;
 
-  const availableTabs = useMemo(() => {
-    if (mode === "base") {
-      return HISTORY_TABS.filter((tab) => tab.key === "cloud");
-    }
+  const availableTabs = HISTORY_TABS;
 
-    return HISTORY_TABS;
-  }, [HISTORY_TABS, mode]);
+  const activeTab =
+    availableTabs.some((tab) => tab.key === historyTab)
+      ? historyTab
+      : availableTabs[0]?.key;
 
-  const activeTab = mode === "base" ? "cloud" : historyTab;
+  const hasSyncedBaseDefaultRef = useRef(false);
 
   useEffect(() => {
-    if (mode !== "base") {
+    if (mode === "base") {
+      if (!hasSyncedBaseDefaultRef.current) {
+        hasSyncedBaseDefaultRef.current = true;
+
+        if (typeof setHistoryTab === "function" && historyTab !== "cloud") {
+          setHistoryTab("cloud");
+        }
+      }
+
       return;
     }
 
-    if (typeof setHistoryTab === "function" && historyTab !== "cloud") {
-      setHistoryTab("cloud");
-    }
+    hasSyncedBaseDefaultRef.current = false;
   }, [historyTab, mode, setHistoryTab]);
 
   return (
