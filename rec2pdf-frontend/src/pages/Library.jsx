@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import CloudLibraryPanel from "../components/CloudLibraryPanel";
 import WorkspaceNavigator from "../components/WorkspaceNavigator";
 import { useAppContext } from "../hooks/useAppContext";
@@ -5,14 +6,46 @@ import { Tabs, TabsList, TabsTrigger } from "../components/ui";
 
 const LibraryPage = () => {
   const context = useAppContext();
-  const { theme, themes } = context;
+  const {
+    theme,
+    themes,
+    mode,
+    HISTORY_TABS,
+    historyTab,
+    setHistoryTab,
+  } = context;
+
+  const availableTabs = HISTORY_TABS;
+
+  const activeTab =
+    availableTabs.some((tab) => tab.key === historyTab)
+      ? historyTab
+      : availableTabs[0]?.key;
+
+  const hasSyncedBaseDefaultRef = useRef(false);
+
+  useEffect(() => {
+    if (mode === "base") {
+      if (!hasSyncedBaseDefaultRef.current) {
+        hasSyncedBaseDefaultRef.current = true;
+
+        if (typeof setHistoryTab === "function" && historyTab !== "cloud") {
+          setHistoryTab("cloud");
+        }
+      }
+
+      return;
+    }
+
+    hasSyncedBaseDefaultRef.current = false;
+  }, [historyTab, mode, setHistoryTab]);
 
   return (
     <div className="mt-8">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-2">
-        <Tabs value={context.historyTab} onValueChange={context.setHistoryTab}>
+        <Tabs value={activeTab} onValueChange={setHistoryTab}>
           <TabsList className="flex gap-2 border-none bg-transparent p-0">
-            {context.HISTORY_TABS.map((tab) => (
+            {availableTabs.map((tab) => (
               <TabsTrigger key={tab.key} value={tab.key} className="px-4">
                 {tab.label}
               </TabsTrigger>
@@ -21,7 +54,7 @@ const LibraryPage = () => {
         </Tabs>
       </div>
       <div className="mt-5">
-        {context.historyTab === "history" ? (
+        {activeTab === "history" ? (
           <WorkspaceNavigator
             entries={context.history}
             workspaces={context.workspaces}
