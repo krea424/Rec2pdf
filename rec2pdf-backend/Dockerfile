@@ -21,6 +21,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 2. Installazione delle dipendenze Python (Whisper e WhisperX)
 #    Installiamo direttamente whisperX che include whisper come dipendenza
+#    Impostiamo un timeout più alto perché il pacchetto scarica runtime NVIDIA molto grandi
+#    e forziamo l'uso dei wheel CPU-only per evitare di scaricare i runtime NVIDIA (~GB)
+ENV PIP_DEFAULT_TIMEOUT=1000 \
+    PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 RUN pip3 install --no-cache-dir --break-system-packages git+https://github.com/m-bain/whisperX.git
 
 # 3. Imposta la directory di lavoro principale nel container
