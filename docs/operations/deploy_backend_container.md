@@ -10,9 +10,11 @@ The Rec2PDF backend must be built for the `linux/amd64` architecture before bein
      -t europe-west3-docker.pkg.dev/rec2pdf/rec2pdf-repo/backend:v6.0.1 \
      .
    ```
-   WhisperX pulls very large CUDA wheels; if your build machine has a slow connection, set a higher pip timeout (the Dockerfile
-   now defaults to `PIP_DEFAULT_TIMEOUT=1000`) or export `PIP_DEFAULT_TIMEOUT=1000` before running the build to avoid
-   `ReadTimeoutError` failures.
+  WhisperX pulls very large CUDA wheels; if your build machine has a slow connection, set a higher pip timeout (the Dockerfile
+  now defaults to `PIP_DEFAULT_TIMEOUT=1000`) or export `PIP_DEFAULT_TIMEOUT=1000` before running the build to avoid
+  `ReadTimeoutError` failures. The Dockerfile also sets `PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu` so that PyTorch
+  and torchaudio install CPU-only wheels, avoiding multi-hundred-megabyte NVIDIA runtime downloads that frequently time out or
+  fail hash verification during `pip install`.
    *Alternative:*
    ```bash
    gcloud builds submit \
