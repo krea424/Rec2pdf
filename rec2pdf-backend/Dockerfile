@@ -1,50 +1,57 @@
 # =================================================================
-# === Dockerfile Definitivo per Deploy Monorepo (rec2pdf-backend) ===
+# === Dockerfile v2.0 per Cloud Deploy (Render/Cloud Run) ===
 # =================================================================
 
-# Usa un'immagine base ufficiale e leggera di Node.js
 FROM node:20-slim
 
-# 1. Installazione delle dipendenze di sistema
-#    - usiamo --no-install-recommends per un'immagine più piccola
-#    - includiamo tutte le dipendenze necessarie per la pipeline
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    NODE_ENV=production \
+    PORT=8080
+
+# Installa dipendenze di sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     pandoc \
+    texlive-latex-base \
     texlive-latex-extra \
+    texlive-fonts-recommended \
+    texlive-xetex \
     python3 \
     python3-pip \
     git \
     build-essential \
-    rustc \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Installazione delle dipendenze Python (Whisper e WhisperX)
-#    Installiamo direttamente whisperX che include whisper come dipendenza
-#    Impostiamo un timeout più alto perché il pacchetto scarica runtime NVIDIA molto grandi
-#    e forziamo l'uso dei wheel CPU-only per evitare di scaricare i runtime NVIDIA (~GB)
-ENV PIP_DEFAULT_TIMEOUT=1000 \
-    PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
-RUN pip3 install --no-cache-dir --break-system-packages git+https://github.com/m-bain/whisperX.git
+# Installa PyTorch CPU-only
+RUN pip3 install --no-cache-dir --break-system-packages \
+    torch --index-url https://download.pytorch.org/whl/cpu
 
-# 3. Imposta la directory di lavoro principale nel container
+# Installa WhisperX (dal repo git per avere la versione completa)
+RUN pip3 install --no-cache-dir --break-system-packages \
+    git+https://github.com/m-bain/whisperX.git
+
 WORKDIR /app
 
-# 4. Copia l'intero monorepo nel container
-#    Questo è il passaggio chiave che assicura che le cartelle 'Scripts' e 'Templates' siano presenti
+# Copia package files per cache npm
+COPY rec2pdf-backend/package*.json ./rec2pdf-backend/
+
+# Installa dipendenze Node
+WORKDIR /app/rec2pdf-backend
+RUN npm ci --only=production && npm cache clean --force
+
+# Copia il resto del codice
+WORKDIR /app
 COPY . .
 
-# 5. Imposta la directory di lavoro sulla cartella specifica del backend
+# Assicura che lo script sia eseguibile
+RUN chmod +x Scripts/publish.sh
+
+# Crea e usa utente non-root
+RUN useradd -m appuser && chown -R appuser:appuser /app
 WORKDIR /app/rec2pdf-backend
+USER appuser
 
-# 6. Installa le dipendenze di Node.js
-#    Usiamo --omit=dev per installare solo le dipendenze di produzione
-RUN npm install --omit=dev
-
-# 7. Esponi la porta che il nostro server ascolterà
-#    Le piattaforme come Render e Cloud Run si aspettano 10000 di default
-EXPOSE 10000
-
-# 8. Il comando per avviare il server
-#    Usa il percorso relativo alla WORKDIR corrente
+EXPOSE 8080
 CMD ["node", "server.js"]

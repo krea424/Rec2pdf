@@ -22,7 +22,7 @@ const {
 } = require('./services/aiProviders');
 
 const app = express();
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 8080;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const HUGGING_FACE_TOKEN = process.env.HUGGING_FACE_TOKEN || '';
