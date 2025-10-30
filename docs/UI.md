@@ -14,6 +14,20 @@ These guidelines codify the consulting-grade UX overhaul of the Rec2PDF web appl
 - **Spacing scale**: 4px increments (`4, 8, 12, 16, 20, 24, 32, 40, 48, 64`). Components must snap to the scale to keep rhythm consistent between cards, drawers, and modals.
 - **Containers**: Primary canvas constrained to `max-width: 1360px`, centered with 32px padding at ≥1280px and 20px padding below.
 
+## Hero Step Layout (aggiornamento 2025)
+- **Schema Setup/Input/Publish**: La hero non usa più la griglia uniforme; presenta tre card sequenziali che raccontano la progressione Setup → Input → Publish, riprese dal frame Figma “Create · Executive flow 2025”. Le card usano le superfici già definite (`highlightSurface`) e mantengono la micro-tipografia uppercase per etichette e descrizioni sintetiche.【F:rec2pdf-frontend/src/pages/Create.jsx†L399-L417】
+- **Micro-interazioni**: Ogni card deve comportarsi come anchor contestuale (`onClick` o `RouterLink`) verso la sezione corrispondente e conservare ombre/hover già presenti nella hero (`hover:border-emerald-400/40`). Aggiungi `aria-describedby` per collegare titolo e microcopy della card alla sezione di arrivo.
+- **Badge stato**: Il badge pipeline nello stesso header continua a riflettere `context.pipelineComplete` e gli stati `STAGE_STATUS_LABELS`, quindi non duplicare indicatori dentro le card per evitare conflitti narrativi.【F:rec2pdf-frontend/src/pages/Create.jsx†L359-L465】
+
+### Mappatura contenuti sugli step
+- **Setup** → “Workspace & progetto”: include selezione/creazione workspace, progetti, stati e profili PDF. Mantieni questa sezione sotto `#setup` per i deep link e assicurati che i pulsanti (es. “Salva progetto”, “Aggiungi stato”) continuino a usare i componenti esistenti.【F:rec2pdf-frontend/src/pages/Create.jsx†L880-L1011】
+- **Input** → “Sorgenti contenuto”: raggruppa registrazione, upload audio/Markdown/TXT e la clip preview. Etichetta l’anchor `#input` e riordina i pulsanti di caricamento in linea con la sequenza Figma (audio → Markdown → TXT) mantenendo tooltip/info box correnti.【F:rec2pdf-frontend/src/pages/Create.jsx†L503-L1375】
+- **Publish** → “Pipeline & log”: la colonna destra resta la reference per avanzamento, tappe pipeline, log e CTA “Vai alla Library”. Collega la card Publish alla sezione `#publish` senza alterare i componenti `PIPELINE_STAGES` e il toggle log grezzi.【F:rec2pdf-frontend/src/pages/Create.jsx†L1380-L1654】
+
+### Deliverable Figma
+- Aggiorna il file Figma principale duplicando la sezione “Create · Hero 2024” e sostituendo la griglia con lo schema a step. Esporta varianti desktop (1280px) e condense (960px) per revisione QA.
+- Inserisci note di handoff che rimandano alle anchor `#setup`, `#input`, `#publish` e documentano lo stato atteso del badge pipeline.
+
 ## Typography Scale
 - **Font family**: `"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`.
 - **Scale**: `Display 32/40`, `Headline 24/32`, `Title 20/28`, `Body 16/24`, `Caption 14/20`, `Micro 12/16` (`font-size/line-height` in px).
@@ -73,3 +87,8 @@ Keyboard accelerators non sono ancora attivi. Quando li introdurrai:
 - I placeholder “File system integration” e “Context packs per RAG” si attivano con `VITE_ENABLE_FS_INTEGRATION_PLACEHOLDER` e `VITE_ENABLE_RAG_PLACEHOLDER` nel file `.env` (`true`/`1`/`yes`).【F:rec2pdf-frontend/.env.example†L1-L4】【F:rec2pdf-frontend/src/features/advanced/AdvancedDashboard.tsx†L17-L65】
 
 Following these standards keeps the Rec2PDF interface cohesive as new pipeline capabilities ship.
+
+## Piano di routing, anchor e telemetria
+- **Deep link**: Aggiungi hash route dedicate (`/create#setup`, `/create#input`, `/create#publish`) configurando `useEffect` in `Create.jsx` per scorrere verso gli ID delle sezioni corrispondenti quando cambia `location.hash`. Mantieni gli ID già presenti o introdurli con `id="setup"`, `id="input"`, `id="publish"` nelle sezioni esistenti.【F:rec2pdf-frontend/src/pages/Create.jsx†L399-L1654】
+- **Click tracking**: Strumenta le card della hero con `trackEvent("create.hero_step_click", { step })` riutilizzando il sink analytics centralizzato, così gli insight rimangono coerenti con il modello attuale di telemetria.【F:rec2pdf-frontend/src/utils/analytics.ts†L29-L60】
+- **Compatibilità CTA**: Aggiorna eventuali link storici (`/create#workspace`, `/create#logs`) in documentazione e materiali marketing per puntare alle nuove anchor; mantieni alias temporanei con `scrollIntoView` condizionale per intercettare hash legacy e reindirizzare allo step corretto.
