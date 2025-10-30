@@ -819,12 +819,13 @@ const themes = {
     log: "bg-slate-950/70 border-emerald-500/20",
   },
   boardroom: {
-    bg: "from-[#020817] via-[#0b1a33] to-[#123552]",
-    card: "border-white/18 bg-gradient-to-br from-white/[0.08] via-white/[0.02] to-transparent backdrop-blur-2xl shadow-[0_30px_80px_-45px_rgba(7,23,45,0.9)]",
-    input: "border-white/15 bg-white/[0.015] backdrop-blur-2xl",
-    input_hover: "hover:border-white/35 hover:bg-white/[0.04]",
-    button: "bg-gradient-to-r from-[#5dd5c4] via-[#39b0ff] to-[#5a78ff] text-slate-950 border-transparent font-semibold shadow-md shadow-black/20 hover:from-[#39b0ff] hover:via-[#5a78ff] hover:to-[#7b5dff]",
-    log: "border-white/15 bg-[#061226]/70 backdrop-blur-xl",
+    bg: "from-[#020b1a] via-[#081d36] to-[#103054]",
+    card: "border-white/20 bg-gradient-to-br from-white/[0.14] via-white/[0.05] to-transparent backdrop-blur-3xl shadow-[0_45px_120px_-60px_rgba(4,20,44,0.95)]",
+    input: "border-white/16 bg-white/[0.05] backdrop-blur-2xl shadow-[0_32px_90px_-58px_rgba(9,33,68,0.85)]",
+    input_hover: "hover:border-brand-200/60 hover:bg-white/[0.08]",
+    button:
+      "bg-gradient-to-r from-brand-400 via-[#1f9bbd] to-[#6b6bff] text-slate-950 border-transparent font-semibold transition-all duration-300 ease-out shadow-[0_32px_90px_-55px_rgba(63,163,255,0.6)] hover:from-brand-500 hover:via-[#1f9bbd] hover:to-[#8f7bff] hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:ring-brand-200/60",
+    log: "border-white/16 bg-[#071a33]/80 backdrop-blur-2xl",
   },
 };
 
