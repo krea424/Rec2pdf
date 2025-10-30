@@ -1189,6 +1189,52 @@ const loadTranscriptForPrompt = async (sourcePath) => {
 
 const FRONT_MATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n)?/;
 
+const stripFrontMatter = (markdown) => {
+  if (typeof markdown !== 'string' || !markdown) {
+    return '';
+  }
+  return markdown.replace(FRONT_MATTER_REGEX, '').trim();
+};
+
+const unwrapCodeFence = (markdown) => {
+  if (typeof markdown !== 'string' || !markdown.trim()) {
+    return '';
+  }
+
+  const fencedBlockMatch = markdown.match(/^\s*```[\w-]*\s*\n([\s\S]*?)\n```\s*$/);
+  if (fencedBlockMatch) {
+    return fencedBlockMatch[1].trim();
+  }
+
+  return markdown;
+};
+
+const normalizeLiteralEscapes = (markdown) => {
+  if (typeof markdown !== 'string' || !markdown) {
+    return '';
+  }
+
+  let normalized = markdown.replace(/\r\n?/g, '\n');
+  if (/\\[nrt]/.test(normalized)) {
+    normalized = normalized
+      .replace(/\\r/g, '')
+      .replace(/\\t/g, '\t')
+      .replace(/\\n/g, '\n');
+  }
+  return normalized;
+};
+
+const normalizeAiMarkdownBody = (markdown) => {
+  if (typeof markdown !== 'string') {
+    return '';
+  }
+
+  const withoutFrontMatter = stripFrontMatter(markdown);
+  const unfenced = unwrapCodeFence(withoutFrontMatter);
+  const normalizedEscapes = normalizeLiteralEscapes(unfenced);
+  return normalizedEscapes.trim();
+};
+
 const applyAiModelToFrontMatter = (markdown, modelName) => {
   if (!modelName || typeof markdown !== 'string' || !markdown.startsWith('---')) {
     return markdown;
@@ -5172,10 +5218,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       // Genera il blocco YAML in modo sicuro
       const yamlFrontMatter = yaml.dump(metadata);
 
-      // Pulisci il corpo del Markdown da eventuali front-matter e blocchi di codice iniziali
-      const CODE_BLOCK_REGEX = /^\s*```[\s\S]*?```\s*/;
-      let cleanedMarkdownBody = markdownBody.replace(FRONT_MATTER_REGEX, '').trim();
-      cleanedMarkdownBody = cleanedMarkdownBody.replace(CODE_BLOCK_REGEX, '').trim();
+      // Pulisci il corpo del Markdown rimuovendo front matter, recinzioni spurie e sequenze letterali
+      const cleanedMarkdownBody = normalizeAiMarkdownBody(markdownBody);
 
       // Unisci front-matter e corpo e scrivi il file finale
       const finalMarkdownContent = `---\n${yamlFrontMatter}---\n\n${cleanedMarkdownBody}`;
@@ -6136,9 +6180,7 @@ app.post(
 
         const yamlFrontMatter = yaml.dump(metadata);
 
-        const CODE_BLOCK_REGEX = /^\s*```[\s\S]*?```\s*/;
-        let cleanedMarkdownBody = markdownBody.replace(FRONT_MATTER_REGEX, '').trim();
-        cleanedMarkdownBody = cleanedMarkdownBody.replace(CODE_BLOCK_REGEX, '').trim();
+        const cleanedMarkdownBody = normalizeAiMarkdownBody(markdownBody);
 
         const finalMarkdownContent = `---\n${yamlFrontMatter}---\n\n${cleanedMarkdownBody}`;
         await fsp.writeFile(mdLocalPath, finalMarkdownContent, 'utf8');
@@ -6461,4 +6503,5 @@ module.exports = {
   resolvePromptTemplateDescriptor,
   DEFAULT_LAYOUT_TEMPLATE_MAP,
   generateMarkdown,
+  normalizeAiMarkdownBody,
 };
