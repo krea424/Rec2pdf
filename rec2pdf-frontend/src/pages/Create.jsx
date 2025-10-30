@@ -74,30 +74,33 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
   } = context;
   const isBoardroom = theme === "boardroom";
   const boardroomPrimarySurface =
-    "border-white/18 bg-white/[0.02] backdrop-blur-2xl shadow-[0_28px_80px_-40px_rgba(6,20,40,0.85)]";
+    "border-white/20 bg-gradient-to-br from-white/[0.14] via-white/[0.05] to-transparent backdrop-blur-3xl shadow-[0_45px_120px_-60px_rgba(4,20,44,0.95)]";
   const boardroomSecondarySurface =
-    "border-white/15 bg-white/[0.015] backdrop-blur-2xl";
+    "border-white/14 bg-white/[0.05] backdrop-blur-2xl shadow-[0_32px_90px_-58px_rgba(9,33,68,0.85)]";
   const boardroomChipSurface =
-    "border-white/15 bg-white/[0.03] text-slate-100";
+    "border-white/20 bg-white/[0.08] text-white/90";
   const boardroomInfoSurface =
-    "border-white/12 bg-white/[0.02] text-slate-200";
+    "border-white/16 bg-white/[0.05] text-white/80";
   const boardroomStageStyles = {
-    idle: "border-white/12 bg-white/[0.01] text-white/60 backdrop-blur-xl",
-    pending: "border-white/14 bg-white/[0.02] text-white/80 backdrop-blur-xl",
+    idle:
+      "border-white/12 bg-[#0d1f3d]/75 text-slate-100 backdrop-blur-2xl shadow-[0_18px_60px_-48px_rgba(7,29,60,0.55)]",
+    pending:
+      "border-brand-300/60 bg-[#10345a]/80 text-slate-100 backdrop-blur-2xl shadow-[0_24px_70px_-52px_rgba(31,139,255,0.65)]",
     running:
-      "border-sky-400/40 bg-gradient-to-r from-[#39b0ff1a] via-[#5dd5c41a] to-[#7b5dff1a] text-white/90 backdrop-blur-xl",
+      "border-brand-400/70 bg-gradient-to-r from-[#1f8bff26] via-[#1f9bbd26] to-[#6b6bff26] text-white backdrop-blur-2xl shadow-[0_30px_80px_-55px_rgba(63,163,255,0.6)]",
     done:
-      "border-emerald-400/50 bg-emerald-400/15 text-emerald-100 backdrop-blur-xl",
+      "border-emerald-300/60 bg-emerald-400/20 text-emerald-50 backdrop-blur-2xl shadow-[0_28px_80px_-55px_rgba(16,185,129,0.5)]",
     failed:
-      "border-rose-400/50 bg-rose-500/12 text-rose-100 backdrop-blur-xl",
-    info: "border-white/14 bg-white/[0.02] text-white/75 backdrop-blur-xl",
+      "border-rose-400/60 bg-rose-500/18 text-rose-50 backdrop-blur-2xl shadow-[0_24px_70px_-52px_rgba(244,63,94,0.5)]",
+    info:
+      "border-brand-200/45 bg-white/[0.05] text-white/90 backdrop-blur-2xl shadow-[0_20px_64px_-48px_rgba(36,119,198,0.45)]",
   };
   const boardroomStageMessageSurface =
-    "border-white/12 bg-white/[0.02] text-white/75 backdrop-blur-xl";
+    "border-brand-200/40 bg-white/[0.05] text-white/80 backdrop-blur-2xl shadow-[0_18px_60px_-48px_rgba(31,139,255,0.45)]";
   const boardroomConnectorColors = {
     done: "bg-emerald-400/60",
     failed: "bg-rose-500/60",
-    base: "bg-white/12",
+    base: "bg-white/14",
   };
 
   const HeaderIcon = context.headerStatus?.icon || Cpu;
@@ -234,10 +237,10 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
   const canStartPipeline =
     Boolean(context.audioBlob) && !context.busy && context.backendUp !== false;
   const highlightSurface = isBoardroom ? boardroomSecondarySurface : themes[theme].input;
-  const mutedTextClass = isBoardroom ? "text-white/60" : "text-zinc-500";
+  const mutedTextClass = isBoardroom ? "text-white/75" : "text-zinc-500";
   const heroTitleClass = isBoardroom ? "text-white" : "text-zinc-100";
-  const heroSubtitleClass = isBoardroom ? "text-white/70" : "text-zinc-400";
-  const labelToneClass = isBoardroom ? "text-white/55" : "text-zinc-500";
+  const heroSubtitleClass = isBoardroom ? "text-white/80" : "text-zinc-400";
+  const labelToneClass = isBoardroom ? "text-white/65" : "text-zinc-500";
   const heroSteps = useMemo(
     () => [
       {
@@ -343,7 +346,7 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
       <section className="mt-6 space-y-4">
         <div
           className={classNames(
-            "rounded-3xl border p-6 md:p-7 shadow-xl transition-all",
+            "rounded-4xl border p-6 md:p-7 shadow-xl transition-all",
             isBoardroom ? boardroomPrimarySurface : themes[theme].card,
             "grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
           )}
@@ -361,7 +364,7 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <h1
                   className={classNames(
-                    "text-2xl font-semibold tracking-tight md:text-[28px]",
+                    "text-2xl font-display font-semibold tracking-tight md:text-[28px]",
                     heroTitleClass
                   )}
                 >
@@ -370,7 +373,7 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
                   <span
                     className={classNames(
-                      "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide",
+                      "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition-all duration-300",
                       stageStyleBadge,
                       "shadow-sm"
                     )}
@@ -401,9 +404,9 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
                 <div
                   key={step.key}
                   className={classNames(
-                    "rounded-2xl border px-4 py-3 text-sm transition-all",
+                    "rounded-3xl border px-4.5 py-3.25 text-sm transition-all",
                     highlightSurface,
-                    "hover:border-emerald-400/40 hover:shadow-[0_18px_45px_-28px_rgba(16,185,129,0.55)]"
+                    "hover:border-brand-300/50 hover:shadow-[0_26px_70px_-45px_rgba(31,139,255,0.6)]"
                   )}
                 >
                   <p className={classNames("text-[11px] font-semibold uppercase tracking-[0.32em]", labelToneClass)}>
@@ -417,7 +420,7 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
             </div>
           </div>
           <div className="space-y-4">
-            <div className={classNames("rounded-2xl border p-4", highlightSurface)}>
+            <div className={classNames("rounded-3xl border p-4.5", highlightSurface)}>
               <div className="flex items-center justify-between">
                 <div
                   className={classNames(
@@ -434,8 +437,10 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
               <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
                 <div
                   className={classNames(
-                    "h-full rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-violet-500 transition-all",
-                    context.progressPercent ? "shadow-[0_0_16px_-4px_rgba(96,165,250,0.45)]" : ""
+                    "h-full rounded-full bg-gradient-to-r from-brand-400 via-[#1f9bbd] to-[#6b6bff] transition-all",
+                    context.progressPercent
+                      ? "shadow-[0_0_22px_-8px_rgba(63,163,255,0.65)] animate-boardroom-progress"
+                      : ""
                   )}
                   style={{ width: `${Math.min(100, Math.max(0, context.progressPercent))}%` }}
                 />
@@ -471,22 +476,27 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
               <div
                 key={card.key}
                 className={classNames(
-                  "rounded-2xl border p-5 transition-all",
+                  "rounded-3xl border p-5 transition-all",
                   highlightSurface,
                   card.emphasis &&
-                    "border-emerald-400/40 shadow-[0_24px_60px_-35px_rgba(16,185,129,0.65)]"
+                    "border-brand-300/50 shadow-[0_30px_90px_-55px_rgba(31,139,255,0.6)]"
                 )}
               >
                 <div
                   className={classNames(
-                    "flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em]",
+                    "flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.32em]",
                     labelToneClass
                   )}
                 >
                   <Icon className="h-3.5 w-3.5" />
                   {card.label}
                 </div>
-                <div className={classNames("mt-3 text-lg font-semibold leading-tight", heroTitleClass)}>
+                <div
+                  className={classNames(
+                    "mt-3 text-lg font-display font-semibold leading-tight",
+                    heroTitleClass
+                  )}
+                >
                   {card.value}
                 </div>
                 {card.meta ? (
@@ -1523,6 +1533,10 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
                       ? boardroomConnectorColors.base
                       : "bg-zinc-700/60"
                     : baseConnectorClass;
+                const connectorAnimationClass =
+                  isBoardroom && prevStatus === "running"
+                    ? "boardroom-connector-progress"
+                    : "";
                 const baseStageStyle = isBoardroom
                   ? boardroomStageStyles[status] || boardroomStageStyles.idle
                   : context.STAGE_STATUS_STYLES[status] ||
@@ -1539,34 +1553,35 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
                 const stageMessage = context.stageMessages[stage.key];
 
                 return (
-                  <div key={stage.key} className="relative pl-10">
+                  <div key={stage.key} className="relative pl-12">
                     {index !== 0 && (
                       <div
                         className={classNames(
-                          "absolute left-3 top-0 h-full w-px transition-colors",
+                          "absolute left-4 top-0 h-full w-px transition-all duration-300",
                           connectorClass,
+                          connectorAnimationClass,
                         )}
                       />
                     )}
                     <div
                       className={classNames(
-                        "absolute left-0 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-xs transition-all",
+                        "absolute left-0 top-1.5 flex h-9 w-9 items-center justify-center rounded-full border text-xs transition-all duration-300",
                         stageStyle,
                         isActive &&
                           (isBoardroom
-                            ? "ring-2 ring-sky-400/60"
+                            ? "ring-2 ring-brand-200/70"
                             : "ring-2 ring-indigo-400/60"),
                       )}
                     >
-                      <Icon className="h-3.5 w-3.5" />
+                      <Icon className="h-4 w-4" />
                     </div>
                     <div
                       className={classNames(
-                        "rounded-lg border px-3 py-2 transition-all",
+                        "rounded-3xl border px-5 py-4 transition-all duration-300",
                         stageStyle,
                         isActive &&
                           (isBoardroom
-                            ? "shadow-lg shadow-sky-500/15"
+                            ? "shadow-[0_32px_90px_-55px_rgba(63,163,255,0.6)]"
                             : "shadow-lg shadow-indigo-500/10"),
                       )}
                     >
@@ -1574,14 +1589,17 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
                         <div
                           className={classNames(
                             "text-sm font-medium",
-                            isBoardroom ? "text-white/90" : "text-zinc-100",
+                            isBoardroom
+                              ? "font-display text-white/90"
+                              : "text-zinc-100",
                           )}
                         >
                           {stage.label}
                         </div>
                         <span
                           className={classNames(
-                            "rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
+                            "rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase transition-all duration-300",
+                            isBoardroom ? "font-display tracking-[0.28em]" : "tracking-wide",
                             stageStyle,
                             status === "running" && "animate-pulse",
                           )}
@@ -1600,7 +1618,10 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
                       {stageMessage && (
                         <div
                           className={classNames(
-                            "mt-2 whitespace-pre-wrap rounded-md border px-3 py-2 text-xs font-mono leading-relaxed",
+                            "mt-2 whitespace-pre-wrap text-xs font-mono leading-relaxed transition-all duration-300",
+                            isBoardroom
+                              ? "rounded-2xl border px-4 py-3"
+                              : "rounded-md border px-3 py-2",
                             status === "failed"
                               ? isBoardroom
                                 ? "border-rose-500/50 bg-rose-500/15 text-rose-100"
@@ -1614,7 +1635,14 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
                         </div>
                       )}
                       {status === "failed" && stage.help && (
-                        <div className="mt-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                        <div
+                          className={classNames(
+                            "mt-2 text-xs transition-all duration-300",
+                            isBoardroom
+                              ? "rounded-2xl border border-rose-500/40 bg-rose-500/12 px-4 py-3 text-rose-100"
+                              : "rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-rose-200",
+                          )}
+                        >
                           {stage.help}
                         </div>
                       )}

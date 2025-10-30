@@ -99,10 +99,11 @@ export default function PromptLibrary({
   const shouldAutoExpandActive = hasActivePrompt && selection?.expandPromptDetails !== false;
   const isBoardroom = themeName === "boardroom";
   const boardroomContainerSurface =
-    "border-white/15 bg-white/[0.015] backdrop-blur-2xl";
+    "border-white/16 bg-white/[0.05] backdrop-blur-2xl shadow-[0_32px_90px_-58px_rgba(9,33,68,0.85)]";
   const boardroomControlIdle =
-    "border border-white/18 bg-transparent text-slate-200 hover:border-white/35 hover:text-white";
-  const boardroomControlActive = "border-white/35 bg-white/[0.06] text-white";
+    "border border-white/18 bg-transparent text-white/75 transition-all duration-300 hover:border-brand-200/60 hover:bg-white/[0.06] hover:text-white";
+  const boardroomControlActive =
+    "border-white/35 bg-white/[0.08] text-white shadow-[0_26px_70px_-50px_rgba(63,163,255,0.55)]";
   const [expandedSections, setExpandedSections] = useState(() => ({
     library: false,
     active: shouldAutoExpandActive,

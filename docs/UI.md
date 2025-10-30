@@ -11,7 +11,7 @@ These guidelines codify the consulting-grade UX overhaul of the Rec2PDF web appl
 ## Layout Grid
 - **Breakpoints**: 1280px base (desktop), 960px condense (laptop/tablet landscape), 768px stacked (tablet portrait), 480px compact (mobile fallback for diagnostics only).
 - **Grid**: 12-column fluid grid with 24px gutters on desktop; collapse to 8 columns with 16px gutters below 960px; single-column stack below 768px.
-- **Spacing scale**: 4px increments (`4, 8, 12, 16, 20, 24, 32, 40, 48, 64`). Components must snap to the scale to keep rhythm consistent between cards, drawers, and modals.
+- **Spacing scale**: 4px increments (`4, 8, 12, 16, 20, 24, 32, 40, 48, 64`) con estensioni frazionarie (`3.25, 4.5, 5.5, 7.5, 13, 15, 17, 18, 22, 25, 26, 30`) per il refresh boardroom. Usa i valori decimali su card executive, badge e stepper per mantenere il ritmo delle tavole Figma.
 - **Containers**: Primary canvas constrained to `max-width: 1360px`, centered with 32px padding at ≥1280px and 20px padding below.
 
 ## Hero Step Layout (aggiornamento 2025)
@@ -29,16 +29,16 @@ These guidelines codify the consulting-grade UX overhaul of the Rec2PDF web appl
 - Inserisci note di handoff che rimandano alle anchor `#setup`, `#input`, `#publish` e documentano lo stato atteso del badge pipeline.
 
 ## Typography Scale
-- **Font family**: `"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`.
-- **Scale**: `Display 32/40`, `Headline 24/32`, `Title 20/28`, `Body 16/24`, `Caption 14/20`, `Micro 12/16` (`font-size/line-height` in px).
-- **Weight usage**: Display/Headline at 600, Title at 600/500 for emphasis, Body and below at 400. Never combine more than two weights on a single view.
-- **Code/metadata**: Use `"JetBrains Mono", "Fira Code", monospace` for logs and pipeline IDs.
+- **Font family**: Display styles adottano `"Space Grotesk", "Inter var", Inter, system`; corpo e interfaccia usano `"Inter var", Inter, system`. I fallback di sistema restano validi se Google Fonts non è disponibile.【F:rec2pdf-frontend/src/index.css†L1-L58】【F:rec2pdf-frontend/tailwind.config.js†L27-L48】
+- **Scale**: `Display 32/40`, `Headline 24/32`, `Title 20/28`, `Body 16/24`, `Caption 14/20`, `Micro 12/16` (`font-size/line-height` in px). Gli heading boardroom applicano `font-display` per agganciare Space Grotesk.【F:rec2pdf-frontend/src/pages/Create.jsx†L332-L420】
+- **Weight usage**: Display/Headline a 600, Title a 600 (o 500 dove serve bilanciare), Body e label a 400/500. Evita più di due pesi su una singola vista.
+- **Code/metadata**: Usa `"JetBrains Mono", "Fira Code", monospace` per log, pipeline ID e snippet.【F:rec2pdf-frontend/tailwind.config.js†L49-L53】【F:rec2pdf-frontend/src/pages/Create.jsx†L1584-L1625】
 
 ## Tailwind Design Tokens (aggiornamento 2025)
-- **Spacing**: oltre alla scala base (4px), utilizza gli step estesi `4.5`, `13`, `15`, `18`, `22`, `25` per allineare callout, banner e drawer al nuovo ritmo verticale.【F:rec2pdf-frontend/tailwind.config.js†L6-L13】
-- **Radii**: applica `rounded-3xl`/`rounded-4xl` alle superfici boardroom; `rounded-xl` e `rounded-2xl` restano lo standard per card e controlli base.【F:rec2pdf-frontend/tailwind.config.js†L14-L19】
-- **Shadow**: `shadow-subtle`, `shadow-raised` e `shadow-focus` definiscono rispettivamente fondi neutri, modali prominenti e focus ring accessibile; evita mixare con le shadow Tailwind di default per mantenere coerenza.【F:rec2pdf-frontend/tailwind.config.js†L20-L24】
-- **Palette**: i nuovi token `surface`, `brand`, `accent`, `feedback` e `graphite` coprono tonalità da 25 a 950 per sfondi graduali, CTA e messaggi di stato. Usa `surface` per background, `brand` per CTA principali, `accent` per highlight contestuali e `graphite` per testo a contrasto medio.【F:rec2pdf-frontend/tailwind.config.js†L25-L78】
+- **Spacing**: oltre alla scala base (4px), utilizza gli step estesi `3.25`, `4.5`, `5.5`, `7.5`, `13`, `15`, `17`, `18`, `22`, `25`, `26`, `30` per allineare card executive, hero step e drawer avanzati al nuovo ritmo verticale.【F:rec2pdf-frontend/tailwind.config.js†L6-L26】【F:rec2pdf-frontend/src/pages/Create.jsx†L344-L470】
+- **Radii**: applica `rounded-3xl`/`rounded-4xl` alle superfici boardroom; `rounded-xl` e `rounded-2xl` restano lo standard per card e controlli base.【F:rec2pdf-frontend/tailwind.config.js†L14-L19】【F:rec2pdf-frontend/src/pages/Create.jsx†L344-L470】
+- **Shadow**: `shadow-subtle`, `shadow-raised`, `shadow-focus` e `shadow-inset` definiscono rispettivamente fondi neutri, modali prominenti, focus ring accessibile e separatori sottili. Evita mix con ombre Tailwind generiche.【F:rec2pdf-frontend/tailwind.config.js†L20-L24】【F:rec2pdf-frontend/src/pages/Create.jsx†L208-L229】
+- **Palette**: i token `surface`, `brand`, `boardroom`, `accent`, `feedback` e `graphite` coprono tonalità calibrate per gradienti, CTA e messaggi di stato. `boardroom.*` fornisce le ancore oceaniche/teal del refresh, `brand` governa CTA primarie, `surface` bilancia sfondi e modali.【F:rec2pdf-frontend/tailwind.config.js†L25-L74】【F:rec2pdf-frontend/src/App.jsx†L812-L832】
 
 ## Component Usage
 - **Shell**: `AppShell` gestisce il layout boardroom (header con logo/custom logo, onboarding banner, navigazione principale) e monta il `SettingsDrawer` per temi, diagnostica, builder workspace/progetti e gestione dispositivi.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L15-L139】【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L26-L199】
