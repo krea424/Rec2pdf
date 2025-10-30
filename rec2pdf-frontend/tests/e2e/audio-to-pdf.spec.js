@@ -139,13 +139,13 @@ test.describe('Audio to PDF flow', () => {
     await expect(downloadButton).toBeVisible()
   })
 
-  test('renders advanced control room tabs for context packs', async ({ page }) => {
+  test('espone le insight sui prompt nelle impostazioni', async ({ page }) => {
     await page.goto('/create')
 
-    await expect(page.getByRole('heading', { name: /Control room/i })).toBeVisible()
+    await page.getByRole('button', { name: 'Impostazioni' }).click()
 
-    await page.getByRole('button', { name: 'Context Packs' }).click()
+    await page.getByRole('button', { name: 'Prompt' }).click()
 
-    await expect(page.getByText(/Nessun placeholder attivo/i)).toBeVisible()
+    await expect(page.getByText(/Prompt attivo/i)).toBeVisible()
   })
 })
