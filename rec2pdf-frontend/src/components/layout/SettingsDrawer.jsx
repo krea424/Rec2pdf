@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo } from "react";
 import Drawer from "../ui/Drawer";
-import { Bug, Cpu, Folder, Mic, Palette, Users } from "../icons";
+import { Bug, Cpu, Folder, Mic, Palette, Sparkles, Users } from "../icons";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
 import RecordingSection from "../../features/settings/sections/RecordingSection";
@@ -8,6 +8,7 @@ import DiagnosticsSection from "../../features/settings/sections/DiagnosticsSect
 import WorkspaceSection from "../../features/settings/sections/WorkspaceSection";
 import BrandingSection from "../../features/settings/sections/BrandingSection";
 import AccountSection from "../../features/settings/sections/AccountSection";
+import PromptInsightsSection from "../../features/settings/sections/PromptInsightsSection";
 import { trackEvent } from "../../utils/analytics";
 
 const AdvancedBackendSection = lazy(
@@ -19,6 +20,7 @@ const BASE_NAV = [
   { key: "diagnostics", label: "Diagnostics", icon: Bug },
   { key: "workspace", label: "Workspace", icon: Folder },
   { key: "branding", label: "Branding", icon: Palette },
+  { key: "prompts", label: "Prompt", icon: Sparkles },
   { key: "account", label: "Account", icon: Users },
 ];
 
@@ -38,7 +40,9 @@ export default function SettingsDrawer({ open, onClose }) {
 
   const navigation = useMemo(() => {
     if (hasAdvancedAccess) {
-      return [...BASE_NAV.slice(0, 4), ADVANCED_ITEM, BASE_NAV[4]];
+      const items = BASE_NAV.slice();
+      const accountItem = items.pop();
+      return accountItem ? [...items, ADVANCED_ITEM, accountItem] : [...items, ADVANCED_ITEM];
     }
     return [...BASE_NAV];
   }, [hasAdvancedAccess]);
@@ -54,6 +58,7 @@ export default function SettingsDrawer({ open, onClose }) {
     diagnostics: <DiagnosticsSection />,
     workspace: <WorkspaceSection />,
     branding: <BrandingSection />,
+    prompts: <PromptInsightsSection />,
     advanced: hasAdvancedAccess ? (
       <Suspense fallback={<AdvancedSectionFallback />}>
         <AdvancedBackendSection />

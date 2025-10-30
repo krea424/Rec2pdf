@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
   Bug,
@@ -21,12 +21,9 @@ import {
 import PromptLibrary from "../components/PromptLibrary";
 import { useAppContext } from "../hooks/useAppContext";
 import { classNames } from "../utils/classNames";
-import { Button, Drawer, Toast } from "../components/ui";
+import { Button, Toast } from "../components/ui";
 import BaseHome from "../features/base/BaseHome";
 import { useAnalytics } from "../context/AnalyticsContext";
-
-const loadControlRoomModule = () => import("../features/advanced/AdvancedDashboard");
-const AdvancedDashboard = lazy(loadControlRoomModule);
 
 const truncateText = (value, limit = 80) => {
   if (typeof value !== "string") {
@@ -107,7 +104,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
 
   const [openInfo, setOpenInfo] = useState(null);
   const [showCompletionHighlight, setShowCompletionHighlight] = useState(false);
-  const [isControlRoomOpen, setIsControlRoomOpen] = useState(false);
   const pdfLogoInputRef = useRef(null);
 
   const toggleInfo = (section) => {
@@ -201,19 +197,9 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
   const shouldNeutralizePipelineStages =
     context.pipelineComplete && !showCompletionHighlight;
 
-  const handleControlRoomPrefetch = () => {
-    void loadControlRoomModule();
-  };
-
-  const handleOpenControlRoom = () => {
-    handleControlRoomPrefetch();
-    setIsControlRoomOpen(true);
-    trackEvent?.("advanced.control_room.open");
-  };
-
-  const handleCloseControlRoom = () => {
-    setIsControlRoomOpen(false);
-    trackEvent?.("advanced.control_room.close");
+  const handleOpenWorkspaceSettings = () => {
+    context.openSettingsDrawer?.("workspace");
+    trackEvent?.("advanced.settings.workspace_shortcut");
   };
 
   const activeProject = useMemo(
@@ -398,12 +384,10 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
                     size="sm"
                     variant="secondary"
                     leadingIcon={Settings}
-                    onClick={handleOpenControlRoom}
-                    onMouseEnter={handleControlRoomPrefetch}
-                    onFocus={handleControlRoomPrefetch}
+                    onClick={handleOpenWorkspaceSettings}
                     className="sm:ml-2"
                   >
-                    Apri control room
+                    Impostazioni workspace
                   </Button>
                 </div>
               </div>
@@ -515,23 +499,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
           })}
         </div>
       </section>
-
-      <Drawer
-        open={isControlRoomOpen}
-        onClose={handleCloseControlRoom}
-        title="Advanced control room"
-        description="Gestisci workspace, destinazioni, branding e diagnostica senza uscire dall&apos;Executive create hub."
-      >
-        <Suspense
-          fallback={
-            <div className="rounded-3xl border border-dashed border-zinc-800 bg-zinc-950/30 p-6 text-sm text-zinc-400">
-              Caricamento control room…
-            </div>
-          }
-        >
-          <AdvancedDashboard />
-        </Suspense>
-      </Drawer>
 
       <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
         <div
@@ -1709,7 +1676,7 @@ const CreatePage = () => {
         <div className="rounded-3xl border border-amber-500/40 bg-amber-500/10 p-6">
           <h2 className="text-lg font-semibold text-amber-100">Modalità avanzata non disponibile</h2>
           <p className="mt-2 text-amber-100/80">
-            Il tuo account non ha ancora accesso alla control room avanzata. Contatta l'amministratore per abilitare il flag
+            Il tuo account non ha ancora accesso alle funzionalità avanzate. Contatta l'amministratore per abilitare il flag
             <code className="mx-1 rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-xs">MODE_ADVANCED</code> oppure torna
             alla modalità base.
           </p>
