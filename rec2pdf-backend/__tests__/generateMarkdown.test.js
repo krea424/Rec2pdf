@@ -27,6 +27,7 @@ describe('generateMarkdown prompt composition', () => {
   let tempDir;
   let originalEnv;
   let generateMarkdown;
+  let normalizeAiMarkdownBody;
 
   beforeAll(() => {
     tempDir = tmp.dirSync({ unsafeCleanup: true });
@@ -39,7 +40,7 @@ describe('generateMarkdown prompt composition', () => {
     process.env.SUPABASE_SERVICE_KEY = '';
     process.env.PORT = '0';
     jest.resetModules();
-    ({ generateMarkdown } = require('../server'));
+    ({ generateMarkdown, normalizeAiMarkdownBody } = require('../server'));
   });
 
   afterAll(() => {
@@ -178,5 +179,22 @@ describe('generateMarkdown prompt composition', () => {
 
     const result = await generateMarkdown(transcriptPath, null, '');
     expect(result.content).toContain('ai.model: "gemini-2.5-flash"');
+  });
+
+  describe('normalizeAiMarkdownBody', () => {
+    it('rimuove il front matter iniziale lasciando solo il corpo', () => {
+      const raw = ['---', 'title: Test', 'ai.model: "gpt"', '---', '', '# Titolo'].join('\n');
+      expect(normalizeAiMarkdownBody(raw)).toBe('# Titolo');
+    });
+
+    it('trasforma i letterali \\n in nuove righe reali', () => {
+      const raw = '# Titolo\\n\\nContenuto';
+      expect(normalizeAiMarkdownBody(raw)).toBe(['# Titolo', '', 'Contenuto'].join('\n'));
+    });
+
+    it('srotola un body racchiuso interamente in un blocco di codice', () => {
+      const raw = ['```markdown', '# Titolo', '', 'Contenuto', '```'].join('\n');
+      expect(normalizeAiMarkdownBody(raw)).toBe(['# Titolo', '', 'Contenuto'].join('\n'));
+    });
   });
 });

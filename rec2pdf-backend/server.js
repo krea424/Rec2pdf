@@ -1189,6 +1189,52 @@ const loadTranscriptForPrompt = async (sourcePath) => {
 
 const FRONT_MATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n)?/;
 
+const stripFrontMatter = (markdown) => {
+  if (typeof markdown !== 'string' || !markdown) {
+    return '';
+  }
+  return markdown.replace(FRONT_MATTER_REGEX, '').trim();
+};
+
+const unwrapCodeFence = (markdown) => {
+  if (typeof markdown !== 'string' || !markdown.trim()) {
+    return '';
+  }
+
+  const fencedBlockMatch = markdown.match(/^\s*```[\w-]*\s*\n([\s\S]*?)\n```\s*$/);
+  if (fencedBlockMatch) {
+    return fencedBlockMatch[1].trim();
+  }
+
+  return markdown;
+};
+
+const normalizeLiteralEscapes = (markdown) => {
+  if (typeof markdown !== 'string' || !markdown) {
+    return '';
+  }
+
+  let normalized = markdown.replace(/\r\n?/g, '\n');
+  if (/\\[nrt]/.test(normalized)) {
+    normalized = normalized
+      .replace(/\\r/g, '')
+      .replace(/\\t/g, '\t')
+      .replace(/\\n/g, '\n');
+  }
+  return normalized;
+};
+
+const normalizeAiMarkdownBody = (markdown) => {
+  if (typeof markdown !== 'string') {
+    return '';
+  }
+
+  const withoutFrontMatter = stripFrontMatter(markdown);
+  const unfenced = unwrapCodeFence(withoutFrontMatter);
+  const normalizedEscapes = normalizeLiteralEscapes(unfenced);
+  return normalizedEscapes.trim();
+};
+
 const applyAiModelToFrontMatter = (markdown, modelName) => {
   if (!modelName || typeof markdown !== 'string' || !markdown.startsWith('---')) {
     return markdown;
@@ -5172,10 +5218,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       // Genera il blocco YAML in modo sicuro
       const yamlFrontMatter = yaml.dump(metadata);
 
-      // Pulisci il corpo del Markdown da eventuali front-matter e blocchi di codice iniziali
-      const CODE_BLOCK_REGEX = /^\s*```[\s\S]*?```\s*/;
-      let cleanedMarkdownBody = markdownBody.replace(FRONT_MATTER_REGEX, '').trim();
-      cleanedMarkdownBody = cleanedMarkdownBody.replace(CODE_BLOCK_REGEX, '').trim();
+      // Pulisci il corpo del Markdown rimuovendo front matter, recinzioni spurie e sequenze letterali
+      const cleanedMarkdownBody = normalizeAiMarkdownBody(markdownBody);
 
       // Unisci front-matter e corpo e scrivi il file finale
       const finalMarkdownContent = `---\n${yamlFrontMatter}---\n\n${cleanedMarkdownBody}`;
@@ -6053,21 +6097,94 @@ app.post(
         txtLocalPath = registerTempFile(path.join(pipelineDir, `${baseName}.txt`));
         await fsp.writeFile(txtLocalPath, downloadedTxt);
         mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
-        const gm = await generateMarkdown(
+        let retrievedWorkspaceContext = res.locals?.retrievedWorkspaceContext || '';
+        if (!retrievedWorkspaceContext && workspaceId) {
+          try {
+            const transcriptTextForQuery = downloadedTxt.toString('utf8');
+            const queryParts = [];
+            if (promptFocus) queryParts.push(promptFocus);
+            if (promptNotes) queryParts.push(promptNotes);
+            if (transcriptTextForQuery) queryParts.push(transcriptTextForQuery);
+            const combinedQuery = queryParts.join('\n\n').slice(0, CONTEXT_QUERY_MAX_CHARS);
+            if (combinedQuery) {
+              retrievedWorkspaceContext = await retrieveRelevantContext(combinedQuery, workspaceId, {
+                provider: aiOverrides.embedding,
+              });
+              if (retrievedWorkspaceContext) {
+                res.locals.retrievedWorkspaceContext = retrievedWorkspaceContext;
+              }
+            }
+          } catch (contextError) {
+            out(
+              `⚠️ Recupero contesto knowledge base fallito: ${contextError?.message || contextError}`,
+              'markdown',
+              'warning'
+            );
+          }
+        }
+
+        const {
+          title: aiTitle,
+          summary: aiSummary,
+          author: aiAuthor,
+          content: markdownBody,
+          modelName: aiModel,
+        } = await generateMarkdown(
           txtLocalPath,
-          mdLocalPath,
           promptRulePayload,
-          res.locals?.retrievedWorkspaceContext || '',
+          retrievedWorkspaceContext || '',
           { textProvider: aiOverrides.text }
         );
-        if (gm.code !== 0) {
-          const reason = gm.stderr || gm.stdout || 'Generazione Markdown fallita';
-          out(reason, 'markdown', 'failed');
-          throw new Error(`Generazione Markdown fallita: ${reason}`);
-        }
-        if (!fs.existsSync(mdLocalPath)) {
-          throw new Error(`Markdown non trovato: ${mdLocalPath}`);
-        }
+
+        const now = new Date();
+        const localTimestamp = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+          .toISOString()
+          .slice(0, -1);
+
+        const metadata = {
+          title: aiTitle || String(req.body?.title || baseName).trim(),
+          author: aiAuthor || req.user?.email || 'rec2pdf',
+          owner: workspaceProject?.name || workspaceMeta?.client || '',
+          project_name: workspaceProject?.name || workspaceProjectName || '',
+          project_code: workspaceMeta?.slug || workspaceId || '',
+          artifact_type: 'Report',
+          version: 'v1_0_0',
+          identifier: baseName,
+          location: destDir,
+          summary: aiSummary || String(req.body?.summary || '').trim(),
+          usageterms: '',
+          ssot: false,
+          status: workspaceStatus || '',
+          created: localTimestamp,
+          updated: localTimestamp,
+          tags: selectedPrompt?.tags || [],
+          ai: {
+            generated: true,
+            model: aiModel || '',
+            prompt_id: selectedPrompt?.id || '',
+          },
+        };
+
+        metadata.BLDTitle = metadata.title;
+        metadata.BLDVersion = metadata.version;
+        metadata.BLDUpdated = now.toLocaleDateString('it-IT', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        metadata.BLDAuthor = metadata.author;
+        metadata.BLDProject = metadata.project_name;
+
+        Object.keys(metadata).forEach((key) => {
+          const value = metadata[key];
+          if (value === '' || value === null || (Array.isArray(value) && value.length === 0)) {
+            delete metadata[key];
+          }
+        });
+
+        const yamlFrontMatter = yaml.dump(metadata);
+
+        const cleanedMarkdownBody = normalizeAiMarkdownBody(markdownBody);
+
+        const finalMarkdownContent = `---\n${yamlFrontMatter}---\n\n${cleanedMarkdownBody}`;
+        await fsp.writeFile(mdLocalPath, finalMarkdownContent, 'utf8');
+
         await uploadFileToBucket(
           SUPABASE_PROCESSED_BUCKET,
           mdStoragePath,
@@ -6386,4 +6503,5 @@ module.exports = {
   resolvePromptTemplateDescriptor,
   DEFAULT_LAYOUT_TEMPLATE_MAP,
   generateMarkdown,
+  normalizeAiMarkdownBody,
 };
