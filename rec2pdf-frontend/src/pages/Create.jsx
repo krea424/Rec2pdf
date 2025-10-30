@@ -1132,12 +1132,14 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
               <button
                 type="button"
                 onClick={context.resetAll}
+                disabled={context.busy}
                 className={classNames(
-                  "rounded-lg px-4 py-2 text-sm",
+                  "flex items-center gap-2 rounded-lg px-4 py-2 text-sm",
                   themes[theme].button,
+                  context.busy && "cursor-not-allowed opacity-60",
                 )}
               >
-                Reset
+                <RefreshCw className="h-4 w-4" /> Nuova sessione
               </button>
             </div>
           </div>

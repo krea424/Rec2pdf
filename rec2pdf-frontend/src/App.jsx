@@ -1458,7 +1458,29 @@ function AppContent(){
 
   const stopRecording=()=>{ const rec=mediaRecorderRef.current; if(rec&&rec.state!=="inactive") rec.stop(); setRecording(false); };
   useEffect(()=>{ if(recording&&secondsCap&&elapsed>=secondsCap) stopRecording(); },[recording,secondsCap,elapsed]);
-  const resetAll=()=>{ setAudioBlob(null); setAudioUrl(""); setMime(""); setElapsed(0); setLogs([]); setPdfPath(""); setMdPath(""); setPermissionMessage(""); setErrorBanner(null); resetPipelineProgress(false); setShowRawLogs(false); setLastMarkdownUpload(null); resetJourneyVisibility(); setEnableDiarization(false); };
+  const resetAll=()=>{
+    setAudioBlob(null);
+    setAudioUrl("");
+    setMime("");
+    setElapsed(0);
+    setLogs([]);
+    setPdfPath("");
+    setMdPath("");
+    setPermissionMessage("");
+    setErrorBanner(null);
+    resetPipelineProgress(false);
+    setShowRawLogs(false);
+    setLastMarkdownUpload(null);
+    setLastTextUpload(null);
+    if(markdownInputRef.current){
+      markdownInputRef.current.value="";
+    }
+    if(textInputRef.current){
+      textInputRef.current.value="";
+    }
+    resetJourneyVisibility();
+    setEnableDiarization(false);
+  };
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
   const canCallAuthenticatedApis = useMemo(

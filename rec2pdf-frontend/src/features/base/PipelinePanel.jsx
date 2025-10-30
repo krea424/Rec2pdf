@@ -384,7 +384,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
 
   const newSessionButtonClass = classNames(
     "flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-    hasDownloaded
+    pipelineComplete
       ? "bg-emerald-400 text-slate-950 shadow-[0_18px_60px_-30px_rgba(16,185,129,0.9)] hover:bg-emerald-300"
       : "border border-white/15 bg-white/5 text-white/70 hover:border-white/25 hover:bg-white/10",
     busy ? "cursor-not-allowed opacity-60" : null
@@ -496,7 +496,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
               <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-4 text-xs text-white/70">
                 <p className="text-sm font-semibold text-white">Prossimi passi</p>
                 <p className="mt-1">
-                  Puoi rifinire il documento nel markdown editor oppure avviare una nuova sessione di registrazione.
+                  Puoi rifinire il documento nel markdown editor e mantenere a portata di mano il reset della sessione.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {latestEntry?.mdPath ? (
@@ -508,19 +508,39 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
                       <FileText className="h-4 w-4" /> Modifica PDF
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={handleResetSession}
-                    disabled={busy}
-                    className={newSessionButtonClass}
-                  >
-                    <RefreshCw className="h-4 w-4" /> Nuova sessione
-                  </button>
                 </div>
+                <p className="mt-3 text-[11px] text-white/65">
+                  Hai finito? Il pulsante «Nuova sessione» qui sotto azzera i caricamenti senza toccare workspace e impostazioni.
+                </p>
               </div>
             ) : null}
           </div>
         ) : null}
+
+        <div
+          className={classNames(
+            "rounded-2xl border border-white/10 bg-white/5 px-4 py-4 transition-all",
+            pipelineComplete ? "border-emerald-300/50 bg-emerald-500/10" : null,
+            shouldDimContent ? "opacity-80" : null
+          )}
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-white">Gestione sessione</p>
+              <p className="text-xs text-white/70">
+                Reimposta i caricamenti mantenendo workspace, prompt e preferenze già configurate.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleResetSession}
+              disabled={busy}
+              className={newSessionButtonClass}
+            >
+              <RefreshCw className="h-4 w-4" /> Nuova sessione
+            </button>
+          </div>
+        </div>
       </div>
 
       {showPipelineDetails ? (
