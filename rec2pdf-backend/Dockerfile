@@ -32,6 +32,11 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 RUN pip3 install --no-cache-dir --break-system-packages \
     git+https://github.com/m-bain/whisperX.git
 
+    # === NUOVO STEP: Pre-scarica il modello Whisper ===
+# Eseguiamo uno script Python per forzare il download del modello 'base'
+# Questo modello verrà salvato nella cache all'interno dell'immagine Docker
+RUN python3 -c "import whisper; whisper.load_model('base')"
+
 WORKDIR /app
 
 # Copia package files per cache npm
