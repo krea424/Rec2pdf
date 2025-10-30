@@ -342,7 +342,7 @@ const run = (cmd, args = [], opts = {}) =>
     });
   });
 
-const zsh = (command, opts = {}) => run('zsh', ['-lc', command], opts);
+const bash = (command, opts = {}) => run('bash', ['-lc', command], opts);
 
 const buildPandocFallback = (templateInfo, mdArg, pdfArg) => {
   const info =
@@ -764,7 +764,7 @@ const publishWithTemplateFallback = async ({
   templateInfo,
   logger,
   callPublishFn = callPublishScript,
-  runPandoc = zsh,
+  runPandoc = bash,
 }) => {
   if (!mdLocalPath || !pdfLocalPath) {
     throw new Error('Percorsi Markdown o PDF mancanti per la pubblicazione');
@@ -4602,12 +4602,12 @@ app.get('/api/diag', async (req, res) => {
   } catch { out('❌ gemini non eseguibile'); }
 
   try {
-    const ppub = await zsh('command -v ppubr >/dev/null || command -v PPUBR >/dev/null && echo OK || echo NO');
+    const ppub = await bash('command -v ppubr >/dev/null || command -v PPUBR >/dev/null && echo OK || echo NO');
     out(ppub.stdout.includes('OK') ? `✅ ppubr/PPUBR: disponibile` : '❌ ppubr/PPUBR non trovato');
   } catch { out('❌ ppubr non disponibile'); }
 
   try {
-    const pandoc = await zsh('command -v pandocPDF >/dev/null && echo pandocPDF || command -v pandoc >/dev/null && echo pandoc || echo NO');
+    const pandoc = await bash('command -v pandocPDF >/dev/null && echo pandocPDF || command -v pandoc >/dev/null && echo pandoc || echo NO');
     out(/pandoc/i.test(pandoc.stdout) ? `✅ pandoc: ${pandoc.stdout.trim()}` : '⚠️ pandoc non trovato');
   } catch { out('⚠️ pandoc non disponibile'); }
 

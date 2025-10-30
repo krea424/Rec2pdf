@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     git \
     build-essential \
+    bash \
     && rm -rf /var/lib/apt/lists/*
 
 # Installa PyTorch CPU-only
