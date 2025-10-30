@@ -6053,21 +6053,96 @@ app.post(
         txtLocalPath = registerTempFile(path.join(pipelineDir, `${baseName}.txt`));
         await fsp.writeFile(txtLocalPath, downloadedTxt);
         mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
-        const gm = await generateMarkdown(
+        let retrievedWorkspaceContext = res.locals?.retrievedWorkspaceContext || '';
+        if (!retrievedWorkspaceContext && workspaceId) {
+          try {
+            const transcriptTextForQuery = downloadedTxt.toString('utf8');
+            const queryParts = [];
+            if (promptFocus) queryParts.push(promptFocus);
+            if (promptNotes) queryParts.push(promptNotes);
+            if (transcriptTextForQuery) queryParts.push(transcriptTextForQuery);
+            const combinedQuery = queryParts.join('\n\n').slice(0, CONTEXT_QUERY_MAX_CHARS);
+            if (combinedQuery) {
+              retrievedWorkspaceContext = await retrieveRelevantContext(combinedQuery, workspaceId, {
+                provider: aiOverrides.embedding,
+              });
+              if (retrievedWorkspaceContext) {
+                res.locals.retrievedWorkspaceContext = retrievedWorkspaceContext;
+              }
+            }
+          } catch (contextError) {
+            out(
+              `⚠️ Recupero contesto knowledge base fallito: ${contextError?.message || contextError}`,
+              'markdown',
+              'warning'
+            );
+          }
+        }
+
+        const {
+          title: aiTitle,
+          summary: aiSummary,
+          author: aiAuthor,
+          content: markdownBody,
+          modelName: aiModel,
+        } = await generateMarkdown(
           txtLocalPath,
-          mdLocalPath,
           promptRulePayload,
-          res.locals?.retrievedWorkspaceContext || '',
+          retrievedWorkspaceContext || '',
           { textProvider: aiOverrides.text }
         );
-        if (gm.code !== 0) {
-          const reason = gm.stderr || gm.stdout || 'Generazione Markdown fallita';
-          out(reason, 'markdown', 'failed');
-          throw new Error(`Generazione Markdown fallita: ${reason}`);
-        }
-        if (!fs.existsSync(mdLocalPath)) {
-          throw new Error(`Markdown non trovato: ${mdLocalPath}`);
-        }
+
+        const now = new Date();
+        const localTimestamp = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+          .toISOString()
+          .slice(0, -1);
+
+        const metadata = {
+          title: aiTitle || String(req.body?.title || baseName).trim(),
+          author: aiAuthor || req.user?.email || 'rec2pdf',
+          owner: workspaceProject?.name || workspaceMeta?.client || '',
+          project_name: workspaceProject?.name || workspaceProjectName || '',
+          project_code: workspaceMeta?.slug || workspaceId || '',
+          artifact_type: 'Report',
+          version: 'v1_0_0',
+          identifier: baseName,
+          location: destDir,
+          summary: aiSummary || String(req.body?.summary || '').trim(),
+          usageterms: '',
+          ssot: false,
+          status: workspaceStatus || '',
+          created: localTimestamp,
+          updated: localTimestamp,
+          tags: selectedPrompt?.tags || [],
+          ai: {
+            generated: true,
+            model: aiModel || '',
+            prompt_id: selectedPrompt?.id || '',
+          },
+        };
+
+        metadata.BLDTitle = metadata.title;
+        metadata.BLDVersion = metadata.version;
+        metadata.BLDUpdated = now.toLocaleDateString('it-IT', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        metadata.BLDAuthor = metadata.author;
+        metadata.BLDProject = metadata.project_name;
+
+        Object.keys(metadata).forEach((key) => {
+          const value = metadata[key];
+          if (value === '' || value === null || (Array.isArray(value) && value.length === 0)) {
+            delete metadata[key];
+          }
+        });
+
+        const yamlFrontMatter = yaml.dump(metadata);
+
+        const CODE_BLOCK_REGEX = /^\s*```[\s\S]*?```\s*/;
+        let cleanedMarkdownBody = markdownBody.replace(FRONT_MATTER_REGEX, '').trim();
+        cleanedMarkdownBody = cleanedMarkdownBody.replace(CODE_BLOCK_REGEX, '').trim();
+
+        const finalMarkdownContent = `---\n${yamlFrontMatter}---\n\n${cleanedMarkdownBody}`;
+        await fsp.writeFile(mdLocalPath, finalMarkdownContent, 'utf8');
+
         await uploadFileToBucket(
           SUPABASE_PROCESSED_BUCKET,
           mdStoragePath,
