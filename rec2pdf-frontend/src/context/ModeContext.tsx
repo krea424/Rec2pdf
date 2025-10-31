@@ -25,6 +25,8 @@ const MODE_FLAGS: Record<Mode, string> = {
   advanced: "MODE_ADVANCED",
 };
 
+const ANALYTICS_FLAGS = new Set(["MODE_ADVANCED_V2"]);
+
 const DEFAULT_MODE_FLAGS_SOURCE =
   typeof import.meta.env.VITE_DEFAULT_MODE_FLAGS === "string" &&
   import.meta.env.VITE_DEFAULT_MODE_FLAGS.trim().length > 0
@@ -148,6 +150,7 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
   const [flags, setFlags] = useState<Set<string>>(() => extractFlags(session));
   const [remoteSyncOverrideDisabled, setRemoteSyncOverrideDisabled] = useState<boolean>(false);
   const { trackEvent, trackToggleEvent } = useAnalytics();
+  const reportedFlagsRef = useRef<Map<string | null, Set<string>>>(new Map());
 
   const remoteSyncDisabled = useMemo(
     () => !syncWithSupabase || remoteSyncOverrideDisabled,
@@ -167,6 +170,30 @@ export const ModeProvider = ({ children, session, syncWithSupabase = true }: Mod
   useEffect(() => {
     setRemoteSyncOverrideDisabled(false);
   }, [sessionId]);
+
+  useEffect(() => {
+    const sessionKey = sessionId ?? "__anonymous__";
+    const seenForSession = reportedFlagsRef.current.get(sessionKey) ?? new Set<string>();
+
+    ANALYTICS_FLAGS.forEach((flag) => {
+      if (!flags.has(flag)) {
+        return;
+      }
+
+      if (seenForSession.has(flag)) {
+        return;
+      }
+
+      trackEvent("mode.flag_exposed", {
+        flag,
+        mode,
+      });
+
+      seenForSession.add(flag);
+    });
+
+    reportedFlagsRef.current.set(sessionKey, seenForSession);
+  }, [flags, mode, sessionId, trackEvent]);
 
   const availableModes = useMemo<Mode[]>(() => {
     const enabled = (Object.keys(MODE_FLAGS) as Mode[]).filter((candidate) => {

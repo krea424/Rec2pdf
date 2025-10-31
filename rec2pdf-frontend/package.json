@@ -31,6 +31,7 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/user-event": "^14.5.2",
     "jsdom": "^24.1.0",
-    "@playwright/test": "^1.49.1"
+    "@playwright/test": "^1.49.1",
+    "@axe-core/playwright": "^4.10.1"
   }
 }
