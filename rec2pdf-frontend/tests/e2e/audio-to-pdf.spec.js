@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
 const promptsPayload = {
   ok: true,
   prompts: [
@@ -147,5 +148,42 @@ test.describe('Audio to PDF flow', () => {
     await page.getByRole('button', { name: 'Prompt' }).click()
 
     await expect(page.getByText(/Prompt attivo/i)).toBeVisible()
+  })
+
+  test('boardroom advanced pipeline è accessibile e completa la sessione', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('rec2pdfModePreference', 'advanced')
+    })
+
+    await page.goto('/create')
+
+    const startButton = page.getByRole('button', { name: 'Avvia pipeline executive', exact: true })
+    await expect(startButton).toBeVisible()
+
+    const infoButtons = [
+      page.getByRole('button', { name: 'Informazioni su Carica audio' }),
+      page.getByRole('button', { name: 'Informazioni su Carica Markdown' }),
+      page.getByRole('button', { name: 'Informazioni su Carica TXT' }),
+    ]
+
+    for (const button of infoButtons) {
+      await button.click()
+    }
+
+    const accessibilityScanResults = await new AxeBuilder({ page }).analyze()
+    expect(accessibilityScanResults.violations).toEqual([])
+
+    const fakeAudioFile = {
+      name: 'sample.wav',
+      mimeType: 'audio/wav',
+      buffer: Buffer.from('RIFF....WAVEfmt '),
+    }
+
+    await page.setInputFiles('input[type="file"][accept="audio/*"]', fakeAudioFile)
+
+    await expect(startButton).toBeEnabled()
+    await startButton.click()
+
+    await expect(page.getByRole('link', { name: 'Vai alla Library', exact: true })).toBeVisible()
   })
 })

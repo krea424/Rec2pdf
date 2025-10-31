@@ -15,6 +15,7 @@ export default defineConfig({
     timeout: 120000,
     env: {
       VITE_BYPASS_AUTH: 'true',
+      VITE_DEFAULT_MODE_FLAGS: 'MODE_BASE,MODE_ADVANCED,MODE_ADVANCED_V2',
     },
   },
 })

@@ -79,9 +79,54 @@ describe('ModeContext', () => {
       false,
       expect.objectContaining({ previousMode: 'advanced', nextMode: 'base', trigger: 'cycle' }),
     )
-    expect(trackEvent).toHaveBeenLastCalledWith(
-      'mode.changed',
-      expect.objectContaining({ previousMode: 'advanced', nextMode: 'base', trigger: 'cycle' }),
+      expect(trackEvent).toHaveBeenLastCalledWith(
+        'mode.changed',
+        expect.objectContaining({ previousMode: 'advanced', nextMode: 'base', trigger: 'cycle' }),
+      )
+    })
+
+  it('emits a flag exposure event when tracked feature flags are available', async () => {
+    const { rerender } = render(
+      <AnalyticsProvider value={{ trackEvent, trackToggleEvent }}>
+        <ModeProvider
+          session={{
+            user: {
+              id: 'user-2',
+              app_metadata: { feature_flags: ['MODE_BASE', 'MODE_ADVANCED', 'MODE_ADVANCED_V2'] },
+            },
+          } as any}
+          syncWithSupabase={false}
+        >
+          <Consumer />
+        </ModeProvider>
+      </AnalyticsProvider>,
     )
+
+    await waitFor(() => {
+      expect(trackEvent).toHaveBeenCalledWith(
+        'mode.flag_exposed',
+        expect.objectContaining({ flag: 'MODE_ADVANCED_V2' }),
+      )
+    })
+
+    rerender(
+      <AnalyticsProvider value={{ trackEvent, trackToggleEvent }}>
+        <ModeProvider
+          session={{
+            user: {
+              id: 'user-2',
+              app_metadata: { feature_flags: ['MODE_BASE', 'MODE_ADVANCED', 'MODE_ADVANCED_V2'] },
+            },
+          } as any}
+          syncWithSupabase={false}
+        >
+          <Consumer />
+        </ModeProvider>
+      </AnalyticsProvider>,
+    )
+
+    await waitFor(() => {
+      expect(trackEvent.mock.calls.filter(([eventName]) => eventName === 'mode.flag_exposed')).toHaveLength(1)
+    })
   })
 })
