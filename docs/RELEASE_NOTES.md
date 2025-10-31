@@ -13,7 +13,7 @@
 ## Stato feature flags
 - `MODE_BASE`: sempre attivo via flag di default, garantisce accesso alla pipeline essenziale.【F:rec2pdf-frontend/src/context/ModeContext.tsx†L21-L177】
 - `MODE_ADVANCED`: attivo di default per ambienti demo (`VITE_DEFAULT_MODE_FLAGS`, con fallback automatico a `MODE_BASE,MODE_ADVANCED` se la variabile manca) ma può essere revocato per profili senza permessi; gli utenti senza flag restano sulla modalità Base.【F:rec2pdf-frontend/.env.example†L1-L4】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L24-L205】【F:rec2pdf-frontend/src/pages/Create.jsx†L69-L187】
-- `MODE_ADVANCED_V2`: abilita la nuova control room boardroom e viene tracciato con `mode.flag_exposed`; impostalo via Supabase o `VITE_DEFAULT_MODE_FLAGS` per abilitare cohort mirati.【F:rec2pdf-frontend/src/context/ModeContext.tsx†L148-L208】【F:rec2pdf-frontend/src/pages/Create.jsx†L288-L326】
+- `MODE_ADVANCED_V2`: abilita la nuova control room boardroom e viene tracciato con `mode.flag_exposed`; abilitalo su Supabase da Authentication → Users aggiungendo `MODE_ADVANCED_V2` a `modeFlags` (insieme a `MODE_ADVANCED`) oppure preimpostalo con `VITE_DEFAULT_MODE_FLAGS=MODE_BASE,MODE_ADVANCED,MODE_ADVANCED_V2` per cohort locali.【F:rec2pdf-frontend/src/context/ModeContext.tsx†L148-L208】【F:rec2pdf-frontend/src/pages/Create.jsx†L288-L326】
 - `VITE_BYPASS_AUTH`: flag operativo per ambienti locali/dimostrazione; disattivarlo su staging/produzione per preservare il login Supabase.【F:rec2pdf-frontend/src/App.jsx†L17-L195】
 - `VITE_ENABLE_FS_INTEGRATION_PLACEHOLDER` / `VITE_ENABLE_RAG_PLACEHOLDER`: disattivati per default, mostrano card informative nella tab Context Packs quando settati su `true`/`1`/`yes`.【F:rec2pdf-frontend/src/features/advanced/AdvancedDashboard.tsx†L18-L109】
 

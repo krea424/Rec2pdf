@@ -176,6 +176,8 @@ describe('CreatePage', () => {
     render(<CreatePage />)
 
     expect(screen.getByText(/Nuova control room in rollout/i)).toBeInTheDocument()
+    expect(screen.getByText(/Supabase → Authentication → Users/i)).toBeInTheDocument()
+    expect(screen.getByText(/VITE_DEFAULT_MODE_FLAGS=MODE_BASE,MODE_ADVANCED,MODE_ADVANCED_V2/i)).toBeInTheDocument()
     expect(screen.getByTestId('base-home')).toBeInTheDocument()
   })
 
