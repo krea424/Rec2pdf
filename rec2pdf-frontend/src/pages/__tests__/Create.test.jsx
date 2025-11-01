@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import CreatePage from '../Create.jsx'
 
@@ -14,14 +15,6 @@ vi.mock('../../features/advanced/InputManager', () => ({
   default: ({ context }) => (
     <div data-testid="input-manager">Input manager mock – mode {context?.mode}</div>
   ),
-}))
-
-vi.mock('../../features/advanced/PipelineOverview', () => ({
-  default: () => <div data-testid="pipeline-overview">Pipeline overview mock</div>,
-}))
-
-vi.mock('../../context/AnalyticsContext', () => ({
-  useAnalytics: () => ({ trackEvent: vi.fn() }),
 }))
 
 const mockUseAppContext = vi.fn()
@@ -150,7 +143,11 @@ describe('CreatePage', () => {
 
   it('renders the base journey when mode is base', () => {
     mockUseAppContext.mockReturnValue(buildContext())
-    render(<CreatePage />)
+    render(
+      <MemoryRouter>
+        <CreatePage />
+      </MemoryRouter>
+    )
 
     expect(screen.getByTestId('base-home')).toBeInTheDocument()
   })
@@ -161,7 +158,11 @@ describe('CreatePage', () => {
       flags: ['MODE_BASE'],
     })
     mockUseAppContext.mockReturnValue(context)
-    render(<CreatePage />)
+    render(
+      <MemoryRouter>
+        <CreatePage />
+      </MemoryRouter>
+    )
 
     expect(screen.getByText(/Modalità avanzata non disponibile/i)).toBeInTheDocument()
     expect(screen.getByTestId('base-home')).toBeInTheDocument()
@@ -173,7 +174,11 @@ describe('CreatePage', () => {
       flags: ['MODE_BASE', 'MODE_ADVANCED'],
     })
     mockUseAppContext.mockReturnValue(context)
-    render(<CreatePage />)
+    render(
+      <MemoryRouter>
+        <CreatePage />
+      </MemoryRouter>
+    )
 
     expect(screen.getByText(/Nuova control room in rollout/i)).toBeInTheDocument()
     expect(screen.getByText(/Supabase → Authentication → Users/i)).toBeInTheDocument()
@@ -187,11 +192,14 @@ describe('CreatePage', () => {
       flags: ['MODE_BASE', 'MODE_ADVANCED', 'MODE_ADVANCED_V2'],
     })
     mockUseAppContext.mockReturnValue(context)
-    render(<CreatePage />)
+    render(
+      <MemoryRouter>
+        <CreatePage />
+      </MemoryRouter>
+    )
 
     expect(screen.queryByTestId('base-home')).not.toBeInTheDocument()
     expect(screen.getByTestId('setup-panel')).toBeInTheDocument()
     expect(screen.getByTestId('input-manager')).toHaveTextContent('mode advanced')
-    expect(screen.getByTestId('pipeline-overview')).toBeInTheDocument()
   })
 })

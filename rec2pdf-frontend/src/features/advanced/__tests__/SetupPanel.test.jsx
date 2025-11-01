@@ -9,81 +9,62 @@ const makeThemes = () => ({
   },
 });
 
-const heroSteps = [
-  { key: "setup", label: "Setup", description: "Descrizione" },
-  { key: "record", label: "Record", description: "Rec" },
-  { key: "deliver", label: "Deliver", description: "PDF" },
-];
-
-const highlightCards = [
-  { key: "workspace", label: "Workspace", value: "Acme", meta: "Meta", icon: () => <span>W</span> },
-];
-
 describe("SetupPanel", () => {
-  it("renders pipeline summary and disables start button when prerequisites missing", () => {
+  it("renders summary items and triggers library navigation", async () => {
+    const user = userEvent.setup();
+    const onOpenLibrary = vi.fn();
+
     render(
       <SetupPanel
         isBoardroom={false}
         theme="default"
         themes={makeThemes()}
-        heroSteps={heroSteps}
-        highlightCards={highlightCards}
-        stageLabel="In attesa"
-        stageDescription="Descrizione stage"
-        statusBadgeLabel="Idle"
-        stageStyleBadge="badge"
-        progressPercent={42}
-        highlightSurface="highlight"
-        mutedTextClass="muted"
+        boardroomPrimarySurface="primary"
+        labelToneClass="label"
         heroTitleClass="title"
         heroSubtitleClass="subtitle"
-        labelToneClass="label"
-        boardroomPrimarySurface="primary"
-        onStartPipeline={vi.fn()}
-        canStartPipeline={false}
-        HeaderIcon={() => <span data-testid="header-icon">H</span>}
+        summaryItems={[
+          {
+            key: "workspace",
+            label: "Workspace",
+            value: "Acme",
+            meta: "Cliente · Contoso",
+          },
+          {
+            key: "project",
+            label: "Progetto",
+            value: "OKR",
+            meta: "Stato · Draft",
+          },
+        ]}
+        onOpenLibrary={onOpenLibrary}
       />
     );
 
-    expect(screen.getByText("42%")).toBeInTheDocument();
-    const startButton = screen.getByRole("button", { name: /pipeline executive/i });
-    expect(startButton).toBeDisabled();
-    expect(
-      screen.getByText(/registra o carica un audio per attivare l'esecuzione/i)
-    ).toBeInTheDocument();
-    expect(screen.getByText("Workspace")).toBeInTheDocument();
-    expect(screen.getByTestId("header-icon")).toBeInTheDocument();
+    expect(screen.getByText(/configura parametri/i)).toBeInTheDocument();
+    expect(screen.getByText("Acme")).toBeInTheDocument();
+    expect(screen.getByText("OKR")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /library avanzata/i }));
+    expect(onOpenLibrary).toHaveBeenCalled();
   });
 
-  it("calls callbacks when actions are triggered", async () => {
-    const user = userEvent.setup();
-    const onStartPipeline = vi.fn();
-
+  it("omits the CTA when no handler is provided", () => {
     render(
       <SetupPanel
-        isBoardroom={false}
+        isBoardroom
         theme="default"
         themes={makeThemes()}
-        heroSteps={heroSteps}
-        highlightCards={highlightCards}
-        stageLabel="Pronto"
-        stageDescription="Descrizione"
-        statusBadgeLabel="Running"
-        stageStyleBadge="badge"
-        progressPercent={100}
-        highlightSurface="highlight"
-        mutedTextClass="muted"
+        boardroomPrimarySurface="primary"
+        labelToneClass="label"
         heroTitleClass="title"
         heroSubtitleClass="subtitle"
-        labelToneClass="label"
-        boardroomPrimarySurface="primary"
-        onStartPipeline={onStartPipeline}
-        canStartPipeline
-        HeaderIcon={() => <span />}
+        summaryItems={[]}
       />
     );
 
-    await user.click(screen.getByRole("button", { name: /pipeline executive/i }));
-    expect(onStartPipeline).toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: /library avanzata/i })
+    ).not.toBeInTheDocument();
   });
 });

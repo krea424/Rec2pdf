@@ -14,34 +14,37 @@ const themes = {
 };
 
 const baseContext = {
-  activeWorkspaceProfiles: [],
-  activeWorkspaceProfile: null,
-  workspaceProfileSelection: {},
+  activeWorkspaceProfiles: [
+    { id: "profile-1", label: "Profilo 1" },
+    { id: "profile-2", label: "Profilo 2" },
+  ],
+  activeWorkspaceProfile: { id: "profile-1", label: "Profilo 1" },
+  workspaceProfileSelection: { profileId: "profile-1" },
   workspaceProfileLocked: false,
   applyWorkspaceProfile: vi.fn(() => ({ ok: true })),
   clearWorkspaceProfile: vi.fn(),
   setErrorBanner: vi.fn(),
   setCustomPdfLogo: vi.fn(),
   customPdfLogo: null,
-  fmtTime: vi.fn(() => "00:10"),
-  elapsed: 10,
-  recording: false,
-  busy: false,
-  mediaSupported: true,
-  recorderSupported: true,
-  startRecording: vi.fn(),
-  stopRecording: vi.fn(),
-  secureOK: true,
   workspaceSelection: {
-    workspaceId: "",
-    projectId: "",
-    projectName: "",
-    status: "",
+    workspaceId: "workspace-1",
+    projectId: "project-1",
+    projectName: "Progetto A",
+    status: "In progress",
   },
-  workspaces: [],
-  workspaceProjects: [],
+  workspaces: [
+    { id: "workspace-1", name: "Workspace A", client: "Acme" },
+  ],
+  workspaceProjects: [
+    { id: "project-1", name: "Discovery" },
+  ],
   handleSelectWorkspaceForPipeline: vi.fn(),
-  activeWorkspace: {},
+  activeWorkspace: {
+    versioningPolicy: {
+      namingConvention: "slug",
+      retentionLimit: 5,
+    },
+  },
   projectCreationMode: false,
   projectDraft: "",
   projectStatusDraft: "",
@@ -51,7 +54,7 @@ const baseContext = {
   handleCreateProjectFromDraft: vi.fn(),
   handleSelectProjectForPipeline: vi.fn(),
   statusCreationMode: false,
-  availableStatuses: [],
+  availableStatuses: ["In progress", "Done"],
   statusDraft: "",
   setStatusDraft: vi.fn(),
   handleCreateStatusFromDraft: vi.fn(),
@@ -59,27 +62,21 @@ const baseContext = {
   handleRefreshWorkspaces: vi.fn(),
   workspaceLoading: false,
   openSettingsDrawer: vi.fn(),
-  destDir: "",
+  destDir: "/tmp",
   setDestDir: vi.fn(),
   DEFAULT_DEST_DIR: "/Users/",
   destIsPlaceholder: false,
   showDestDetails: false,
   setShowDestDetails: vi.fn(),
-  slug: "",
+  slug: "sessione",
   setSlug: vi.fn(),
-  mime: "audio/mp3",
-  fmtBytes: vi.fn(() => "1 MB"),
-  audioBlob: null,
-  audioUrl: "",
-  processViaBackend: vi.fn(),
-  resetAll: vi.fn(),
-  onPickFile: vi.fn(),
-  handleMarkdownFilePicked: vi.fn(),
-  handleTextFilePicked: vi.fn(),
-  fileInputRef: { current: { click: vi.fn() } },
-  markdownInputRef: { current: { click: vi.fn() } },
-  textInputRef: { current: { click: vi.fn() } },
-  prompts: [],
+  prompts: [
+    {
+      id: "prompt-1",
+      title: "All hands",
+      persona: "Advisor",
+    },
+  ],
   promptLoading: false,
   promptState: { focus: "", notes: "", cueProgress: {} },
   handleSelectPromptTemplate: vi.fn(),
@@ -93,7 +90,6 @@ const baseContext = {
   handleTogglePromptCue: vi.fn(),
   handleCreatePrompt: vi.fn(),
   handleDeletePrompt: vi.fn(),
-  pipelineComplete: false,
 };
 
 const renderInputManager = (override = {}) =>
@@ -107,35 +103,39 @@ const renderInputManager = (override = {}) =>
         boardroomPrimarySurface="primary"
         boardroomSecondarySurface="secondary"
         boardroomChipSurface="chip"
-        boardroomInfoSurface="info"
-        trackEvent={vi.fn()}
-        canStartPipeline={false}
-        audioDownloadExtension="m4a"
       />
     </MemoryRouter>
   );
 
 describe("InputManager", () => {
-  it("toggles informational panels", async () => {
-    const user = userEvent.setup();
+  it("exposes only parameter controls", () => {
     renderInputManager();
 
     expect(
-      screen.queryByText(/usa un file audio esistente come sorgente alternativa/i)
-    ).not.toBeInTheDocument();
-
-    await user.click(
-      screen.getByRole("button", { name: /informazioni su carica audio/i })
-    );
-
-    expect(
-      screen.getByText(/usa un file audio esistente come sorgente alternativa/i)
+      screen.getByRole("combobox", { name: /profilo preconfigurato/i })
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: /workspace/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /carica audio/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /rec/i })
+    ).not.toBeInTheDocument();
   });
 
-  it("shows completion call-to-action when pipeline is complete", () => {
-    renderInputManager({ pipelineComplete: true });
-    expect(screen.getByText(/pipeline completata/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /vai alla library/i })).toBeInTheDocument();
+  it("clears the workspace profile when the empty option is selected", async () => {
+    const user = userEvent.setup();
+    const clearWorkspaceProfile = vi.fn();
+
+    renderInputManager({ clearWorkspaceProfile });
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: /profilo preconfigurato/i }),
+      ""
+    );
+
+    expect(clearWorkspaceProfile).toHaveBeenCalled();
   });
 });
