@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import UploadCard from "../UploadCard.jsx";
 import { AppContext } from "../../../hooks/useAppContext.jsx";
 
@@ -113,6 +114,30 @@ describe("UploadCard", () => {
       title: "Formato non supportato",
       details: "Trascina un file audio, .md o .txt valido.",
     });
+  });
+
+  it("toggles recording state through context handlers", async () => {
+    const user = userEvent.setup();
+    const startRecording = vi.fn();
+    const stopRecording = vi.fn();
+
+    const { rerender } = render(
+      <AppContext.Provider value={buildContextValue({ startRecording, stopRecording })}>
+        <UploadCard />
+      </AppContext.Provider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /registra/i }));
+    expect(startRecording).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <AppContext.Provider value={buildContextValue({ recording: true, startRecording, stopRecording })}>
+        <UploadCard />
+      </AppContext.Provider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /stop/i }));
+    expect(stopRecording).toHaveBeenCalledTimes(1);
   });
 });
 

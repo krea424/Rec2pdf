@@ -6,7 +6,7 @@ Deliver a streamlined creation experience: Base mode becomes a quick-start works
 ## Progress
 - [x] Milestone 1 (Audit + TODO scaffolding) — (2025-02-14 12:00Z)
 - [x] Milestone 2 (Base B header cards & uploads) — (2025-02-14 15:45Z · summary cards + unified upload bar)
-- [ ] Milestone 3 (Recording toggle + accessibility polish) — (…)
+- [x] Milestone 3 (Recording toggle + accessibility polish) — (2025-02-14 18:10Z · unified Registra/Stop CTA)
 - [ ] Milestone 4 (Advanced slim view + library handoff) — (…)
 - [ ] Milestone 5 (Tests, docs, screenshots, feature flag) — (…)
 
@@ -26,6 +26,7 @@ Deliver a streamlined creation experience: Base mode becomes a quick-start works
 
 ## Outcomes & Retrospective
 - Milestone 2: Base mode now surfaces workspace, project, prompt, and session cards summarizing key context while keeping pipeline below the fold. Upload controls are unified into audio/Markdown/TXT buttons backed by a shared dropzone with validation.
+- Milestone 3: Recording CTA refactored into a single toggle button with Mic/Stop iconography, ARIA state, and disabled handling to eliminate duplicated “Rec/Registra” controls.
 
 ## Context and Orientation
 - Framework: React 18 + Vite + Tailwind (see `src/main.jsx`, `src/index.css`).

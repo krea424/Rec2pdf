@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
-import { FileCode, FileText, Mic, Square, Upload } from "../../components/icons";
+import { FileCode, FileText, Mic, Upload } from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
+import RecordingToggleButton from "./RecordingToggleButton";
 
 const UploadCard = ({ journeyStage = "record" }) => {
   const context = useAppContext();
@@ -93,17 +94,77 @@ const UploadCard = ({ journeyStage = "record" }) => {
     return [name, sizeLabel].filter(Boolean).join(" • ");
   }, [fmtBytes, lastTextUpload]);
 
-  const recordState = recording ? "recording" : journeyStage;
-  const recordButtonClass = classNames(
-    "relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl px-4 py-5 text-lg font-semibold",
-    "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-    recording
-      ? "bg-rose-500/90 text-white shadow-[0_18px_60px_-30px_rgba(244,63,94,0.9)]"
-      : recordState === "record"
-        ? "bg-emerald-400/90 text-slate-950 shadow-[0_20px_60px_-35px_rgba(16,185,129,0.9)] hover:bg-emerald-300"
-        : "border border-white/15 bg-white/5 text-white/70 hover:border-white/25 hover:bg-white/10",
-    recordState === "download" && !recording ? "opacity-50" : null,
-    !canRecord && "cursor-not-allowed opacity-60"
+  const handleDragEnter = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer?.items?.length) {
+      setIsDragging(true);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isDragging) {
+      setIsDragging(true);
+    }
+  }, [isDragging]);
+
+  const handleDragLeave = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.currentTarget.contains(event.relatedTarget)) {
+      return;
+    }
+    setIsDragging(false);
+  }, []);
+
+  const processDroppedFile = useCallback(
+    (file) => {
+      if (!file) {
+        return;
+      }
+
+      const name = typeof file.name === "string" ? file.name : "";
+      const type = typeof file.type === "string" ? file.type : "";
+      const isMarkdown = /\.md$/i.test(name);
+      const isText = /\.txt$/i.test(name);
+      const isAudio = type.startsWith("audio/") || /\.(mp3|wav|m4a|aac|flac|ogg|oga|opus|wma)$/i.test(name);
+
+      if (isMarkdown) {
+        handleMarkdownFilePicked({ target: { files: [file] } });
+        return;
+      }
+
+      if (isText) {
+        void handleTextFilePicked({ target: { files: [file] } });
+        return;
+      }
+
+      if (isAudio) {
+        onPickFile({ target: { files: [file] } });
+        return;
+      }
+
+      setErrorBanner({
+        title: "Formato non supportato",
+        details: "Trascina un file audio, .md o .txt valido.",
+      });
+    },
+    [handleMarkdownFilePicked, handleTextFilePicked, onPickFile, setErrorBanner],
+  );
+
+  const handleDrop = useCallback(
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsDragging(false);
+      const file = event.dataTransfer?.files?.[0];
+      if (file) {
+        processDroppedFile(file);
+      }
+    },
+    [processDroppedFile],
   );
 
   // TODO(Task 4): Harmonize the record toggle labeling/iconography so the
@@ -192,16 +253,13 @@ const UploadCard = ({ journeyStage = "record" }) => {
       </div>
 
       <div className="mt-6 space-y-5">
-        <button
-          type="button"
-          onClick={handleToggleRecording}
+        <RecordingToggleButton
+          onToggle={handleToggleRecording}
+          recording={recording}
           disabled={!canRecord}
-          className={recordButtonClass}
-          title={micStatusLabel}
-        >
-          {recording ? <Square className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-          {recording ? "Stop" : "Registra"}
-        </button>
+          journeyStage={journeyStage}
+          micStatusLabel={micStatusLabel}
+        />
 
         <div className="space-y-3">
           <div
