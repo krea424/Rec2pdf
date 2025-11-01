@@ -2840,9 +2840,7 @@ const buildKnowledgeMetadata = (file, { ingestionId, chunkIndex, totalChunks, pr
   if (Number.isFinite(file.size)) {
     metadata.size = file.size;
   }
-  if (projectId) {
-    metadata.projectId = projectId;
-  }
+  metadata.projectId = projectId || null;
   return metadata;
 };
 
@@ -3966,14 +3964,22 @@ app.post(
         ? req.body.projectId
         : typeof req.body?.workspaceProjectId === 'string'
           ? req.body.workspaceProjectId
-          : '';
+          : typeof req.query?.projectId === 'string'
+            ? req.query.projectId
+            : typeof req.query?.workspaceProjectId === 'string'
+              ? req.query.workspaceProjectId
+              : '';
     const projectId = rawProjectId ? String(rawProjectId).trim() : '';
     const rawProjectName =
       typeof req.body?.projectName === 'string'
         ? req.body.projectName
         : typeof req.body?.workspaceProjectName === 'string'
           ? req.body.workspaceProjectName
-          : '';
+          : typeof req.query?.projectName === 'string'
+            ? req.query.projectName
+            : typeof req.query?.workspaceProjectName === 'string'
+              ? req.query.workspaceProjectName
+              : '';
     const projectName = rawProjectName ? String(rawProjectName).trim() : '';
 
     if (!workspaceId) {
