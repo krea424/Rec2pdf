@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { Folder, Target, Sparkles, Users } from "../../components/icons.jsx";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
@@ -34,10 +34,7 @@ const BaseSummaryCards = () => {
     activeWorkspace,
     workspaceProjects,
     promptLoading,
-    prompts,
     promptState,
-    handleSelectPromptTemplate,
-    handleClearPromptSelection,
     activePrompt,
     activeWorkspaceProfile,
     workspaceProfileSelection,
@@ -69,13 +66,6 @@ const BaseSummaryCards = () => {
     return null;
   }, [projectList, workspaceSelection?.projectId, workspaceSelection?.projectName]);
 
-  const promptOptions = useMemo(() => {
-    if (!Array.isArray(prompts)) {
-      return [];
-    }
-    return prompts.map((prompt) => ({ id: prompt.id, title: prompt.title || prompt.id }));
-  }, [prompts]);
-
   const profileHeadline = useMemo(() => {
     if (activeWorkspaceProfile) {
       return activeWorkspaceProfile.label || activeWorkspaceProfile.id || "Profilo attivo";
@@ -85,19 +75,6 @@ const BaseSummaryCards = () => {
     }
     return "Nessun profilo attivo";
   }, [activeWorkspaceProfile, workspaceProfileSelection?.profileId]);
-
-  const handlePromptChange = useCallback(
-    (event) => {
-      const targetId = event.target.value;
-      if (!targetId) {
-        handleClearPromptSelection();
-        return;
-      }
-      const selected = prompts.find((prompt) => prompt.id === targetId) || { id: targetId };
-      handleSelectPromptTemplate(selected);
-    },
-    [handleClearPromptSelection, handleSelectPromptTemplate, prompts],
-  );
 
   return (
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="Stato workspace e sessione">
@@ -120,24 +97,9 @@ const BaseSummaryCards = () => {
         icon={Sparkles}
         accent="bg-violet-500/20 text-violet-100"
         headline={
-          promptLoading ? "Caricamento…" : activePrompt?.title || activePrompt?.id || "Nessun prompt attivo"
-        }
-        action={
-          <select
-            id="base-prompt-select"
-            className="w-36 truncate rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-violet-300/70 focus:ring-offset-2 focus:ring-offset-zinc-900"
-            value={promptState?.promptId || ""}
-            onChange={handlePromptChange}
-            disabled={promptLoading || (!promptOptions.length && !promptState?.promptId)}
-            aria-label="Seleziona prompt"
-          >
-            <option value="">Nessun prompt</option>
-            {promptOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.title || option.id}
-              </option>
-            ))}
-          </select>
+          promptLoading
+            ? "Caricamento…"
+            : activePrompt?.title || activePrompt?.id || promptState?.promptId || "Nessun prompt attivo"
         }
       />
 

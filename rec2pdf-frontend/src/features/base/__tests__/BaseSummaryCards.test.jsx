@@ -1,5 +1,4 @@
 import { render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import BaseSummaryCards from "../BaseSummaryCards.jsx";
 import { AppContext } from "../../../hooks/useAppContext.jsx";
 
@@ -23,8 +22,6 @@ const buildContextValue = (overrides = {}) => ({
     { id: "prompt-2", title: "Prompt Review" },
   ],
   promptState: { promptId: "prompt-1" },
-  handleSelectPromptTemplate: vi.fn(),
-  handleClearPromptSelection: vi.fn(),
   activePrompt: {
     id: "prompt-1",
     title: "Prompt Strategia",
@@ -76,24 +73,9 @@ describe("BaseSummaryCards", () => {
     expect(within(profileCard).queryByText("template-letter")).not.toBeInTheDocument();
   });
 
-  it("allows switching and clearing the active prompt", async () => {
-    const user = userEvent.setup();
-    const handlers = {
-      handleSelectPromptTemplate: vi.fn(),
-      handleClearPromptSelection: vi.fn(),
-    };
+  it("does not render prompt selection controls", () => {
+    renderCards();
 
-    renderCards(handlers);
-
-    const select = screen.getByRole("combobox", { name: /prompt/i });
-    expect(select).toHaveValue("prompt-1");
-
-    await user.selectOptions(select, "prompt-2");
-    expect(handlers.handleSelectPromptTemplate).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "prompt-2" }),
-    );
-
-    await user.selectOptions(select, "");
-    expect(handlers.handleClearPromptSelection).toHaveBeenCalled();
+    expect(screen.queryByRole("combobox", { name: /prompt/i })).not.toBeInTheDocument();
   });
 });
