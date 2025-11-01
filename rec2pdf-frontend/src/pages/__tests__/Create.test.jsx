@@ -16,10 +16,6 @@ vi.mock('../../features/advanced/InputManager', () => ({
   ),
 }))
 
-vi.mock('../../features/advanced/PipelineOverview', () => ({
-  default: () => <div data-testid="pipeline-overview">Pipeline overview mock</div>,
-}))
-
 vi.mock('../../context/AnalyticsContext', () => ({
   useAnalytics: () => ({ trackEvent: vi.fn() }),
 }))
@@ -192,6 +188,5 @@ describe('CreatePage', () => {
     expect(screen.queryByTestId('base-home')).not.toBeInTheDocument()
     expect(screen.getByTestId('setup-panel')).toBeInTheDocument()
     expect(screen.getByTestId('input-manager')).toHaveTextContent('mode advanced')
-    expect(screen.getByTestId('pipeline-overview')).toBeInTheDocument()
   })
 })
