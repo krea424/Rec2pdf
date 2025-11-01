@@ -3,7 +3,7 @@
 const path = require('path');
 const fs = require('fs/promises');
 const { existsSync } = require('fs');
-const { randomUUID } = require('crypto');
+const { randomUUID, createHash } = require('crypto');
 const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
 const yaml = require('js-yaml');
@@ -17,16 +17,20 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 loadEnv();
 
+const PROJECT_SCOPE_NAMESPACE = 'rec2pdf:knowledge:project:';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const args = process.argv.slice(2);
 const workspaceId = parseWorkspaceId(args);
-const projectId = parseProjectId(args);
+const rawProjectId = parseProjectId(args);
+const { canonicalId: projectScopeId, originalId: projectOriginalId } = resolveProjectScopeIdentifiers(rawProjectId);
 
 if (!workspaceId) {
     console.error('Errore: specifica il workspace tramite --workspaceId <id>');
     process.exit(1);
 }
 
-const knowledgePathSegments = projectId ? [workspaceId, projectId] : [workspaceId];
+const knowledgePathSegments = projectOriginalId ? [workspaceId, projectOriginalId] : [workspaceId];
 const knowledgeDirCandidates = [
     path.resolve(PROJECT_ROOT, 'knowledge_sources', ...knowledgePathSegments),
     path.resolve(PROJECT_ROOT, '..', 'knowledge_sources', ...knowledgePathSegments)
@@ -36,7 +40,7 @@ const knowledgeDir = knowledgeDirCandidates.find((candidate) => existsSync(candi
 
 if (!knowledgeDir) {
     console.error(
-        `Errore: impossibile trovare i contenuti per ${projectId ? `il progetto ${projectId} del ` : ''}` +
+        `Errore: impossibile trovare i contenuti per ${projectOriginalId ? `il progetto ${projectOriginalId} del ` : ''}` +
         `workspace ${workspaceId}. Crea knowledge_sources/${knowledgePathSegments.join('/')}/ in rec2pdf-backend/ ` +
         `oppure nella root del progetto con i file da indicizzare.`
     );
@@ -94,11 +98,12 @@ const BATCH_SIZE = 50;
             const fileChunks = createChunks(normalized, CHUNK_SIZE, CHUNK_OVERLAP).map((chunkContent, index) => ({
                 id: randomUUID(),
                 workspace_id: workspaceId,
-                project_id: projectId || null,
+                project_id: projectScopeId || null,
                 content: chunkContent,
                 metadata: {
                     ...metadata,
-                    projectId: projectId || null,
+                    projectId: projectScopeId || null,
+                    projectOriginalId: projectOriginalId || null,
                 },
                 order: index
             }));
@@ -143,9 +148,9 @@ const BATCH_SIZE = 50;
             console.log(`Inseriti ${processed}/${chunks.length} chunk...`);
         }
 
-        if (projectId) {
+        if (projectScopeId) {
             console.log(
-                `Completato: ${processed} chunk salvati per il progetto ${projectId} del workspace ${workspaceId}.`
+                `Completato: ${processed} chunk salvati per il progetto ${projectOriginalId || projectScopeId} del workspace ${workspaceId}.`
             );
         } else {
             console.log(`Completato: ${processed} chunk salvati per il workspace ${workspaceId}.`);
@@ -226,6 +231,57 @@ function parseEmbeddingProvider(args) {
         }
     }
     return sanitizeAiProviderInput(provider);
+}
+
+function sanitizeProjectIdentifier(value) {
+    if (Array.isArray(value) && value.length) {
+        return sanitizeProjectIdentifier(value[0]);
+    }
+    if (value === null || value === undefined) {
+        return '';
+    }
+    const raw = typeof value === 'string' ? value : String(value);
+    const trimmed = raw.trim();
+    if (!trimmed) {
+        return '';
+    }
+    const lowered = trimmed.toLowerCase();
+    if (lowered === 'null' || lowered === 'undefined' || trimmed === '[object Object]') {
+        return '';
+    }
+    return trimmed;
+}
+
+function deterministicUuidFromString(value) {
+    const hash = createHash('sha1').update(PROJECT_SCOPE_NAMESPACE).update(value).digest();
+    const bytes = Buffer.from(hash.subarray(0, 16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = bytes.toString('hex');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function canonicalizeProjectScopeId(value) {
+    const sanitized = sanitizeProjectIdentifier(value);
+    if (!sanitized) {
+        return '';
+    }
+    const normalized = sanitized.toLowerCase();
+    if (UUID_REGEX.test(normalized)) {
+        return normalized;
+    }
+    return deterministicUuidFromString(normalized);
+}
+
+function resolveProjectScopeIdentifiers(value) {
+    const sanitized = sanitizeProjectIdentifier(value);
+    if (!sanitized) {
+        return { canonicalId: '', originalId: '' };
+    }
+    return {
+        canonicalId: canonicalizeProjectScopeId(sanitized),
+        originalId: sanitized,
+    };
 }
 
 async function collectSourceFiles(dir, baseDir) {

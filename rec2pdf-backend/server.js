@@ -84,6 +84,45 @@ const LOGO_CONTENT_TYPE_MAP = new Map([
 const CONTEXT_SEPARATOR = '\n\n---\n\n';
 const CONTEXT_QUERY_MAX_CHARS = 4000;
 
+const PROJECT_SCOPE_NAMESPACE = 'rec2pdf:knowledge:project:';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const formatUuidFromBytes = (bytes) => {
+  const hex = Buffer.from(bytes).toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+const deterministicUuidFromString = (value) => {
+  const hash = crypto.createHash('sha1').update(PROJECT_SCOPE_NAMESPACE).update(value).digest();
+  const bytes = Buffer.from(hash.subarray(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x50; // versione 5
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variante RFC 4122
+  return formatUuidFromBytes(bytes);
+};
+
+const canonicalizeProjectScopeId = (value) => {
+  const sanitized = sanitizeProjectIdentifier(value);
+  if (!sanitized) {
+    return '';
+  }
+  const normalized = sanitized.toLowerCase();
+  if (UUID_REGEX.test(normalized)) {
+    return normalized;
+  }
+  return deterministicUuidFromString(normalized);
+};
+
+const resolveProjectScopeIdentifiers = (value) => {
+  const sanitized = sanitizeProjectIdentifier(value);
+  if (!sanitized) {
+    return { canonicalId: '', originalId: '' };
+  }
+  return {
+    canonicalId: canonicalizeProjectScopeId(sanitized),
+    originalId: sanitized,
+  };
+};
+
 const getWorkspaceIdFromRequest = (req = {}) => {
   const bodyId = typeof req.body?.workspaceId === 'string' ? req.body.workspaceId.trim() : '';
   if (bodyId) {
@@ -123,10 +162,7 @@ const sanitizeProjectIdentifier = (value) => {
   return trimmed;
 };
 
-const sanitizeProjectName = (value) => {
-  const sanitized = sanitizeProjectIdentifier(value);
-  return sanitized;
-};
+const sanitizeProjectName = (value) => sanitizeProjectIdentifier(value);
 
 const extractAiProviderOverrides = (req = {}) => {
   const body = req && typeof req === 'object' ? req.body || {} : {};
@@ -160,7 +196,7 @@ const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => 
     return '';
   }
 
-  const normalizedProjectId = sanitizeProjectIdentifier(options.projectId);
+  const normalizedProjectId = canonicalizeProjectScopeId(options.projectId);
   const matchCountCandidate = Number(options.matchCount);
   const matchCount = Number.isFinite(matchCountCandidate) && matchCountCandidate > 0 ? matchCountCandidate : 4;
 
@@ -2847,7 +2883,10 @@ const extractTextFromKnowledgeFile = async (file) => {
   return '';
 };
 
-const buildKnowledgeMetadata = (file, { ingestionId, chunkIndex, totalChunks, projectId, projectName }) => {
+const buildKnowledgeMetadata = (
+  file,
+  { ingestionId, chunkIndex, totalChunks, projectId, projectName, projectOriginalId }
+) => {
   const originalName = typeof file.originalName === 'string' ? file.originalName : file.originalname;
   const metadata = {
     sourceFile: originalName || path.basename(file.path),
@@ -2865,6 +2904,7 @@ const buildKnowledgeMetadata = (file, { ingestionId, chunkIndex, totalChunks, pr
   }
   metadata.projectId = projectId || null;
   metadata.projectName = projectName || null;
+  metadata.projectOriginalId = projectOriginalId || null;
   return metadata;
 };
 
@@ -2910,13 +2950,22 @@ const cleanupKnowledgeFiles = async (files = []) => {
 };
 
 const processKnowledgeTask = async (task = {}) => {
-  const { workspaceId, projectId = '', projectName = '', files = [], ingestionId } = task;
+  const {
+    workspaceId,
+    projectId = '',
+    projectOriginalId = '',
+    projectName = '',
+    files = [],
+    ingestionId,
+  } = task;
   if (!workspaceId || !Array.isArray(files) || !files.length) {
     await cleanupKnowledgeFiles(files);
     return;
   }
 
-  const normalizedProjectId = sanitizeProjectIdentifier(projectId);
+  const scopeIdentifiers = resolveProjectScopeIdentifiers(projectId || projectOriginalId);
+  const normalizedProjectId = scopeIdentifiers.canonicalId;
+  const normalizedProjectOriginalId = sanitizeProjectIdentifier(projectOriginalId) || scopeIdentifiers.originalId;
   const normalizedProjectName = sanitizeProjectName(projectName);
 
   if (!supabase) {
@@ -2974,6 +3023,7 @@ const processKnowledgeTask = async (task = {}) => {
             totalChunks: chunks.length,
             projectId: normalizedProjectId || null,
             projectName: normalizedProjectName || null,
+            projectOriginalId: normalizedProjectOriginalId || null,
           }),
         }));
         const { error } = await supabase.from('knowledge_chunks').insert(payload);
@@ -2982,7 +3032,7 @@ const processKnowledgeTask = async (task = {}) => {
         }
       }
       const projectLabel = normalizedProjectId
-        ? ` (progetto ${normalizedProjectName || normalizedProjectId})`
+        ? ` (progetto ${normalizedProjectName || normalizedProjectOriginalId || normalizedProjectId})`
         : '';
       console.log(`📚 Knowledge base aggiornata${projectLabel} (${fileLabel} → ${chunks.length} chunk)`);
     } catch (error) {
@@ -3997,7 +4047,7 @@ app.post(
             : typeof req.query?.workspaceProjectId === 'string'
               ? req.query.workspaceProjectId
               : '';
-    const projectId = sanitizeProjectIdentifier(rawProjectId);
+    const requestedProjectId = sanitizeProjectIdentifier(rawProjectId);
     const rawProjectName =
       typeof req.body?.projectName === 'string'
         ? req.body.projectName
@@ -4008,7 +4058,7 @@ app.post(
             : typeof req.query?.workspaceProjectName === 'string'
               ? req.query.workspaceProjectName
               : '';
-    const projectName = sanitizeProjectName(rawProjectName);
+    const requestedProjectName = sanitizeProjectName(rawProjectName);
 
     if (!workspaceId) {
       await cleanupKnowledgeFiles(uploadedFiles);
@@ -4053,12 +4103,13 @@ app.post(
       return res.status(500).json({ ok: false, message: workspaceError?.message || 'Recupero workspace non riuscito' });
     }
 
-    let knowledgeProjectId = '';
+    let knowledgeProjectScopeId = '';
+    let knowledgeProjectOriginalId = '';
     let knowledgeProjectName = '';
-    if (workspace && (projectId || projectName)) {
+    if (workspace && (requestedProjectId || requestedProjectName)) {
       const projects = Array.isArray(workspace.projects) ? workspace.projects : [];
-      const normalizedProjectId = sanitizeProjectIdentifier(projectId);
-      const normalizedProjectName = sanitizeProjectName(projectName);
+      const normalizedProjectId = sanitizeProjectIdentifier(requestedProjectId);
+      const normalizedProjectName = sanitizeProjectName(requestedProjectName);
       const projectById = normalizedProjectId
         ? projects.find((proj) => sanitizeProjectIdentifier(proj?.id) === normalizedProjectId)
         : null;
@@ -4077,10 +4128,14 @@ app.post(
         console.warn(
           `⚠️  Progetto ${normalizedProjectId} non trovato nel workspace ${workspaceId}: procedo utilizzando l'ID fornito.`
         );
-        knowledgeProjectId = normalizedProjectId;
+        const fallbackScope = resolveProjectScopeIdentifiers(normalizedProjectId);
+        knowledgeProjectScopeId = fallbackScope.canonicalId;
+        knowledgeProjectOriginalId = fallbackScope.originalId || normalizedProjectId;
         knowledgeProjectName = normalizedProjectName || '';
       } else {
-        knowledgeProjectId = sanitizeProjectIdentifier(targetProject.id) || '';
+        const resolvedScope = resolveProjectScopeIdentifiers(targetProject.id);
+        knowledgeProjectScopeId = resolvedScope.canonicalId;
+        knowledgeProjectOriginalId = resolvedScope.originalId;
         knowledgeProjectName = sanitizeProjectName(targetProject.name) || normalizedProjectName || '';
       }
     }
@@ -4095,7 +4150,8 @@ app.post(
 
     enqueueKnowledgeIngestion({
       workspaceId: workspaceId.trim(),
-      projectId: knowledgeProjectId || null,
+      projectId: knowledgeProjectScopeId || null,
+      projectOriginalId: knowledgeProjectOriginalId || null,
       projectName: knowledgeProjectName || null,
       files: normalizedFiles,
       ingestionId,
@@ -4105,7 +4161,8 @@ app.post(
       ok: true,
       ingestionId,
       filesQueued: normalizedFiles.length,
-      projectId: knowledgeProjectId || null,
+      projectId: knowledgeProjectOriginalId || null,
+      projectScopeId: knowledgeProjectScopeId || null,
       projectName: knowledgeProjectName || null,
       message: 'Ingestion avviata: la knowledge base verrà aggiornata in background.',
     });
@@ -4121,7 +4178,7 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
       : typeof req.query?.workspaceProjectId === 'string'
         ? req.query.workspaceProjectId
         : '';
-  const projectId = sanitizeProjectIdentifier(rawProjectId);
+  const requestedProjectScopeId = canonicalizeProjectScopeId(rawProjectId);
 
   if (!workspaceId) {
     return res.status(400).json({ ok: false, message: 'workspaceId obbligatorio' });
@@ -4154,8 +4211,8 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
       .select('metadata, created_at, project_id')
       .eq('workspace_id', workspaceId.trim());
 
-    if (projectId) {
-      query = query.or(`project_id.eq.${projectId},project_id.is.null`);
+    if (requestedProjectScopeId) {
+      query = query.or(`project_id.eq.${requestedProjectScopeId},project_id.is.null`);
     } else {
       query = query.is('project_id', null);
     }
@@ -4173,12 +4230,12 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
     const projectLookup = new Map(
       (Array.isArray(workspace?.projects) ? workspace.projects : [])
         .map((proj) => {
-          const identifier = sanitizeProjectIdentifier(proj?.id);
-          if (!identifier) {
+          const { canonicalId, originalId } = resolveProjectScopeIdentifiers(proj?.id);
+          if (!canonicalId) {
             return null;
           }
-          const label = sanitizeProjectName(proj?.name) || identifier;
-          return [identifier, label];
+          const label = sanitizeProjectName(proj?.name) || originalId;
+          return [canonicalId, { label, originalId }];
         })
         .filter(Boolean)
     );
@@ -4190,11 +4247,13 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
       if (!fileName) {
         return;
       }
-      const rowProjectId = typeof row?.project_id === 'string' && row.project_id ? row.project_id : null;
+      const rowProjectId = typeof row?.project_id === 'string' && row.project_id ? row.project_id.toLowerCase() : null;
       const metadataProjectId =
-        typeof metadata?.projectId === 'string' && metadata.projectId ? metadata.projectId : null;
+        typeof metadata?.projectId === 'string' && metadata.projectId
+          ? canonicalizeProjectScopeId(metadata.projectId)
+          : null;
       const effectiveProjectId = rowProjectId || metadataProjectId || null;
-      if (!projectId && effectiveProjectId) {
+      if (!requestedProjectScopeId && effectiveProjectId) {
         return;
       }
       const ingestedAt = metadata?.ingestedAt || row?.created_at || null;
@@ -4204,6 +4263,20 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
 
       const key = `${effectiveProjectId || 'workspace'}::${fileName}`;
 
+      const metadataOriginalProjectId =
+        typeof metadata?.projectOriginalId === 'string'
+          ? sanitizeProjectIdentifier(metadata.projectOriginalId)
+          : '';
+      const legacyProjectId =
+        !metadataOriginalProjectId && typeof metadata?.projectId === 'string'
+          ? sanitizeProjectIdentifier(metadata.projectId)
+          : '';
+      const lookupEntry = effectiveProjectId ? projectLookup.get(effectiveProjectId) : null;
+      const projectOriginalId = metadataOriginalProjectId || lookupEntry?.originalId || legacyProjectId || null;
+      const projectDisplayName = effectiveProjectId
+        ? lookupEntry?.label || sanitizeProjectName(metadata?.projectName) || null
+        : null;
+
       if (!aggregated.has(key)) {
         aggregated.set(key, {
           name: fileName,
@@ -4211,10 +4284,9 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
           lastIngestedAt: ingestedAt,
           mimeType: mimeType || null,
           size: size || null,
-          projectId: effectiveProjectId,
-          projectName: effectiveProjectId
-            ? projectLookup.get(effectiveProjectId) || sanitizeProjectName(metadata?.projectName) || null
-            : null,
+          projectId: projectOriginalId,
+          projectScopeId: effectiveProjectId,
+          projectName: projectDisplayName,
         });
       }
 
