@@ -158,6 +158,17 @@ const buildSpeakerLabelVariants = (label = '') => {
     variants.add(spaced.toLowerCase());
     variants.add(spaced.replace(/\b\w/g, (c) => c.toUpperCase()));
   }
+  const speakerMatch = normalized.match(/speaker[_\s-]*(\d+)/i);
+  if (speakerMatch) {
+    const rawNumber = speakerMatch[1] || '';
+    const parsed = parseInt(rawNumber, 10);
+    if (Number.isFinite(parsed)) {
+      variants.add(`Speaker ${parsed}`);
+      if (parsed === 0 || /^0/.test(rawNumber)) {
+        variants.add(`Speaker ${parsed + 1}`);
+      }
+    }
+  }
   return Array.from(variants);
 };
 
