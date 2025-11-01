@@ -164,6 +164,32 @@ const sanitizeProjectIdentifier = (value) => {
 
 const sanitizeProjectName = (value) => sanitizeProjectIdentifier(value);
 
+const sanitizeKnowledgeFileName = (value) => {
+  if (Array.isArray(value) && value.length) {
+    for (const candidate of value) {
+      const sanitized = sanitizeKnowledgeFileName(candidate);
+      if (sanitized) {
+        return sanitized;
+      }
+    }
+    return '';
+  }
+  if (value === null || value === undefined) {
+    return '';
+  }
+  const raw = typeof value === 'string' ? value : String(value);
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return '';
+  }
+  const normalized = trimmed.replace(/[\r\n]+/g, ' ').trim();
+  const baseName = path.basename(normalized);
+  if (!baseName || baseName === '.' || baseName === '..') {
+    return '';
+  }
+  return baseName;
+};
+
 const extractAiProviderOverrides = (req = {}) => {
   const body = req && typeof req === 'object' ? req.body || {} : {};
   const query = req && typeof req === 'object' ? req.query || {} : {};
@@ -4316,6 +4342,144 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
     res.json({ ok: true, files });
   } catch (error) {
     res.status(500).json({ ok: false, message: error?.message || 'Errore inatteso nella lettura della knowledge base.' });
+  }
+});
+
+app.delete('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
+  const paramId = typeof req.params?.workspaceId === 'string' ? req.params.workspaceId.trim() : '';
+  const workspaceId = paramId || getWorkspaceIdFromRequest(req);
+
+  if (!workspaceId) {
+    return res.status(400).json({ ok: false, message: 'workspaceId obbligatorio' });
+  }
+
+  if (!supabase) {
+    return res
+      .status(503)
+      .json({ ok: false, message: 'Supabase non configurato: impossibile rimuovere la knowledge base.' });
+  }
+
+  const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+  if (!ownerId) {
+    return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
+  }
+
+  let workspace;
+  try {
+    workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
+    if (!workspace) {
+      return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
+    }
+  } catch (workspaceError) {
+    return res.status(500).json({ ok: false, message: workspaceError?.message || 'Recupero workspace non riuscito' });
+  }
+
+  const fileCandidates = [
+    req.body?.fileName,
+    req.body?.file,
+    req.body?.name,
+    req.query?.fileName,
+    req.query?.file,
+    req.query?.name,
+  ];
+
+  let targetFileName = '';
+  for (const candidate of fileCandidates) {
+    const sanitized = sanitizeKnowledgeFileName(candidate);
+    if (sanitized) {
+      targetFileName = sanitized;
+      break;
+    }
+  }
+
+  if (!targetFileName) {
+    return res.status(400).json({ ok: false, message: 'fileName obbligatorio' });
+  }
+
+  const projectCandidates = [
+    req.body?.projectScopeId,
+    req.body?.projectId,
+    req.body?.workspaceProjectId,
+    req.query?.projectScopeId,
+    req.query?.projectId,
+    req.query?.workspaceProjectId,
+  ];
+
+  let requestedProjectId = '';
+  for (const candidate of projectCandidates) {
+    const sanitized = sanitizeProjectIdentifier(candidate);
+    if (sanitized) {
+      requestedProjectId = sanitized;
+      break;
+    }
+  }
+
+  const requestedProjectScopeId = canonicalizeProjectScopeId(requestedProjectId);
+
+  const applyBaseFilters = (query) => {
+    let filtered = query.eq('workspace_id', workspaceId.trim());
+    if (requestedProjectScopeId) {
+      filtered = filtered.eq('project_id', requestedProjectScopeId);
+    } else {
+      filtered = filtered.is('project_id', null);
+    }
+    return filtered;
+  };
+
+  const deleteByMetadataKey = async (column) => {
+    const { data, error } = await applyBaseFilters(supabase.from('knowledge_chunks').delete())
+      .filter(column, 'eq', targetFileName)
+      .select('id');
+    if (error) {
+      throw new Error(error.message || 'Eliminazione knowledge non riuscita');
+    }
+    return Array.isArray(data) ? data : [];
+  };
+
+  try {
+    let removedRows = await deleteByMetadataKey('metadata->>sourceFile');
+    if (!removedRows.length) {
+      removedRows = await deleteByMetadataKey('metadata->>source');
+    }
+
+    if (!removedRows.length) {
+      return res.status(404).json({ ok: false, message: 'Documento knowledge non trovato.' });
+    }
+
+    const projectLookup = new Map(
+      (Array.isArray(workspace?.projects) ? workspace.projects : [])
+        .map((proj) => {
+          const { canonicalId, originalId } = resolveProjectScopeIdentifiers(proj?.id);
+          if (!canonicalId) {
+            return null;
+          }
+          const label = sanitizeProjectName(proj?.name) || originalId;
+          return [canonicalId, { label, originalId }];
+        })
+        .filter(Boolean)
+    );
+
+    const projectDetails = requestedProjectScopeId ? projectLookup.get(requestedProjectScopeId) : null;
+    const removedChunks = removedRows.length;
+    const baseMessage =
+      removedChunks === 1
+        ? `Documento "${targetFileName}" rimosso dalla knowledge base.`
+        : `Rimossi ${removedChunks} chunk del documento "${targetFileName}".`;
+
+    return res.json({
+      ok: true,
+      removed: removedChunks,
+      fileName: targetFileName,
+      projectScopeId: requestedProjectScopeId || null,
+      projectId: projectDetails?.originalId || null,
+      projectName: projectDetails?.label || null,
+      message: baseMessage,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: error?.message || 'Impossibile rimuovere il documento dalla knowledge base.',
+    });
   }
 });
 

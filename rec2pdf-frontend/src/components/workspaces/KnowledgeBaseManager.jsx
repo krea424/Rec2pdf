@@ -63,6 +63,8 @@ const KnowledgeBaseManager = ({ workspaceId, projects = [] }) => {
   const [successMessage, setSuccessMessage] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deletingKey, setDeletingKey] = useState("");
   const inputRef = useRef(null);
 
   const backendUrl = useMemo(
@@ -88,6 +90,7 @@ const KnowledgeBaseManager = ({ workspaceId, projects = [] }) => {
       if (!silent) {
         setListError("");
       }
+      setDeleteError("");
       setLoading(true);
       try {
         const searchParams = new URLSearchParams();
@@ -124,6 +127,7 @@ const KnowledgeBaseManager = ({ workspaceId, projects = [] }) => {
     setFiles([]);
     setSuccessMessage("");
     setUploadError("");
+    setDeleteError("");
     if (canManage) {
       loadKnowledge({ silent: true });
     } else {
@@ -151,6 +155,7 @@ const KnowledgeBaseManager = ({ workspaceId, projects = [] }) => {
       setUploading(true);
       setUploadError("");
       setSuccessMessage("");
+      setDeleteError("");
       try {
         const formData = new FormData();
         selected.forEach((file) => {
@@ -229,6 +234,47 @@ const KnowledgeBaseManager = ({ workspaceId, projects = [] }) => {
       handleFilesSelected(event.target.files || []);
     },
     [handleFilesSelected],
+  );
+
+  const handleDeleteFile = useCallback(
+    async (file) => {
+      if (!file || !file.name || !canManage) {
+        return;
+      }
+      const entryKey = `${file.projectScopeId || "workspace"}::${file.name}`;
+      setDeletingKey(entryKey);
+      setDeleteError("");
+      setSuccessMessage("");
+      try {
+        const payload = { fileName: file.name };
+        if (file.projectScopeId) {
+          payload.projectScopeId = file.projectScopeId;
+        }
+        const result = await fetchBody(
+          `${backendUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/knowledge`,
+          {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+        if (result.ok) {
+          const scopeLabel = file.projectName || file.projectId || (file.projectScopeId ? "Progetto" : "Workspace");
+          const message =
+            result.data?.message || `Documento "${file.name}" rimosso dalla knowledge base.`;
+          setSuccessMessage(scopeLabel ? `${message} (${scopeLabel})` : message);
+          await loadKnowledge({ silent: true });
+        } else {
+          const message = result.data?.message || result.raw || "Impossibile rimuovere il documento.";
+          setDeleteError(message);
+        }
+      } catch (error) {
+        setDeleteError(error?.message || "Errore durante la rimozione del documento.");
+      } finally {
+        setDeletingKey("");
+      }
+    },
+    [backendUrl, canManage, fetchBody, loadKnowledge, workspaceId],
   );
 
   useEffect(() => {
@@ -353,10 +399,11 @@ const KnowledgeBaseManager = ({ workspaceId, projects = [] }) => {
           ) : (
             <ul className="divide-y divide-surface-800/60">
               {files.map((file) => {
+                const entryKey = `${file.projectScopeId || "workspace"}::${file.name}`;
                 const formattedSize = formatBytes(file.size);
                 const formattedDate = formatDateTime(file.lastIngestedAt);
                 return (
-                  <li key={file.name} className="flex items-start justify-between gap-4 py-3">
+                  <li key={entryKey} className="flex items-start justify-between gap-4 py-3">
                     <div>
                       <div className="text-sm font-medium text-surface-100">{file.name}</div>
                       <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] uppercase tracking-wide text-surface-500">
@@ -375,11 +422,19 @@ const KnowledgeBaseManager = ({ workspaceId, projects = [] }) => {
                     </div>
                     <button
                       type="button"
-                      disabled
-                      title="Rimozione non ancora disponibile"
-                      className="flex h-8 w-8 items-center justify-center rounded-full border border-surface-700/70 text-surface-500"
+                      onClick={() => handleDeleteFile(file)}
+                      disabled={!canManage || deletingKey === entryKey || loading}
+                      title="Rimuovi il documento dalla knowledge base"
+                      className={classNames(
+                        "flex h-8 w-8 items-center justify-center rounded-full border transition",
+                        deletingKey === entryKey
+                          ? "border-amber-400 text-amber-300"
+                          : "border-surface-700/70 text-surface-400 hover:border-rose-400 hover:text-rose-300",
+                        (!canManage || loading) && "cursor-not-allowed opacity-60",
+                      )}
                     >
                       <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      <span className="sr-only">Elimina documento</span>
                     </button>
                   </li>
                 );
@@ -387,6 +442,7 @@ const KnowledgeBaseManager = ({ workspaceId, projects = [] }) => {
             </ul>
           )}
         </div>
+        {deleteError ? <div className="px-4 pb-3 text-xs text-rose-300">{deleteError}</div> : null}
       </div>
     </div>
   );

@@ -63,4 +63,65 @@ describe("KnowledgeBaseManager", () => {
       expect(files[0].name).toBe("nota.txt");
     });
   });
+
+  it("permette di eliminare un documento dalla knowledge base", async () => {
+    const knowledgeResponses = [
+      {
+        ok: true,
+        data: {
+          files: [
+            {
+              name: "executive.txt",
+              chunkCount: 6,
+              size: 2048,
+              lastIngestedAt: "2024-02-18T10:00:00.000Z",
+              projectScopeId: null,
+            },
+          ],
+        },
+      },
+      { ok: true, data: { files: [] } },
+    ];
+
+    const fetchBody = vi.fn((url, options = {}) => {
+      if (options.method === "DELETE") {
+        return Promise.resolve({
+          ok: true,
+          data: { message: "Documento eliminato", removed: 6 },
+        });
+      }
+      if (url.includes("/knowledge")) {
+        const response = knowledgeResponses.shift();
+        return Promise.resolve(response || { ok: true, data: { files: [] } });
+      }
+      return Promise.resolve({ ok: true, data: {} });
+    });
+
+    renderWithContext(<KnowledgeBaseManager workspaceId="ws-1" projects={[]} />, { fetchBody });
+
+    await waitFor(() => {
+      expect(fetchBody).toHaveBeenCalledWith(
+        "http://localhost/api/workspaces/ws-1/knowledge",
+        { method: "GET" },
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("executive.txt")).toBeInTheDocument();
+    });
+
+    const deleteButton = screen.getByRole("button", { name: /Elimina documento/i });
+    await userEvent.click(deleteButton);
+
+    await waitFor(() => {
+      expect(fetchBody.mock.calls.some(([, options]) => options?.method === "DELETE")).toBe(true);
+    });
+
+    const deleteCall = fetchBody.mock.calls.find(([, options]) => options?.method === "DELETE");
+    expect(deleteCall[0]).toBe("http://localhost/api/workspaces/ws-1/knowledge");
+    expect(deleteCall[1].headers["Content-Type"]).toBe("application/json");
+    const payload = JSON.parse(deleteCall[1].body);
+    expect(payload).toMatchObject({ fileName: "executive.txt" });
+    expect(payload.projectScopeId).toBeUndefined();
+  });
 });
