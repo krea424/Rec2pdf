@@ -32,16 +32,18 @@ const buildContextValue = (overrides = {}) => ({
     cueCards: [{ key: "agenda" }, { key: "summary" }],
   },
   promptCompletedCues: ["agenda"],
-  recording: false,
-  busy: false,
-  elapsed: 42,
-  fmtTime: (value) => `00:00:${String(value).padStart(2, "0")}`,
-  audioBlob: { name: "memo.m4a", size: 1024, type: "audio/m4a" },
-  fmtBytes: (bytes) => `${bytes} B`,
-  mime: "audio/m4a",
-  lastMarkdownUpload: { name: "note.md", size: 2048 },
-  lastTextUpload: null,
-  pipelineComplete: false,
+  activeWorkspaceProfile: {
+    id: "profile-1",
+    label: "Profilo Strategia",
+    slug: "strategia",
+    destDir: "strategy",
+    promptId: "prompt-2",
+    pdfTemplate: "template-letter",
+  },
+  workspaceProfileSelection: {
+    workspaceId: "ws-1",
+    profileId: "profile-1",
+  },
   ...overrides,
 });
 
@@ -55,22 +57,23 @@ const renderCards = (valueOverrides = {}) => {
 };
 
 describe("BaseSummaryCards", () => {
-  it("renders workspace, project, prompt and session summaries", () => {
+  it("renders workspace, project, prompt and profile summaries", () => {
     renderCards();
 
     expect(screen.getByText("Workspace Alpha")).toBeInTheDocument();
     expect(screen.getByText("Kickoff")).toBeInTheDocument();
+    expect(screen.queryByText("Input sessione")).not.toBeInTheDocument();
 
     const promptCard = screen.getByText("Prompt guida").closest("article");
     expect(promptCard).not.toBeNull();
     const promptMatches = within(promptCard).getAllByText("Prompt Strategia");
     expect(promptMatches[0]).toBeInTheDocument();
 
-    const sessionCard = screen.getByText("Input sessione").closest("article");
-    expect(sessionCard).not.toBeNull();
-    expect(within(sessionCard).getByText("Audio caricato")).toBeInTheDocument();
-    expect(within(sessionCard).getAllByText(/memo\.m4a/i)[0]).toBeInTheDocument();
-    expect(within(sessionCard).getAllByText(/note\.md/i)[0]).toBeInTheDocument();
+    const profileCard = screen.getByText("Profilo").closest("article");
+    expect(profileCard).not.toBeNull();
+    expect(within(profileCard).getByText("Profilo Strategia")).toBeInTheDocument();
+    expect(within(profileCard).getByText("strategia")).toBeInTheDocument();
+    expect(within(profileCard).getByText("template-letter")).toBeInTheDocument();
   });
 
   it("allows switching and clearing the active prompt", async () => {
