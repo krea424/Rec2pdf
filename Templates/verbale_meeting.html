@@ -144,6 +144,12 @@
         </div>
         $endif$
 
+        $if(body)$
+        <div class="additional-content">
+            $body$
+        </div>
+        $endif$
+
         <!--
             Trascrizione.
             metadata.transcript: elenco di interventi
@@ -193,12 +199,6 @@
             $for(metadata.footer.notes)$
             <div class="footer-note">$metadata.footer.notes$</div>
             $endfor$
-        </div>
-        $endif$
-
-        $if(body)$
-        <div class="additional-content">
-            $body$
         </div>
         $endif$
     </div>
