@@ -23,6 +23,8 @@ const SetupPanel = ({
   canStartPipeline,
   HeaderIcon,
 }) => {
+  // TODO(Task 5): Retire the executive hero, pipeline progress, and highlight
+  // cards when advanced mode becomes parameters-only.
   return (
     <section className="mt-6 space-y-4">
       <div
