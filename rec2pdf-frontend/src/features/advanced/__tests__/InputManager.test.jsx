@@ -107,8 +107,6 @@ const renderInputManager = (override = {}) =>
         boardroomSecondarySurface="secondary"
         boardroomChipSurface="chip"
         boardroomInfoSurface="info"
-        trackEvent={vi.fn()}
-        audioDownloadExtension="m4a"
       />
     </MemoryRouter>
   );
@@ -135,5 +133,14 @@ describe("InputManager", () => {
     renderInputManager({ pipelineComplete: true });
     expect(screen.getByText(/pipeline completata/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /vai alla library/i })).toBeInTheDocument();
+  });
+
+  it("does not show clip playback or reset controls", () => {
+    renderInputManager();
+
+    expect(screen.queryByText(/clip caricata/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/nessuna clip disponibile/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /scarica audio/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /nuova sessione/i })).not.toBeInTheDocument();
   });
 });

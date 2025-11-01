@@ -2,7 +2,6 @@ import { useMemo, useRef } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
   CheckCircle2,
-  Download,
   FileCode,
   FileText,
   Info,
@@ -23,8 +22,6 @@ const InputManager = ({
   boardroomSecondarySurface,
   boardroomChipSurface,
   boardroomInfoSurface,
-  trackEvent,
-  audioDownloadExtension,
 }) => {
   const {
     activeWorkspaceProfiles = [],
@@ -493,60 +490,6 @@ const InputManager = ({
           )}
         </div>
       </div>
-
-      <div className="mt-4 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm text-zinc-400">Clip caricata</div>
-          <div className="text-xs text-zinc-500">
-            {context.mime || "—"} · {context.fmtBytes(context.audioBlob?.size)}
-          </div>
-        </div>
-        <div>
-          {context.audioUrl ? (
-            <audio controls src={context.audioUrl} className="w-full" />
-          ) : (
-            <div className="text-sm text-zinc-500">
-              Nessuna clip disponibile.
-            </div>
-          )}
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <a
-            href={context.audioUrl}
-            download={`recording.${audioDownloadExtension}`}
-            className={classNames(
-              "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium",
-              themes[theme].button,
-              !context.audioUrl && "pointer-events-none opacity-50"
-            )}
-            onClick={() => {
-              if (!context.audioUrl) {
-                return;
-              }
-              trackEvent("pipeline.export_audio", {
-                mime: context.mime || "",
-                size: context.audioBlob?.size ?? 0,
-                extension: audioDownloadExtension,
-              });
-            }}
-          >
-            <Download className="h-4 w-4" /> Scarica audio
-          </a>
-          <button
-            type="button"
-            onClick={context.resetAll}
-            disabled={context.busy}
-            className={classNames(
-              "flex items-center gap-2 rounded-lg px-4 py-2 text-sm",
-              themes[theme].button,
-              context.busy && "cursor-not-allowed opacity-60"
-            )}
-          >
-            <RefreshCw className="h-4 w-4" /> Nuova sessione
-          </button>
-        </div>
-      </div>
-
 
       <div
         className={classNames(

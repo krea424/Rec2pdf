@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { useAppContext } from "../hooks/useAppContext";
 import { Button, Toast } from "../components/ui";
 import BaseHome from "../features/base/BaseHome";
-import { useAnalytics } from "../context/AnalyticsContext";
 import InputManager from "../features/advanced/InputManager";
 
 const truncateText = (value, limit = 80) => {
@@ -41,7 +40,7 @@ const ErrorBanner = () => {
   );
 };
 
-const AdvancedCreatePage = ({ context, trackEvent }) => {
+const AdvancedCreatePage = ({ context }) => {
   const { theme, themes } = context;
   const isBoardroom = theme === "boardroom";
   const boardroomPrimarySurface =
@@ -52,13 +51,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
     "border-white/20 bg-white/[0.08] text-white/90";
   const boardroomInfoSurface =
     "border-white/16 bg-white/[0.05] text-white/80";
-  const audioDownloadExtension = useMemo(() => {
-    const mime = context.mime || "";
-    if (mime.includes("webm")) return "webm";
-    if (mime.includes("ogg")) return "ogg";
-    if (mime.includes("wav")) return "wav";
-    return "m4a";
-  }, [context.mime]);
 
   const activeProject = useMemo(
     () =>
@@ -94,8 +86,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
           boardroomSecondarySurface={boardroomSecondarySurface}
           boardroomChipSurface={boardroomChipSurface}
           boardroomInfoSurface={boardroomInfoSurface}
-          trackEvent={trackEvent}
-          audioDownloadExtension={audioDownloadExtension}
         />
       </div>
     </div>
@@ -104,7 +94,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
 
 const CreatePage = () => {
   const context = useAppContext();
-  const { trackEvent } = useAnalytics();
 
   const hasAdvancedAccess =
     typeof context.hasModeFlag === "function" ? context.hasModeFlag("MODE_ADVANCED") : false;
@@ -147,7 +136,7 @@ const CreatePage = () => {
     );
   }
 
-  return <AdvancedCreatePage context={context} trackEvent={trackEvent} />;
+  return <AdvancedCreatePage context={context} />;
 };
 
 export default CreatePage;
