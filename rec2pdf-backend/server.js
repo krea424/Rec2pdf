@@ -84,6 +84,45 @@ const LOGO_CONTENT_TYPE_MAP = new Map([
 const CONTEXT_SEPARATOR = '\n\n---\n\n';
 const CONTEXT_QUERY_MAX_CHARS = 4000;
 
+const PROJECT_SCOPE_NAMESPACE = 'rec2pdf:knowledge:project:';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const formatUuidFromBytes = (bytes) => {
+  const hex = Buffer.from(bytes).toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+const deterministicUuidFromString = (value) => {
+  const hash = crypto.createHash('sha1').update(PROJECT_SCOPE_NAMESPACE).update(value).digest();
+  const bytes = Buffer.from(hash.subarray(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x50; // versione 5
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variante RFC 4122
+  return formatUuidFromBytes(bytes);
+};
+
+const canonicalizeProjectScopeId = (value) => {
+  const sanitized = sanitizeProjectIdentifier(value);
+  if (!sanitized) {
+    return '';
+  }
+  const normalized = sanitized.toLowerCase();
+  if (UUID_REGEX.test(normalized)) {
+    return normalized;
+  }
+  return deterministicUuidFromString(normalized);
+};
+
+const resolveProjectScopeIdentifiers = (value) => {
+  const sanitized = sanitizeProjectIdentifier(value);
+  if (!sanitized) {
+    return { canonicalId: '', originalId: '' };
+  }
+  return {
+    canonicalId: canonicalizeProjectScopeId(sanitized),
+    originalId: sanitized,
+  };
+};
+
 const getWorkspaceIdFromRequest = (req = {}) => {
   const bodyId = typeof req.body?.workspaceId === 'string' ? req.body.workspaceId.trim() : '';
   if (bodyId) {
@@ -103,6 +142,27 @@ const getWorkspaceIdFromRequest = (req = {}) => {
 
   return '';
 };
+
+const sanitizeProjectIdentifier = (value) => {
+  if (Array.isArray(value) && value.length) {
+    return sanitizeProjectIdentifier(value[0]);
+  }
+  if (value === null || value === undefined) {
+    return '';
+  }
+  const raw = typeof value === 'string' ? value : String(value);
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return '';
+  }
+  const lowered = trimmed.toLowerCase();
+  if (lowered === 'null' || lowered === 'undefined' || trimmed === '[object Object]') {
+    return '';
+  }
+  return trimmed;
+};
+
+const sanitizeProjectName = (value) => sanitizeProjectIdentifier(value);
 
 const extractAiProviderOverrides = (req = {}) => {
   const body = req && typeof req === 'object' ? req.body || {} : {};
@@ -136,6 +196,10 @@ const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => 
     return '';
   }
 
+  const normalizedProjectId = canonicalizeProjectScopeId(options.projectId);
+  const matchCountCandidate = Number(options.matchCount);
+  const matchCount = Number.isFinite(matchCountCandidate) && matchCountCandidate > 0 ? matchCountCandidate : 4;
+
   if (!supabase) {
     console.warn('⚠️  Supabase non configurato: impossibile eseguire retrieveRelevantContext.');
     return '';
@@ -164,7 +228,8 @@ const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => 
     const { data, error } = await supabase.rpc('match_knowledge_chunks', {
       query_embedding: embedding,
       match_workspace_id: normalizedWorkspaceId,
-      match_count: 4 // <-- AGGIUNGI QUESTO PARAMETRO
+      match_project_id: normalizedProjectId || null,
+      match_count: matchCount,
     });
 
     if (error) {
@@ -2797,7 +2862,10 @@ const extractTextFromKnowledgeFile = async (file) => {
   return '';
 };
 
-const buildKnowledgeMetadata = (file, { ingestionId, chunkIndex, totalChunks }) => {
+const buildKnowledgeMetadata = (
+  file,
+  { ingestionId, chunkIndex, totalChunks, projectId, projectName, projectOriginalId }
+) => {
   const originalName = typeof file.originalName === 'string' ? file.originalName : file.originalname;
   const metadata = {
     sourceFile: originalName || path.basename(file.path),
@@ -2813,6 +2881,9 @@ const buildKnowledgeMetadata = (file, { ingestionId, chunkIndex, totalChunks }) 
   if (Number.isFinite(file.size)) {
     metadata.size = file.size;
   }
+  metadata.projectId = projectId || null;
+  metadata.projectName = projectName || null;
+  metadata.projectOriginalId = projectOriginalId || null;
   return metadata;
 };
 
@@ -2858,11 +2929,23 @@ const cleanupKnowledgeFiles = async (files = []) => {
 };
 
 const processKnowledgeTask = async (task = {}) => {
-  const { workspaceId, files = [], ingestionId } = task;
+  const {
+    workspaceId,
+    projectId = '',
+    projectOriginalId = '',
+    projectName = '',
+    files = [],
+    ingestionId,
+  } = task;
   if (!workspaceId || !Array.isArray(files) || !files.length) {
     await cleanupKnowledgeFiles(files);
     return;
   }
+
+  const scopeIdentifiers = resolveProjectScopeIdentifiers(projectId || projectOriginalId);
+  const normalizedProjectId = scopeIdentifiers.canonicalId;
+  const normalizedProjectOriginalId = sanitizeProjectIdentifier(projectOriginalId) || scopeIdentifiers.originalId;
+  const normalizedProjectName = sanitizeProjectName(projectName);
 
   if (!supabase) {
     console.warn('⚠️  Supabase non configurato: impossibile salvare la knowledge base.');
@@ -2910,12 +2993,16 @@ const processKnowledgeTask = async (task = {}) => {
         const payload = batch.map((content, index) => ({
           id: crypto.randomUUID(),
           workspace_id: workspaceId,
+          project_id: normalizedProjectId || null,
           content,
           embedding: Array.isArray(embeddings[index]) ? embeddings[index] : [],
           metadata: buildKnowledgeMetadata(file, {
             ingestionId,
             chunkIndex: start + index + 1,
             totalChunks: chunks.length,
+            projectId: normalizedProjectId || null,
+            projectName: normalizedProjectName || null,
+            projectOriginalId: normalizedProjectOriginalId || null,
           }),
         }));
         const { error } = await supabase.from('knowledge_chunks').insert(payload);
@@ -2923,7 +3010,10 @@ const processKnowledgeTask = async (task = {}) => {
           throw new Error(error.message || 'Inserimento Supabase fallito');
         }
       }
-      console.log(`📚 Knowledge base aggiornata (${fileLabel} → ${chunks.length} chunk)`);
+      const projectLabel = normalizedProjectId
+        ? ` (progetto ${normalizedProjectName || normalizedProjectOriginalId || normalizedProjectId})`
+        : '';
+      console.log(`📚 Knowledge base aggiornata${projectLabel} (${fileLabel} → ${chunks.length} chunk)`);
     } catch (error) {
       console.error(`Errore ingestione knowledge per ${fileLabel}:`, error);
     } finally {
@@ -3941,6 +4031,28 @@ app.post(
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
     const paramId = typeof req.params?.workspaceId === 'string' ? req.params.workspaceId.trim() : '';
     const workspaceId = paramId || getWorkspaceIdFromRequest(req);
+    const rawProjectId =
+      typeof req.body?.projectId === 'string'
+        ? req.body.projectId
+        : typeof req.body?.workspaceProjectId === 'string'
+          ? req.body.workspaceProjectId
+          : typeof req.query?.projectId === 'string'
+            ? req.query.projectId
+            : typeof req.query?.workspaceProjectId === 'string'
+              ? req.query.workspaceProjectId
+              : '';
+    const requestedProjectId = sanitizeProjectIdentifier(rawProjectId);
+    const rawProjectName =
+      typeof req.body?.projectName === 'string'
+        ? req.body.projectName
+        : typeof req.body?.workspaceProjectName === 'string'
+          ? req.body.workspaceProjectName
+          : typeof req.query?.projectName === 'string'
+            ? req.query.projectName
+            : typeof req.query?.workspaceProjectName === 'string'
+              ? req.query.workspaceProjectName
+              : '';
+    const requestedProjectName = sanitizeProjectName(rawProjectName);
 
     if (!workspaceId) {
       await cleanupKnowledgeFiles(uploadedFiles);
@@ -3973,8 +4085,9 @@ app.post(
       return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
     }
 
+    let workspace;
     try {
-      const workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
+      workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
       if (!workspace) {
         await cleanupKnowledgeFiles(uploadedFiles);
         return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
@@ -3982,6 +4095,43 @@ app.post(
     } catch (workspaceError) {
       await cleanupKnowledgeFiles(uploadedFiles);
       return res.status(500).json({ ok: false, message: workspaceError?.message || 'Recupero workspace non riuscito' });
+    }
+
+    let knowledgeProjectScopeId = '';
+    let knowledgeProjectOriginalId = '';
+    let knowledgeProjectName = '';
+    if (workspace && (requestedProjectId || requestedProjectName)) {
+      const projects = Array.isArray(workspace.projects) ? workspace.projects : [];
+      const normalizedProjectId = sanitizeProjectIdentifier(requestedProjectId);
+      const normalizedProjectName = sanitizeProjectName(requestedProjectName);
+      const projectById = normalizedProjectId
+        ? projects.find((proj) => sanitizeProjectIdentifier(proj?.id) === normalizedProjectId)
+        : null;
+      const normalizedName = normalizedProjectName ? normalizedProjectName.toLowerCase() : '';
+      const projectByName = !projectById && normalizedName
+        ? projects.find(
+            (proj) => sanitizeProjectName(proj?.name).toLowerCase() === normalizedName
+          )
+        : null;
+      const targetProject = projectById || projectByName || null;
+      if (!targetProject) {
+        if (!normalizedProjectId) {
+          await cleanupKnowledgeFiles(uploadedFiles);
+          return res.status(404).json({ ok: false, message: 'Progetto non trovato nel workspace' });
+        }
+        console.warn(
+          `⚠️  Progetto ${normalizedProjectId} non trovato nel workspace ${workspaceId}: procedo utilizzando l'ID fornito.`
+        );
+        const fallbackScope = resolveProjectScopeIdentifiers(normalizedProjectId);
+        knowledgeProjectScopeId = fallbackScope.canonicalId;
+        knowledgeProjectOriginalId = fallbackScope.originalId || normalizedProjectId;
+        knowledgeProjectName = normalizedProjectName || '';
+      } else {
+        const resolvedScope = resolveProjectScopeIdentifiers(targetProject.id);
+        knowledgeProjectScopeId = resolvedScope.canonicalId;
+        knowledgeProjectOriginalId = resolvedScope.originalId;
+        knowledgeProjectName = sanitizeProjectName(targetProject.name) || normalizedProjectName || '';
+      }
     }
 
     const ingestionId = crypto.randomUUID();
@@ -3994,6 +4144,9 @@ app.post(
 
     enqueueKnowledgeIngestion({
       workspaceId: workspaceId.trim(),
+      projectId: knowledgeProjectScopeId || null,
+      projectOriginalId: knowledgeProjectOriginalId || null,
+      projectName: knowledgeProjectName || null,
       files: normalizedFiles,
       ingestionId,
     });
@@ -4002,6 +4155,9 @@ app.post(
       ok: true,
       ingestionId,
       filesQueued: normalizedFiles.length,
+      projectId: knowledgeProjectOriginalId || null,
+      projectScopeId: knowledgeProjectScopeId || null,
+      projectName: knowledgeProjectName || null,
       message: 'Ingestion avviata: la knowledge base verrà aggiornata in background.',
     });
   }
@@ -4010,6 +4166,13 @@ app.post(
 app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
   const paramId = typeof req.params?.workspaceId === 'string' ? req.params.workspaceId.trim() : '';
   const workspaceId = paramId || getWorkspaceIdFromRequest(req);
+  const rawProjectId =
+    typeof req.query?.projectId === 'string'
+      ? req.query.projectId
+      : typeof req.query?.workspaceProjectId === 'string'
+        ? req.query.workspaceProjectId
+        : '';
+  const requestedProjectScopeId = canonicalizeProjectScopeId(rawProjectId);
 
   if (!workspaceId) {
     return res.status(400).json({ ok: false, message: 'workspaceId obbligatorio' });
@@ -4026,8 +4189,9 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
     return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
   }
 
+  let workspace;
   try {
-    const workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
+    workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
     if (!workspace) {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
@@ -4036,10 +4200,18 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('knowledge_chunks')
-      .select('metadata, created_at')
-      .eq('workspace_id', workspaceId.trim())
+      .select('metadata, created_at, project_id')
+      .eq('workspace_id', workspaceId.trim());
+
+    if (requestedProjectScopeId) {
+      query = query.or(`project_id.eq.${requestedProjectScopeId},project_id.is.null`);
+    } else {
+      query = query.is('project_id', null);
+    }
+
+    const { data, error } = await query
       .order('created_at', { ascending: false, nullsLast: true })
       .limit(2000);
 
@@ -4049,6 +4221,19 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
         .json({ ok: false, message: error?.message || 'Impossibile recuperare la knowledge base.' });
     }
 
+    const projectLookup = new Map(
+      (Array.isArray(workspace?.projects) ? workspace.projects : [])
+        .map((proj) => {
+          const { canonicalId, originalId } = resolveProjectScopeIdentifiers(proj?.id);
+          if (!canonicalId) {
+            return null;
+          }
+          const label = sanitizeProjectName(proj?.name) || originalId;
+          return [canonicalId, { label, originalId }];
+        })
+        .filter(Boolean)
+    );
+
     const aggregated = new Map();
     (Array.isArray(data) ? data : []).forEach((row) => {
       const metadata = row?.metadata || {};
@@ -4056,22 +4241,50 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
       if (!fileName) {
         return;
       }
+      const rowProjectId = typeof row?.project_id === 'string' && row.project_id ? row.project_id.toLowerCase() : null;
+      const metadataProjectId =
+        typeof metadata?.projectId === 'string' && metadata.projectId
+          ? canonicalizeProjectScopeId(metadata.projectId)
+          : null;
+      const effectiveProjectId = rowProjectId || metadataProjectId || null;
+      if (!requestedProjectScopeId && effectiveProjectId) {
+        return;
+      }
       const ingestedAt = metadata?.ingestedAt || row?.created_at || null;
       const rawSize = Number(metadata?.size);
       const size = Number.isFinite(rawSize) && rawSize > 0 ? rawSize : null;
       const mimeType = typeof metadata?.mimeType === 'string' ? metadata.mimeType : '';
 
-      if (!aggregated.has(fileName)) {
-        aggregated.set(fileName, {
+      const key = `${effectiveProjectId || 'workspace'}::${fileName}`;
+
+      const metadataOriginalProjectId =
+        typeof metadata?.projectOriginalId === 'string'
+          ? sanitizeProjectIdentifier(metadata.projectOriginalId)
+          : '';
+      const legacyProjectId =
+        !metadataOriginalProjectId && typeof metadata?.projectId === 'string'
+          ? sanitizeProjectIdentifier(metadata.projectId)
+          : '';
+      const lookupEntry = effectiveProjectId ? projectLookup.get(effectiveProjectId) : null;
+      const projectOriginalId = metadataOriginalProjectId || lookupEntry?.originalId || legacyProjectId || null;
+      const projectDisplayName = effectiveProjectId
+        ? lookupEntry?.label || sanitizeProjectName(metadata?.projectName) || null
+        : null;
+
+      if (!aggregated.has(key)) {
+        aggregated.set(key, {
           name: fileName,
           chunkCount: 0,
           lastIngestedAt: ingestedAt,
           mimeType: mimeType || null,
           size: size || null,
+          projectId: projectOriginalId,
+          projectScopeId: effectiveProjectId,
+          projectName: projectDisplayName,
         });
       }
 
-      const entry = aggregated.get(fileName);
+      const entry = aggregated.get(key);
       entry.chunkCount += 1;
       if (ingestedAt) {
         const current = entry.lastIngestedAt ? new Date(entry.lastIngestedAt).getTime() : 0;
@@ -5336,6 +5549,7 @@ const w = await run('bash', ['-lc', whisperxCmd]);
         if (combinedQuery) {
           retrievedWorkspaceContext = await retrieveRelevantContext(combinedQuery, workspaceId, {
             provider: aiOverrides.embedding,
+            projectId: workspaceProjectId,
           });
           if (retrievedWorkspaceContext) {
             res.locals.retrievedWorkspaceContext = retrievedWorkspaceContext;
@@ -6336,6 +6550,7 @@ app.post(
             if (combinedQuery) {
               retrievedWorkspaceContext = await retrieveRelevantContext(combinedQuery, workspaceId, {
                 provider: aiOverrides.embedding,
+                projectId: workspaceProjectId,
               });
               if (retrievedWorkspaceContext) {
                 res.locals.retrievedWorkspaceContext = retrievedWorkspaceContext;
