@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { AlertCircle, LogOut, Maximize, Sparkles } from "../../components/icons";
+import { AlertCircle, LogOut, Maximize, Settings, Sparkles } from "../../components/icons";
 import logoAsset from "../../assets/logo.svg";
 import { classNames } from "../../utils/classNames";
 import { useAppContext } from "../../hooks/useAppContext";
@@ -169,11 +169,11 @@ const AppShell = () => {
                 variant="ghost"
                 className="gap-2 px-3 text-sm font-medium text-surface-200 hover:text-white"
                 onClick={() => {
-                  openSettingsDrawer();
+                  openSettingsDrawer?.("workspace");
                 }}
-                leadingIcon={Sparkles}
+                leadingIcon={Settings}
               >
-                Impostazioni
+                Impostazioni workspace
               </Button>
               <Button
                 type="button"

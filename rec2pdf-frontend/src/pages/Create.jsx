@@ -87,11 +87,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
     return "m4a";
   }, [context.mime]);
 
-  const handleOpenWorkspaceSettings = () => {
-    context.openSettingsDrawer?.("workspace");
-    trackEvent?.("advanced.settings.workspace_shortcut");
-  };
-
   const activeProject = useMemo(
     () =>
       context.workspaceProjects.find(
@@ -251,7 +246,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
         heroSubtitleClass={heroSubtitleClass}
         labelToneClass={labelToneClass}
         boardroomPrimarySurface={boardroomPrimarySurface}
-        onOpenWorkspaceSettings={handleOpenWorkspaceSettings}
         onStartPipeline={context.processViaBackend}
         canStartPipeline={canStartPipeline}
         HeaderIcon={HeaderIcon}

@@ -54,10 +54,15 @@ const renderWithContext = (contextOverrides = {}, initialEntries = ['/create']) 
 describe('AppShell', () => {
   it('renders navigation and fires logout handler', async () => {
     const handleLogout = vi.fn()
-    renderWithContext({ handleLogout })
+    const openSettingsDrawer = vi.fn()
+    renderWithContext({ handleLogout, openSettingsDrawer })
 
     const createLink = screen.getByRole('link', { name: 'Create' })
     expect(createLink).toHaveAttribute('href', '/create')
+
+    const workspaceSettingsButton = screen.getByRole('button', { name: /impostazioni workspace/i })
+    await userEvent.click(workspaceSettingsButton)
+    expect(openSettingsDrawer).toHaveBeenCalledWith('workspace')
 
     const logoutButton = screen.getByRole('button', { name: 'Logout' })
     await userEvent.click(logoutButton)

@@ -1,5 +1,5 @@
 import { Button } from "../../components/ui";
-import { Settings, Cpu } from "../../components/icons";
+import { Cpu } from "../../components/icons";
 import { classNames } from "../../utils/classNames";
 
 const SetupPanel = ({
@@ -19,7 +19,6 @@ const SetupPanel = ({
   heroSubtitleClass,
   labelToneClass,
   boardroomPrimarySurface,
-  onOpenWorkspaceSettings,
   onStartPipeline,
   canStartPipeline,
   HeaderIcon,
@@ -63,15 +62,6 @@ const SetupPanel = ({
                   <HeaderIcon className="h-4 w-4" />
                   {statusBadgeLabel}
                 </span>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  leadingIcon={Settings}
-                  onClick={onOpenWorkspaceSettings}
-                  className="sm:ml-2"
-                >
-                  Impostazioni workspace
-                </Button>
               </div>
             </div>
             <p className={classNames("text-sm leading-relaxed md:text-base", heroSubtitleClass)}>
