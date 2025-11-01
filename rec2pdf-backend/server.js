@@ -136,6 +136,11 @@ const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => 
     return '';
   }
 
+  const normalizedProjectId =
+    typeof options.projectId === 'string' ? options.projectId.trim() : '';
+  const matchCountCandidate = Number(options.matchCount);
+  const matchCount = Number.isFinite(matchCountCandidate) && matchCountCandidate > 0 ? matchCountCandidate : 4;
+
   if (!supabase) {
     console.warn('⚠️  Supabase non configurato: impossibile eseguire retrieveRelevantContext.');
     return '';
@@ -164,7 +169,8 @@ const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => 
     const { data, error } = await supabase.rpc('match_knowledge_chunks', {
       query_embedding: embedding,
       match_workspace_id: normalizedWorkspaceId,
-      match_count: 4 // <-- AGGIUNGI QUESTO PARAMETRO
+      match_project_id: normalizedProjectId || null,
+      match_count: matchCount,
     });
 
     if (error) {
@@ -2797,7 +2803,7 @@ const extractTextFromKnowledgeFile = async (file) => {
   return '';
 };
 
-const buildKnowledgeMetadata = (file, { ingestionId, chunkIndex, totalChunks }) => {
+const buildKnowledgeMetadata = (file, { ingestionId, chunkIndex, totalChunks, projectId }) => {
   const originalName = typeof file.originalName === 'string' ? file.originalName : file.originalname;
   const metadata = {
     sourceFile: originalName || path.basename(file.path),
@@ -2813,6 +2819,7 @@ const buildKnowledgeMetadata = (file, { ingestionId, chunkIndex, totalChunks }) 
   if (Number.isFinite(file.size)) {
     metadata.size = file.size;
   }
+  metadata.projectId = projectId || null;
   return metadata;
 };
 
@@ -2858,11 +2865,13 @@ const cleanupKnowledgeFiles = async (files = []) => {
 };
 
 const processKnowledgeTask = async (task = {}) => {
-  const { workspaceId, files = [], ingestionId } = task;
+  const { workspaceId, projectId = '', files = [], ingestionId } = task;
   if (!workspaceId || !Array.isArray(files) || !files.length) {
     await cleanupKnowledgeFiles(files);
     return;
   }
+
+  const normalizedProjectId = typeof projectId === 'string' ? projectId.trim() : '';
 
   if (!supabase) {
     console.warn('⚠️  Supabase non configurato: impossibile salvare la knowledge base.');
@@ -2910,12 +2919,14 @@ const processKnowledgeTask = async (task = {}) => {
         const payload = batch.map((content, index) => ({
           id: crypto.randomUUID(),
           workspace_id: workspaceId,
+          project_id: normalizedProjectId || null,
           content,
           embedding: Array.isArray(embeddings[index]) ? embeddings[index] : [],
           metadata: buildKnowledgeMetadata(file, {
             ingestionId,
             chunkIndex: start + index + 1,
             totalChunks: chunks.length,
+            projectId: normalizedProjectId || null,
           }),
         }));
         const { error } = await supabase.from('knowledge_chunks').insert(payload);
@@ -2923,7 +2934,8 @@ const processKnowledgeTask = async (task = {}) => {
           throw new Error(error.message || 'Inserimento Supabase fallito');
         }
       }
-      console.log(`📚 Knowledge base aggiornata (${fileLabel} → ${chunks.length} chunk)`);
+      const projectLabel = normalizedProjectId ? ` (progetto ${normalizedProjectId})` : '';
+      console.log(`📚 Knowledge base aggiornata${projectLabel} (${fileLabel} → ${chunks.length} chunk)`);
     } catch (error) {
       console.error(`Errore ingestione knowledge per ${fileLabel}:`, error);
     } finally {
@@ -3941,6 +3953,28 @@ app.post(
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
     const paramId = typeof req.params?.workspaceId === 'string' ? req.params.workspaceId.trim() : '';
     const workspaceId = paramId || getWorkspaceIdFromRequest(req);
+    const rawProjectId =
+      typeof req.body?.projectId === 'string'
+        ? req.body.projectId
+        : typeof req.body?.workspaceProjectId === 'string'
+          ? req.body.workspaceProjectId
+          : typeof req.query?.projectId === 'string'
+            ? req.query.projectId
+            : typeof req.query?.workspaceProjectId === 'string'
+              ? req.query.workspaceProjectId
+              : '';
+    const projectId = rawProjectId ? String(rawProjectId).trim() : '';
+    const rawProjectName =
+      typeof req.body?.projectName === 'string'
+        ? req.body.projectName
+        : typeof req.body?.workspaceProjectName === 'string'
+          ? req.body.workspaceProjectName
+          : typeof req.query?.projectName === 'string'
+            ? req.query.projectName
+            : typeof req.query?.workspaceProjectName === 'string'
+              ? req.query.workspaceProjectName
+              : '';
+    const projectName = rawProjectName ? String(rawProjectName).trim() : '';
 
     if (!workspaceId) {
       await cleanupKnowledgeFiles(uploadedFiles);
@@ -3973,8 +4007,9 @@ app.post(
       return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
     }
 
+    let workspace;
     try {
-      const workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
+      workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
       if (!workspace) {
         await cleanupKnowledgeFiles(uploadedFiles);
         return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
@@ -3982,6 +4017,22 @@ app.post(
     } catch (workspaceError) {
       await cleanupKnowledgeFiles(uploadedFiles);
       return res.status(500).json({ ok: false, message: workspaceError?.message || 'Recupero workspace non riuscito' });
+    }
+
+    let knowledgeProjectId = '';
+    if (workspace && (projectId || projectName)) {
+      const projects = Array.isArray(workspace.projects) ? workspace.projects : [];
+      const projectById = projectId ? projects.find((proj) => proj?.id === projectId) : null;
+      const normalizedName = projectName.toLowerCase();
+      const projectByName = !projectById && normalizedName
+        ? projects.find((proj) => String(proj?.name || '').trim().toLowerCase() === normalizedName)
+        : null;
+      const targetProject = projectById || projectByName || null;
+      if (!targetProject) {
+        await cleanupKnowledgeFiles(uploadedFiles);
+        return res.status(404).json({ ok: false, message: 'Progetto non trovato nel workspace' });
+      }
+      knowledgeProjectId = targetProject.id || '';
     }
 
     const ingestionId = crypto.randomUUID();
@@ -3994,6 +4045,7 @@ app.post(
 
     enqueueKnowledgeIngestion({
       workspaceId: workspaceId.trim(),
+      projectId: knowledgeProjectId || null,
       files: normalizedFiles,
       ingestionId,
     });
@@ -4002,6 +4054,7 @@ app.post(
       ok: true,
       ingestionId,
       filesQueued: normalizedFiles.length,
+      projectId: knowledgeProjectId || null,
       message: 'Ingestion avviata: la knowledge base verrà aggiornata in background.',
     });
   }
@@ -4010,6 +4063,13 @@ app.post(
 app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
   const paramId = typeof req.params?.workspaceId === 'string' ? req.params.workspaceId.trim() : '';
   const workspaceId = paramId || getWorkspaceIdFromRequest(req);
+  const rawProjectId =
+    typeof req.query?.projectId === 'string'
+      ? req.query.projectId
+      : typeof req.query?.workspaceProjectId === 'string'
+        ? req.query.workspaceProjectId
+        : '';
+  const projectId = rawProjectId ? String(rawProjectId).trim() : '';
 
   if (!workspaceId) {
     return res.status(400).json({ ok: false, message: 'workspaceId obbligatorio' });
@@ -4026,8 +4086,9 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
     return res.status(403).json({ ok: false, message: 'Utente non autorizzato' });
   }
 
+  let workspace;
   try {
-    const workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
+    workspace = await getWorkspaceFromDb(workspaceId, { ownerId });
     if (!workspace) {
       return res.status(404).json({ ok: false, message: 'Workspace non trovato' });
     }
@@ -4036,10 +4097,18 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('knowledge_chunks')
-      .select('metadata, created_at')
-      .eq('workspace_id', workspaceId.trim())
+      .select('metadata, created_at, project_id')
+      .eq('workspace_id', workspaceId.trim());
+
+    if (projectId) {
+      query = query.or(`project_id.eq.${projectId},project_id.is.null`);
+    } else {
+      query = query.is('project_id', null);
+    }
+
+    const { data, error } = await query
       .order('created_at', { ascending: false, nullsLast: true })
       .limit(2000);
 
@@ -4049,6 +4118,12 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
         .json({ ok: false, message: error?.message || 'Impossibile recuperare la knowledge base.' });
     }
 
+    const projectLookup = new Map(
+      (Array.isArray(workspace?.projects) ? workspace.projects : [])
+        .filter((proj) => proj && proj.id)
+        .map((proj) => [proj.id, proj.name || proj.id])
+    );
+
     const aggregated = new Map();
     (Array.isArray(data) ? data : []).forEach((row) => {
       const metadata = row?.metadata || {};
@@ -4056,22 +4131,33 @@ app.get('/api/workspaces/:workspaceId/knowledge', async (req, res) => {
       if (!fileName) {
         return;
       }
+      const rowProjectId = typeof row?.project_id === 'string' && row.project_id ? row.project_id : null;
+      const metadataProjectId =
+        typeof metadata?.projectId === 'string' && metadata.projectId ? metadata.projectId : null;
+      const effectiveProjectId = rowProjectId || metadataProjectId || null;
+      if (!projectId && effectiveProjectId) {
+        return;
+      }
       const ingestedAt = metadata?.ingestedAt || row?.created_at || null;
       const rawSize = Number(metadata?.size);
       const size = Number.isFinite(rawSize) && rawSize > 0 ? rawSize : null;
       const mimeType = typeof metadata?.mimeType === 'string' ? metadata.mimeType : '';
 
-      if (!aggregated.has(fileName)) {
-        aggregated.set(fileName, {
+      const key = `${effectiveProjectId || 'workspace'}::${fileName}`;
+
+      if (!aggregated.has(key)) {
+        aggregated.set(key, {
           name: fileName,
           chunkCount: 0,
           lastIngestedAt: ingestedAt,
           mimeType: mimeType || null,
           size: size || null,
+          projectId: effectiveProjectId,
+          projectName: effectiveProjectId ? projectLookup.get(effectiveProjectId) || null : null,
         });
       }
 
-      const entry = aggregated.get(fileName);
+      const entry = aggregated.get(key);
       entry.chunkCount += 1;
       if (ingestedAt) {
         const current = entry.lastIngestedAt ? new Date(entry.lastIngestedAt).getTime() : 0;
@@ -5336,6 +5422,7 @@ const w = await run('bash', ['-lc', whisperxCmd]);
         if (combinedQuery) {
           retrievedWorkspaceContext = await retrieveRelevantContext(combinedQuery, workspaceId, {
             provider: aiOverrides.embedding,
+            projectId: workspaceProjectId,
           });
           if (retrievedWorkspaceContext) {
             res.locals.retrievedWorkspaceContext = retrievedWorkspaceContext;
@@ -6336,6 +6423,7 @@ app.post(
             if (combinedQuery) {
               retrievedWorkspaceContext = await retrieveRelevantContext(combinedQuery, workspaceId, {
                 provider: aiOverrides.embedding,
+                projectId: workspaceProjectId,
               });
               if (retrievedWorkspaceContext) {
                 res.locals.retrievedWorkspaceContext = retrievedWorkspaceContext;
