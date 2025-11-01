@@ -1,12 +1,8 @@
 import { useMemo } from "react";
-import { Cpu, FileText, Mic, Sparkles, Users } from "../components/icons";
 import { useAppContext } from "../hooks/useAppContext";
 import { Button, Toast } from "../components/ui";
 import BaseHome from "../features/base/BaseHome";
-import { useAnalytics } from "../context/AnalyticsContext";
-import SetupPanel from "../features/advanced/SetupPanel";
 import InputManager from "../features/advanced/InputManager";
-import PipelineOverview from "../features/advanced/PipelineOverview";
 
 const truncateText = (value, limit = 80) => {
   if (typeof value !== "string") {
@@ -44,7 +40,7 @@ const ErrorBanner = () => {
   );
 };
 
-const AdvancedCreatePage = ({ context, trackEvent }) => {
+const AdvancedCreatePage = ({ context }) => {
   const { theme, themes } = context;
   const isBoardroom = theme === "boardroom";
   const boardroomPrimarySurface =
@@ -55,37 +51,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
     "border-white/20 bg-white/[0.08] text-white/90";
   const boardroomInfoSurface =
     "border-white/16 bg-white/[0.05] text-white/80";
-  const boardroomStageStyles = {
-    idle:
-      "border-white/12 bg-[#0d1f3d]/75 text-slate-100 backdrop-blur-2xl shadow-[0_18px_60px_-48px_rgba(7,29,60,0.55)]",
-    pending:
-      "border-brand-300/60 bg-[#10345a]/80 text-slate-100 backdrop-blur-2xl shadow-[0_24px_70px_-52px_rgba(31,139,255,0.65)]",
-    running:
-      "border-brand-400/70 bg-gradient-to-r from-[#1f8bff26] via-[#1f9bbd26] to-[#6b6bff26] text-white backdrop-blur-2xl shadow-[0_30px_80px_-55px_rgba(63,163,255,0.6)]",
-    done:
-      "border-emerald-300/60 bg-emerald-400/20 text-emerald-50 backdrop-blur-2xl shadow-[0_28px_80px_-55px_rgba(16,185,129,0.5)]",
-    failed:
-      "border-rose-400/60 bg-rose-500/18 text-rose-50 backdrop-blur-2xl shadow-[0_24px_70px_-52px_rgba(244,63,94,0.5)]",
-    info:
-      "border-brand-200/45 bg-white/[0.05] text-white/90 backdrop-blur-2xl shadow-[0_20px_64px_-48px_rgba(36,119,198,0.45)]",
-  };
-  const boardroomStageMessageSurface =
-    "border-brand-200/40 bg-white/[0.05] text-white/80 backdrop-blur-2xl shadow-[0_18px_60px_-48px_rgba(31,139,255,0.45)]";
-  const boardroomConnectorColors = {
-    done: "bg-emerald-400/60",
-    failed: "bg-rose-500/60",
-    base: "bg-white/14",
-  };
-
-  const HeaderIcon = context.headerStatus?.icon || Cpu;
-
-  const audioDownloadExtension = useMemo(() => {
-    const mime = context.mime || "";
-    if (mime.includes("webm")) return "webm";
-    if (mime.includes("ogg")) return "ogg";
-    if (mime.includes("wav")) return "wav";
-    return "m4a";
-  }, [context.mime]);
 
   const activeProject = useMemo(
     () =>
@@ -99,124 +64,8 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
   const workspaceClient = context.activeWorkspace?.client || "—";
   const projectLabel =
     activeProject?.name || context.workspaceSelection.projectName || "Nessun progetto";
-  const stageKey = context.failedStage?.key || context.activeStageKey;
-  const currentStage =
-    context.PIPELINE_STAGES.find((stage) => stage.key === stageKey) || null;
-  const stageStatus = stageKey
-    ? context.pipelineStatus[stageKey] || (context.pipelineComplete ? "done" : "idle")
-    : context.pipelineComplete
-      ? "done"
-      : "idle";
-  const stageLabel = context.pipelineComplete
-    ? "Pipeline completata"
-    : currentStage?.label || "In attesa di avvio";
-  const stageDescription = context.pipelineComplete
-    ? "Sessione elaborata e disponibile nella Library."
-    : currentStage?.description || "Carica o registra una clip per iniziare.";
-  const stageStyleBadge = isBoardroom
-    ? boardroomStageStyles[stageStatus] || boardroomStageStyles.idle
-    : context.STAGE_STATUS_STYLES[stageStatus] || context.STAGE_STATUS_STYLES.idle;
-  const canStartPipeline =
-    Boolean(context.audioBlob) && !context.busy && context.backendUp !== false;
-  const highlightSurface = isBoardroom ? boardroomSecondarySurface : themes[theme].input;
-  const mutedTextClass = isBoardroom ? "text-white/75" : "text-zinc-500";
-  const heroTitleClass = isBoardroom ? "text-white" : "text-zinc-100";
-  const heroSubtitleClass = isBoardroom ? "text-white/80" : "text-zinc-400";
-  const labelToneClass = isBoardroom ? "text-white/65" : "text-zinc-500";
-  const heroSteps = useMemo(
-    () => [
-      {
-        key: "setup",
-        label: "Setup",
-        description: "Workspace, progetto e prompt",
-      },
-      {
-        key: "record",
-        label: "Rec / Upload",
-        description: "Registra o importa la sessione",
-      },
-      {
-        key: "deliver",
-        label: "PDF Wow",
-        description: "Report strutturato in pochi secondi",
-      },
-    ],
-    []
-  );
-
-  const highlightCards = useMemo(() => {
-    const promptTitle = typeof context.activePrompt?.title === "string"
-      ? context.activePrompt.title
-      : "";
-    const focusNotes =
-      typeof context.promptState?.focus === "string" && context.promptState.focus.trim()
-        ? truncateText(context.promptState.focus, 72)
-        : null;
-    const persona =
-      typeof context.activePrompt?.persona === "string" && context.activePrompt.persona
-        ? context.activePrompt.persona
-        : null;
-
-    return [
-      {
-        key: "workspace",
-        label: "Workspace",
-        value: workspaceName,
-        meta:
-          workspaceClient && workspaceClient !== "—"
-            ? `Cliente · ${workspaceClient}`
-            : "Scegli il contesto operativo per allineare automazioni e permessi.",
-        icon: Users,
-      },
-      {
-        key: "project",
-        label: "Progetto",
-        value: projectLabel,
-        meta: context.workspaceSelection.status
-          ? `Stato · ${context.workspaceSelection.status}`
-          : "Definisci lo stato per monitorare milestone e priorità.",
-        icon: FileText,
-      },
-      {
-        key: "prompt",
-        label: "Prompt guida",
-        value: promptTitle || "Nessun template attivo",
-        meta:
-          focusNotes || persona
-            ? focusNotes || `Persona · ${persona}`
-            : "Attiva un prompt dalla libreria per orchestrare tono e struttura.",
-        icon: Sparkles,
-      },
-      {
-        key: "audio",
-        label: "Input sessione",
-        value: context.audioBlob ? "Audio pronto" : "In attesa di input",
-        meta: context.audioBlob
-          ? `${context.mime || "Formato sconosciuto"} · ${context.fmtBytes(
-              context.audioBlob.size
-            )}`
-          : "Registra o carica una clip per sbloccare la pipeline automatizzata.",
-        icon: Mic,
-        emphasis: Boolean(context.audioBlob),
-      },
-    ];
-  }, [
-    context.activePrompt?.persona,
-    context.activePrompt?.title,
-    context.audioBlob,
-    context.mime,
-    context.promptState?.focus,
-    context.workspaceSelection.status,
-    context.workspaceSelection.projectId,
-    context.workspaceSelection.projectName,
-    context.fmtBytes,
-    workspaceClient,
-    workspaceName,
-    projectLabel,
-  ]);
-
-  // TODO(Task 5): Swap out the SetupPanel/InputManager/PipelineOverview trio
-  // with a parameters-only surface once Advanced mode is slimmed down.
+  // TODO(Task 5): Swap out the SetupPanel/InputManager duo with a
+  // parameters-only surface once Advanced mode is slimmed down.
 
   return (
     <div>
@@ -227,34 +76,7 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
       )}
 
       <ErrorBanner />
-
-      <SetupPanel
-        isBoardroom={isBoardroom}
-        theme={theme}
-        themes={themes}
-        heroSteps={heroSteps}
-        highlightCards={highlightCards}
-        stageLabel={stageLabel}
-        stageDescription={stageDescription}
-        statusBadgeLabel={
-          context.pipelineComplete
-            ? "Completata"
-            : context.STAGE_STATUS_LABELS[stageStatus] || stageStatus
-        }
-        stageStyleBadge={stageStyleBadge}
-        progressPercent={context.progressPercent}
-        highlightSurface={highlightSurface}
-        mutedTextClass={mutedTextClass}
-        heroTitleClass={heroTitleClass}
-        heroSubtitleClass={heroSubtitleClass}
-        labelToneClass={labelToneClass}
-        boardroomPrimarySurface={boardroomPrimarySurface}
-        onStartPipeline={context.processViaBackend}
-        canStartPipeline={canStartPipeline}
-        HeaderIcon={HeaderIcon}
-      />
-
-      <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+      <div className="mt-10">
         <InputManager
           context={context}
           theme={theme}
@@ -264,20 +86,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
           boardroomSecondarySurface={boardroomSecondarySurface}
           boardroomChipSurface={boardroomChipSurface}
           boardroomInfoSurface={boardroomInfoSurface}
-          trackEvent={trackEvent}
-          canStartPipeline={canStartPipeline}
-          audioDownloadExtension={audioDownloadExtension}
-        />
-        <PipelineOverview
-          context={context}
-          theme={theme}
-          themes={themes}
-          isBoardroom={isBoardroom}
-          boardroomPrimarySurface={boardroomPrimarySurface}
-          boardroomStageStyles={boardroomStageStyles}
-          boardroomStageMessageSurface={boardroomStageMessageSurface}
-          boardroomConnectorColors={boardroomConnectorColors}
-          HeaderIcon={HeaderIcon}
         />
       </div>
     </div>
@@ -286,7 +94,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
 
 const CreatePage = () => {
   const context = useAppContext();
-  const { trackEvent } = useAnalytics();
 
   const hasAdvancedAccess =
     typeof context.hasModeFlag === "function" ? context.hasModeFlag("MODE_ADVANCED") : false;
@@ -329,7 +136,7 @@ const CreatePage = () => {
     );
   }
 
-  return <AdvancedCreatePage context={context} trackEvent={trackEvent} />;
+  return <AdvancedCreatePage context={context} />;
 };
 
 export default CreatePage;
