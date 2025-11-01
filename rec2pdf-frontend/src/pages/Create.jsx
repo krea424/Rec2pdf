@@ -215,6 +215,9 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
     projectLabel,
   ]);
 
+  // TODO(Task 5): Swap out the SetupPanel/InputManager/PipelineOverview trio
+  // with a parameters-only surface once Advanced mode is slimmed down.
+
   return (
     <div>
       {!context.secureOK && (

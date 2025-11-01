@@ -4,6 +4,7 @@ import { useAppContext } from "../../hooks/useAppContext";
 import { Toast } from "../../components/ui";
 import PipelinePanel from "./PipelinePanel";
 import UploadCard from "./UploadCard";
+import BaseSummaryCards from "./BaseSummaryCards";
 import { classNames } from "../../utils/classNames";
 
 const ErrorBanner = () => {
@@ -87,6 +88,9 @@ const BaseHome = () => {
     return publishPanelVisible;
   }, [busy, pipelineComplete, publishPanelVisible]);
 
+  // TODO(Task 6): Add an Advanced Library CTA that toggles ModeContext before
+  // navigating, ensuring unsaved recording state is preserved.
+
   return (
     <div className="space-y-6">
       <ConnectionGuard />
@@ -99,6 +103,8 @@ const BaseHome = () => {
           </p>
         </div>
       ) : null}
+
+      <BaseSummaryCards />
 
       <section
         className={classNames(
