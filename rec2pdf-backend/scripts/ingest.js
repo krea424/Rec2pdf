@@ -17,24 +17,28 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 loadEnv();
 
-const workspaceId = parseWorkspaceId(process.argv.slice(2));
+const args = process.argv.slice(2);
+const workspaceId = parseWorkspaceId(args);
+const projectId = parseProjectId(args);
 
 if (!workspaceId) {
     console.error('Errore: specifica il workspace tramite --workspaceId <id>');
     process.exit(1);
 }
 
+const knowledgePathSegments = projectId ? [workspaceId, projectId] : [workspaceId];
 const knowledgeDirCandidates = [
-    path.resolve(PROJECT_ROOT, 'knowledge_sources', workspaceId),
-    path.resolve(PROJECT_ROOT, '..', 'knowledge_sources', workspaceId)
+    path.resolve(PROJECT_ROOT, 'knowledge_sources', ...knowledgePathSegments),
+    path.resolve(PROJECT_ROOT, '..', 'knowledge_sources', ...knowledgePathSegments)
 ];
 
 const knowledgeDir = knowledgeDirCandidates.find((candidate) => existsSync(candidate));
 
 if (!knowledgeDir) {
     console.error(
-        `Errore: impossibile trovare i contenuti per il workspace ${workspaceId}. ` +
-        `Crea knowledge_sources/${workspaceId}/ in rec2pdf-backend/ oppure nella root del progetto con i file da indicizzare.`
+        `Errore: impossibile trovare i contenuti per ${projectId ? `il progetto ${projectId} del ` : ''}` +
+        `workspace ${workspaceId}. Crea knowledge_sources/${knowledgePathSegments.join('/')}/ in rec2pdf-backend/ ` +
+        `oppure nella root del progetto con i file da indicizzare.`
     );
     process.exit(1);
 }
@@ -47,7 +51,7 @@ if (missingEnv.length > 0) {
     process.exit(1);
 }
 
-const embeddingProviderArg = parseEmbeddingProvider(process.argv.slice(2));
+const embeddingProviderArg = parseEmbeddingProvider(args);
 let embeddingProvider;
 try {
     embeddingProvider = resolveAiProvider('embedding', embeddingProviderArg);
@@ -90,8 +94,12 @@ const BATCH_SIZE = 50;
             const fileChunks = createChunks(normalized, CHUNK_SIZE, CHUNK_OVERLAP).map((chunkContent, index) => ({
                 id: randomUUID(),
                 workspace_id: workspaceId,
+                project_id: projectId || null,
                 content: chunkContent,
-                metadata,
+                metadata: {
+                    ...metadata,
+                    projectId: projectId || null,
+                },
                 order: index
             }));
 
@@ -120,6 +128,7 @@ const BATCH_SIZE = 50;
             const payload = batch.map((item, index) => ({
                 id: item.id,
                 workspace_id: item.workspace_id,
+                project_id: item.project_id,
                 content: item.content,
                 embedding: Array.isArray(embeddings[index]) ? embeddings[index] : [],
                 metadata: item.metadata
@@ -134,7 +143,13 @@ const BATCH_SIZE = 50;
             console.log(`Inseriti ${processed}/${chunks.length} chunk...`);
         }
 
-        console.log(`Completato: ${processed} chunk salvati per il workspace ${workspaceId}.`);
+        if (projectId) {
+            console.log(
+                `Completato: ${processed} chunk salvati per il progetto ${projectId} del workspace ${workspaceId}.`
+            );
+        } else {
+            console.log(`Completato: ${processed} chunk salvati per il workspace ${workspaceId}.`);
+        }
     } catch (error) {
         console.error(error.message || error);
         process.exit(1);
@@ -171,6 +186,26 @@ function parseWorkspaceId(args) {
         }
     }
     return workspaceId;
+}
+
+function parseProjectId(args) {
+    let projectId;
+    for (let index = 0; index < args.length; index += 1) {
+        const arg = args[index];
+        if (arg === '--projectId' || arg === '--project-id') {
+            projectId = args[index + 1];
+            break;
+        }
+        if (arg.startsWith('--projectId=')) {
+            projectId = arg.split('=')[1];
+            break;
+        }
+        if (arg.startsWith('--project-id=')) {
+            projectId = arg.split('=')[1];
+            break;
+        }
+    }
+    return projectId ? String(projectId).trim() : undefined;
 }
 
 function parseEmbeddingProvider(args) {
