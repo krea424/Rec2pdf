@@ -32,6 +32,8 @@ const InputManager = ({
   canStartPipeline,
   audioDownloadExtension,
 }) => {
+  // TODO(Task 5): Strip recording/upload widgets from Advanced mode so this
+  // component focuses on parameter selectors and criteria controls only.
   const {
     activeWorkspaceProfiles = [],
     activeWorkspaceProfile,

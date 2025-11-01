@@ -14,6 +14,8 @@ const PipelineOverview = ({
   boardroomConnectorColors,
   HeaderIcon,
 }) => {
+  // TODO(Task 5): Gate or remove this pipeline visualization when Advanced is
+  // trimmed to configuration-only controls.
   const [showCompletionHighlight, setShowCompletionHighlight] = useState(false);
 
   useEffect(() => {

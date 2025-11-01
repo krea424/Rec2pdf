@@ -15,6 +15,9 @@ const LibraryPage = () => {
     setHistoryTab,
   } = context;
 
+  // TODO(Task 6): Align this page with the Advanced-only library strategy and
+  // confirm navigation from the Base CTA preserves mode and history state.
+
   const availableTabs = HISTORY_TABS;
 
   const manualSelectionRef = useRef(false);
