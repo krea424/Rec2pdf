@@ -87,6 +87,11 @@ const BaseHome = () => {
     return publishPanelVisible;
   }, [busy, pipelineComplete, publishPanelVisible]);
 
+  // TODO(Task 2): Inject the new Base header cards above the main section using
+  // workspace, project, prompt, and session state from context.
+  // TODO(Task 6): Add an Advanced Library CTA that toggles ModeContext before
+  // navigating, ensuring unsaved recording state is preserved.
+
   return (
     <div className="space-y-6">
       <ConnectionGuard />
