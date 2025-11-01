@@ -1,10 +1,8 @@
 import { useMemo } from "react";
-import { Cpu } from "../components/icons";
 import { useAppContext } from "../hooks/useAppContext";
 import { Button, Toast } from "../components/ui";
 import BaseHome from "../features/base/BaseHome";
 import { useAnalytics } from "../context/AnalyticsContext";
-import SetupPanel from "../features/advanced/SetupPanel";
 import InputManager from "../features/advanced/InputManager";
 
 const truncateText = (value, limit = 80) => {
@@ -54,22 +52,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
     "border-white/20 bg-white/[0.08] text-white/90";
   const boardroomInfoSurface =
     "border-white/16 bg-white/[0.05] text-white/80";
-  const boardroomStageStyles = {
-    idle:
-      "border-white/12 bg-[#0d1f3d]/75 text-slate-100 backdrop-blur-2xl shadow-[0_18px_60px_-48px_rgba(7,29,60,0.55)]",
-    pending:
-      "border-brand-300/60 bg-[#10345a]/80 text-slate-100 backdrop-blur-2xl shadow-[0_24px_70px_-52px_rgba(31,139,255,0.65)]",
-    running:
-      "border-brand-400/70 bg-gradient-to-r from-[#1f8bff26] via-[#1f9bbd26] to-[#6b6bff26] text-white backdrop-blur-2xl shadow-[0_30px_80px_-55px_rgba(63,163,255,0.6)]",
-    done:
-      "border-emerald-300/60 bg-emerald-400/20 text-emerald-50 backdrop-blur-2xl shadow-[0_28px_80px_-55px_rgba(16,185,129,0.5)]",
-    failed:
-      "border-rose-400/60 bg-rose-500/18 text-rose-50 backdrop-blur-2xl shadow-[0_24px_70px_-52px_rgba(244,63,94,0.5)]",
-    info:
-      "border-brand-200/45 bg-white/[0.05] text-white/90 backdrop-blur-2xl shadow-[0_20px_64px_-48px_rgba(36,119,198,0.45)]",
-  };
-  const HeaderIcon = context.headerStatus?.icon || Cpu;
-
   const audioDownloadExtension = useMemo(() => {
     const mime = context.mime || "";
     if (mime.includes("webm")) return "webm";
@@ -90,42 +72,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
   const workspaceClient = context.activeWorkspace?.client || "—";
   const projectLabel =
     activeProject?.name || context.workspaceSelection.projectName || "Nessun progetto";
-  const stageKey = context.failedStage?.key || context.activeStageKey;
-  const currentStage =
-    context.PIPELINE_STAGES.find((stage) => stage.key === stageKey) || null;
-  const stageStatus = stageKey
-    ? context.pipelineStatus[stageKey] || (context.pipelineComplete ? "done" : "idle")
-    : context.pipelineComplete
-      ? "done"
-      : "idle";
-  const stageStyleBadge = isBoardroom
-    ? boardroomStageStyles[stageStatus] || boardroomStageStyles.idle
-    : context.STAGE_STATUS_STYLES[stageStatus] || context.STAGE_STATUS_STYLES.idle;
-  const highlightSurface = isBoardroom ? boardroomSecondarySurface : themes[theme].input;
-  const heroTitleClass = isBoardroom ? "text-white" : "text-zinc-100";
-  const heroSubtitleClass = isBoardroom ? "text-white/80" : "text-zinc-400";
-  const labelToneClass = isBoardroom ? "text-white/65" : "text-zinc-500";
-  const heroSteps = useMemo(
-    () => [
-      {
-        key: "setup",
-        label: "Setup",
-        description: "Workspace, progetto e prompt",
-      },
-      {
-        key: "context",
-        label: "Contesto",
-        description: "Slug, stato e branding coordinati",
-      },
-      {
-        key: "deliver",
-        label: "PDF Wow",
-        description: "Report strutturato pronto al download",
-      },
-    ],
-    []
-  );
-
   // TODO(Task 5): Swap out the SetupPanel/InputManager duo with a
   // parameters-only surface once Advanced mode is slimmed down.
 
@@ -138,26 +84,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
       )}
 
       <ErrorBanner />
-
-      <SetupPanel
-        isBoardroom={isBoardroom}
-        theme={theme}
-        themes={themes}
-        heroSteps={heroSteps}
-        statusBadgeLabel={
-          context.pipelineComplete
-            ? "Completata"
-            : context.STAGE_STATUS_LABELS[stageStatus] || stageStatus
-        }
-        stageStyleBadge={stageStyleBadge}
-        highlightSurface={highlightSurface}
-        heroTitleClass={heroTitleClass}
-        heroSubtitleClass={heroSubtitleClass}
-        labelToneClass={labelToneClass}
-        boardroomPrimarySurface={boardroomPrimarySurface}
-        HeaderIcon={HeaderIcon}
-      />
-
       <div className="mt-10">
         <InputManager
           context={context}

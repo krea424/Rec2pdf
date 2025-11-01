@@ -8,17 +8,13 @@ const makeThemes = () => ({
 });
 
 describe("SetupPanel", () => {
-  it("renders hero summary with status badge", () => {
-    render(
+  it("renders nothing while the hero panel is retired", () => {
+    const { container } = render(
       <SetupPanel
         isBoardroom={false}
         theme="default"
         themes={makeThemes()}
-        heroSteps={[
-          { key: "setup", label: "Setup", description: "Descrizione" },
-          { key: "context", label: "Contesto", description: "Parametri" },
-          { key: "deliver", label: "Deliver", description: "PDF" },
-        ]}
+        heroSteps={[]}
         statusBadgeLabel="Pronto"
         stageStyleBadge="badge"
         highlightSurface="highlight"
@@ -30,20 +26,6 @@ describe("SetupPanel", () => {
       />
     );
 
-    expect(
-      screen.queryByText(/Executive create hub/i)
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /Imposta il contesto, monitora la pipeline e lascia che l'ai generi un pdf executive con effetto wow./i
-      )
-    ).toBeInTheDocument();
-    expect(screen.getByText("Pronto")).toBeInTheDocument();
-    expect(screen.getByText("Contesto")).toBeInTheDocument();
-    expect(screen.getByTestId("header-icon")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /pipeline executive/i })
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText(/Registra o carica un audio/i)).not.toBeInTheDocument();
+    expect(container.firstChild).toBeNull();
   });
 });
