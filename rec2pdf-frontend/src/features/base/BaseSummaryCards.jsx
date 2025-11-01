@@ -5,11 +5,11 @@ import { classNames } from "../../utils/classNames";
 
 const SummaryCard = ({ title, icon: Icon, accent = "bg-white/10 text-white", headline, action = null }) => {
   return (
-    <article className="flex items-center justify-between rounded-3xl border border-white/10 bg-white/5 p-5 text-white shadow-subtle">
-      <div className="flex items-center gap-3">
+    <article className="flex items-center justify-between rounded-3xl border border-white/10 bg-white/5 p-4 text-white shadow-subtle">
+      <div className="flex items-center gap-2.5">
         <span
           className={classNames(
-            "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-base font-semibold",
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-base font-semibold",
             accent,
           )}
           aria-hidden="true"
@@ -18,7 +18,7 @@ const SummaryCard = ({ title, icon: Icon, accent = "bg-white/10 text-white", hea
         </span>
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-white/60">{title}</p>
-          <p className="mt-1 text-lg font-semibold leading-snug text-white">{headline}</p>
+          <p className="mt-0.5 text-base font-semibold leading-tight text-white">{headline}</p>
         </div>
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
