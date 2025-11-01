@@ -1731,7 +1731,10 @@ const WorkspaceProfilesManager = () => {
         </TabsContent>
 
         <TabsContent value="knowledge">
-          <KnowledgeBaseManager workspaceId={selectedWorkspaceId} />
+          <KnowledgeBaseManager
+            workspaceId={selectedWorkspaceId}
+            projects={Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []}
+          />
         </TabsContent>
       </Tabs>
     </div>
