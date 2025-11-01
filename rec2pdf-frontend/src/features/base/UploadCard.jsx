@@ -94,7 +94,7 @@ const UploadCard = ({ journeyStage = "record" }) => {
     return [name, sizeLabel].filter(Boolean).join(" • ");
   }, [fmtBytes, lastTextUpload]);
 
-  const handleDragEnter = useCallback((event) => {
+  const handleDropZoneDragEnter = useCallback((event) => {
     event.preventDefault();
     event.stopPropagation();
     if (event.dataTransfer?.items?.length) {
@@ -102,7 +102,7 @@ const UploadCard = ({ journeyStage = "record" }) => {
     }
   }, []);
 
-  const handleDragOver = useCallback((event) => {
+  const handleDropZoneDragOver = useCallback((event) => {
     event.preventDefault();
     event.stopPropagation();
     if (!isDragging) {
@@ -110,7 +110,7 @@ const UploadCard = ({ journeyStage = "record" }) => {
     }
   }, [isDragging]);
 
-  const handleDragLeave = useCallback((event) => {
+  const handleDropZoneDragLeave = useCallback((event) => {
     event.preventDefault();
     event.stopPropagation();
     if (event.currentTarget.contains(event.relatedTarget)) {
@@ -253,9 +253,9 @@ const UploadCard = ({ journeyStage = "record" }) => {
           </div>
 
           <div
-            onDragEnter={handleDragEnter}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
+            onDragEnter={handleDropZoneDragEnter}
+            onDragOver={handleDropZoneDragOver}
+            onDragLeave={handleDropZoneDragLeave}
             onDrop={handleDrop}
             className={classNames(
               "rounded-2xl border border-dashed px-4 py-6 text-center text-sm transition",
