@@ -5,7 +5,7 @@ Deliver a streamlined creation experience: Base mode becomes a quick-start works
 
 ## Progress
 - [x] Milestone 1 (Audit + TODO scaffolding) — (2025-02-14 12:00Z)
-- [ ] Milestone 2 (Base B header cards & uploads) — (2025-02-14 14:30Z · card layout shipped, upload bar pending)
+- [x] Milestone 2 (Base B header cards & uploads) — (2025-02-14 15:45Z · summary cards + unified upload bar)
 - [ ] Milestone 3 (Recording toggle + accessibility polish) — (…)
 - [ ] Milestone 4 (Advanced slim view + library handoff) — (…)
 - [ ] Milestone 5 (Tests, docs, screenshots, feature flag) — (…)
@@ -25,7 +25,7 @@ Deliver a streamlined creation experience: Base mode becomes a quick-start works
   Date/Author: 2025-02-14 / gpt-5-codex
 
 ## Outcomes & Retrospective
-- Milestone 2 (partial): Base mode now surfaces workspace, project, prompt, and session cards summarizing key context while keeping pipeline below the fold.
+- Milestone 2: Base mode now surfaces workspace, project, prompt, and session cards summarizing key context while keeping pipeline below the fold. Upload controls are unified into audio/Markdown/TXT buttons backed by a shared dropzone with validation.
 
 ## Context and Orientation
 - Framework: React 18 + Vite + Tailwind (see `src/main.jsx`, `src/index.css`).
