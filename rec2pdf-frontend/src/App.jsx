@@ -103,6 +103,8 @@ const deriveMarkdownPath = (mdPath, pdfPath) => {
   return '';
 };
 
+const OBJECT_URL_REVOKE_DELAY_MS = 120_000;
+
 const buildFileUrl = (backendUrl, filePath, options = {}) => {
   const normalized = normalizeBackendUrlValue(backendUrl);
   if (!normalized || !filePath) return '';
@@ -112,6 +114,24 @@ const buildFileUrl = (backendUrl, filePath, options = {}) => {
     params.set('token', token);
   }
   return `${normalized}/api/file?${params.toString()}`;
+};
+
+const appendCacheBustingParam = (url) => {
+  if (!url || typeof url !== 'string') {
+    return '';
+  }
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return '';
+  }
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  if (/[?&]cachebust=/i.test(trimmed)) {
+    return trimmed;
+  }
+  const separator = trimmed.includes('?') ? '&' : '?';
+  return `${trimmed}${separator}cachebust=${Date.now().toString(36)}`;
 };
 
 const normalizeSpeakers = (speakers) =>
@@ -1741,6 +1761,45 @@ function AppContent(){
     [fetchWithAuth, getSessionToken]
   );
 
+  const writeLoadingDocument = useCallback((tab, label) => {
+    if (!tab || tab.closed) {
+      return;
+    }
+    try {
+      const doc = tab.document;
+      if (!doc) return;
+      doc.open();
+      doc.write(`<!doctype html><html lang="it"><head><meta charset="utf-8" /><title>Caricamento ${label}…</title><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#111827;color:#e4e4e7;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}p{font-size:14px;letter-spacing:0.02em;}</style></head><body><p>Caricamento ${label}…</p></body></html>`);
+      doc.close();
+    } catch (error) {
+      console.warn('Impossibile aggiornare la scheda di caricamento:', error);
+    }
+  }, []);
+
+  const fetchFileObjectUrl = useCallback(async (url, label) => {
+    const requestUrl = appendCacheBustingParam(url);
+    if (!requestUrl) {
+      throw new Error(`URL ${label} non valido.`);
+    }
+
+    const response = await fetch(requestUrl, {
+      cache: 'no-store',
+      mode: 'cors',
+      credentials: 'omit',
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Impossibile scaricare il ${label} (HTTP ${response.status}).`);
+    }
+
+    const blob = await response.blob();
+    return { objectUrl: URL.createObjectURL(blob), requestUrl };
+  }, []);
+
   const openSignedFileInNewTab = useCallback(
     async ({ backendUrl, path, label = 'file', directUrl = '' }) => {
       const normalizedPath = typeof path === 'string' ? path.trim() : '';
@@ -1758,19 +1817,45 @@ function AppContent(){
       }
 
       try {
-        if (directUrl) {
-          newTab.location.href = directUrl;
-          return { url: directUrl, tab: newTab };
-        }
+        writeLoadingDocument(newTab, label);
 
         const normalizedBackend = normalizeBackendUrlValue(backendUrl);
-        if (!normalizedBackend) {
-          throw new Error(`Backend non configurato per aprire il ${label}.`);
+        let resolvedUrl = directUrl || '';
+
+        if (!resolvedUrl) {
+          if (!normalizedBackend) {
+            throw new Error(`Backend non configurato per aprire il ${label}.`);
+          }
+          resolvedUrl = await requestSignedFileUrl(normalizedBackend, normalizedPath);
+        }
+        let objectUrl;
+        let requestUrl = appendCacheBustingParam(resolvedUrl);
+
+        try {
+          const { objectUrl: fetchedObjectUrl, requestUrl: fetchedRequestUrl } = await fetchFileObjectUrl(
+            resolvedUrl,
+            label
+          );
+          objectUrl = fetchedObjectUrl;
+          requestUrl = fetchedRequestUrl || requestUrl;
+        } catch (downloadError) {
+          if (directUrl && requestUrl) {
+            newTab.location.href = requestUrl;
+            return { url: requestUrl, tab: newTab };
+          }
+          throw downloadError;
         }
 
-        const signedUrl = await requestSignedFileUrl(normalizedBackend, normalizedPath);
-        newTab.location.href = signedUrl;
-        return { url: signedUrl, tab: newTab };
+        newTab.location.href = objectUrl;
+        setTimeout(() => {
+          try {
+            URL.revokeObjectURL(objectUrl);
+          } catch (revokeError) {
+            console.warn('Impossibile rilasciare URL temporaneo:', revokeError);
+          }
+        }, OBJECT_URL_REVOKE_DELAY_MS);
+
+        return { url: requestUrl || resolvedUrl, tab: newTab };
       } catch (error) {
         if (!newTab.closed) {
           newTab.close();
@@ -1778,7 +1863,7 @@ function AppContent(){
         throw error;
       }
     },
-    [requestSignedFileUrl]
+    [fetchFileObjectUrl, requestSignedFileUrl, writeLoadingDocument]
   );
 
   const fetchPdfTemplates = useCallback(
