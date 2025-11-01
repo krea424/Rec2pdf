@@ -16,7 +16,7 @@ describe("SetupPanel", () => {
         themes={makeThemes()}
         heroSteps={[
           { key: "setup", label: "Setup", description: "Descrizione" },
-          { key: "input", label: "Input", description: "Clip caricata" },
+          { key: "context", label: "Contesto", description: "Parametri" },
           { key: "deliver", label: "Deliver", description: "PDF" },
         ]}
         statusBadgeLabel="Pronto"
@@ -33,11 +33,11 @@ describe("SetupPanel", () => {
     expect(screen.getByText(/Executive create hub/i)).toBeInTheDocument();
     expect(
       screen.getByText(
-        /Imposta il contesto, carica la sessione e lascia che l'ai generi un pdf executive con effetto wow./i
+        /Imposta il contesto, monitora la pipeline e lascia che l'ai generi un pdf executive con effetto wow./i
       )
     ).toBeInTheDocument();
     expect(screen.getByText("Pronto")).toBeInTheDocument();
-    expect(screen.getByText("Clip caricata")).toBeInTheDocument();
+    expect(screen.getByText("Contesto")).toBeInTheDocument();
     expect(screen.getByTestId("header-icon")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /pipeline executive/i })

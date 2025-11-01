@@ -101,8 +101,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
   const stageStyleBadge = isBoardroom
     ? boardroomStageStyles[stageStatus] || boardroomStageStyles.idle
     : context.STAGE_STATUS_STYLES[stageStatus] || context.STAGE_STATUS_STYLES.idle;
-  const canStartPipeline =
-    Boolean(context.audioBlob) && !context.busy && context.backendUp !== false;
   const highlightSurface = isBoardroom ? boardroomSecondarySurface : themes[theme].input;
   const heroTitleClass = isBoardroom ? "text-white" : "text-zinc-100";
   const heroSubtitleClass = isBoardroom ? "text-white/80" : "text-zinc-400";
@@ -115,14 +113,14 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
         description: "Workspace, progetto e prompt",
       },
       {
-        key: "input",
-        label: "Input",
-        description: "Carica la registrazione della sessione",
+        key: "context",
+        label: "Contesto",
+        description: "Slug, stato e branding coordinati",
       },
       {
         key: "deliver",
         label: "PDF Wow",
-        description: "Report strutturato in pochi secondi",
+        description: "Report strutturato pronto al download",
       },
     ],
     []
@@ -171,7 +169,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
           boardroomChipSurface={boardroomChipSurface}
           boardroomInfoSurface={boardroomInfoSurface}
           trackEvent={trackEvent}
-          canStartPipeline={canStartPipeline}
           audioDownloadExtension={audioDownloadExtension}
         />
       </div>

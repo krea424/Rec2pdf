@@ -55,7 +55,7 @@ const SetupPanel = ({
             </div>
           </div>
           <p className={classNames("text-sm leading-relaxed md:text-base", heroSubtitleClass)}>
-            Imposta il contesto, carica la sessione e lascia che l&apos;AI generi un PDF executive con effetto wow.
+            Imposta il contesto, monitora la pipeline e lascia che l&apos;AI generi un PDF executive con effetto wow.
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
