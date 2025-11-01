@@ -72,8 +72,8 @@ describe("BaseSummaryCards", () => {
     const profileCard = screen.getByText("Profilo").closest("article");
     expect(profileCard).not.toBeNull();
     expect(within(profileCard).getByText("Profilo Strategia")).toBeInTheDocument();
-    expect(within(profileCard).getByText("strategia")).toBeInTheDocument();
-    expect(within(profileCard).getByText("template-letter")).toBeInTheDocument();
+    expect(within(profileCard).queryByText("strategia")).not.toBeInTheDocument();
+    expect(within(profileCard).queryByText("template-letter")).not.toBeInTheDocument();
   });
 
   it("allows switching and clearing the active prompt", async () => {
@@ -85,7 +85,7 @@ describe("BaseSummaryCards", () => {
 
     renderCards(handlers);
 
-    const select = screen.getByLabelText(/Seleziona/i);
+    const select = screen.getByRole("combobox", { name: /prompt/i });
     expect(select).toHaveValue("prompt-1");
 
     await user.selectOptions(select, "prompt-2");
