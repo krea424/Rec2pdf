@@ -6,7 +6,6 @@ import BaseHome from "../features/base/BaseHome";
 import { useAnalytics } from "../context/AnalyticsContext";
 import SetupPanel from "../features/advanced/SetupPanel";
 import InputManager from "../features/advanced/InputManager";
-import PipelineOverview from "../features/advanced/PipelineOverview";
 
 const truncateText = (value, limit = 80) => {
   if (typeof value !== "string") {
@@ -69,14 +68,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
     info:
       "border-brand-200/45 bg-white/[0.05] text-white/90 backdrop-blur-2xl shadow-[0_20px_64px_-48px_rgba(36,119,198,0.45)]",
   };
-  const boardroomStageMessageSurface =
-    "border-brand-200/40 bg-white/[0.05] text-white/80 backdrop-blur-2xl shadow-[0_18px_60px_-48px_rgba(31,139,255,0.45)]";
-  const boardroomConnectorColors = {
-    done: "bg-emerald-400/60",
-    failed: "bg-rose-500/60",
-    base: "bg-white/14",
-  };
-
   const HeaderIcon = context.headerStatus?.icon || Cpu;
 
   const audioDownloadExtension = useMemo(() => {
@@ -107,19 +98,12 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
     : context.pipelineComplete
       ? "done"
       : "idle";
-  const stageLabel = context.pipelineComplete
-    ? "Pipeline completata"
-    : currentStage?.label || "In attesa di avvio";
-  const stageDescription = context.pipelineComplete
-    ? "Sessione elaborata e disponibile nella Library."
-    : currentStage?.description || "Carica o registra una clip per iniziare.";
   const stageStyleBadge = isBoardroom
     ? boardroomStageStyles[stageStatus] || boardroomStageStyles.idle
     : context.STAGE_STATUS_STYLES[stageStatus] || context.STAGE_STATUS_STYLES.idle;
   const canStartPipeline =
     Boolean(context.audioBlob) && !context.busy && context.backendUp !== false;
   const highlightSurface = isBoardroom ? boardroomSecondarySurface : themes[theme].input;
-  const mutedTextClass = isBoardroom ? "text-white/75" : "text-zinc-500";
   const heroTitleClass = isBoardroom ? "text-white" : "text-zinc-100";
   const heroSubtitleClass = isBoardroom ? "text-white/80" : "text-zinc-400";
   const labelToneClass = isBoardroom ? "text-white/65" : "text-zinc-500";
@@ -131,9 +115,9 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
         description: "Workspace, progetto e prompt",
       },
       {
-        key: "record",
-        label: "Rec / Upload",
-        description: "Registra o importa la sessione",
+        key: "input",
+        label: "Input",
+        description: "Carica la registrazione della sessione",
       },
       {
         key: "deliver",
@@ -144,8 +128,8 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
     []
   );
 
-  // TODO(Task 5): Swap out the SetupPanel/InputManager/PipelineOverview trio
-  // with a parameters-only surface once Advanced mode is slimmed down.
+  // TODO(Task 5): Swap out the SetupPanel/InputManager duo with a
+  // parameters-only surface once Advanced mode is slimmed down.
 
   return (
     <div>
@@ -162,27 +146,21 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
         theme={theme}
         themes={themes}
         heroSteps={heroSteps}
-        stageLabel={stageLabel}
-        stageDescription={stageDescription}
         statusBadgeLabel={
           context.pipelineComplete
             ? "Completata"
             : context.STAGE_STATUS_LABELS[stageStatus] || stageStatus
         }
         stageStyleBadge={stageStyleBadge}
-        progressPercent={context.progressPercent}
         highlightSurface={highlightSurface}
-        mutedTextClass={mutedTextClass}
         heroTitleClass={heroTitleClass}
         heroSubtitleClass={heroSubtitleClass}
         labelToneClass={labelToneClass}
         boardroomPrimarySurface={boardroomPrimarySurface}
-        onStartPipeline={context.processViaBackend}
-        canStartPipeline={canStartPipeline}
         HeaderIcon={HeaderIcon}
       />
 
-      <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+      <div className="mt-10">
         <InputManager
           context={context}
           theme={theme}
@@ -195,17 +173,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
           trackEvent={trackEvent}
           canStartPipeline={canStartPipeline}
           audioDownloadExtension={audioDownloadExtension}
-        />
-        <PipelineOverview
-          context={context}
-          theme={theme}
-          themes={themes}
-          isBoardroom={isBoardroom}
-          boardroomPrimarySurface={boardroomPrimarySurface}
-          boardroomStageStyles={boardroomStageStyles}
-          boardroomStageMessageSurface={boardroomStageMessageSurface}
-          boardroomConnectorColors={boardroomConnectorColors}
-          HeaderIcon={HeaderIcon}
         />
       </div>
     </div>
