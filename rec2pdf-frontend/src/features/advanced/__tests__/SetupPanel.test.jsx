@@ -39,7 +39,6 @@ describe("SetupPanel", () => {
         heroSubtitleClass="subtitle"
         labelToneClass="label"
         boardroomPrimarySurface="primary"
-        onOpenWorkspaceSettings={vi.fn()}
         onStartPipeline={vi.fn()}
         canStartPipeline={false}
         HeaderIcon={() => <span data-testid="header-icon">H</span>}
@@ -58,7 +57,6 @@ describe("SetupPanel", () => {
 
   it("calls callbacks when actions are triggered", async () => {
     const user = userEvent.setup();
-    const onOpenWorkspaceSettings = vi.fn();
     const onStartPipeline = vi.fn();
 
     render(
@@ -79,15 +77,11 @@ describe("SetupPanel", () => {
         heroSubtitleClass="subtitle"
         labelToneClass="label"
         boardroomPrimarySurface="primary"
-        onOpenWorkspaceSettings={onOpenWorkspaceSettings}
         onStartPipeline={onStartPipeline}
         canStartPipeline
         HeaderIcon={() => <span />}
       />
     );
-
-    await user.click(screen.getByRole("button", { name: /impostazioni workspace/i }));
-    expect(onOpenWorkspaceSettings).toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: /pipeline executive/i }));
     expect(onStartPipeline).toHaveBeenCalled();
