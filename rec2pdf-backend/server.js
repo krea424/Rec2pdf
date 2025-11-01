@@ -1142,33 +1142,75 @@ const callPublishScript = async (mdPath, env = {}) => {
   return await run('bash', [PUBLISH_SCRIPT, mdPath], { env: publishEnv });
 };
 
-const diarizedSegmentsToText = (segments = []) => {
-  if (!Array.isArray(segments) || !segments.length) return '';
-  const normalized = segments
+const formatDiarizedTimestamp = (seconds) => {
+  if (!Number.isFinite(seconds)) return '00:00:00';
+  const clamped = Math.max(0, Math.floor(seconds));
+  const hh = String(Math.floor(clamped / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((clamped % 3600) / 60)).padStart(2, '0');
+  const ss = String(clamped % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+};
+
+const humanizeDiarizedSpeaker = (rawSpeaker) => {
+  if (typeof rawSpeaker !== 'string' || !rawSpeaker.trim()) {
+    return 'Speaker ?';
+  }
+  const normalized = rawSpeaker.trim();
+  const match = normalized.match(/speaker[_\s]*(\d+)/i);
+  if (match) {
+    const idx = parseInt(match[1], 10);
+    if (Number.isFinite(idx)) {
+      return `Speaker ${idx + 1}`;
+    }
+  }
+  return normalized.replace(/_/g, ' ').trim();
+};
+
+const extractDiarizedText = (segment) => {
+  if (!segment || typeof segment !== 'object') return '';
+  if (typeof segment.text === 'string' && segment.text.trim()) {
+    return segment.text.replace(/\s+/g, ' ').trim();
+  }
+  if (Array.isArray(segment.words)) {
+    return segment.words
+      .map((w) => (w && typeof w.word === 'string' ? w.word : ''))
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  return '';
+};
+
+const normalizeDiarizedSegments = (segments = []) => {
+  if (!Array.isArray(segments) || !segments.length) return [];
+
+  return segments
     .map((segment) => {
-      if (!segment || typeof segment !== 'object') return null;
-      const start = Number(segment.start);
-      const speakerRaw = typeof segment.speaker === 'string' ? segment.speaker.trim() : '';
-      const speaker = speakerRaw || 'SPEAKER_UNKNOWN';
-      let text = '';
-      if (typeof segment.text === 'string' && segment.text.trim()) {
-        text = segment.text.replace(/\s+/g, ' ').trim();
-      } else if (Array.isArray(segment.words)) {
-        text = segment.words
-          .map((word) => (word && typeof word.word === 'string' ? word.word : ''))
-          .filter(Boolean)
-          .join(' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-      }
+      const text = extractDiarizedText(segment);
       if (!text) return null;
-      return { start: Number.isFinite(start) ? start : Number.MAX_SAFE_INTEGER, speaker, text };
+      const start = typeof segment.start === 'number' ? segment.start : null;
+      const speakerRaw = typeof segment.speaker === 'string' ? segment.speaker.trim() : '';
+      return {
+        start: Number.isFinite(start) ? start : Number.MAX_SAFE_INTEGER,
+        timestamp: formatDiarizedTimestamp(start),
+        speakerRaw,
+        speakerLabel: humanizeDiarizedSpeaker(speakerRaw || 'SPEAKER_UNKNOWN'),
+        text,
+      };
     })
     .filter(Boolean)
     .sort((a, b) => a.start - b.start);
-  if (!normalized.length) return '';
-  return normalized.map((item) => `${item.speaker}: ${item.text}`).join('\n');
 };
+
+// Converte i segmenti diarizzati di whisperx in testo leggibile
+// con timestamp [HH:MM:SS] e Speaker N
+const diarizedSegmentsToText = (segments = []) => {
+  const normalized = normalizeDiarizedSegments(segments);
+  if (!normalized.length) return '';
+  return normalized.map((segment) => `[${segment.timestamp}] ${segment.speakerLabel}: ${segment.text}`).join('\n');
+};
+
 
 const loadTranscriptForPrompt = async (sourcePath) => {
   const raw = await fsp.readFile(sourcePath, 'utf8');
@@ -2399,6 +2441,17 @@ const buildSpeakerLabelVariants = (label = '') => {
     variants.add(spaced.toLowerCase());
     variants.add(spaced.replace(/\b\w/g, (c) => c.toUpperCase()));
   }
+  const speakerMatch = normalized.match(/speaker[_\s-]*(\d+)/i);
+  if (speakerMatch) {
+    const rawNumber = speakerMatch[1] || '';
+    const parsed = parseInt(rawNumber, 10);
+    if (Number.isFinite(parsed)) {
+      variants.add(`Speaker ${parsed}`);
+      if (parsed === 0 || /^0/.test(rawNumber)) {
+        variants.add(`Speaker ${parsed + 1}`);
+      }
+    }
+  }
   return Array.from(variants);
 };
 
@@ -2428,35 +2481,130 @@ const applySpeakerMapToContent = (content, mapping = {}) => {
     return content;
   }
 
-  let result = content;
-  for (const [label, mappedName] of Object.entries(mapping)) {
-    if (!label || typeof label !== 'string') continue;
-    const trimmedName = typeof mappedName === 'string' ? mappedName.trim() : '';
-    if (!trimmedName) continue;
-    const variants = buildSpeakerLabelVariants(label);
-    variants.forEach((token) => {
-      const quotedPattern = new RegExp(`(['"])\\s*${escapeRegExp(token)}\\s*(['"])`, 'gi');
-      result = result.replace(quotedPattern, (_match, openQuote, closeQuote) => {
-        return `${openQuote}${trimmedName}${closeQuote}`;
-      });
-    });
-    variants.forEach((token) => {
-      const colonPattern = new RegExp(`(['"]?)(\\*\\*)?${escapeRegExp(token)}(\\*\\*)?(['"]?)(\\s*:)`, 'gi');
-      result = result.replace(colonPattern, (_match, openQuote, _leading, _trailing, closeQuote, suffix) => {
-        const quote = openQuote && openQuote === closeQuote ? openQuote : '';
-        const normalizedSuffix = suffix && suffix.includes(':') ? suffix : ':';
-        return `${quote}**${trimmedName}**${quote}${normalizedSuffix}`;
-      });
-    });
-    variants.forEach((token) => {
-      const barePattern = new RegExp(`(['"]?)(\\*\\*)?${escapeRegExp(token)}(\\*\\*)?(['"]?)`, 'gi');
-      result = result.replace(barePattern, (_match, openQuote, _leading, _trailing, closeQuote) => {
-        const quote = openQuote && openQuote === closeQuote ? openQuote : '';
-        return `${quote}**${trimmedName}**${quote}`;
-      });
-    });
+  const preparedMapping = Object.entries(mapping)
+    .map(([label, mappedName]) => {
+      if (typeof label !== 'string') return null;
+      const trimmedName = typeof mappedName === 'string' ? mappedName.trim() : '';
+      const normalizedLabel = label.trim();
+      if (!normalizedLabel || !trimmedName) return null;
+      return {
+        original: normalizedLabel,
+        mappedName: trimmedName,
+        variants: buildSpeakerLabelVariants(normalizedLabel).map((variant) => variant.toLowerCase()),
+      };
+    })
+    .filter(Boolean);
+
+  if (!preparedMapping.length) {
+    return content;
   }
-  return result;
+
+  const resolveMappedSpeaker = (value) => {
+    const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (!normalized) return '';
+    for (const entry of preparedMapping) {
+      if (entry.variants.includes(normalized)) {
+        return entry.mappedName;
+      }
+    }
+    return '';
+  };
+
+  const mapTranscriptCollection = (collection) => {
+    if (!Array.isArray(collection) || !collection.length) {
+      return collection;
+    }
+    return collection.map((item) => {
+      if (!item || typeof item !== 'object') return item;
+      const next = { ...item };
+      const candidates = [
+        next.raw_label,
+        next.rawLabel,
+        next.speaker,
+      ];
+      let mappedSpeaker = '';
+      for (const candidate of candidates) {
+        mappedSpeaker = resolveMappedSpeaker(candidate);
+        if (mappedSpeaker) break;
+      }
+      if (mappedSpeaker) {
+        next.speaker = mappedSpeaker;
+      }
+      return next;
+    });
+  };
+
+  const applyMappingToBody = (body) => {
+    let result = body;
+    preparedMapping.forEach(({ original, mappedName }) => {
+      const variants = buildSpeakerLabelVariants(original);
+      variants.forEach((token) => {
+        if (!token) return;
+        const trimmedToken = token.trim();
+        if (!trimmedToken) return;
+        const quotedPattern = new RegExp(`(['"])\\s*${escapeRegExp(trimmedToken)}\\s*(['"])`, 'gi');
+        result = result.replace(quotedPattern, (_match, openQuote, closeQuote) => {
+          return `${openQuote}${mappedName}${closeQuote}`;
+        });
+      });
+      variants.forEach((token) => {
+        if (!token) return;
+        const trimmedToken = token.trim();
+        if (!trimmedToken) return;
+        const colonPattern = new RegExp(`(['"]?)(\\*\\*)?${escapeRegExp(trimmedToken)}(\\*\\*)?(['"]?)(\\s*:)`, 'gi');
+        result = result.replace(colonPattern, (_match, openQuote, _leading, _trailing, closeQuote, suffix) => {
+          const quote = openQuote && openQuote === closeQuote ? openQuote : '';
+          const normalizedSuffix = suffix && suffix.includes(':') ? suffix : ':';
+          return `${quote}**${mappedName}**${quote}${normalizedSuffix}`;
+        });
+      });
+      variants.forEach((token) => {
+        if (!token) return;
+        const trimmedToken = token.trim();
+        if (!trimmedToken) return;
+        const barePattern = new RegExp(`(['"]?)(\\*\\*)?${escapeRegExp(trimmedToken)}(\\*\\*)?(['"]?)`, 'gi');
+        result = result.replace(barePattern, (_match, openQuote, _leading, _trailing, closeQuote) => {
+          const quote = openQuote && openQuote === closeQuote ? openQuote : '';
+          return `${quote}**${mappedName}**${quote}`;
+        });
+      });
+    });
+    return result;
+  };
+
+  const match = FRONT_MATTER_REGEX.exec(content);
+  if (!match) {
+    return applyMappingToBody(content);
+  }
+
+  const frontMatterSrc = match[1];
+  const newline = match[0].includes('\r\n') ? '\r\n' : '\n';
+  const trailingNewline = typeof match[2] === 'string' ? match[2] : '';
+  const body = content.slice(match[0].length);
+
+  let updatedFrontMatter = match[0];
+  try {
+    const yamlDoc = frontMatterSrc ? yaml.load(frontMatterSrc) || {} : {};
+    if (yamlDoc && typeof yamlDoc === 'object') {
+      if (Array.isArray(yamlDoc.transcript)) {
+        yamlDoc.transcript = mapTranscriptCollection(yamlDoc.transcript);
+      }
+      if (yamlDoc.metadata && typeof yamlDoc.metadata === 'object') {
+        if (Array.isArray(yamlDoc.metadata.transcript)) {
+          yamlDoc.metadata.transcript = mapTranscriptCollection(yamlDoc.metadata.transcript);
+        }
+      }
+    }
+    const dumped = yaml.dump(yamlDoc).replace(/\r\n/g, '\n').trimEnd();
+    const normalizedDump = dumped.split('\n').join(newline);
+    updatedFrontMatter = `---${newline}${normalizedDump}${newline}---${trailingNewline}`;
+  } catch (error) {
+    console.warn('⚠️ Impossibile applicare mapping speaker al front matter:', error?.message || error);
+    updatedFrontMatter = match[0];
+  }
+
+  const mappedBody = applyMappingToBody(body);
+  return `${updatedFrontMatter}${mappedBody}`;
 };
 
 
@@ -2606,14 +2754,7 @@ const transcribeAudioForKnowledge = async (filePath) => {
     if (ff.code !== 0) {
       throw new Error(ff.stderr || 'ffmpeg failed');
     }
-    const whisperCmd = [
-      'whisper',
-      JSON.stringify(wavPath),
-      '--model small',
-      '--output_format txt',
-      `--output_dir ${JSON.stringify(tempDir)}`,
-      '--verbose False',
-    ].join(' ');
+    
     const w = await run('bash', ['-lc', whisperCmd]);
     if (w.code !== 0) {
       throw new Error(w.stderr || w.stdout || 'whisper failed');
@@ -4577,8 +4718,7 @@ app.get('/api/diag', async (req, res) => {
   } catch { out('❌ ffmpeg non eseguibile'); }
 
   try {
-    const w = await run('bash', ['-lc', 'command -v whisper && whisper --version || true']);
-    out(/whisper/.test(w.stdout) ? `✅ whisper: trovato` : '❌ whisper non trovato');
+    
   } catch { out('❌ whisper non eseguibile'); }
 
   try {
@@ -4637,7 +4777,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
   let promptCuesCompleted = [];
   const tempFiles = new Set();
   const tempDirs = new Set();
-  let speakerLabels = [];
+    let speakerLabels = [];
+    let diarizedTranscriptEntries = [];
   let retrievedWorkspaceContext = '';
 
   const logStageEvent = (stage, status = 'info', message = '') => {
@@ -5026,10 +5167,20 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         }
         transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, candidates[0]));
       } else {
-        const w = await run('bash', [
-          '-lc',
-          `whisper ${JSON.stringify(wavLocalForTranscribe)} --language it --model small --output_format txt --output_dir ${JSON.stringify(transcribeOutputDir)} --verbose False`
-        ]);
+        // NUOVA VERSIONE
+        const whisperxCmd = [
+          'whisperx',
+          JSON.stringify(wavLocalForTranscribe),
+          '--language it',
+          '--model small',
+          '--device cpu',
+          '--compute_type float32',
+          '--output_format txt',
+          `--output_dir ${JSON.stringify(transcribeOutputDir)}`
+        ].join(' ');
+        
+
+const w = await run('bash', ['-lc', whisperxCmd]);
         if (w.code !== 0) {
           out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
           throw new Error('Trascrizione fallita');
@@ -5113,26 +5264,32 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       if (diarizeEnabled) {
         try {
           const parsedTranscript = JSON.parse(transcriptBuffer.toString('utf8'));
-          const speakerSet = new Set();
-          const transcriptTexts = [];
-          if (Array.isArray(parsedTranscript?.segments)) {
-            parsedTranscript.segments.forEach((segment) => {
-              if (segment && typeof segment.speaker === 'string') {
-                const normalizedSpeaker = segment.speaker.trim();
-                if (normalizedSpeaker) {
-                  speakerSet.add(normalizedSpeaker);
-                }
+          const normalizedSegments = normalizeDiarizedSegments(parsedTranscript?.segments || []);
+          if (normalizedSegments.length) {
+            const speakerSet = new Set();
+            const transcriptTexts = [];
+            diarizedTranscriptEntries = normalizedSegments.map((segment) => {
+              if (segment.speakerRaw) {
+                speakerSet.add(segment.speakerRaw);
+              } else if (segment.speakerLabel) {
+                speakerSet.add(segment.speakerLabel);
               }
-              if (segment && typeof segment.text === 'string') {
-                const segmentText = segment.text.trim();
-                if (segmentText) {
-                  transcriptTexts.push(segmentText);
-                }
+              if (segment.text) {
+                transcriptTexts.push(segment.text);
               }
+              return {
+                speaker: segment.speakerLabel,
+                timestamp: segment.timestamp,
+                paragraphs: [segment.text],
+                raw_label: segment.speakerRaw,
+              };
             });
+            speakerLabels = Array.from(speakerSet).sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }));
+            transcriptTextForQuery = transcriptTexts.join(' ');
+          } else {
+            speakerLabels = [];
+            diarizedTranscriptEntries = [];
           }
-          speakerLabels = Array.from(speakerSet).sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }));
-          transcriptTextForQuery = transcriptTexts.join(' ');
         } catch (parseError) {
           out(
             `⚠️ Impossibile analizzare gli speaker diarizzati: ${parseError?.message || parseError}`,
@@ -5140,6 +5297,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
             'warning'
           );
           speakerLabels = [];
+          diarizedTranscriptEntries = [];
         }
       } else {
         transcriptTextForQuery = transcriptBuffer.toString('utf8');
@@ -5180,7 +5338,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       const now = new Date();
       const localTimestamp = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, -1);
 
-      const metadata = {
+      const frontMatter = {
         title: aiTitle || String(req.body?.title || baseName).trim(),
         author: aiAuthor || req.user?.email || 'rec2pdf',
         owner: workspaceProject?.name || workspaceMeta?.client || '',
@@ -5205,22 +5363,63 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       };
 
       // Aggiungi variabili specifiche per i template LaTeX
-      metadata.BLDTitle = metadata.title;
-      metadata.BLDVersion = metadata.version;
-      metadata.BLDUpdated = now.toLocaleDateString('it-IT', { year: 'numeric', month: '2-digit', day: '2-digit' });
-      metadata.BLDAuthor = metadata.author;
-      metadata.BLDProject = metadata.project_name;
+      frontMatter.BLDTitle = frontMatter.title;
+      frontMatter.BLDVersion = frontMatter.version;
+      frontMatter.BLDUpdated = now.toLocaleDateString('it-IT', { year: 'numeric', month: '2-digit', day: '2-digit' });
+      frontMatter.BLDAuthor = frontMatter.author;
+      frontMatter.BLDProject = frontMatter.project_name;
+
+      if (selectedPrompt?.pdfRules && typeof selectedPrompt.pdfRules === 'object') {
+        frontMatter.pdfRules = { ...selectedPrompt.pdfRules };
+      }
+
+      if (diarizeEnabled && diarizedTranscriptEntries.length) {
+        if (!frontMatter.pdfRules || typeof frontMatter.pdfRules !== 'object') {
+          frontMatter.pdfRules = {};
+        }
+        if (!frontMatter.pdfRules.layout) {
+          frontMatter.pdfRules.layout = 'verbale_meeting';
+        }
+        const transcriptBlocks = diarizedTranscriptEntries.map((entry) => {
+          const block = {
+            speaker: entry.speaker,
+            timestamp: entry.timestamp,
+          };
+          if (typeof entry.role === 'string' && entry.role.trim()) {
+            block.role = entry.role.trim();
+          }
+          const paragraphs = Array.isArray(entry.paragraphs)
+            ? entry.paragraphs.filter((p) => typeof p === 'string' && p.trim()).map((p) => p.trim())
+            : [];
+          if (!paragraphs.length && typeof entry.text === 'string' && entry.text.trim()) {
+            paragraphs.push(entry.text.trim());
+          }
+          if (paragraphs.length) {
+            block.paragraphs = paragraphs;
+          }
+          const rawLabel = entry.raw_label || entry.rawLabel;
+          if (typeof rawLabel === 'string' && rawLabel.trim()) {
+            block.raw_label = rawLabel.trim();
+          }
+          return block;
+        });
+        frontMatter.transcript = transcriptBlocks;
+        const nestedMetadata =
+          frontMatter.metadata && typeof frontMatter.metadata === 'object' ? { ...frontMatter.metadata } : {};
+        nestedMetadata.transcript = transcriptBlocks;
+        frontMatter.metadata = nestedMetadata;
+      }
 
       // Rimuovi chiavi vuote per un YAML pulito
-      Object.keys(metadata).forEach(key => {
-        const value = metadata[key];
+      Object.keys(frontMatter).forEach((key) => {
+        const value = frontMatter[key];
         if (value === '' || value === null || (Array.isArray(value) && value.length === 0)) {
-          delete metadata[key];
+          delete frontMatter[key];
         }
       });
 
       // Genera il blocco YAML in modo sicuro
-      const yamlFrontMatter = yaml.dump(metadata);
+      const yamlFrontMatter = yaml.dump(frontMatter);
 
       // Pulisci il corpo del Markdown rimuovendo front matter, recinzioni spurie e sequenze letterali
       const cleanedMarkdownBody = normalizeAiMarkdownBody(markdownBody);
@@ -6508,4 +6707,5 @@ module.exports = {
   DEFAULT_LAYOUT_TEMPLATE_MAP,
   generateMarkdown,
   normalizeAiMarkdownBody,
+  applySpeakerMapToContent,
 };
