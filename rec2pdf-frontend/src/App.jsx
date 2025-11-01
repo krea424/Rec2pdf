@@ -547,6 +547,45 @@ const buildWorkspaceProfileLogoDescriptor = (workspaceId, profile, options = {})
   };
 };
 
+const sanitizeProjectStatuses = (statuses, fallbackStatuses = []) => {
+  const baseList = Array.isArray(statuses)
+    ? statuses
+    : typeof statuses === 'string'
+    ? statuses.split(',')
+    : [];
+  const normalized = baseList
+    .map((status) => String(status || '').trim())
+    .filter(Boolean);
+  if (normalized.length) {
+    return Array.from(new Set(normalized));
+  }
+  const fallback = Array.isArray(fallbackStatuses)
+    ? fallbackStatuses.map((status) => String(status || '').trim()).filter(Boolean)
+    : [];
+  return Array.from(new Set(fallback));
+};
+
+const sanitizeProjectColor = (color, fallbackColor) => {
+  const trimmed = typeof color === 'string' ? color.trim() : '';
+  if (trimmed) {
+    return trimmed;
+  }
+  const fallback = typeof fallbackColor === 'string' ? fallbackColor.trim() : '';
+  return fallback || '#6366f1';
+};
+
+const generateProjectId = () => `proj_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+const findProjectByName = (projects = [], name) => {
+  if (!Array.isArray(projects) || !name) {
+    return null;
+  }
+  const targetName = name.toLowerCase();
+  return (
+    projects.find((project) => typeof project?.name === 'string' && project.name.toLowerCase() === targetName) || null
+  );
+};
+
 const appendPdfLogoIfPresent = (formData, logo) => {
   if (!formData || !isFileLike(logo)) {
     return false;
@@ -2227,9 +2266,365 @@ function AppContent(){
     ]
   );
 
+  const ensureWorkspaceForProjects = useCallback(
+    async (workspaceId) => {
+      const trimmedId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
+      if (!trimmedId) {
+        return null;
+      }
+      const existingWorkspace = workspaces.find((ws) => ws.id === trimmedId);
+      if (existingWorkspace) {
+        return existingWorkspace;
+      }
+      const refreshed = await fetchWorkspaces({ silent: true });
+      if (refreshed?.ok && refreshed.data) {
+        const { workspaces: parsedWorkspaces } = parseWorkspacesResponse(refreshed.data || {});
+        if (Array.isArray(parsedWorkspaces)) {
+          const normalized = parsedWorkspaces.map((workspace) => ({
+            ...workspace,
+            profiles: normalizeWorkspaceProfiles(workspace),
+          }));
+          return normalized.find((workspace) => workspace.id === trimmedId) || null;
+        }
+      }
+      return null;
+    },
+    [workspaces, fetchWorkspaces]
+  );
+
+  const createWorkspaceProject = useCallback(
+    async (workspaceId, project) => {
+      const targetWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
+      if (!targetWorkspaceId) {
+        const message = 'Workspace non valido per creare il progetto.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+      if (!normalizedBackend) {
+        const message = 'Configura un backend valido per creare progetti.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const targetWorkspace = await ensureWorkspaceForProjects(targetWorkspaceId);
+      if (!targetWorkspace) {
+        const message = 'Workspace non disponibile sul backend.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const trimmedName = String(project?.name || '').trim();
+      if (!trimmedName) {
+        const message = 'Il nome del progetto è obbligatorio.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const existingProjects = Array.isArray(targetWorkspace.projects)
+        ? targetWorkspace.projects.map((proj) => ({ ...proj }))
+        : [];
+      if (findProjectByName(existingProjects, trimmedName)) {
+        const message = 'Esiste già un progetto con questo nome.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const fallbackStatuses =
+        Array.isArray(targetWorkspace.defaultStatuses) && targetWorkspace.defaultStatuses.length
+          ? targetWorkspace.defaultStatuses
+          : DEFAULT_WORKSPACE_STATUSES;
+      const resolvedStatuses = sanitizeProjectStatuses(project?.statuses, fallbackStatuses);
+      const color = sanitizeProjectColor(project?.color, targetWorkspace.color);
+      const projectId =
+        typeof project?.id === 'string' && project.id.trim() ? project.id.trim() : generateProjectId();
+      const nextProject = {
+        id: projectId,
+        name: trimmedName,
+        color,
+        statuses: resolvedStatuses.length ? resolvedStatuses : [...fallbackStatuses],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      const nextProjectsPayload = [...existingProjects, nextProject];
+      try {
+        const response = await fetchWithAuth(`${normalizedBackend}/api/workspaces/${targetWorkspaceId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projects: nextProjectsPayload }),
+        });
+        let body = {};
+        try {
+          body = await response.json();
+        } catch {
+          body = {};
+        }
+        if (!response.ok) {
+          const message = body?.message || `Aggiornamento workspace fallito (HTTP ${response.status})`;
+          const details = Array.isArray(body?.details) ? body.details : [];
+          pushLogs([`❌ ${message}`].concat(details));
+          return { ok: false, message, details };
+        }
+        const { workspace: parsedWorkspace } = parseWorkspaceResponse(body);
+        if (parsedWorkspace) {
+          const normalizedWorkspace = {
+            ...parsedWorkspace,
+            profiles: normalizeWorkspaceProfiles(parsedWorkspace),
+          };
+          setWorkspaces((prev) =>
+            prev.map((workspace) => (workspace.id === targetWorkspaceId ? normalizedWorkspace : workspace))
+          );
+          const createdProject =
+            normalizedWorkspace.projects?.find((proj) => proj.id === nextProject.id) ||
+            findProjectByName(normalizedWorkspace.projects, trimmedName) ||
+            null;
+          pushLogs([`✅ Progetto creato: ${createdProject?.name || trimmedName}`]);
+          return {
+            ok: true,
+            project: createdProject || nextProject,
+            projects: normalizedWorkspace.projects || [],
+            workspace: normalizedWorkspace,
+          };
+        }
+        pushLogs([`✅ Progetto creato: ${trimmedName}`]);
+        return { ok: true, project: nextProject, projects: nextProjectsPayload };
+      } catch (error) {
+        const message = error?.message || 'Errore durante la creazione del progetto';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+    },
+    [backendUrl, fetchWithAuth, pushLogs, ensureWorkspaceForProjects, setWorkspaces]
+  );
+
+  const updateWorkspaceProject = useCallback(
+    async (workspaceId, projectId, updates = {}) => {
+      const targetWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
+      if (!targetWorkspaceId) {
+        const message = "Workspace non valido per l'aggiornamento del progetto.";
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+      if (!normalizedBackend) {
+        const message = 'Configura un backend valido per aggiornare i progetti.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const targetWorkspace = await ensureWorkspaceForProjects(targetWorkspaceId);
+      if (!targetWorkspace) {
+        const message = 'Workspace non disponibile sul backend.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const trimmedProjectId = typeof projectId === 'string' ? projectId.trim() : '';
+      if (!trimmedProjectId) {
+        const message = 'Progetto non valido.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const baseProjects = Array.isArray(targetWorkspace.projects)
+        ? targetWorkspace.projects.map((proj) => ({ ...proj }))
+        : [];
+      let existingProject =
+        baseProjects.find((proj) => proj.id === trimmedProjectId) ||
+        findProjectByName(baseProjects, trimmedProjectId) ||
+        null;
+      if (!existingProject) {
+        const message = 'Progetto non trovato nel workspace.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const nextName =
+        typeof updates?.name === 'string' && updates.name.trim() ? updates.name.trim() : existingProject.name || '';
+      if (!nextName) {
+        const message = 'Il nome del progetto è obbligatorio.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const duplicate = baseProjects.find(
+        (proj) =>
+          proj.id !== existingProject.id &&
+          typeof proj.name === 'string' &&
+          proj.name.toLowerCase() === nextName.toLowerCase()
+      );
+      if (duplicate) {
+        const message = 'Esiste già un progetto con questo nome.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const fallbackStatuses =
+        Array.isArray(targetWorkspace.defaultStatuses) && targetWorkspace.defaultStatuses.length
+          ? targetWorkspace.defaultStatuses
+          : DEFAULT_WORKSPACE_STATUSES;
+      const statusesInput =
+        updates.statuses !== undefined ? updates.statuses : existingProject.statuses;
+      const normalizedStatuses = sanitizeProjectStatuses(statusesInput, fallbackStatuses);
+      const resolvedStatuses = normalizedStatuses.length ? normalizedStatuses : [...fallbackStatuses];
+      const nextColor = sanitizeProjectColor(
+        updates.color !== undefined ? updates.color : existingProject.color,
+        targetWorkspace.color || existingProject.color
+      );
+      const nextProjectsPayload = baseProjects.map((proj) => {
+        if (proj.id !== existingProject.id) {
+          return { ...proj };
+        }
+        return {
+          ...proj,
+          name: nextName,
+          color: nextColor,
+          statuses: resolvedStatuses,
+          updatedAt: Date.now(),
+        };
+      });
+      try {
+        const response = await fetchWithAuth(`${normalizedBackend}/api/workspaces/${targetWorkspaceId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projects: nextProjectsPayload }),
+        });
+        let body = {};
+        try {
+          body = await response.json();
+        } catch {
+          body = {};
+        }
+        if (!response.ok) {
+          const message = body?.message || `Aggiornamento workspace fallito (HTTP ${response.status})`;
+          const details = Array.isArray(body?.details) ? body.details : [];
+          pushLogs([`❌ ${message}`].concat(details));
+          return { ok: false, message, details };
+        }
+        const { workspace: parsedWorkspace } = parseWorkspaceResponse(body);
+        if (parsedWorkspace) {
+          const normalizedWorkspace = {
+            ...parsedWorkspace,
+            profiles: normalizeWorkspaceProfiles(parsedWorkspace),
+          };
+          setWorkspaces((prev) =>
+            prev.map((workspace) => (workspace.id === targetWorkspaceId ? normalizedWorkspace : workspace))
+          );
+          const updatedProject =
+            normalizedWorkspace.projects?.find((proj) => proj.id === existingProject.id) ||
+            findProjectByName(normalizedWorkspace.projects, nextName) ||
+            null;
+          pushLogs([`✅ Progetto aggiornato: ${updatedProject?.name || nextName}`]);
+          return {
+            ok: true,
+            project: updatedProject || {
+              ...existingProject,
+              name: nextName,
+              color: nextColor,
+              statuses: resolvedStatuses,
+            },
+            projects: normalizedWorkspace.projects || [],
+            workspace: normalizedWorkspace,
+          };
+        }
+        pushLogs([`✅ Progetto aggiornato: ${nextName}`]);
+        return {
+          ok: true,
+          project: {
+            ...existingProject,
+            name: nextName,
+            color: nextColor,
+            statuses: resolvedStatuses,
+          },
+          projects: nextProjectsPayload,
+        };
+      } catch (error) {
+        const message = error?.message || "Errore durante l'aggiornamento del progetto";
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+    },
+    [backendUrl, fetchWithAuth, pushLogs, ensureWorkspaceForProjects, setWorkspaces]
+  );
+
+  const deleteWorkspaceProject = useCallback(
+    async (workspaceId, projectId) => {
+      const targetWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
+      if (!targetWorkspaceId) {
+        const message = 'Workspace non valido per la rimozione del progetto.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+      if (!normalizedBackend) {
+        const message = 'Configura un backend valido per rimuovere i progetti.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const targetWorkspace = await ensureWorkspaceForProjects(targetWorkspaceId);
+      if (!targetWorkspace) {
+        const message = 'Workspace non disponibile sul backend.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const trimmedProjectId = typeof projectId === 'string' ? projectId.trim() : '';
+      if (!trimmedProjectId) {
+        const message = 'Progetto non valido.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const baseProjects = Array.isArray(targetWorkspace.projects)
+        ? targetWorkspace.projects.map((proj) => ({ ...proj }))
+        : [];
+      const projectToRemove =
+        baseProjects.find((proj) => proj.id === trimmedProjectId) ||
+        findProjectByName(baseProjects, trimmedProjectId) ||
+        null;
+      if (!projectToRemove) {
+        const message = 'Progetto non trovato nel workspace.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+      const nextProjectsPayload = baseProjects.filter((proj) => proj.id !== projectToRemove.id);
+      try {
+        const response = await fetchWithAuth(`${normalizedBackend}/api/workspaces/${targetWorkspaceId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projects: nextProjectsPayload }),
+        });
+        let body = {};
+        try {
+          body = await response.json();
+        } catch {
+          body = {};
+        }
+        if (!response.ok) {
+          const message = body?.message || `Aggiornamento workspace fallito (HTTP ${response.status})`;
+          const details = Array.isArray(body?.details) ? body.details : [];
+          pushLogs([`❌ ${message}`].concat(details));
+          return { ok: false, message, details };
+        }
+        const { workspace: parsedWorkspace } = parseWorkspaceResponse(body);
+        if (parsedWorkspace) {
+          const normalizedWorkspace = {
+            ...parsedWorkspace,
+            profiles: normalizeWorkspaceProfiles(parsedWorkspace),
+          };
+          setWorkspaces((prev) =>
+            prev.map((workspace) => (workspace.id === targetWorkspaceId ? normalizedWorkspace : workspace))
+          );
+          pushLogs([`🗑️ Progetto eliminato: ${projectToRemove.name || projectToRemove.id}`]);
+          return {
+            ok: true,
+            projects: normalizedWorkspace.projects || [],
+            workspace: normalizedWorkspace,
+          };
+        }
+        pushLogs([`🗑️ Progetto eliminato: ${projectToRemove.name || projectToRemove.id}`]);
+        return { ok: true, projects: nextProjectsPayload };
+      } catch (error) {
+        const message = error?.message || 'Errore durante la rimozione del progetto';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+    },
+    [backendUrl, fetchWithAuth, pushLogs, ensureWorkspaceForProjects, setWorkspaces]
+  );
+
   const handleEnsureWorkspaceProject = useCallback(
     async (workspaceId, { projectId, projectName, status } = {}) => {
-      if (!workspaceId) {
+      const targetWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
+      if (!targetWorkspaceId) {
         return { ok: false, message: 'Workspace mancante' };
       }
       const normalized = normalizeBackendUrlValue(backendUrl);
@@ -2239,18 +2634,7 @@ function AppContent(){
         return { ok: false, message };
       }
 
-      const ensureWorkspaceAvailable = async () => {
-        let target = workspaces.find((ws) => ws.id === workspaceId);
-        if (!target) {
-          const refreshed = await fetchWorkspaces({ silent: true });
-          if (Array.isArray(refreshed?.data?.workspaces)) {
-            target = refreshed.data.workspaces.find((ws) => ws.id === workspaceId) || null;
-          }
-        }
-        return target;
-      };
-
-      const targetWorkspace = await ensureWorkspaceAvailable();
+      const targetWorkspace = await ensureWorkspaceForProjects(targetWorkspaceId);
       if (!targetWorkspace) {
         const message = 'Workspace non trovato sul backend.';
         pushLogs([`⚠️ ${message}`]);
@@ -2272,44 +2656,49 @@ function AppContent(){
           }))
         : [];
 
+      const fallbackStatuses =
+        Array.isArray(targetWorkspace.defaultStatuses) && targetWorkspace.defaultStatuses.length
+          ? targetWorkspace.defaultStatuses
+          : DEFAULT_WORKSPACE_STATUSES;
+
       let existingProject = null;
       if (projectIdTrimmed) {
         existingProject = projects.find((proj) => proj.id === projectIdTrimmed) || null;
       }
       if (!existingProject && projectNameTrimmed) {
-        existingProject = projects.find(
-          (proj) => proj.name && proj.name.toLowerCase() === projectNameTrimmed.toLowerCase()
-        ) || null;
+        existingProject = findProjectByName(projects, projectNameTrimmed);
       }
 
       let changed = false;
-
       if (!existingProject && projectNameTrimmed) {
-        const defaultStatuses = Array.isArray(targetWorkspace.defaultStatuses) && targetWorkspace.defaultStatuses.length
-          ? targetWorkspace.defaultStatuses
-          : DEFAULT_WORKSPACE_STATUSES;
-        existingProject = {
-          id: projectIdTrimmed || `proj_${Date.now()}`,
+        const newProject = {
+          id: projectIdTrimmed || generateProjectId(),
           name: projectNameTrimmed,
-          color: targetWorkspace.color || '#6366f1',
-          statuses: statusTrimmed ? [statusTrimmed] : [...defaultStatuses],
+          color: sanitizeProjectColor(targetWorkspace.color, targetWorkspace.color),
+          statuses: statusTrimmed
+            ? sanitizeProjectStatuses([statusTrimmed], fallbackStatuses)
+            : [...fallbackStatuses],
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
-        projects.push(existingProject);
+        projects.push(newProject);
+        existingProject = newProject;
         changed = true;
       } else if (existingProject && statusTrimmed && !existingProject.statuses.includes(statusTrimmed)) {
-        existingProject.statuses = [...existingProject.statuses, statusTrimmed];
+        existingProject.statuses = sanitizeProjectStatuses(
+          [...existingProject.statuses, statusTrimmed],
+          fallbackStatuses
+        );
         existingProject.updatedAt = Date.now();
         changed = true;
       }
 
       if (!changed) {
-        return { ok: true, workspace: targetWorkspace, updated: false };
+        return { ok: true, workspace: targetWorkspace, updated: false, project: existingProject };
       }
 
       try {
-        const response = await fetchWithAuth(`${normalized}/api/workspaces/${workspaceId}`, {
+        const response = await fetchWithAuth(`${normalized}/api/workspaces/${targetWorkspaceId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ projects }),
@@ -2332,18 +2721,27 @@ function AppContent(){
             profiles: normalizeWorkspaceProfiles(parsedWorkspace),
           };
           setWorkspaces((prev) =>
-            prev.map((ws) => (ws.id === workspaceId ? normalizedWorkspace : ws))
+            prev.map((ws) => (ws.id === targetWorkspaceId ? normalizedWorkspace : ws))
           );
-          return { ok: true, workspace: normalizedWorkspace, updated: true };
+          const resolvedProject = existingProject
+            ? normalizedWorkspace.projects?.find((proj) => proj.id === existingProject.id) || existingProject
+            : null;
+          return { ok: true, workspace: normalizedWorkspace, updated: true, project: resolvedProject };
         }
-        return { ok: true, workspace: targetWorkspace, updated: true };
+        return { ok: true, workspace: targetWorkspace, updated: true, project: existingProject };
       } catch (error) {
         const message = error?.message || 'Errore aggiornamento workspace';
         pushLogs([`❌ ${message}`]);
         return { ok: false, message };
       }
     },
-    [backendUrl, fetchWithAuth, workspaces, fetchWorkspaces, pushLogs]
+    [
+      backendUrl,
+      fetchWithAuth,
+      ensureWorkspaceForProjects,
+      pushLogs,
+      setWorkspaces,
+    ]
   );
 
   const handleAssignEntryWorkspace = useCallback(
@@ -4691,6 +5089,9 @@ function AppContent(){
     createWorkspaceProfile,
     updateWorkspaceProfile,
     deleteWorkspaceProfile,
+    createWorkspaceProject,
+    updateWorkspaceProject,
+    deleteWorkspaceProject,
     pdfTemplates,
     pdfTemplatesLoading,
     pdfTemplatesError,
