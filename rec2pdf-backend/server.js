@@ -2797,14 +2797,18 @@ const processKnowledgeTask = async (task = {}) => {
   }
 };
 
-const uploadFileToBucket = async (bucket, objectPath, buffer, contentType) => {
+const uploadFileToBucket = async (bucket, objectPath, buffer, contentType, options = {}) => {
   if (!supabase) {
     throw new Error('Supabase client is not configured');
   }
+  const cacheControl =
+    options.cacheControl !== undefined && options.cacheControl !== null
+      ? String(options.cacheControl)
+      : '0';
   const { error } = await supabase.storage.from(bucket).upload(objectPath, buffer, {
-    cacheControl: '3600',
+    cacheControl,
     contentType: contentType || 'application/octet-stream',
-    upsert: true,
+    upsert: options.upsert ?? true,
   });
   if (error) {
     throw new Error(`Upload fallito su Supabase (${bucket}/${objectPath}): ${error.message}`);
