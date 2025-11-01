@@ -15,10 +15,6 @@ const heroSteps = [
   { key: "deliver", label: "Deliver", description: "PDF" },
 ];
 
-const highlightCards = [
-  { key: "workspace", label: "Workspace", value: "Acme", meta: "Meta", icon: () => <span>W</span> },
-];
-
 describe("SetupPanel", () => {
   it("renders pipeline summary and disables start button when prerequisites missing", () => {
     render(
@@ -27,7 +23,6 @@ describe("SetupPanel", () => {
         theme="default"
         themes={makeThemes()}
         heroSteps={heroSteps}
-        highlightCards={highlightCards}
         stageLabel="In attesa"
         stageDescription="Descrizione stage"
         statusBadgeLabel="Idle"
@@ -51,7 +46,6 @@ describe("SetupPanel", () => {
     expect(
       screen.getByText(/registra o carica un audio per attivare l'esecuzione/i)
     ).toBeInTheDocument();
-    expect(screen.getByText("Workspace")).toBeInTheDocument();
     expect(screen.getByTestId("header-icon")).toBeInTheDocument();
   });
 
@@ -65,7 +59,6 @@ describe("SetupPanel", () => {
         theme="default"
         themes={makeThemes()}
         heroSteps={heroSteps}
-        highlightCards={highlightCards}
         stageLabel="Pronto"
         stageDescription="Descrizione"
         statusBadgeLabel="Running"

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Cpu, FileText, Mic, Sparkles, Users } from "../components/icons";
+import { Cpu } from "../components/icons";
 import { useAppContext } from "../hooks/useAppContext";
 import { Button, Toast } from "../components/ui";
 import BaseHome from "../features/base/BaseHome";
@@ -144,77 +144,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
     []
   );
 
-  const highlightCards = useMemo(() => {
-    const promptTitle = typeof context.activePrompt?.title === "string"
-      ? context.activePrompt.title
-      : "";
-    const focusNotes =
-      typeof context.promptState?.focus === "string" && context.promptState.focus.trim()
-        ? truncateText(context.promptState.focus, 72)
-        : null;
-    const persona =
-      typeof context.activePrompt?.persona === "string" && context.activePrompt.persona
-        ? context.activePrompt.persona
-        : null;
-
-    return [
-      {
-        key: "workspace",
-        label: "Workspace",
-        value: workspaceName,
-        meta:
-          workspaceClient && workspaceClient !== "—"
-            ? `Cliente · ${workspaceClient}`
-            : "Scegli il contesto operativo per allineare automazioni e permessi.",
-        icon: Users,
-      },
-      {
-        key: "project",
-        label: "Progetto",
-        value: projectLabel,
-        meta: context.workspaceSelection.status
-          ? `Stato · ${context.workspaceSelection.status}`
-          : "Definisci lo stato per monitorare milestone e priorità.",
-        icon: FileText,
-      },
-      {
-        key: "prompt",
-        label: "Prompt guida",
-        value: promptTitle || "Nessun template attivo",
-        meta:
-          focusNotes || persona
-            ? focusNotes || `Persona · ${persona}`
-            : "Attiva un prompt dalla libreria per orchestrare tono e struttura.",
-        icon: Sparkles,
-      },
-      {
-        key: "audio",
-        label: "Input sessione",
-        value: context.audioBlob ? "Audio pronto" : "In attesa di input",
-        meta: context.audioBlob
-          ? `${context.mime || "Formato sconosciuto"} · ${context.fmtBytes(
-              context.audioBlob.size
-            )}`
-          : "Registra o carica una clip per sbloccare la pipeline automatizzata.",
-        icon: Mic,
-        emphasis: Boolean(context.audioBlob),
-      },
-    ];
-  }, [
-    context.activePrompt?.persona,
-    context.activePrompt?.title,
-    context.audioBlob,
-    context.mime,
-    context.promptState?.focus,
-    context.workspaceSelection.status,
-    context.workspaceSelection.projectId,
-    context.workspaceSelection.projectName,
-    context.fmtBytes,
-    workspaceClient,
-    workspaceName,
-    projectLabel,
-  ]);
-
   // TODO(Task 5): Swap out the SetupPanel/InputManager/PipelineOverview trio
   // with a parameters-only surface once Advanced mode is slimmed down.
 
@@ -233,7 +162,6 @@ const AdvancedCreatePage = ({ context, trackEvent }) => {
         theme={theme}
         themes={themes}
         heroSteps={heroSteps}
-        highlightCards={highlightCards}
         stageLabel={stageLabel}
         stageDescription={stageDescription}
         statusBadgeLabel={

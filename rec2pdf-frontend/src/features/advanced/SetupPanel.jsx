@@ -7,7 +7,6 @@ const SetupPanel = ({
   theme,
   themes,
   heroSteps,
-  highlightCards,
   stageLabel,
   stageDescription,
   statusBadgeLabel,
@@ -23,8 +22,8 @@ const SetupPanel = ({
   canStartPipeline,
   HeaderIcon,
 }) => {
-  // TODO(Task 5): Retire the executive hero, pipeline progress, and highlight
-  // cards when advanced mode becomes parameters-only.
+  // TODO(Task 5): Retire the executive hero and pipeline progress when
+  // advanced mode becomes parameters-only.
   return (
     <section className="mt-6 space-y-4">
       <div
@@ -132,44 +131,6 @@ const SetupPanel = ({
             </p>
           )}
         </div>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {highlightCards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <div
-              key={card.key}
-              className={classNames(
-                "rounded-3xl border p-5 transition-all",
-                highlightSurface,
-                card.emphasis && "border-brand-300/50 shadow-[0_30px_90px_-55px_rgba(31,139,255,0.6)]"
-              )}
-            >
-              <div
-                className={classNames(
-                  "flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.32em]",
-                  labelToneClass
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {card.label}
-              </div>
-              <div
-                className={classNames(
-                  "mt-3 text-lg font-display font-semibold leading-tight",
-                  heroTitleClass
-                )}
-              >
-                {card.value}
-              </div>
-              {card.meta ? (
-                <p className={classNames("mt-2 text-sm leading-relaxed", mutedTextClass)}>
-                  {card.meta}
-                </p>
-              ) : null}
-            </div>
-          );
-        })}
       </div>
     </section>
   );
