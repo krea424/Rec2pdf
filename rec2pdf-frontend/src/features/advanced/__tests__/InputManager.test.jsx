@@ -1,5 +1,4 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import InputManager from "../InputManager";
 import { MemoryRouter } from "react-router-dom";
@@ -108,34 +107,40 @@ const renderInputManager = (override = {}) =>
         boardroomSecondarySurface="secondary"
         boardroomChipSurface="chip"
         boardroomInfoSurface="info"
-        trackEvent={vi.fn()}
-        canStartPipeline={false}
-        audioDownloadExtension="m4a"
       />
     </MemoryRouter>
   );
 
 describe("InputManager", () => {
-  it("toggles informational panels", async () => {
-    const user = userEvent.setup();
+  it("omits manual upload and pipeline triggers", () => {
     renderInputManager();
 
     expect(
-      screen.queryByText(/usa un file audio esistente come sorgente alternativa/i)
+      screen.queryByRole("button", { name: /avvia pipeline/i })
     ).not.toBeInTheDocument();
-
-    await user.click(
-      screen.getByRole("button", { name: /informazioni su carica audio/i })
-    );
-
     expect(
-      screen.getByText(/usa un file audio esistente come sorgente alternativa/i)
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: /carica audio/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /carica markdown/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /carica txt/i })
+    ).not.toBeInTheDocument();
   });
 
   it("shows completion call-to-action when pipeline is complete", () => {
     renderInputManager({ pipelineComplete: true });
     expect(screen.getByText(/pipeline completata/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /vai alla library/i })).toBeInTheDocument();
+  });
+
+  it("does not show clip playback or reset controls", () => {
+    renderInputManager();
+
+    expect(screen.queryByText(/clip caricata/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/nessuna clip disponibile/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /scarica audio/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /nuova sessione/i })).not.toBeInTheDocument();
   });
 });
