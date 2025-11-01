@@ -8,6 +8,7 @@ Deliver a streamlined creation experience: Base mode becomes a quick-start works
 - [x] Milestone 2 (Base B header cards & uploads) — (2025-02-14 15:45Z · summary cards + unified upload bar)
 - [x] Milestone 3 (Recording toggle + accessibility polish) — (2025-02-14 18:10Z · unified Registra/Stop CTA)
 - [x] Milestone 4 (Advanced slim view + library handoff) — (2025-02-14 21:05Z · advanced parameters-only control room)
+- [ ] Milestone 4a (Control room componentization) — (2025-02-15 09:45Z · extract AdvancedControlRoom wrapper to reduce merge conflicts)
 - [ ] Milestone 5 (Tests, docs, screenshots, feature flag) — (…)
 
 ## Surprises & Discoveries
@@ -25,6 +26,9 @@ Deliver a streamlined creation experience: Base mode becomes a quick-start works
 - Decision: Introduce reusable card primitives in Base scope rather than cross-mode shared components for now.
   Rationale: Keeps Task 1 lightweight; future extraction possible after confirming layouts.
   Date/Author: 2025-02-14 / gpt-5-codex
+- Decision: Lift the advanced control room into its own feature wrapper.
+  Rationale: Minimizes ongoing merge conflicts by isolating the larger JSX change set from `Create.jsx` while preserving routing semantics.
+  Date/Author: 2025-02-15 / gpt-5-codex
 
 ## Outcomes & Retrospective
 - Milestone 2: Base mode now surfaces workspace, project, prompt, and session cards summarizing key context while keeping pipeline below the fold. Upload controls are unified into audio/Markdown/TXT buttons backed by a shared dropzone with validation.
