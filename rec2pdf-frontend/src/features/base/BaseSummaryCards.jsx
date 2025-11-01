@@ -1,16 +1,9 @@
 import { useCallback, useMemo } from "react";
-import { Folder, Target, Sparkles, Waves } from "../../components/icons.jsx";
+import { Folder, Target, Sparkles, Users } from "../../components/icons.jsx";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
 
-const SummaryCard = ({
-  title,
-  icon: Icon,
-  accent = "bg-white/10 text-white",
-  headline,
-  description,
-  children,
-}) => {
+const SummaryCard = ({ title, icon: Icon, accent = "bg-white/10 text-white", headline, children }) => {
   return (
     <article className="flex h-full flex-col justify-between rounded-3xl border border-white/10 bg-white/5 p-5 text-white shadow-subtle">
       <header className="flex items-start justify-between gap-3">
@@ -25,17 +18,12 @@ const SummaryCard = ({
             <Icon className="h-5 w-5" />
           </span>
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-white/60">
-              {title}
-            </p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-white/60">{title}</p>
             <p className="mt-2 text-lg font-semibold leading-snug text-white">{headline}</p>
           </div>
         </div>
       </header>
-      <div className="mt-4 space-y-4 text-sm text-white/70">
-        {description ? <p className="text-white/70">{description}</p> : null}
-        {children}
-      </div>
+      <div className="mt-4 space-y-4 text-sm text-white/70">{children}</div>
     </article>
   );
 };
@@ -48,17 +36,6 @@ const DetailRow = ({ label, value }) => (
     </span>
   </div>
 );
-
-const formatFileDescriptor = (descriptor, fmtBytes) => {
-  if (!descriptor) {
-    return null;
-  }
-
-  const name = typeof descriptor.name === "string" ? descriptor.name : "";
-  const sizeLabel = descriptor.size ? fmtBytes(descriptor.size) : null;
-  const formatted = [name, sizeLabel].filter(Boolean).join(" • ");
-  return formatted || name || null;
-};
 
 const BaseSummaryCards = () => {
   const context = useAppContext();
@@ -74,19 +51,12 @@ const BaseSummaryCards = () => {
     handleClearPromptSelection,
     activePrompt,
     promptCompletedCues,
-    recording,
-    busy,
-    elapsed,
-    fmtTime,
-    audioBlob,
-    fmtBytes,
-    mime,
-    lastMarkdownUpload,
-    lastTextUpload,
-    pipelineComplete,
+    activeWorkspaceProfile,
+    workspaceProfileSelection,
   } = context;
 
   const workspaceStatus = workspaceSelection?.status || activeWorkspace?.status || "In attesa";
+  const workspaceClient = typeof activeWorkspace?.client === "string" ? activeWorkspace.client : "";
 
   const projectList = useMemo(() => {
     if (!Array.isArray(workspaceProjects)) {
@@ -130,62 +100,22 @@ const BaseSummaryCards = () => {
     return { completed, total };
   }, [activePrompt?.cueCards, promptCompletedCues]);
 
-  const audioDetails = useMemo(() => {
-    if (!audioBlob) {
+  const activeProfilePrompt = useMemo(() => {
+    if (!activeWorkspaceProfile?.promptId) {
       return null;
     }
-    const name = typeof audioBlob.name === "string" && audioBlob.name ? audioBlob.name : "Audio pronto";
-    const sizeLabel = audioBlob.size ? fmtBytes(audioBlob.size) : null;
-    const mimeLabel = mime || audioBlob.type || "Formato sconosciuto";
-    return [name, sizeLabel, mimeLabel].filter(Boolean).join(" • ");
-  }, [audioBlob, fmtBytes, mime]);
+    return prompts.find((prompt) => prompt.id === activeWorkspaceProfile.promptId) || null;
+  }, [activeWorkspaceProfile?.promptId, prompts]);
 
-  const markdownDetails = useMemo(() => formatFileDescriptor(lastMarkdownUpload, fmtBytes), [lastMarkdownUpload, fmtBytes]);
-  const textDetails = useMemo(() => formatFileDescriptor(lastTextUpload, fmtBytes), [lastTextUpload, fmtBytes]);
-
-  const sessionHeadline = useMemo(() => {
-    if (recording) {
-      return "Registrazione in corso";
+  const profileHeadline = useMemo(() => {
+    if (activeWorkspaceProfile) {
+      return activeWorkspaceProfile.label || activeWorkspaceProfile.id || "Profilo attivo";
     }
-    if (audioDetails) {
-      return "Audio caricato";
+    if (workspaceProfileSelection?.profileId) {
+      return "Profilo non disponibile";
     }
-    if (markdownDetails) {
-      return "Markdown caricato";
-    }
-    if (textDetails) {
-      return "Testo caricato";
-    }
-    if (pipelineComplete) {
-      return "Sessione completata";
-    }
-    if (busy) {
-      return "Pipeline in corso";
-    }
-    return "Registrazione pronta";
-  }, [audioDetails, busy, markdownDetails, pipelineComplete, recording, textDetails]);
-
-  const sessionDescription = useMemo(() => {
-    if (recording) {
-      return `Durata: ${fmtTime(elapsed)}`;
-    }
-    if (audioDetails) {
-      return audioDetails;
-    }
-    if (markdownDetails) {
-      return markdownDetails;
-    }
-    if (textDetails) {
-      return textDetails;
-    }
-    if (pipelineComplete) {
-      return "Pipeline completata. Scarica il PDF dalla sezione a destra.";
-    }
-    if (busy) {
-      return "Attendi il completamento della pipeline attuale.";
-    }
-    return "Carica audio, Markdown o testo per avviare la sessione.";
-  }, [audioDetails, busy, elapsed, fmtTime, markdownDetails, pipelineComplete, recording, textDetails]);
+    return "Nessun profilo attivo";
+  }, [activeWorkspaceProfile, workspaceProfileSelection?.profileId]);
 
   const handlePromptChange = useCallback(
     (event) => {
@@ -207,16 +137,10 @@ const BaseSummaryCards = () => {
         icon={Folder}
         accent="bg-emerald-500/15 text-emerald-200"
         headline={workspaceLoading ? "Caricamento…" : activeWorkspace?.name || "Nessun workspace"}
-        description={
-          workspaceLoading
-            ? "Recupero workspaces in corso"
-            : activeWorkspace?.client
-            ? `Cliente: ${activeWorkspace.client}`
-            : "Seleziona un workspace per abilitare la pipeline."
-        }
       >
         <div className="space-y-3">
           <DetailRow label="ID" value={workspaceSelection?.workspaceId || "—"} />
+          <DetailRow label="Cliente" value={workspaceClient || "—"} />
           <DetailRow label="Stato" value={workspaceStatus} />
         </div>
       </SummaryCard>
@@ -226,11 +150,6 @@ const BaseSummaryCards = () => {
         icon={Target}
         accent="bg-sky-500/15 text-sky-200"
         headline={selectedProject?.name || "Nessun progetto"}
-        description={
-          selectedProject
-            ? "Il progetto guiderà i metadati di esportazione."
-            : "Associare un progetto mantiene allineati PDF e cronologia."
-        }
       >
         <div className="space-y-3">
           <DetailRow label="ID" value={selectedProject?.id || workspaceSelection?.projectId || "—"} />
@@ -243,16 +162,8 @@ const BaseSummaryCards = () => {
         icon={Sparkles}
         accent="bg-violet-500/20 text-violet-100"
         headline={
-          promptLoading
-            ? "Caricamento…"
-            : activePrompt?.title || activePrompt?.id || "Nessun prompt attivo"
+          promptLoading ? "Caricamento…" : activePrompt?.title || activePrompt?.id || "Nessun prompt attivo"
         }
-        description={
-          promptLoading
-            ? "Aggiornamento della libreria prompt."
-            : activePrompt
-            ? activePrompt.summary || ""
-            : "Seleziona un prompt per aiutare la generazione."}
       >
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
@@ -276,26 +187,29 @@ const BaseSummaryCards = () => {
           </div>
           <DetailRow label="ID" value={activePrompt?.id || promptState?.promptId || "—"} />
           {promptChecklist ? (
-            <DetailRow
-              label="Checklist"
-              value={`${promptChecklist.completed}/${promptChecklist.total} cue`}
-            />
+            <DetailRow label="Checklist" value={`${promptChecklist.completed}/${promptChecklist.total} cue`} />
           ) : null}
         </div>
       </SummaryCard>
 
       <SummaryCard
-        title="Input sessione"
-        icon={Waves}
+        title="Profilo"
+        icon={Users}
         accent="bg-rose-500/15 text-rose-200"
-        headline={sessionHeadline}
-        description={sessionDescription}
+        headline={profileHeadline}
       >
         <div className="space-y-3">
-          <DetailRow label="Registrazione" value={recording ? fmtTime(elapsed) : "Pronta"} />
-          <DetailRow label="Audio" value={audioDetails} />
-          <DetailRow label="Markdown" value={markdownDetails} />
-          <DetailRow label="Testo" value={textDetails} />
+          <DetailRow
+            label="ID"
+            value={activeWorkspaceProfile?.id || workspaceProfileSelection?.profileId || "—"}
+          />
+          <DetailRow label="Slug" value={activeWorkspaceProfile?.slug || "—"} />
+          <DetailRow label="Cartella" value={activeWorkspaceProfile?.destDir || "—"} />
+          <DetailRow
+            label="Prompt"
+            value={activeProfilePrompt?.title || activeWorkspaceProfile?.promptId || "—"}
+          />
+          <DetailRow label="Template" value={activeWorkspaceProfile?.pdfTemplate || "—"} />
         </div>
       </SummaryCard>
     </section>
