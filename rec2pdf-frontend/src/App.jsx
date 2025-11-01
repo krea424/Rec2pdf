@@ -4007,6 +4007,8 @@ function AppContent(){
     }
   };
 
+  // TODO(Task 3): Surface this handler through the Base upload bar for .md
+  // files alongside audio and .txt inputs.
   const handleMarkdownFilePicked=(event)=>{
     const file=event.target?.files?.[0];
     if(!file) return;
@@ -4048,6 +4050,8 @@ function AppContent(){
     }
   };
 
+  // TODO(Task 3): Expose this TXT ingestion path via the Base upload bar to
+  // keep advanced mode focused on configuration only.
   const handleTextFilePicked = async (event) => {
     const file = event.target?.files?.[0];
     if (!file) return;

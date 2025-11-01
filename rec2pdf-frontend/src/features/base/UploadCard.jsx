@@ -75,6 +75,11 @@ const UploadCard = ({ journeyStage = "record" }) => {
     !canRecord && "cursor-not-allowed opacity-60"
   );
 
+  // TODO(Task 4): Harmonize the record toggle labeling/iconography so the
+  // single button communicates Mic vs Stop states without duplicate CTAs.
+  // TODO(Task 3): Replace the lone audio upload control with a shared
+  // dropzone supporting audio, .md, and .txt inputs via AppContext handlers.
+
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-subtle">
       <div className="flex items-center justify-between">
