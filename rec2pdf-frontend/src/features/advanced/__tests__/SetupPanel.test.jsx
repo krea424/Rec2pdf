@@ -30,7 +30,9 @@ describe("SetupPanel", () => {
       />
     );
 
-    expect(screen.getByText(/Executive create hub/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Executive create hub/i)
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(
         /Imposta il contesto, monitora la pipeline e lascia che l'ai generi un pdf executive con effetto wow./i

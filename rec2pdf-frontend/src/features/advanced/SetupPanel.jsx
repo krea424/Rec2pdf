@@ -24,14 +24,6 @@ const SetupPanel = ({
         )}
       >
         <div className="space-y-3">
-          <p
-            className={classNames(
-              "text-xs font-semibold uppercase tracking-[0.32em]",
-              labelToneClass
-            )}
-          >
-            Executive create hub
-          </p>
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <h1
               className={classNames(
