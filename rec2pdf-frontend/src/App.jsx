@@ -116,6 +116,24 @@ const buildFileUrl = (backendUrl, filePath, options = {}) => {
   return `${normalized}/api/file?${params.toString()}`;
 };
 
+const appendCacheBustingParam = (url) => {
+  if (!url || typeof url !== 'string') {
+    return '';
+  }
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return '';
+  }
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  if (/[?&]cachebust=/i.test(trimmed)) {
+    return trimmed;
+  }
+  const separator = trimmed.includes('?') ? '&' : '?';
+  return `${trimmed}${separator}cachebust=${Date.now().toString(36)}`;
+};
+
 const normalizeSpeakers = (speakers) =>
   Array.isArray(speakers)
     ? speakers
@@ -1770,7 +1788,12 @@ function AppContent(){
   }, []);
 
   const fetchFileObjectUrl = useCallback(async (url, label) => {
-    const response = await fetch(url, {
+    const requestUrl = appendCacheBustingParam(url);
+    if (!requestUrl) {
+      throw new Error(`URL ${label} non valido.`);
+    }
+
+    const response = await fetch(requestUrl, {
       cache: 'no-store',
       mode: 'cors',
       credentials: 'omit',
@@ -1785,7 +1808,7 @@ function AppContent(){
     }
 
     const blob = await response.blob();
-    return URL.createObjectURL(blob);
+    return { objectUrl: URL.createObjectURL(blob), requestUrl };
   }, []);
 
   const openSignedFileInNewTab = useCallback(
@@ -1817,13 +1840,19 @@ function AppContent(){
           resolvedUrl = await requestSignedFileUrl(normalizedBackend, normalizedPath);
         }
         let objectUrl;
+        let requestUrl = appendCacheBustingParam(resolvedUrl);
 
         try {
-          objectUrl = await fetchFileObjectUrl(resolvedUrl, label);
+          const { objectUrl: fetchedObjectUrl, requestUrl: fetchedRequestUrl } = await fetchFileObjectUrl(
+            resolvedUrl,
+            label
+          );
+          objectUrl = fetchedObjectUrl;
+          requestUrl = fetchedRequestUrl || requestUrl;
         } catch (downloadError) {
-          if (directUrl) {
-            newTab.location.href = `${resolvedUrl}${resolvedUrl.includes('?') ? '&' : '?'}cachebust=${Date.now()}`;
-            return { url: resolvedUrl, tab: newTab };
+          if (directUrl && requestUrl) {
+            newTab.location.href = requestUrl;
+            return { url: requestUrl, tab: newTab };
           }
           throw downloadError;
         }
@@ -1837,7 +1866,7 @@ function AppContent(){
           }
         }, OBJECT_URL_REVOKE_DELAY_MS);
 
-        return { url: resolvedUrl, tab: newTab };
+        return { url: requestUrl || resolvedUrl, tab: newTab };
       } catch (error) {
         if (!newTab.closed) {
           newTab.close();

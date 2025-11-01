@@ -2942,6 +2942,24 @@ const uploadFileToBucket = async (bucket, objectPath, buffer, contentType, optio
   if (!supabase) {
     throw new Error('Supabase client is not configured');
   }
+
+  if (options.invalidateCache) {
+    try {
+      const { error: removeError } = await supabase.storage.from(bucket).remove([objectPath]);
+      if (removeError && Number(removeError?.statusCode || removeError?.status) !== 404) {
+        const reason = removeError?.message || removeError?.error || String(removeError);
+        console.warn(
+          `⚠️  Impossibile invalidare il file Supabase (${bucket}/${objectPath}) prima del nuovo upload: ${reason}`
+        );
+      }
+    } catch (invalidateError) {
+      const reason = invalidateError?.message || invalidateError?.error || String(invalidateError);
+      console.warn(
+        `⚠️  Errore durante l'invalidazione del file Supabase (${bucket}/${objectPath}): ${reason}`
+      );
+    }
+  }
+
   const cacheControl =
     options.cacheControl !== undefined && options.cacheControl !== null
       ? String(options.cacheControl)
@@ -5755,7 +5773,13 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
         logger: out,
       });
 
-      await uploadFileToBucket(bucket, pdfObjectPath, await fsp.readFile(pdfLocalPath), 'application/pdf');
+      await uploadFileToBucket(
+        bucket,
+        pdfObjectPath,
+        await fsp.readFile(pdfLocalPath),
+        'application/pdf',
+        { invalidateCache: true }
+      );
       out(`☁️ PDF aggiornato su Supabase: ${pdfObjectPath}`);
 
       let localPdfPath = '';
@@ -6618,7 +6642,13 @@ app.put('/api/markdown', async (req, res) => {
     }
 
     const nextBuffer = Buffer.from(content, 'utf8');
-    await uploadFileToBucket(bucket, objectPath, nextBuffer, 'text/markdown; charset=utf-8');
+    await uploadFileToBucket(
+      bucket,
+      objectPath,
+      nextBuffer,
+      'text/markdown; charset=utf-8',
+      { invalidateCache: true }
+    );
 
     return res.json({ ok: true, path: `${bucket}/${objectPath}`, bytes: nextBuffer.length });
   } catch (err) {
@@ -6666,6 +6696,10 @@ app.get('/api/file', async (req, res) => {
     if (!/^https?:\/\//i.test(targetUrl)) {
       return res.status(500).json({ ok: false, message: 'URL firmato Supabase non valido' });
     }
+
+    const cacheBuster = Date.now().toString(36);
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    targetUrl = `${targetUrl}${separator}cachebust=${cacheBuster}`;
 
     res.setHeader('Cache-Control', 'no-store');
     return res.json({ ok: true, url: targetUrl });
