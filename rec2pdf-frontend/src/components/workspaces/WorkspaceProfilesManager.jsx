@@ -48,6 +48,9 @@ const WorkspaceProfilesManager = () => {
     createWorkspaceProfile,
     updateWorkspaceProfile,
     deleteWorkspaceProfile,
+    createWorkspaceProject,
+    updateWorkspaceProject,
+    deleteWorkspaceProject,
     pdfTemplates,
     pdfTemplatesLoading,
     pdfTemplatesError,
@@ -83,6 +86,16 @@ const WorkspaceProfilesManager = () => {
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState({ success: "", error: "", details: [] });
   const [activeTab, setActiveTab] = useState("profiles");
+  const [projectFormMode, setProjectFormMode] = useState(null);
+  const [projectForm, setProjectForm] = useState({
+    id: "",
+    name: "",
+    color: "#6366f1",
+    statuses: defaultStatusesString,
+  });
+  const [projectFormPending, setProjectFormPending] = useState(false);
+  const [projectFeedbackEntries, setProjectFeedbackEntries] = useState([]);
+  const projectFeedbackIdRef = useRef(0);
   const logoInputRef = useRef(null);
   const resetWorkspaceForm = useCallback(() => {
     setWorkspaceForm({
@@ -174,9 +187,228 @@ const WorkspaceProfilesManager = () => {
     setWorkspaceManagerFeedback({ type: "", message: "" });
   }, [activeWorkspace, defaultStatusesString]);
 
+  const activeWorkspaceDefaultStatusesString = useMemo(() => {
+    if (
+      Array.isArray(activeWorkspace?.defaultStatuses) &&
+      activeWorkspace.defaultStatuses.length
+    ) {
+      return activeWorkspace.defaultStatuses.join(", ");
+    }
+    return defaultStatusesString;
+  }, [activeWorkspace, defaultStatusesString]);
+
+  const clearProjectFeedbackEntries = useCallback(() => {
+    setProjectFeedbackEntries([]);
+    projectFeedbackIdRef.current = 0;
+  }, []);
+
+  const pushProjectFeedbackEntry = useCallback((entry) => {
+    if (!entry || !entry.message) {
+      return;
+    }
+    const message = String(entry.message).trim();
+    if (!message) {
+      return;
+    }
+    const normalizedType = entry.type === "error" ? "error" : entry.type === "success" ? "success" : "info";
+    const normalizedDetails = Array.isArray(entry.details)
+      ? entry.details.map((detail) => String(detail).trim()).filter(Boolean)
+      : entry.details
+      ? [String(entry.details).trim()].filter(Boolean)
+      : [];
+
+    setProjectFeedbackEntries((prev) => {
+      projectFeedbackIdRef.current += 1;
+      const nextEntry = {
+        id: `project-feedback-${projectFeedbackIdRef.current}`,
+        type: normalizedType,
+        message,
+        details: normalizedDetails,
+      };
+      const nextEntries = prev.concat(nextEntry);
+      return nextEntries.length > 4 ? nextEntries.slice(nextEntries.length - 4) : nextEntries;
+    });
+  }, []);
+
+  const resetProjectForm = useCallback(() => {
+    setProjectForm({
+      id: "",
+      name: "",
+      color: activeWorkspace?.color || "#6366f1",
+      statuses: activeWorkspaceDefaultStatusesString,
+    });
+  }, [activeWorkspace?.color, activeWorkspaceDefaultStatusesString]);
+
+  useEffect(() => {
+    resetProjectForm();
+    setProjectFormMode(null);
+    clearProjectFeedbackEntries();
+  }, [activeWorkspace?.id, resetProjectForm, clearProjectFeedbackEntries]);
+
   const workspaceProjects = useMemo(
     () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []),
     [activeWorkspace]
+  );
+
+  const handleProjectFieldChange = useCallback(
+    (field) => (event) => {
+      const value = event.target.value;
+      setProjectForm((prev) => ({ ...prev, [field]: value }));
+    },
+    [],
+  );
+
+  const handleProjectColorChange = useCallback((event) => {
+    const value = event.target.value;
+    setProjectForm((prev) => ({ ...prev, color: value || "#6366f1" }));
+  }, []);
+
+  const openCreateProjectForm = useCallback(() => {
+    setProjectFormMode("create");
+    setProjectForm({
+      id: "",
+      name: "",
+      color: activeWorkspace?.color || "#6366f1",
+      statuses: activeWorkspaceDefaultStatusesString,
+    });
+    clearProjectFeedbackEntries();
+  }, [activeWorkspace?.color, activeWorkspaceDefaultStatusesString, clearProjectFeedbackEntries]);
+
+  const openEditProjectForm = useCallback(
+    (project) => {
+      if (!project) {
+        return;
+      }
+      setProjectFormMode("edit");
+      setProjectForm({
+        id: project.id || "",
+        name: project.name || "",
+        color: project.color || activeWorkspace?.color || "#6366f1",
+        statuses:
+          Array.isArray(project.statuses) && project.statuses.length
+            ? project.statuses.join(", ")
+            : activeWorkspaceDefaultStatusesString,
+      });
+      clearProjectFeedbackEntries();
+    },
+    [activeWorkspace?.color, activeWorkspaceDefaultStatusesString, clearProjectFeedbackEntries],
+  );
+
+  const handleCancelProjectForm = useCallback(() => {
+    setProjectFormMode(null);
+    resetProjectForm();
+  }, [resetProjectForm]);
+
+  const handleProjectFormSubmit = useCallback(
+    async (event) => {
+      event.preventDefault();
+      if (!selectedWorkspaceId) {
+        pushProjectFeedbackEntry({ type: "error", message: "Seleziona un workspace valido." });
+        return;
+      }
+      const trimmedName = projectForm.name.trim();
+      if (!trimmedName) {
+        pushProjectFeedbackEntry({ type: "error", message: "Il nome del progetto è obbligatorio." });
+        return;
+      }
+      const statusList = parseStatusList(projectForm.statuses);
+      setProjectFormPending(true);
+      try {
+        if (projectFormMode === "create") {
+          const result = await createWorkspaceProject(selectedWorkspaceId, {
+            name: trimmedName,
+            color: projectForm.color,
+            statuses: statusList,
+          });
+          if (!result.ok) {
+            pushProjectFeedbackEntry({
+              type: "error",
+              message: result.message || "Creazione progetto non riuscita.",
+              details: Array.isArray(result.details) ? result.details : [],
+            });
+            return;
+          }
+          pushProjectFeedbackEntry({
+            type: "success",
+            message: `Progetto creato: ${result.project?.name || trimmedName}`,
+            details: [],
+          });
+          setProjectFormMode(null);
+          resetProjectForm();
+        } else if (projectFormMode === "edit" && projectForm.id) {
+          const result = await updateWorkspaceProject(selectedWorkspaceId, projectForm.id, {
+            name: trimmedName,
+            color: projectForm.color,
+            statuses: statusList,
+          });
+          if (!result.ok) {
+            pushProjectFeedbackEntry({
+              type: "error",
+              message: result.message || "Aggiornamento progetto non riuscito.",
+              details: Array.isArray(result.details) ? result.details : [],
+            });
+            return;
+          }
+          pushProjectFeedbackEntry({
+            type: "success",
+            message: `Progetto aggiornato: ${result.project?.name || trimmedName}`,
+            details: [],
+          });
+          setProjectFormMode(null);
+          resetProjectForm();
+        } else {
+          pushProjectFeedbackEntry({ type: "error", message: "Modalità progetto non valida." });
+        }
+      } finally {
+        setProjectFormPending(false);
+      }
+    },
+    [
+      createWorkspaceProject,
+      projectForm.color,
+      projectForm.id,
+      projectForm.name,
+      projectForm.statuses,
+      projectFormMode,
+      resetProjectForm,
+      selectedWorkspaceId,
+      updateWorkspaceProject,
+      pushProjectFeedbackEntry,
+    ],
+  );
+
+  const handleProjectDelete = useCallback(
+    async (project) => {
+      if (!project || !project.id || !selectedWorkspaceId) {
+        return;
+      }
+      const targetLabel = project.name || project.id;
+      const confirmed = window.confirm(`Eliminare il progetto "${targetLabel}"?`);
+      if (!confirmed) {
+        return;
+      }
+      setProjectFormPending(true);
+      try {
+        const result = await deleteWorkspaceProject(selectedWorkspaceId, project.id);
+        if (!result.ok) {
+          pushProjectFeedbackEntry({
+            type: "error",
+            message: result.message || "Eliminazione progetto non riuscita.",
+          });
+          return;
+        }
+        pushProjectFeedbackEntry({
+          type: "success",
+          message: `Progetto eliminato: ${targetLabel}`,
+          details: [],
+        });
+        setProjectFormMode(null);
+        resetProjectForm();
+      } finally {
+        setProjectFormPending(false);
+      }
+    },
+    [deleteWorkspaceProject, resetProjectForm, selectedWorkspaceId, pushProjectFeedbackEntry],
   );
 
   const profiles = useMemo(
@@ -1282,69 +1514,217 @@ const WorkspaceProfilesManager = () => {
         <TabsContent value="projects">
           {!selectedWorkspaceId ? (
             <div className="rounded-2xl border border-dashed border-surface-700 bg-surface-900/30 p-6 text-center text-sm text-surface-400">
-              Seleziona un workspace per visualizzare i progetti configurati.
-            </div>
-          ) : workspaceProjects.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-surface-700 bg-surface-900/30 p-6 text-center text-sm text-surface-400">
-              Nessun progetto configurato per questo workspace.
+              Seleziona un workspace per visualizzare e gestire i progetti.
             </div>
           ) : (
-            <div className="mt-4 space-y-4">
-              <div className="rounded-2xl border border-surface-700 bg-surface-900/40 p-5">
-                <div className="text-sm font-semibold text-surface-100">Progetti del workspace</div>
-                <p className="mt-1 text-xs text-surface-400">
-                  Stati e metadati vengono utilizzati per organizzare i deliverable generati dalla pipeline.
-                </p>
-                <ul className="mt-4 space-y-3">
-                  {workspaceProjects.map((project) => {
-                    const updatedLabel = formatProjectTimestamp(project.updatedAt || project.createdAt);
+            <div className="mt-4 space-y-5">
+              <div className="flex flex-col gap-3 rounded-2xl border border-surface-700 bg-surface-900/40 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-surface-100">Progetti del workspace</div>
+                  <p className="mt-1 text-xs text-surface-400">
+                    Usa i progetti per classificare le sessioni e precompilare stati nella pipeline.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  leadingIcon={Plus}
+                  onClick={openCreateProjectForm}
+                  disabled={projectFormPending}
+                >
+                  Nuovo progetto
+                </Button>
+              </div>
+
+              {projectFeedbackEntries.length ? (
+                <div
+                  className="space-y-3"
+                  role="status"
+                  aria-live={projectFeedbackEntries.some((entry) => entry.type === "error") ? "assertive" : "polite"}
+                >
+                  {projectFeedbackEntries.map((entry) => {
+                    const isError = entry.type === "error";
+                    const Icon = isError ? AlertCircle : Sparkles;
                     return (
-                      <li
-                        key={project.id}
-                        className="rounded-2xl border border-surface-700/70 bg-surface-900/30 p-4"
+                      <div
+                        key={entry.id}
+                        className={classNames(
+                          "rounded-2xl border p-4 text-xs",
+                          isError
+                            ? "border-feedback-danger/50 bg-feedback-danger/10 text-feedback-danger"
+                            : "border-emerald-500/50 bg-emerald-500/10 text-emerald-200",
+                        )}
                       >
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex items-start gap-2">
+                          <Icon className="mt-0.5 h-4 w-4" aria-hidden="true" />
                           <div>
-                            <div className="text-sm font-semibold text-surface-100">{project.name || project.id}</div>
-                            <div className="mt-1 text-xs text-surface-400">
-                              ID: <span className="font-mono text-surface-200">{project.id}</span>
-                            </div>
-                            {updatedLabel ? (
-                              <div className="text-[11px] uppercase tracking-wide text-surface-500">
-                                Aggiornato: {updatedLabel}
-                              </div>
+                            <div className="font-medium">{entry.message}</div>
+                            {entry.details?.length ? (
+                              <ul className="mt-1 list-disc space-y-1 pl-4">
+                                {entry.details.map((detail, index) => (
+                                  <li key={`${entry.id}-detail-${index}`}>{detail}</li>
+                                ))}
+                              </ul>
                             ) : null}
                           </div>
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-surface-400">
-                            <span className="inline-flex items-center gap-2 rounded-full border border-surface-700/60 bg-surface-900/60 px-2 py-0.5">
-                              <span
-                                className="h-2.5 w-2.5 rounded-full"
-                                style={{ backgroundColor: project.color || '#6366f1' }}
-                                aria-hidden="true"
-                              />
-                              {project.color || '#6366f1'}
-                            </span>
-                            <span className="uppercase tracking-wide">
-                              {Array.isArray(project.statuses) ? project.statuses.length : 0} stati
-                            </span>
-                          </div>
                         </div>
-                        {Array.isArray(project.statuses) && project.statuses.length ? (
-                          <div className="mt-3 flex flex-wrap gap-2 text-xs text-surface-300">
-                            {project.statuses.map((status) => (
-                              <span
-                                key={`${project.id}-${status}`}
-                                className="rounded-full border border-surface-700/60 bg-surface-900/60 px-2 py-0.5"
-                              >
-                                {status}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </li>
+                      </div>
                     );
                   })}
-                </ul>
+                </div>
+              ) : null}
+
+              {projectFormMode ? (
+                <form
+                  onSubmit={handleProjectFormSubmit}
+                  className="space-y-4 rounded-2xl border border-surface-700 bg-surface-900/40 p-5"
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-surface-100">
+                        {projectFormMode === 'create' ? 'Nuovo progetto' : 'Modifica progetto'}
+                      </div>
+                      <p className="mt-1 text-xs text-surface-400">
+                        Imposta un nome descrittivo, un colore per le etichette e gli stati predefiniti.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleCancelProjectForm}
+                      disabled={projectFormPending}
+                    >
+                      Annulla
+                    </Button>
+                  </div>
+
+                  <Input
+                    label="Nome progetto"
+                    value={projectForm.name}
+                    onChange={handleProjectFieldChange('name')}
+                    placeholder="Es. Discovery cliente"
+                    required
+                    disabled={projectFormPending}
+                  />
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Input
+                      label="Colore"
+                      type="color"
+                      value={projectForm.color}
+                      onChange={handleProjectColorChange}
+                      disabled={projectFormPending}
+                    />
+                    <Input
+                      label="Codice colore"
+                      value={projectForm.color}
+                      onChange={handleProjectFieldChange('color')}
+                      placeholder="#6366f1"
+                      disabled={projectFormPending}
+                    />
+                  </div>
+                  <TextArea
+                    label="Stati"
+                    value={projectForm.statuses}
+                    onChange={handleProjectFieldChange('statuses')}
+                    helperText="Separati da virgola. Se vuoto verranno usati gli stati del workspace."
+                    rows={3}
+                    disabled={projectFormPending}
+                  />
+
+                  <div className="flex justify-end">
+                    <Button type="submit" isLoading={projectFormPending}>
+                      {projectFormMode === 'create' ? 'Crea progetto' : 'Salva progetto'}
+                    </Button>
+                  </div>
+                </form>
+              ) : null}
+
+              <div className="rounded-2xl border border-surface-700 bg-surface-900/40 p-5">
+                {workspaceProjects.length ? (
+                  <ul className="space-y-3">
+                    {workspaceProjects.map((project) => {
+                      const updatedLabel = formatProjectTimestamp(project.updatedAt || project.createdAt);
+                      const isEditing = projectFormMode === 'edit' && projectForm.id === project.id;
+                      return (
+                        <li
+                          key={project.id}
+                          className={classNames(
+                            'rounded-2xl border border-surface-700/70 bg-surface-900/30 p-4',
+                            isEditing && 'border-brand-400/70 bg-brand-500/10',
+                          )}
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <div className="text-sm font-semibold text-surface-100">{project.name || project.id}</div>
+                              <div className="mt-1 text-xs text-surface-400">
+                                ID: <span className="font-mono text-surface-200">{project.id}</span>
+                              </div>
+                              {updatedLabel ? (
+                                <div className="text-[11px] uppercase tracking-wide text-surface-500">
+                                  Aggiornato: {updatedLabel}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-surface-400">
+                              <span className="inline-flex items-center gap-2 rounded-full border border-surface-700/60 bg-surface-900/60 px-2 py-0.5">
+                                <span
+                                  className="h-2.5 w-2.5 rounded-full"
+                                  style={{ backgroundColor: project.color || '#6366f1' }}
+                                  aria-hidden="true"
+                                />
+                                {project.color || '#6366f1'}
+                              </span>
+                              <span className="uppercase tracking-wide">
+                                {Array.isArray(project.statuses) ? project.statuses.length : 0} stati
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  type="button"
+                                  size="xs"
+                                  variant="ghost"
+                                  leadingIcon={Settings}
+                                  onClick={() => openEditProjectForm(project)}
+                                  disabled={projectFormPending}
+                                >
+                                  Modifica
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="xs"
+                                  variant="ghost"
+                                  className="text-feedback-danger hover:text-white"
+                                  leadingIcon={Trash2}
+                                  onClick={() => handleProjectDelete(project)}
+                                  disabled={projectFormPending}
+                                >
+                                  Elimina
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                          {Array.isArray(project.statuses) && project.statuses.length ? (
+                            <div className="mt-3 flex flex-wrap gap-2 text-xs text-surface-300">
+                              {project.statuses.map((status) => (
+                                <span
+                                  key={`${project.id}-${status}`}
+                                  className="rounded-full border border-surface-700/60 bg-surface-900/60 px-2 py-0.5"
+                                >
+                                  {status}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-surface-700/70 bg-surface-900/30 p-6 text-center text-sm text-surface-400">
+                    Nessun progetto configurato. Crea il primo progetto per questo workspace.
+                  </div>
+                )}
               </div>
             </div>
           )}

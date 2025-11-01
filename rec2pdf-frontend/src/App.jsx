@@ -3076,48 +3076,120 @@ function AppContent(){
     if (!workspaceSelection.workspaceId || !name) {
       return;
     }
-    const result = await handleEnsureWorkspaceProject(workspaceSelection.workspaceId, {
+    const trimmedStatus = statusDraft.trim();
+    const ensureResult = await handleEnsureWorkspaceProject(workspaceSelection.workspaceId, {
       projectName: name,
-      status: statusDraft.trim() || workspaceSelection.status,
+      status: trimmedStatus || workspaceSelection.status,
     });
-    if (result.ok && result.workspace) {
-      const created = (result.workspace.projects || []).find(
-        (proj) => proj.name && proj.name.toLowerCase() === name.toLowerCase()
-      );
-      const statuses = created?.statuses && created.statuses.length
-        ? created.statuses
-        : result.workspace.defaultStatuses && result.workspace.defaultStatuses.length
-        ? result.workspace.defaultStatuses
-        : DEFAULT_WORKSPACE_STATUSES;
-      setWorkspaceSelection({
-        workspaceId: result.workspace.id,
-        projectId: created?.id || '',
-        projectName: '',
-        status: statusDraft.trim() || statuses[0] || '',
-      });
-      setProjectCreationMode(false);
-      setStatusCreationMode(false);
-      setProjectDraft('');
-      setStatusDraft('');
-      fetchWorkspaces({ silent: true });
+    if (!ensureResult.ok) {
+      return;
     }
-  }, [projectDraft, statusDraft, workspaceSelection.workspaceId, workspaceSelection.status, handleEnsureWorkspaceProject, fetchWorkspaces]);
+    const resolvedWorkspace = ensureResult.workspace || activeWorkspace || null;
+    const candidateProjects = Array.isArray(ensureResult.workspace?.projects)
+      ? ensureResult.workspace.projects
+      : Array.isArray(resolvedWorkspace?.projects)
+      ? resolvedWorkspace.projects
+      : [];
+    const createdProject = ensureResult.project
+      ? ensureResult.project
+      : candidateProjects.find(
+          (proj) => proj?.name && proj.name.toLowerCase() === name.toLowerCase(),
+        ) || null;
+    const fallbackStatuses = Array.isArray(resolvedWorkspace?.defaultStatuses) && resolvedWorkspace.defaultStatuses.length
+      ? resolvedWorkspace.defaultStatuses
+      : DEFAULT_WORKSPACE_STATUSES;
+    const projectStatuses = Array.isArray(createdProject?.statuses) && createdProject.statuses.length
+      ? createdProject.statuses
+      : fallbackStatuses;
+    const normalizedStatus = trimmedStatus
+      || (workspaceSelection.status && projectStatuses.includes(workspaceSelection.status)
+        ? workspaceSelection.status
+        : projectStatuses[0] || '');
+
+    setWorkspaceSelection({
+      workspaceId: resolvedWorkspace?.id || workspaceSelection.workspaceId,
+      projectId: createdProject?.id || workspaceSelection.projectId || '',
+      projectName: createdProject ? '' : name,
+      status: normalizedStatus,
+    });
+    setProjectCreationMode(false);
+    setStatusCreationMode(false);
+    setProjectDraft('');
+    setStatusDraft('');
+  }, [
+    projectDraft,
+    statusDraft,
+    workspaceSelection.workspaceId,
+    workspaceSelection.status,
+    workspaceSelection.projectId,
+    handleEnsureWorkspaceProject,
+    activeWorkspace,
+    DEFAULT_WORKSPACE_STATUSES,
+    setWorkspaceSelection,
+    setProjectCreationMode,
+    setStatusCreationMode,
+    setProjectDraft,
+    setStatusDraft,
+  ]);
 
   const handleCreateStatusFromDraft = useCallback(async () => {
     const newStatus = statusDraft.trim();
     if (!newStatus || !workspaceSelection.workspaceId) {
       return;
     }
-    await handleEnsureWorkspaceProject(workspaceSelection.workspaceId, {
+    const ensureResult = await handleEnsureWorkspaceProject(workspaceSelection.workspaceId, {
       projectId: workspaceSelection.projectId,
       projectName: workspaceSelection.projectName,
       status: newStatus,
     });
-    setWorkspaceSelection((prev) => ({ ...prev, status: newStatus }));
+    if (!ensureResult.ok) {
+      return;
+    }
+    const resolvedWorkspace = ensureResult.workspace || activeWorkspace || null;
+    const candidateProjects = Array.isArray(ensureResult.workspace?.projects)
+      ? ensureResult.workspace.projects
+      : Array.isArray(resolvedWorkspace?.projects)
+      ? resolvedWorkspace.projects
+      : [];
+    const resolvedProject = ensureResult.project
+      ? ensureResult.project
+      : candidateProjects.find((proj) => proj.id === workspaceSelection.projectId)
+      || candidateProjects.find(
+        (proj) =>
+          proj?.name && workspaceSelection.projectName && proj.name.toLowerCase() === workspaceSelection.projectName.toLowerCase(),
+      )
+      || null;
+    const fallbackStatuses = Array.isArray(resolvedWorkspace?.defaultStatuses) && resolvedWorkspace.defaultStatuses.length
+      ? resolvedWorkspace.defaultStatuses
+      : DEFAULT_WORKSPACE_STATUSES;
+    const projectStatuses = Array.isArray(resolvedProject?.statuses) && resolvedProject.statuses.length
+      ? resolvedProject.statuses
+      : fallbackStatuses;
+    const normalizedStatus = projectStatuses.includes(newStatus)
+      ? newStatus
+      : projectStatuses[0] || newStatus;
+
+    setWorkspaceSelection((prev) => ({
+      ...prev,
+      workspaceId: resolvedWorkspace?.id || prev.workspaceId,
+      projectId: resolvedProject?.id || prev.projectId,
+      projectName: resolvedProject ? '' : prev.projectName,
+      status: normalizedStatus,
+    }));
     setStatusDraft('');
     setStatusCreationMode(false);
-    fetchWorkspaces({ silent: true });
-  }, [statusDraft, workspaceSelection.workspaceId, workspaceSelection.projectId, workspaceSelection.projectName, handleEnsureWorkspaceProject, fetchWorkspaces]);
+  }, [
+    statusDraft,
+    workspaceSelection.workspaceId,
+    workspaceSelection.projectId,
+    workspaceSelection.projectName,
+    handleEnsureWorkspaceProject,
+    activeWorkspace,
+    DEFAULT_WORKSPACE_STATUSES,
+    setWorkspaceSelection,
+    setStatusDraft,
+    setStatusCreationMode,
+  ]);
 
   const processViaBackend=async()=>{
     const blob=audioBlob;
