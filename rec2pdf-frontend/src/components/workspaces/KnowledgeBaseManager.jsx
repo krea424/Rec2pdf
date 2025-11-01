@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
-import { Button } from "../ui";
+import { Button, Select } from "../ui";
 import { FileText, RefreshCw, Trash2, Upload } from "../icons";
 
 const ACCEPTED_TYPES = ".txt,.md,.pdf,.mp3,.m4a,.wav,.aac,.flac,.ogg";
@@ -41,7 +41,19 @@ const formatDateTime = (value) => {
   }
 };
 
-const KnowledgeBaseManager = ({ workspaceId }) => {
+const normalizeProjects = (projects) => {
+  if (!Array.isArray(projects)) {
+    return [];
+  }
+  return projects
+    .filter((project) => project && project.id)
+    .map((project) => ({
+      id: String(project.id),
+      name: String(project.name || project.id || "").trim(),
+    }));
+};
+
+const KnowledgeBaseManager = ({ workspaceId, projects = [] }) => {
   const { normalizedBackendUrl, fetchBody } = useAppContext();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -50,11 +62,21 @@ const KnowledgeBaseManager = ({ workspaceId }) => {
   const [uploadError, setUploadError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [dragActive, setDragActive] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deletingKey, setDeletingKey] = useState("");
   const inputRef = useRef(null);
 
   const backendUrl = useMemo(
     () => (typeof normalizedBackendUrl === "string" ? normalizedBackendUrl.replace(/\/$/, "") : ""),
     [normalizedBackendUrl],
+  );
+
+  const availableProjects = useMemo(() => normalizeProjects(projects), [projects]);
+
+  const activeProject = useMemo(
+    () => availableProjects.find((project) => project.id === selectedProjectId) || null,
+    [availableProjects, selectedProjectId],
   );
 
   const canManage = Boolean(workspaceId && backendUrl);
@@ -68,10 +90,19 @@ const KnowledgeBaseManager = ({ workspaceId }) => {
       if (!silent) {
         setListError("");
       }
+      setDeleteError("");
       setLoading(true);
       try {
+        const searchParams = new URLSearchParams();
+        if (activeProject?.id) {
+          searchParams.set("projectId", activeProject.id);
+        }
+        const queryString = searchParams.toString();
+        const knowledgeUrl = `${backendUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/knowledge${
+          queryString ? `?${queryString}` : ""
+        }`;
         const result = await fetchBody(
-          `${backendUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/knowledge`,
+          knowledgeUrl,
           { method: "GET" },
         );
         if (result.ok && Array.isArray(result.data?.files)) {
@@ -89,13 +120,14 @@ const KnowledgeBaseManager = ({ workspaceId }) => {
         setLoading(false);
       }
     },
-    [backendUrl, canManage, fetchBody, workspaceId],
+    [activeProject?.id, backendUrl, canManage, fetchBody, workspaceId],
   );
 
   useEffect(() => {
     setFiles([]);
     setSuccessMessage("");
     setUploadError("");
+    setDeleteError("");
     if (canManage) {
       loadKnowledge({ silent: true });
     } else {
@@ -123,11 +155,20 @@ const KnowledgeBaseManager = ({ workspaceId }) => {
       setUploading(true);
       setUploadError("");
       setSuccessMessage("");
+      setDeleteError("");
       try {
         const formData = new FormData();
         selected.forEach((file) => {
           formData.append("files", file, file.name);
         });
+        if (activeProject?.id) {
+          formData.append("workspaceProjectId", activeProject.id);
+          formData.append("projectId", activeProject.id);
+          if (activeProject.name) {
+            formData.append("workspaceProjectName", activeProject.name);
+            formData.append("projectName", activeProject.name);
+          }
+        }
         const result = await fetchBody(
           `${backendUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/ingest`,
           {
@@ -136,10 +177,11 @@ const KnowledgeBaseManager = ({ workspaceId }) => {
           },
         );
         if (result.ok) {
+          const scopeLabel = activeProject?.name || activeProject?.id;
           const message =
             result.data?.message ||
             `Ingestion avviata per ${selected.length} documento${selected.length === 1 ? "" : "i"}.`;
-          setSuccessMessage(message);
+          setSuccessMessage(scopeLabel ? `${message} (${scopeLabel})` : message);
           setTimeout(() => {
             loadKnowledge({ silent: true });
           }, 1200);
@@ -157,7 +199,7 @@ const KnowledgeBaseManager = ({ workspaceId }) => {
         }
       }
     },
-    [backendUrl, canManage, fetchBody, loadKnowledge, workspaceId],
+    [activeProject?.id, activeProject?.name, backendUrl, canManage, fetchBody, loadKnowledge, workspaceId],
   );
 
   const handleDrop = useCallback(
@@ -194,6 +236,61 @@ const KnowledgeBaseManager = ({ workspaceId }) => {
     [handleFilesSelected],
   );
 
+  const handleDeleteFile = useCallback(
+    async (file) => {
+      if (!file || !file.name || !canManage) {
+        return;
+      }
+      const entryKey = `${file.projectScopeId || "workspace"}::${file.name}`;
+      setDeletingKey(entryKey);
+      setDeleteError("");
+      setSuccessMessage("");
+      try {
+        const payload = { fileName: file.name };
+        if (file.projectScopeId) {
+          payload.projectScopeId = file.projectScopeId;
+        }
+        const result = await fetchBody(
+          `${backendUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/knowledge`,
+          {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+        if (result.ok) {
+          const scopeLabel = file.projectName || file.projectId || (file.projectScopeId ? "Progetto" : "Workspace");
+          const message =
+            result.data?.message || `Documento "${file.name}" rimosso dalla knowledge base.`;
+          setSuccessMessage(scopeLabel ? `${message} (${scopeLabel})` : message);
+          await loadKnowledge({ silent: true });
+        } else {
+          const message = result.data?.message || result.raw || "Impossibile rimuovere il documento.";
+          setDeleteError(message);
+        }
+      } catch (error) {
+        setDeleteError(error?.message || "Errore durante la rimozione del documento.");
+      } finally {
+        setDeletingKey("");
+      }
+    },
+    [backendUrl, canManage, fetchBody, loadKnowledge, workspaceId],
+  );
+
+  useEffect(() => {
+    if (selectedProjectId && !availableProjects.some((project) => project.id === selectedProjectId)) {
+      setSelectedProjectId("");
+    }
+  }, [availableProjects, selectedProjectId]);
+
+  useEffect(() => {
+    setSelectedProjectId("");
+  }, [workspaceId]);
+
+  const scopeHelperText = activeProject
+    ? `Gestisci la knowledge specifica del progetto “${activeProject.name || activeProject.id}”.`
+    : "Carica documenti generali del workspace o seleziona un progetto per aggiungere knowledge dedicata.";
+
   return (
     <div className="space-y-4 rounded-2xl border border-surface-700 bg-surface-900/70 p-5 shadow-sm shadow-black/20">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -203,6 +300,7 @@ const KnowledgeBaseManager = ({ workspaceId }) => {
             Workspace attivo:{" "}
             <span className="font-mono text-surface-200">{workspaceId || "—"}</span>
           </p>
+          <p className="mt-1 text-xs text-surface-400">{scopeHelperText}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -216,6 +314,26 @@ const KnowledgeBaseManager = ({ workspaceId }) => {
             Aggiorna elenco
           </Button>
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2 md:w-80">
+        <Select
+          label="Ambito knowledge"
+          helperText={
+            availableProjects.length
+              ? "Scegli se caricare documenti generali o collegarli a un progetto specifico."
+              : "Non ci sono progetti configurati: gli upload verranno associati al workspace."
+          }
+          value={selectedProjectId}
+          onChange={(event) => setSelectedProjectId(event.target.value)}
+        >
+          <option value="">Workspace (generale)</option>
+          {availableProjects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name || project.id}
+            </option>
+          ))}
+        </Select>
       </div>
 
       <div
@@ -281,10 +399,11 @@ const KnowledgeBaseManager = ({ workspaceId }) => {
           ) : (
             <ul className="divide-y divide-surface-800/60">
               {files.map((file) => {
+                const entryKey = `${file.projectScopeId || "workspace"}::${file.name}`;
                 const formattedSize = formatBytes(file.size);
                 const formattedDate = formatDateTime(file.lastIngestedAt);
                 return (
-                  <li key={file.name} className="flex items-start justify-between gap-4 py-3">
+                  <li key={entryKey} className="flex items-start justify-between gap-4 py-3">
                     <div>
                       <div className="text-sm font-medium text-surface-100">{file.name}</div>
                       <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] uppercase tracking-wide text-surface-500">
@@ -292,15 +411,30 @@ const KnowledgeBaseManager = ({ workspaceId }) => {
                         {file.mimeType ? <span>{file.mimeType}</span> : null}
                         {formattedSize ? <span>{formattedSize}</span> : null}
                         {formattedDate ? <span>Aggiornato il {formattedDate}</span> : null}
+                        {selectedProjectId ? (
+                          <span>
+                            {file.projectId
+                              ? `Progetto · ${file.projectName || file.projectId}`
+                              : "Workspace · Generale"}
+                          </span>
+                        ) : null}
                       </div>
                     </div>
                     <button
                       type="button"
-                      disabled
-                      title="Rimozione non ancora disponibile"
-                      className="flex h-8 w-8 items-center justify-center rounded-full border border-surface-700/70 text-surface-500"
+                      onClick={() => handleDeleteFile(file)}
+                      disabled={!canManage || deletingKey === entryKey || loading}
+                      title="Rimuovi il documento dalla knowledge base"
+                      className={classNames(
+                        "flex h-8 w-8 items-center justify-center rounded-full border transition",
+                        deletingKey === entryKey
+                          ? "border-amber-400 text-amber-300"
+                          : "border-surface-700/70 text-surface-400 hover:border-rose-400 hover:text-rose-300",
+                        (!canManage || loading) && "cursor-not-allowed opacity-60",
+                      )}
                     >
                       <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      <span className="sr-only">Elimina documento</span>
                     </button>
                   </li>
                 );
@@ -308,6 +442,7 @@ const KnowledgeBaseManager = ({ workspaceId }) => {
             </ul>
           )}
         </div>
+        {deleteError ? <div className="px-4 pb-3 text-xs text-rose-300">{deleteError}</div> : null}
       </div>
     </div>
   );
