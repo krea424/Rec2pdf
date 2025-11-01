@@ -804,13 +804,28 @@ const publishWithTemplateFallback = async ({
     }
   };
 
-  const result = await callPublishFn(mdLocalPath, publishEnv);
+  log(`--- DEBUG: publishWithTemplateFallback START ---`);
+  log(`mdLocalPath: ${mdLocalPath}`);
+  log(`pdfLocalPath: ${pdfLocalPath}`);
+  log(`publishEnv: ${JSON.stringify(publishEnv, null, 2)}`);
+  log(`templateInfo: ${JSON.stringify(templateInfo, null, 2)}`);
+
+  let result;
+  try {
+    result = await callPublishFn(mdLocalPath, publishEnv);
+    log(`callPublishFn (publish.sh) result: code=${result.code}, stdout=${result.stdout}, stderr=${result.stderr}`);
+  } catch (e) {
+    log(`ERROR in callPublishFn (publish.sh): ${e.message}`, 'publish', 'failed');
+    throw e;
+  }
+
   if (result.code !== 0) {
     log(result.stderr || result.stdout || 'publish.sh failed', 'publish', 'warning');
     log('Tentativo fallback pandoc…', 'publish', 'info');
   }
 
   if (!fs.existsSync(pdfLocalPath)) {
+    log(`PDF file NOT found at ${pdfLocalPath} after publish.sh attempt.`);
     if (result.code === 0) {
       log('publish.sh non ha generato un PDF, fallback su pandoc…', 'publish', 'info');
     }
@@ -840,7 +855,10 @@ const publishWithTemplateFallback = async ({
       fallbackCmdParts.push(
         `command -v pandocPDF >/dev/null && pandocPDF ${mdArg} || ${buildPandocFallback(fallbackTemplateInfo, mdArg, pdfArg)}`
       );
+      log(`Pandoc fallback command: ${fallbackCmdParts.join(' ')}`);
       const pandoc = await runPandoc(fallbackCmdParts.join(' '), publishEnv);
+      log(`Pandoc fallback result: code=${pandoc.code}, stdout=${pandoc.stdout}, stderr=${pandoc.stderr}`);
+
       if (pandoc.code !== 0 || !fs.existsSync(pdfLocalPath)) {
         log(pandoc.stderr || pandoc.stdout || 'pandoc failed', 'publish', 'failed');
         throw new Error('Generazione PDF fallita');
@@ -851,8 +869,11 @@ const publishWithTemplateFallback = async ({
         await safeUnlink(inlineMetadataPath);
       }
     }
+  } else {
+    log(`PDF file found at ${pdfLocalPath} after publish.sh attempt. Size: ${fs.statSync(pdfLocalPath).size} bytes.`);
   }
 
+  log(`--- DEBUG: publishWithTemplateFallback END ---`);
   return result;
 };
 
@@ -2983,22 +3004,7 @@ const uploadFileToBucket = async (bucket, objectPath, buffer, contentType, optio
     throw new Error('Supabase client is not configured');
   }
 
-  if (options.invalidateCache) {
-    try {
-      const { error: removeError } = await supabase.storage.from(bucket).remove([objectPath]);
-      if (removeError && Number(removeError?.statusCode || removeError?.status) !== 404) {
-        const reason = removeError?.message || removeError?.error || String(removeError);
-        console.warn(
-          `⚠️  Impossibile invalidare il file Supabase (${bucket}/${objectPath}) prima del nuovo upload: ${reason}`
-        );
-      }
-    } catch (invalidateError) {
-      const reason = invalidateError?.message || invalidateError?.error || String(invalidateError);
-      console.warn(
-        `⚠️  Errore durante l'invalidazione del file Supabase (${bucket}/${objectPath}): ${reason}`
-      );
-    }
-  }
+
 
   const cacheControl =
     options.cacheControl !== undefined && options.cacheControl !== null
@@ -5907,21 +5913,49 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
 
       const mdPathForPublish = await createMappedMarkdownCopy(mdLocalPath);
 
-      await publishWithTemplateFallback({
-        mdLocalPath: mdPathForPublish,
-        pdfLocalPath,
-        publishEnv,
-        templateInfo: activeTemplateDescriptor,
-        logger: out,
-      });
+      out(`--- DEBUG: START publishWithTemplateFallback in /api/ppubr ---`);
+      out(`mdLocalPath for publish: ${mdPathForPublish}`);
+      out(`pdfLocalPath for publish: ${pdfLocalPath}`);
+      out(`publishEnv: ${JSON.stringify(publishEnv, null, 2)}`);
+      out(`activeTemplateDescriptor: ${JSON.stringify(activeTemplateDescriptor, null, 2)}`);
 
-      await uploadFileToBucket(
-        bucket,
-        pdfObjectPath,
-        await fsp.readFile(pdfLocalPath),
-        'application/pdf',
-        { invalidateCache: true }
-      );
+      try {
+        await publishWithTemplateFallback({
+          mdLocalPath: mdPathForPublish,
+          pdfLocalPath,
+          publishEnv,
+          templateInfo: activeTemplateDescriptor,
+          logger: out,
+        });
+      } catch(e) {
+          out(`--- DEBUG: ERROR in publishWithTemplateFallback ---`);
+          out(`Error message: ${e.message}`);
+          out(`Error stack: ${e.stack}`);
+          throw e;
+      }
+      out(`--- DEBUG: END publishWithTemplateFallback in /api/ppubr ---`);
+
+
+      out(`--- DEBUG: Checking if PDF exists locally after publishWithTemplateFallback ---`);
+      if (fs.existsSync(pdfLocalPath)) {
+          out(`File exists at ${pdfLocalPath}. Size: ${fs.statSync(pdfLocalPath).size} bytes.`);
+      } else {
+          out(`File NOT found at ${pdfLocalPath}.`);
+      }
+
+      try {
+        await uploadFileToBucket(
+          bucket,
+          pdfObjectPath,
+          await fsp.readFile(pdfLocalPath),
+          'application/pdf'
+        );
+      } catch(e) {
+          out(`--- DEBUG: ERROR in uploadFileToBucket ---`);
+          out(`Error message: ${e.message}`);
+          out(`Error stack: ${e.stack}`);
+          throw e;
+      }
       out(`☁️ PDF aggiornato su Supabase: ${pdfObjectPath}`);
 
       let localPdfPath = '';
@@ -5970,12 +6004,33 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
     const pdfPath = path.join(dest, `${baseName}.pdf`);
     const mdPathForPublish = await createMappedMarkdownCopy(mdPath);
 
-    await publishWithTemplateFallback({
-      mdLocalPath: mdPathForPublish,
-      pdfLocalPath: pdfPath,
-      publishEnv,
-      logger: out,
-    });
+    out(`--- DEBUG: START publishWithTemplateFallback (local file) ---`);
+    out(`mdLocalPath for publish: ${mdPathForPublish}`);
+    out(`pdfLocalPath for publish: ${pdfPath}`);
+    out(`publishEnv: ${JSON.stringify(publishEnv, null, 2)}`);
+
+    try {
+      await publishWithTemplateFallback({
+        mdLocalPath: mdPathForPublish,
+        pdfLocalPath: pdfPath,
+        publishEnv,
+        logger: out,
+      });
+    } catch(e) {
+        out(`--- DEBUG: ERROR in publishWithTemplateFallback (local file) ---`);
+        out(`Error message: ${e.message}`);
+        out(`Error stack: ${e.stack}`);
+        throw e;
+    }
+    out(`--- DEBUG: END publishWithTemplateFallback (local file) ---`);
+
+    out(`--- DEBUG: Checking if PDF exists locally after publishWithTemplateFallback (local file) ---`);
+    if (fs.existsSync(pdfPath)) {
+        out(`File exists at ${pdfPath}. Size: ${fs.statSync(pdfPath).size} bytes.`);
+    } else {
+        out(`File NOT found at ${pdfPath}.`);
+    }
+
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`);
     return res.json({
@@ -6789,8 +6844,7 @@ app.put('/api/markdown', async (req, res) => {
       bucket,
       objectPath,
       nextBuffer,
-      'text/markdown; charset=utf-8',
-      { invalidateCache: true }
+      'text/markdown; charset=utf-8'
     );
 
     return res.json({ ok: true, path: `${bucket}/${objectPath}`, bytes: nextBuffer.length });
