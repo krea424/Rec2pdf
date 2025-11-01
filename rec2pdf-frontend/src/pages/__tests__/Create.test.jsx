@@ -6,18 +6,10 @@ vi.mock('../../features/base/BaseHome', () => ({
   default: () => <div data-testid="base-home">Base home mock</div>,
 }))
 
-vi.mock('../../features/advanced/SetupPanel', () => ({
-  default: () => <div data-testid="setup-panel">Setup panel mock</div>,
-}))
-
 vi.mock('../../features/advanced/InputManager', () => ({
   default: ({ context }) => (
     <div data-testid="input-manager">Input manager mock – mode {context?.mode}</div>
   ),
-}))
-
-vi.mock('../../features/advanced/PipelineOverview', () => ({
-  default: () => <div data-testid="pipeline-overview">Pipeline overview mock</div>,
 }))
 
 vi.mock('../../context/AnalyticsContext', () => ({
@@ -190,8 +182,6 @@ describe('CreatePage', () => {
     render(<CreatePage />)
 
     expect(screen.queryByTestId('base-home')).not.toBeInTheDocument()
-    expect(screen.getByTestId('setup-panel')).toBeInTheDocument()
     expect(screen.getByTestId('input-manager')).toHaveTextContent('mode advanced')
-    expect(screen.getByTestId('pipeline-overview')).toBeInTheDocument()
   })
 })
