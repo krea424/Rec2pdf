@@ -7,12 +7,9 @@ import {
   FileCode,
   FileText,
   Info,
-  Mic,
   Plus,
   RefreshCw,
   Sparkles,
-  Square,
-  TimerIcon,
   Upload,
   Users,
 } from "../../components/icons";
@@ -32,8 +29,8 @@ const InputManager = ({
   canStartPipeline,
   audioDownloadExtension,
 }) => {
-  // TODO(Task 5): Strip recording/upload widgets from Advanced mode so this
-  // component focuses on parameter selectors and criteria controls only.
+  // TODO(Task 5): Strip upload widgets from Advanced mode so this component
+  // focuses on parameter selectors and criteria controls only.
   const {
     activeWorkspaceProfiles = [],
     activeWorkspaceProfile,
@@ -119,70 +116,18 @@ const InputManager = ({
   return (
     <div
       className={classNames(
-        "md:col-span-2 rounded-2xl border p-6 shadow-lg",
+        "rounded-2xl border p-6 shadow-lg",
         isBoardroom ? boardroomPrimarySurface : themes[theme].card
       )}
     >
-      <div className="flex items-center justify-between">
+      <div className="space-y-3">
         <h2 className="flex items-center gap-2 text-xl font-medium">
-          <Mic className="h-5 w-5" /> Registrazione
+          <Sparkles className="h-5 w-5" /> Gestione input
         </h2>
-        <div className="flex items-center gap-2 text-sm text-zinc-400">
-          <TimerIcon className="h-4 w-4" /> {context.fmtTime(context.elapsed)}
-        </div>
-      </div>
-
-      <div className="mt-8 flex items-center justify-center">
-        <button
-          type="button"
-          aria-pressed={context.recording}
-          onClick={context.recording ? context.stopRecording : context.startRecording}
-          className={classNames(
-            "group relative flex h-44 w-44 items-center justify-center overflow-hidden rounded-full text-center text-white transition-all duration-300 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60",
-            "before:absolute before:inset-[7%] before:rounded-full before:border before:border-white/15 before:opacity-90 before:transition-opacity before:content-['']",
-            context.recording
-              ? "bg-gradient-to-br from-rose-500 via-rose-600 to-rose-700 shadow-[0_28px_55px_-28px_rgba(244,63,94,0.95)] focus-visible:ring-4 focus-visible:ring-rose-300/60 animate-pulse"
-              : "bg-gradient-to-br from-emerald-400 via-emerald-500 to-emerald-600 shadow-[0_32px_70px_-30px_rgba(16,185,129,0.9)] hover:-translate-y-1 hover:shadow-[0_42px_90px_-32px_rgba(16,185,129,0.95)] focus-visible:ring-4 focus-visible:ring-emerald-300/70"
-          )}
-          disabled={
-            context.busy ||
-            !context.mediaSupported ||
-            !context.recorderSupported
-          }
-          title={
-            !context.mediaSupported
-              ? "getUserMedia non supportato"
-              : !context.recorderSupported
-                ? "MediaRecorder non supportato"
-                : ""
-          }
-        >
-          {context.recording ? (
-            <div className="pointer-events-none flex flex-col items-center gap-3">
-              <span className="flex h-16 w-16 items-center justify-center rounded-full border border-white/25 bg-white/15 shadow-inner shadow-rose-900/30">
-                <Square className="h-7 w-7" />
-              </span>
-              <span className="text-sm font-semibold uppercase tracking-[0.32em] text-white/90">
-                Stop
-              </span>
-              <span className="text-xs font-medium text-white/70">
-                Registrazione attiva
-              </span>
-            </div>
-          ) : (
-            <div className="pointer-events-none flex flex-col items-center gap-3">
-              <span className="flex h-16 w-16 items-center justify-center rounded-full border border-white/20 bg-white/10 shadow-inner shadow-emerald-900/30 transition-transform duration-300 group-hover:scale-105 group-active:scale-95">
-                <Mic className="h-7 w-7" />
-              </span>
-              <span className="text-sm font-semibold uppercase tracking-[0.32em] text-white/90">
-                Rec
-              </span>
-              <span className="text-xs font-medium text-white/70">
-                Avvia nuova sessione
-              </span>
-            </div>
-          )}
-        </button>
+        <p className="text-sm text-zinc-400">
+          Carica un file audio esistente, collega workspace e prompt e avvia
+          l&apos;elaborazione quando tutti i parametri sono pronti.
+        </p>
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -561,7 +506,7 @@ const InputManager = ({
 
       <div className="mt-4 space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm text-zinc-400">Clip registrata / caricata</div>
+          <div className="text-sm text-zinc-400">Clip caricata</div>
           <div className="text-xs text-zinc-500">
             {context.mime || "—"} · {context.fmtBytes(context.audioBlob?.size)}
           </div>
@@ -679,9 +624,9 @@ const InputManager = ({
                   : "border-zinc-700/60 bg-zinc-900/40 text-zinc-400"
               )}
             >
-              <p>Usa un file audio esistente come sorgente alternativa alla registrazione.</p>
+              <p>Usa un file audio esistente come sorgente per la sessione.</p>
               <p>
-                Avvia la pipeline dalla card «Clip registrata / caricata» per elaborare questo audio una volta caricato.
+                Avvia la pipeline dalla card «Clip caricata» per elaborare questo audio una volta caricato.
               </p>
               <p>
                 Supporta formati comuni (webm/ogg/m4a/wav). Verrà convertito in WAV lato server.
@@ -702,12 +647,12 @@ const InputManager = ({
                 title={
                   "name" in context.audioBlob && context.audioBlob.name
                     ? context.audioBlob.name
-                    : "Registrazione pronta"
+                    : "Audio pronto"
                 }
               >
                 {"name" in context.audioBlob && context.audioBlob.name
                   ? context.audioBlob.name
-                  : "Registrazione pronta"}
+                  : "Audio pronto"}
               </span>
               {Number.isFinite(context.audioBlob.size) && (
                 <span>· {context.fmtBytes(context.audioBlob.size)}</span>

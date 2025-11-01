@@ -121,7 +121,7 @@ describe("InputManager", () => {
     renderInputManager();
 
     expect(
-      screen.queryByText(/usa un file audio esistente come sorgente alternativa/i)
+      screen.queryByText(/usa un file audio esistente come sorgente per la sessione/i)
     ).not.toBeInTheDocument();
 
     await user.click(
@@ -129,7 +129,7 @@ describe("InputManager", () => {
     );
 
     expect(
-      screen.getByText(/usa un file audio esistente come sorgente alternativa/i)
+      screen.getByText(/usa un file audio esistente come sorgente per la sessione/i)
     ).toBeInTheDocument();
   });
 
