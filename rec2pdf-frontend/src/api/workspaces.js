@@ -43,6 +43,64 @@ const sanitizeColor = (value, fallback = DEFAULT_WORKSPACE_COLOR) => {
   return fallback;
 };
 
+const normalizeQuoteCharacters = (value) =>
+  value
+    .replace(/[\u2018\u2019\u2032\u2035]/g, "'")
+    .replace(/[\u201C\u201D\u2033\u2036]/g, '"')
+    .replace(/[\u02BC\u02BD]/g, "'");
+
+const stripWrappingQuotes = (value) => {
+  const pairs = [
+    ["'", "'"],
+    ['"', '"'],
+    ['`', '`'],
+  ];
+
+  let trimmed = value.trim();
+  let changed = false;
+
+  do {
+    changed = false;
+    for (const [start, end] of pairs) {
+      if (trimmed.length >= 2 && trimmed.startsWith(start) && trimmed.endsWith(end)) {
+        trimmed = trimmed.slice(start.length, trimmed.length - end.length).trim();
+        changed = true;
+      }
+    }
+  } while (changed);
+
+  if (trimmed.startsWith("'") || trimmed.startsWith('"') || trimmed.startsWith('`')) {
+    trimmed = trimmed.slice(1).trim();
+  }
+  if (trimmed.endsWith("'") || trimmed.endsWith('"') || trimmed.endsWith('`')) {
+    trimmed = trimmed.slice(0, -1).trim();
+  }
+
+  return trimmed;
+};
+
+const sanitizeDestDir = (value) => {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const normalizedQuotes = normalizeQuoteCharacters(value);
+  const trimmed = stripWrappingQuotes(normalizedQuotes);
+  if (!trimmed) {
+    return "";
+  }
+  const normalized = trimmed.replace(/\\+/g, "/");
+  if (!normalized || /tuo_utente/i.test(normalized)) {
+    return "";
+  }
+  if (normalized === "/Users/" || normalized === "/Users") {
+    return "";
+  }
+  if (normalized.toLowerCase() === "users/" || normalized.toLowerCase() === "users") {
+    return "";
+  }
+  return trimmed;
+};
+
 const sanitizeStatusList = (value, fallback = DEFAULT_WORKSPACE_STATUSES) => {
   const statuses = toArray(value)
     .map((status) => {
@@ -119,11 +177,13 @@ const parseProjects = (value, { fallbackColor, fallbackStatuses } = {}) => {
           : idSource;
       const color = sanitizeColor(project.color, fallbackColor || DEFAULT_WORKSPACE_COLOR);
       const statuses = sanitizeStatusList(project.statuses, normalizedFallbackStatuses);
+      const destDir = sanitizeDestDir(project.destDir ?? project.dest_dir ?? "");
 
       return {
         id: idSource,
         name: nameSource,
         color,
+        destDir,
         statuses,
         createdAt: createdAtMs || null,
         createdAtIso,
@@ -211,6 +271,10 @@ export const normalizeWorkspaceRecord = (workspace) => {
       ? metadata.client.trim()
       : nameSource;
 
+  const destDir = sanitizeDestDir(
+    workspace.destDir ?? workspace.dest_dir ?? metadata.destDir ?? metadata.dest_dir ?? "",
+  );
+
   const defaultStatuses = sanitizeStatusList(
     workspace.defaultStatuses ?? workspace.default_statuses ?? metadata.defaultStatuses,
     DEFAULT_WORKSPACE_STATUSES,
@@ -251,6 +315,7 @@ export const normalizeWorkspaceRecord = (workspace) => {
     name: nameSource,
     client: clientSource,
     color,
+    destDir,
     metadata,
     logoPath,
     defaultStatuses,

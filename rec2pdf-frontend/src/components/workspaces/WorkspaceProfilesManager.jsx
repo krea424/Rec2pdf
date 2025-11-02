@@ -69,11 +69,18 @@ const WorkspaceProfilesManager = () => {
     }
     return FALLBACK_WORKSPACE_STATUSES.join(", ");
   }, [DEFAULT_WORKSPACE_STATUSES]);
+  const defaultDestDirPlaceholder = useMemo(() => {
+    if (typeof DEFAULT_DEST_DIR === "string" && DEFAULT_DEST_DIR.trim()) {
+      return DEFAULT_DEST_DIR;
+    }
+    return "";
+  }, [DEFAULT_DEST_DIR]);
   const [workspaceFormMode, setWorkspaceFormMode] = useState(null);
   const [workspaceForm, setWorkspaceForm] = useState(() => ({
     name: "",
     client: "",
     color: "#6366f1",
+    destDir: defaultDestDirPlaceholder,
     statuses: defaultStatusesString,
   }));
   const [workspaceFormPending, setWorkspaceFormPending] = useState(false);
@@ -92,6 +99,7 @@ const WorkspaceProfilesManager = () => {
     name: "",
     color: "#6366f1",
     statuses: defaultStatusesString,
+    destDir: defaultDestDirPlaceholder,
   });
   const [projectFormPending, setProjectFormPending] = useState(false);
   const [projectFeedbackEntries, setProjectFeedbackEntries] = useState([]);
@@ -102,9 +110,10 @@ const WorkspaceProfilesManager = () => {
       name: "",
       client: "",
       color: "#6366f1",
+      destDir: defaultDestDirPlaceholder,
       statuses: defaultStatusesString,
     });
-  }, [defaultStatusesString]);
+  }, [defaultDestDirPlaceholder, defaultStatusesString]);
 
   const handleWorkspaceFieldChange = useCallback(
     (field) => (event) => {
@@ -161,9 +170,10 @@ const WorkspaceProfilesManager = () => {
       setWorkspaceForm((prev) => ({
         ...prev,
         statuses: defaultStatusesString,
+        destDir: prev.destDir || defaultDestDirPlaceholder,
       }));
     }
-  }, [defaultStatusesString, workspaceFormMode]);
+  }, [defaultDestDirPlaceholder, defaultStatusesString, workspaceFormMode]);
 
   const activeWorkspace = useMemo(
     () => workspaces.find((workspace) => workspace.id === selectedWorkspaceId) || null,
@@ -179,13 +189,14 @@ const WorkspaceProfilesManager = () => {
       name: activeWorkspace.name || "",
       client: activeWorkspace.client || "",
       color: activeWorkspace.color || "#6366f1",
+      destDir: activeWorkspace.destDir || defaultDestDirPlaceholder,
       statuses:
         Array.isArray(activeWorkspace.defaultStatuses) && activeWorkspace.defaultStatuses.length
           ? activeWorkspace.defaultStatuses.join(", ")
           : defaultStatusesString,
     });
     setWorkspaceManagerFeedback({ type: "", message: "" });
-  }, [activeWorkspace, defaultStatusesString]);
+  }, [activeWorkspace, defaultDestDirPlaceholder, defaultStatusesString]);
 
   const activeWorkspaceDefaultStatusesString = useMemo(() => {
     if (
@@ -235,15 +246,30 @@ const WorkspaceProfilesManager = () => {
       id: "",
       name: "",
       color: activeWorkspace?.color || "#6366f1",
+      destDir: activeWorkspace?.destDir || defaultDestDirPlaceholder,
       statuses: activeWorkspaceDefaultStatusesString,
     });
-  }, [activeWorkspace?.color, activeWorkspaceDefaultStatusesString]);
+  }, [
+    activeWorkspace?.color,
+    activeWorkspace?.destDir,
+    activeWorkspaceDefaultStatusesString,
+    defaultDestDirPlaceholder,
+  ]);
 
   useEffect(() => {
     resetProjectForm();
     setProjectFormMode(null);
     clearProjectFeedbackEntries();
   }, [activeWorkspace?.id, resetProjectForm, clearProjectFeedbackEntries]);
+
+  useEffect(() => {
+    if (projectFormMode === "create") {
+      setProjectForm((prev) => ({
+        ...prev,
+        destDir: prev.destDir || activeWorkspace?.destDir || defaultDestDirPlaceholder,
+      }));
+    }
+  }, [activeWorkspace?.destDir, defaultDestDirPlaceholder, projectFormMode]);
 
   const workspaceProjects = useMemo(
     () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []),
@@ -269,10 +295,17 @@ const WorkspaceProfilesManager = () => {
       id: "",
       name: "",
       color: activeWorkspace?.color || "#6366f1",
+      destDir: activeWorkspace?.destDir || defaultDestDirPlaceholder,
       statuses: activeWorkspaceDefaultStatusesString,
     });
     clearProjectFeedbackEntries();
-  }, [activeWorkspace?.color, activeWorkspaceDefaultStatusesString, clearProjectFeedbackEntries]);
+  }, [
+    activeWorkspace?.color,
+    activeWorkspace?.destDir,
+    activeWorkspaceDefaultStatusesString,
+    clearProjectFeedbackEntries,
+    defaultDestDirPlaceholder,
+  ]);
 
   const openEditProjectForm = useCallback(
     (project) => {
@@ -284,6 +317,7 @@ const WorkspaceProfilesManager = () => {
         id: project.id || "",
         name: project.name || "",
         color: project.color || activeWorkspace?.color || "#6366f1",
+        destDir: project.destDir || activeWorkspace?.destDir || defaultDestDirPlaceholder,
         statuses:
           Array.isArray(project.statuses) && project.statuses.length
             ? project.statuses.join(", ")
@@ -291,7 +325,13 @@ const WorkspaceProfilesManager = () => {
       });
       clearProjectFeedbackEntries();
     },
-    [activeWorkspace?.color, activeWorkspaceDefaultStatusesString, clearProjectFeedbackEntries],
+    [
+      activeWorkspace?.color,
+      activeWorkspace?.destDir,
+      activeWorkspaceDefaultStatusesString,
+      clearProjectFeedbackEntries,
+      defaultDestDirPlaceholder,
+    ],
   );
 
   const handleCancelProjectForm = useCallback(() => {
@@ -318,6 +358,7 @@ const WorkspaceProfilesManager = () => {
           const result = await createWorkspaceProject(selectedWorkspaceId, {
             name: trimmedName,
             color: projectForm.color,
+            destDir: projectForm.destDir,
             statuses: statusList,
           });
           if (!result.ok) {
@@ -339,6 +380,7 @@ const WorkspaceProfilesManager = () => {
           const result = await updateWorkspaceProject(selectedWorkspaceId, projectForm.id, {
             name: trimmedName,
             color: projectForm.color,
+            destDir: projectForm.destDir,
             statuses: statusList,
           });
           if (!result.ok) {
@@ -366,6 +408,7 @@ const WorkspaceProfilesManager = () => {
     [
       createWorkspaceProject,
       projectForm.color,
+      projectForm.destDir,
       projectForm.id,
       projectForm.name,
       projectForm.statuses,
@@ -452,6 +495,7 @@ const WorkspaceProfilesManager = () => {
             name: trimmedName,
             client: workspaceForm.client,
             color: workspaceForm.color || "#6366f1",
+            destDir: workspaceForm.destDir,
             statuses: normalizedStatuses,
           });
           if (!result.ok) {
@@ -477,6 +521,7 @@ const WorkspaceProfilesManager = () => {
             client: workspaceForm.client,
             color: workspaceForm.color || "#6366f1",
             defaultStatuses: normalizedStatuses,
+            destDir: workspaceForm.destDir,
           });
           if (!result.ok) {
             setWorkspaceManagerFeedback({
@@ -828,7 +873,9 @@ const WorkspaceProfilesManager = () => {
         description:
           "Contenitore per cliente o business unit. Gestiscilo qui: la pipeline lo usa in sola lettura per avviare le sessioni.",
         meta: activeWorkspace
-          ? `Attivo: ${activeWorkspace.name || activeWorkspace.client || activeWorkspace.id}`
+          ? `Attivo: ${activeWorkspace.name || activeWorkspace.client || activeWorkspace.id}`.concat(
+              activeWorkspace.destDir ? ` • Cartella: ${activeWorkspace.destDir}` : "",
+            )
           : "Seleziona un workspace per iniziare.",
       },
       {
@@ -1032,6 +1079,15 @@ const WorkspaceProfilesManager = () => {
                   onChange={handleWorkspaceFieldChange("client")}
                   placeholder="Es. ACME Corp"
                   disabled={workspaceFormPending}
+                />
+                <Input
+                  label="Cartella destinazione"
+                  value={workspaceForm.destDir}
+                  onChange={handleWorkspaceFieldChange("destDir")}
+                  placeholder="/Users/nomeutente/Documenti"
+                  helperText="Percorso predefinito sul backend per salvare PDF e Markdown."
+                  disabled={workspaceFormPending}
+                  className="md:col-span-2"
                 />
                 <div className="flex flex-col gap-2">
                   <span className="text-sm font-medium text-surface-200">Colore brand</span>
@@ -1624,6 +1680,16 @@ const WorkspaceProfilesManager = () => {
                       disabled={projectFormPending}
                     />
                   </div>
+                  <Input
+                    label="Cartella destinazione (opzionale)"
+                    value={projectForm.destDir}
+                    onChange={handleProjectFieldChange('destDir')}
+                    placeholder={
+                      activeWorkspace?.destDir || defaultDestDirPlaceholder || '/Users/nomeutente/Documenti'
+                    }
+                    helperText="Se impostata sostituisce la cartella predefinita del workspace."
+                    disabled={projectFormPending}
+                  />
                   <TextArea
                     label="Stati"
                     value={projectForm.statuses}
@@ -1660,6 +1726,9 @@ const WorkspaceProfilesManager = () => {
                               <div className="text-sm font-semibold text-surface-100">{project.name || project.id}</div>
                               <div className="mt-1 text-xs text-surface-400">
                                 ID: <span className="font-mono text-surface-200">{project.id}</span>
+                              </div>
+                              <div className="text-xs text-surface-400">
+                                Cartella: <span className="font-mono text-surface-200">{project.destDir || "—"}</span>
                               </div>
                               {updatedLabel ? (
                                 <div className="text-[11px] uppercase tracking-wide text-surface-500">

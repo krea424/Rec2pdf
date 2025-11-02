@@ -56,6 +56,59 @@ const isDestDirPlaceholder = (value) => {
 };
 const DEST_DIR_STORAGE_KEY = 'rec2pdfDestinationDir';
 
+const normalizeQuoteCharacters = (value) =>
+  value
+    .replace(/[\u2018\u2019\u2032\u2035]/g, "'")
+    .replace(/[\u201C\u201D\u2033\u2036]/g, '"')
+    .replace(/[\u02BC\u02BD]/g, "'");
+
+const stripWrappingQuotes = (value) => {
+  const pairs = [
+    ["'", "'"],
+    ['"', '"'],
+    ['`', '`'],
+  ];
+
+  let trimmed = value.trim();
+  let changed = false;
+
+  do {
+    changed = false;
+    for (const [start, end] of pairs) {
+      if (trimmed.length >= 2 && trimmed.startsWith(start) && trimmed.endsWith(end)) {
+        trimmed = trimmed.slice(start.length, trimmed.length - end.length).trim();
+        changed = true;
+      }
+    }
+  } while (changed);
+
+  if (trimmed.startsWith("'") || trimmed.startsWith('"') || trimmed.startsWith('`')) {
+    trimmed = trimmed.slice(1).trim();
+  }
+  if (trimmed.endsWith("'") || trimmed.endsWith('"') || trimmed.endsWith('`')) {
+    trimmed = trimmed.slice(0, -1).trim();
+  }
+
+  return trimmed;
+};
+
+const sanitizeDestDirForRequest = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const normalizedQuotes = normalizeQuoteCharacters(value);
+  const trimmed = stripWrappingQuotes(normalizedQuotes);
+
+  if (!trimmed) {
+    return '';
+  }
+  if (isDestDirPlaceholder(trimmed)) {
+    return '';
+  }
+  return trimmed.replace(/\\+/g, '/');
+};
+
 const fmtBytes = (bytes) => { if (!bytes && bytes !== 0) return "—"; const u=["B","KB","MB","GB"]; let i=0,v=bytes; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(v<10&&i>0?1:0)} ${u[i]}`; };
 const fmtTime = (s) => { const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const sec=Math.floor(s%60); return [h,m,sec].map(n=>String(n).padStart(2,'0')).join(":"); };
 const HISTORY_STORAGE_KEY = 'rec2pdfHistory';
@@ -1994,7 +2047,7 @@ function AppContent(){
   }, [canCallAuthenticatedApis, fetchWorkspaces, sessionChecked]);
 
   const handleCreateWorkspace = useCallback(
-    async ({ name, client, color, statuses }) => {
+    async ({ name, client, color, destDir, statuses }) => {
       const normalized = normalizeBackendUrlValue(backendUrl);
       if (!normalized) {
         const message = 'Configura un backend valido per creare workspace.';
@@ -2015,6 +2068,7 @@ function AppContent(){
             .map((chunk) => chunk.trim())
             .filter(Boolean)
         : [];
+      const normalizedDestDir = sanitizeDestDirForRequest(destDir);
       try {
         const response = await fetchWithAuth(`${normalized}/api/workspaces`, {
           method: 'POST',
@@ -2023,6 +2077,7 @@ function AppContent(){
             name: sanitizedName,
             client: String(client || sanitizedName).trim(),
             color: color || '#6366f1',
+            destDir: normalizedDestDir,
             defaultStatuses: statusArray.length ? statusArray : undefined,
           }),
         });
@@ -2094,6 +2149,9 @@ function AppContent(){
       }
       if (Array.isArray(updates.defaultStatuses)) {
         payload.defaultStatuses = updates.defaultStatuses;
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'destDir')) {
+        payload.destDir = sanitizeDestDirForRequest(updates.destDir);
       }
 
       if (!Object.keys(payload).length) {
@@ -2260,12 +2318,14 @@ function AppContent(){
           : DEFAULT_WORKSPACE_STATUSES;
       const resolvedStatuses = sanitizeProjectStatuses(project?.statuses, fallbackStatuses);
       const color = sanitizeProjectColor(project?.color, targetWorkspace.color);
+      const destDir = sanitizeDestDirForRequest(project?.destDir);
       const projectId =
         typeof project?.id === 'string' && project.id.trim() ? project.id.trim() : generateProjectId();
       const nextProject = {
         id: projectId,
         name: trimmedName,
         color,
+        destDir,
         statuses: resolvedStatuses.length ? resolvedStatuses : [...fallbackStatuses],
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -2389,6 +2449,10 @@ function AppContent(){
         updates.color !== undefined ? updates.color : existingProject.color,
         targetWorkspace.color || existingProject.color
       );
+      const destDirInput = Object.prototype.hasOwnProperty.call(updates, 'destDir')
+        ? updates.destDir
+        : existingProject.destDir;
+      const nextDestDir = sanitizeDestDirForRequest(destDirInput);
       const nextProjectsPayload = baseProjects.map((proj) => {
         if (proj.id !== existingProject.id) {
           return { ...proj };
@@ -2397,6 +2461,7 @@ function AppContent(){
           ...proj,
           name: nextName,
           color: nextColor,
+          destDir: nextDestDir,
           statuses: resolvedStatuses,
           updatedAt: Date.now(),
         };
@@ -2452,6 +2517,7 @@ function AppContent(){
             ...existingProject,
             name: nextName,
             color: nextColor,
+            destDir: nextDestDir,
             statuses: resolvedStatuses,
           },
           projects: nextProjectsPayload,
@@ -2603,6 +2669,7 @@ function AppContent(){
           id: projectIdTrimmed || generateProjectId(),
           name: projectNameTrimmed,
           color: sanitizeProjectColor(targetWorkspace.color, targetWorkspace.color),
+          destDir: sanitizeDestDirForRequest(targetWorkspace.destDir || ''),
           statuses: statusTrimmed
             ? sanitizeProjectStatuses([statusTrimmed], fallbackStatuses)
             : [...fallbackStatuses],
