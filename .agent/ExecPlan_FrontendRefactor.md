@@ -7,7 +7,7 @@ Deliver a streamlined creation experience: Base mode becomes a quick-start works
 - [x] Milestone 1 (Audit + TODO scaffolding) — (2025-02-14 12:00Z)
 - [x] Milestone 2 (Base B header cards & uploads) — (2025-02-14 15:45Z · summary cards + unified upload bar)
 - [x] Milestone 3 (Recording toggle + accessibility polish) — (2025-02-14 18:10Z · unified Registra/Stop CTA)
-- [ ] Milestone 4 (Advanced slim view + library handoff) — (…)
+- [ ] Milestone 4 (Advanced slim view + library handoff) — (2025-02-15 09:40Z · InputManager palette e controlli allineati alla UI Base B)
 - [ ] Milestone 5 (Tests, docs, screenshots, feature flag) — (…)
 
 ## Surprises & Discoveries
@@ -23,6 +23,9 @@ Deliver a streamlined creation experience: Base mode becomes a quick-start works
 - Decision: Introduce reusable card primitives in Base scope rather than cross-mode shared components for now.
   Rationale: Keeps Task 1 lightweight; future extraction possible after confirming layouts.
   Date/Author: 2025-02-14 / gpt-5-codex
+- Decision: Riutilizzare le superfici traslucide e le pill button del Base mode B dentro InputManager, mantenendo varianti Boardroom tramite surfaces dedicate anziché dipendere da theme legacy.
+  Rationale: Consente uno switch visivo morbido tra Base e Advanced senza duplicare tokens Tailwind eterogenei.
+  Date/Author: 2025-02-15 / gpt-5-codex
 
 ## Outcomes & Retrospective
 - Milestone 2: Base mode now surfaces workspace, project, prompt, and session cards summarizing key context while keeping pipeline below the fold. Upload controls are unified into audio/Markdown/TXT buttons backed by a shared dropzone with validation.

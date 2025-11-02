@@ -100,18 +100,44 @@ const InputManager = ({
     }
   };
 
+  const containerSurface = isBoardroom
+    ? boardroomPrimarySurface
+    : "border-white/10 bg-white/10 backdrop-blur-xl";
+  const panelSurface = isBoardroom
+    ? boardroomSecondarySurface
+    : "border-white/10 bg-white/5 backdrop-blur-lg";
+  const cardSurface = isBoardroom
+    ? boardroomSecondarySurface
+    : "border-white/10 bg-white/5 backdrop-blur";
+  const chipSurface = isBoardroom
+    ? boardroomChipSurface
+    : "border border-white/10 bg-white/10 text-white/80 hover:bg-white/20";
+  const chipGhostSurface = isBoardroom
+    ? "border border-white/20 bg-transparent text-white/75 transition hover:bg-white/10 hover:text-white"
+    : "border border-white/10 bg-transparent text-white/70 hover:bg-white/10 hover:text-white";
+  const controlSurface = isBoardroom
+    ? classNames("border", boardroomInfoSurface)
+    : "border border-white/10 bg-white/10";
+  const subtleMetaText = isBoardroom ? "text-white/75" : "text-white/65";
+  const primaryButtonSurface = isBoardroom
+    ? classNames(
+        "border border-white/20 bg-white/[0.85] text-slate-900 transition hover:bg-white",
+        "font-semibold"
+      )
+    : "border border-white/10 bg-white text-slate-900 font-semibold transition hover:bg-white/90";
+
   return (
     <div
       className={classNames(
-        "rounded-2xl border p-6 shadow-lg",
-        isBoardroom ? boardroomPrimarySurface : themes[theme].card
+        "rounded-3xl border p-6 shadow-subtle text-white transition",
+        containerSurface
       )}
     >
       <div className="space-y-3">
-        <h2 className="flex items-center gap-2 text-xl font-medium">
+        <h2 className="flex items-center gap-2 text-lg font-semibold uppercase tracking-[0.32em] text-white/80">
           <Sparkles className="h-5 w-5" /> Gestione input
         </h2>
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm leading-relaxed text-white/60">
           Configura workspace, progetto, slug e branding. La pipeline avanzata
           si avvia automaticamente quando riceve nuovi input condivisi.
         </p>
@@ -119,13 +145,13 @@ const InputManager = ({
 
       <div
         className={classNames(
-          "mt-8 space-y-3 rounded-2xl border p-5 transition-all",
-          isBoardroom ? boardroomSecondarySurface : themes[theme].input
+          "mt-8 space-y-4 rounded-3xl border p-5 transition-all",
+          panelSurface
         )}
       >
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-sm text-zinc-400">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.3em] text-white/70">
               <Users className="h-4 w-4" />
               <span>Workspace &amp; progetto</span>
             </div>
@@ -134,10 +160,9 @@ const InputManager = ({
                 type="button"
                 onClick={context.handleRefreshWorkspaces}
                 className={classNames(
-                  "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
-                  themes[theme].input,
-                  themes[theme].input_hover,
-                  context.workspaceLoading && "opacity-60 cursor-not-allowed"
+                  "flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+                  chipSurface,
+                  context.workspaceLoading && "cursor-not-allowed opacity-60"
                 )}
                 disabled={context.workspaceLoading}
               >
@@ -153,9 +178,8 @@ const InputManager = ({
                 type="button"
                 onClick={() => context.openSettingsDrawer?.("workspace")}
                 className={classNames(
-                  "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
-                  themes[theme].input,
-                  themes[theme].input_hover
+                  "flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+                  chipGhostSurface
                 )}
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -163,19 +187,21 @@ const InputManager = ({
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className="text-xs text-zinc-500">Workspace</label>
+              <label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/60">
+                Workspace
+              </label>
               <select
                 value={context.workspaceSelection.workspaceId}
                 onChange={(event) =>
                   context.handleSelectWorkspaceForPipeline(event.target.value)
                 }
                 className={classNames(
-                  "mt-2 w-full rounded-lg border px-3 py-2 text-sm text-surface-50 outline-none transition-colors",
-                  "focus:border-brand-400 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
+                  "mt-2 w-full rounded-2xl px-3 py-2 text-sm text-white/90 outline-none transition",
+                  "focus:border-brand-300 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
                   "disabled:cursor-not-allowed disabled:opacity-60",
-                  themes[theme].input
+                  controlSurface
                 )}
               >
                 <option value="">Nessun workspace</option>
@@ -188,8 +214,10 @@ const InputManager = ({
             </div>
             {context.workspaceSelection.workspaceId && (
               <div>
-                <label className="text-xs text-zinc-500">Policy di versioning</label>
-                <div className="mt-2 text-xs text-zinc-400">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/60">
+                  Policy di versioning
+                </label>
+                <div className={classNames("mt-2 text-xs", subtleMetaText)}>
                   {context.activeWorkspace?.versioningPolicy
                     ? `${
                         context.activeWorkspace.versioningPolicy.namingConvention || "timestamped"
@@ -203,9 +231,11 @@ const InputManager = ({
           </div>
 
           {context.workspaceSelection.workspaceId && (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs text-zinc-500">Progetto</label>
+                <label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/60">
+                  Progetto
+                </label>
                 <select
                   value={
                     context.projectCreationMode
@@ -216,10 +246,10 @@ const InputManager = ({
                     context.handleSelectProjectForPipeline(event.target.value)
                   }
                   className={classNames(
-                    "mt-2 w-full rounded-lg border px-3 py-2 text-sm text-surface-50 outline-none transition-colors",
-                    "focus:border-brand-400 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
+                    "mt-2 w-full rounded-2xl px-3 py-2 text-sm text-white/90 outline-none transition",
+                    "focus:border-brand-300 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
                     "disabled:cursor-not-allowed disabled:opacity-60",
-                    themes[theme].input
+                    controlSurface
                   )}
                 >
                   <option value="">Nessun progetto</option>
@@ -237,8 +267,8 @@ const InputManager = ({
                       onChange={(event) => context.setProjectDraft(event.target.value)}
                       placeholder="Nome progetto"
                       className={classNames(
-                        "rounded-lg border bg-transparent px-3 py-2 text-sm",
-                        themes[theme].input
+                        "rounded-2xl px-3 py-2 text-sm text-white/90 outline-none transition",
+                        controlSurface
                       )}
                     />
                     <input
@@ -248,8 +278,8 @@ const InputManager = ({
                       }
                       placeholder="Stato"
                       className={classNames(
-                        "rounded-lg border bg-transparent px-3 py-2 text-sm",
-                        themes[theme].input
+                        "rounded-2xl px-3 py-2 text-sm text-white/90 outline-none transition",
+                        controlSurface
                       )}
                     />
                     <div className="md:col-span-2 flex justify-end gap-2">
@@ -257,9 +287,8 @@ const InputManager = ({
                         type="button"
                         onClick={context.handleCancelProjectDraft}
                         className={classNames(
-                          "rounded-lg border px-3 py-1.5 text-xs",
-                          themes[theme].input,
-                          themes[theme].input_hover
+                          "rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+                          chipGhostSurface
                         )}
                       >
                         Annulla
@@ -268,9 +297,8 @@ const InputManager = ({
                         type="button"
                         onClick={context.handleCreateProjectFromDraft}
                         className={classNames(
-                          "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
-                          themes[theme].input,
-                          themes[theme].input_hover,
+                          "flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+                          chipSurface,
                           (!context.projectDraft.trim() || context.projectCreationMode) &&
                             "cursor-not-allowed opacity-60"
                         )}
@@ -284,7 +312,9 @@ const InputManager = ({
                 )}
               </div>
               <div>
-                <label className="text-xs text-zinc-500">Stato</label>
+                <label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/60">
+                  Stato
+                </label>
                 <select
                   value={
                     context.statusCreationMode
@@ -295,10 +325,10 @@ const InputManager = ({
                     context.handleSelectStatusForPipeline(event.target.value)
                   }
                   className={classNames(
-                    "mt-2 w-full rounded-lg border px-3 py-2 text-sm text-surface-50 outline-none transition-colors",
-                    "focus:border-brand-400 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
+                    "mt-2 w-full rounded-2xl px-3 py-2 text-sm text-white/90 outline-none transition",
+                    "focus:border-brand-300 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
                     "disabled:cursor-not-allowed disabled:opacity-60",
-                    themes[theme].input
+                    controlSurface
                   )}
                 >
                   <option value="">Nessuno stato</option>
@@ -316,17 +346,16 @@ const InputManager = ({
                       onChange={(event) => context.setStatusDraft(event.target.value)}
                       placeholder="Nuovo stato"
                       className={classNames(
-                        "flex-1 rounded-lg border bg-transparent px-3 py-2 text-sm",
-                        themes[theme].input
+                        "flex-1 rounded-2xl px-3 py-2 text-sm text-white/90 outline-none transition",
+                        controlSurface
                       )}
                     />
                     <button
                       type="button"
                       onClick={context.handleCreateStatusFromDraft}
                       className={classNames(
-                        "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs",
-                        themes[theme].input,
-                        themes[theme].input_hover,
+                        "flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+                        chipSurface,
                         (!context.statusDraft.trim() || context.statusCreationMode) &&
                           "cursor-not-allowed opacity-60"
                       )}
@@ -347,19 +376,22 @@ const InputManager = ({
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
         <div
           className={classNames(
-            "rounded-2xl border p-4 transition-all",
-            isBoardroom ? boardroomSecondarySurface : themes[theme].input
+            "rounded-2xl border p-4 transition-all text-white/80",
+            cardSurface
           )}
         >
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-sm text-zinc-400">
+            <label className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.3em] text-white/70">
               <Sparkles className="h-4 w-4" /> Profilo preconfigurato
             </label>
             {workspaceProfileLocked && (
               <button
                 type="button"
                 onClick={() => clearWorkspaceProfile()}
-                className="rounded-lg border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100"
+                className={classNames(
+                  "rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+                  chipGhostSurface
+                )}
               >
                 Scollega
               </button>
@@ -367,10 +399,10 @@ const InputManager = ({
           </div>
           <select
             className={classNames(
-              "mt-3 w-full rounded-lg border px-3 py-2 text-sm text-surface-50 outline-none transition-colors",
-              "focus:border-brand-400 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
+              "mt-3 w-full rounded-2xl px-3 py-2 text-sm text-white/90 outline-none transition",
+              "focus:border-brand-300 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
               "disabled:cursor-not-allowed disabled:opacity-60",
-              themes[theme].input,
+              controlSurface,
               !hasWorkspaceProfiles || !context.workspaceSelection.workspaceId
                 ? "cursor-not-allowed opacity-60"
                 : ""
@@ -387,12 +419,12 @@ const InputManager = ({
             ))}
           </select>
           {!context.workspaceSelection.workspaceId && (
-            <div className="mt-2 text-xs text-zinc-500">
+            <div className={classNames("mt-2 text-xs", subtleMetaText)}>
               Seleziona un workspace per visualizzare i profili salvati.
             </div>
           )}
           {context.workspaceSelection.workspaceId && !hasWorkspaceProfiles && (
-            <div className="mt-2 text-xs text-zinc-500">
+            <div className={classNames("mt-2 text-xs", subtleMetaText)}>
               Nessun profilo configurato per questo workspace.
             </div>
           )}
@@ -409,12 +441,12 @@ const InputManager = ({
         </div>
         <div
           className={classNames(
-            "rounded-2xl border p-4 transition-all",
-            isBoardroom ? boardroomSecondarySurface : themes[theme].input
+            "rounded-2xl border p-4 transition-all text-white/80",
+            cardSurface
           )}
         >
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-sm text-zinc-400">
+            <label className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.3em] text-white/70">
               <FileText className="h-4 w-4" /> Cartella
             </label>
             <div className="flex items-center gap-2">
@@ -422,10 +454,9 @@ const InputManager = ({
                 type="button"
                 onClick={() => context.setDestDir(context.DEFAULT_DEST_DIR)}
                 className={classNames(
-                  "rounded-lg border px-2 py-1 text-xs",
-                  themes[theme].input,
-                  themes[theme].input_hover,
-                  workspaceProfileLocked && "cursor-not-allowed opacity-50"
+                  "rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+                  chipGhostSurface,
+                  workspaceProfileLocked && "cursor-not-allowed opacity-60"
                 )}
                 disabled={workspaceProfileLocked}
               >
@@ -434,7 +465,7 @@ const InputManager = ({
               <button
                 type="button"
                 onClick={() => context.setShowDestDetails((prev) => !prev)}
-                className="text-zinc-400 hover:text-zinc-200"
+                className="text-white/60 transition hover:text-white"
                 aria-label="Mostra dettagli cartella"
                 aria-expanded={context.showDestDetails}
               >
@@ -444,10 +475,10 @@ const InputManager = ({
           </div>
           <input
             className={classNames(
-              "mt-2 w-full rounded-lg border px-3 py-2 outline-none",
-              themes[theme].input,
+              "mt-2 w-full rounded-2xl px-3 py-2 text-sm text-white/90 outline-none transition",
+              controlSurface,
               context.destIsPlaceholder &&
-                "border-rose-600 focus:border-rose-500 focus:ring-rose-500/30"
+                "border-rose-500/80 focus:border-rose-400 focus:ring-rose-400/40"
             )}
             value={context.destDir}
             onChange={(event) => context.setDestDir(event.target.value)}
@@ -461,7 +492,7 @@ const InputManager = ({
             <div
               className={classNames(
                 "mt-2 text-xs",
-                context.destIsPlaceholder ? "text-rose-400" : "text-zinc-500"
+                context.destIsPlaceholder ? "text-rose-300" : subtleMetaText
               )}
             >
               {context.destIsPlaceholder
@@ -472,17 +503,17 @@ const InputManager = ({
         </div>
         <div
           className={classNames(
-            "rounded-2xl border p-4 transition-all",
-            isBoardroom ? boardroomSecondarySurface : themes[theme].input
+            "rounded-2xl border p-4 transition-all text-white/80",
+            cardSurface
           )}
         >
-          <label className="flex items-center gap-2 text-sm text-zinc-400">
+          <label className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.3em] text-white/70">
             <FileText className="h-4 w-4" /> Slug
           </label>
           <input
             className={classNames(
-              "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 outline-none",
-              themes[theme].input
+              "mt-2 w-full rounded-2xl px-3 py-2 text-sm text-white/90 outline-none transition",
+              controlSurface
             )}
             value={context.slug}
             onChange={(event) => context.setSlug(event.target.value)}
@@ -494,21 +525,21 @@ const InputManager = ({
 
       <div
         className={classNames(
-          "mt-6 rounded-2xl border p-4 transition-all",
-          isBoardroom ? boardroomSecondarySurface : themes[theme].input
+          "mt-6 rounded-2xl border p-4 transition-all text-white/80",
+          cardSurface
         )}
       >
         <div className="flex items-center justify-between">
-          <label className="flex items-center gap-2 text-sm text-zinc-400">
+          <label className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.3em] text-white/70">
             <FileCode className="h-4 w-4" /> Logo per PDF
           </label>
           {pdfLogoLabel && (
-            <span className="max-w-[55%] truncate text-[11px] text-zinc-500" title={pdfLogoLabel}>
+            <span className="max-w-[55%] truncate text-[11px] text-white/65" title={pdfLogoLabel}>
               {pdfLogoLabel}
             </span>
           )}
         </div>
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex items-center gap-3">
           <input
             ref={pdfLogoInputRef}
             type="file"
@@ -520,9 +551,9 @@ const InputManager = ({
             type="button"
             onClick={() => pdfLogoInputRef.current?.click()}
             className={classNames(
-              "rounded-lg px-3 py-1.5 text-xs font-medium",
-              themes[theme].button,
-              workspaceProfileLocked && "cursor-not-allowed opacity-50"
+              "rounded-full px-4 py-1.5 text-[11px] uppercase tracking-[0.2em]",
+              primaryButtonSurface,
+              workspaceProfileLocked && "cursor-not-allowed opacity-60"
             )}
             disabled={workspaceProfileLocked}
           >
@@ -532,7 +563,11 @@ const InputManager = ({
             <button
               type="button"
               onClick={() => context.setCustomPdfLogo(null)}
-              className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rose-500"
+              className={classNames(
+                "rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+                "bg-rose-500/90 text-white hover:bg-rose-400",
+                workspaceProfileLocked && "cursor-not-allowed opacity-60"
+              )}
               disabled={workspaceProfileLocked}
             >
               Rimuovi
@@ -540,13 +575,15 @@ const InputManager = ({
           )}
         </div>
         {pdfLogoLabel && (
-          <div className="mt-2 truncate text-xs text-zinc-500" title={pdfLogoLabel}>
+          <div className="mt-2 truncate text-xs text-white/65" title={pdfLogoLabel}>
             {pdfLogoLabel}
           </div>
         )}
         {pdfLogoPreviewUrl && (
-          <div className="mt-3 rounded-lg border border-zinc-700/60 bg-zinc-900/60 p-3">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500">Anteprima logo</div>
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/10 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
+              Anteprima logo
+            </div>
             <img
               src={pdfLogoPreviewUrl}
               alt="Anteprima logo profilo PDF"
@@ -583,10 +620,10 @@ const InputManager = ({
       {context.pipelineComplete && (
         <div
           className={classNames(
-            "mt-6 space-y-3 rounded-xl border px-4 py-3 text-sm shadow-md transition",
+            "mt-6 space-y-3 rounded-2xl border px-4 py-4 text-sm shadow-subtle transition",
             isBoardroom
-              ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-100 shadow-[0_28px_70px_-45px_rgba(16,185,129,0.9)]"
-              : "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"
+              ? "border-emerald-300/60 bg-emerald-400/15 text-emerald-50"
+              : "border-emerald-400/50 bg-emerald-500/15 text-emerald-100"
           )}
         >
           <div className="flex items-start gap-3">
@@ -619,10 +656,10 @@ const InputManager = ({
             <RouterLink
               to="/library"
               className={classNames(
-                "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0",
+                "inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0",
                 isBoardroom
-                  ? "border border-emerald-300/60 bg-emerald-400/15 text-emerald-50 hover:bg-emerald-400/25 focus-visible:ring-emerald-200/60"
-                  : "border border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 focus-visible:ring-emerald-200/70"
+                  ? "border border-emerald-300/60 bg-emerald-400/25 text-emerald-50 hover:bg-emerald-400/35 focus-visible:ring-emerald-200/60"
+                  : "border border-emerald-400/60 bg-emerald-500/25 text-emerald-50 hover:bg-emerald-500/35 focus-visible:ring-emerald-200/70"
               )}
             >
               Vai alla Library
