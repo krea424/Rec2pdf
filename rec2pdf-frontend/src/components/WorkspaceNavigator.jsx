@@ -1513,13 +1513,12 @@ const AdvancedWorkspaceNavigator = ({
 
 export default function WorkspaceNavigator(props) {
   const appContext = useAppContext();
-  const mode = appContext?.mode || "advanced";
-  const hasModeFlag = appContext?.hasModeFlag;
-  const isBaseMode = mode === "base";
-  const advancedFiltersEnabled =
-    !isBaseMode || (typeof hasModeFlag === "function" && hasModeFlag(ADVANCED_FILTERS_FLAG));
+  const canUseAdvancedFilters =
+    typeof appContext?.hasModeFlag === "function"
+      ? appContext.hasModeFlag(ADVANCED_FILTERS_FLAG)
+      : true;
 
-  if (isBaseMode && !advancedFiltersEnabled) {
+  if (!canUseAdvancedFilters) {
     return <BaseWorkspaceNavigator {...props} />;
   }
 
