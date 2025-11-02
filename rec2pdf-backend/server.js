@@ -962,14 +962,63 @@ const yyyymmddHHMMSS = (d = new Date()) => {
 
 const DEFAULT_DEST_DIR = path.join(os.homedir(), 'Recordings');
 
+const normalizeQuoteCharacters = (value) =>
+  value
+    .replace(/[\u2018\u2019\u2032\u2035]/g, "'")
+    .replace(/[\u201C\u201D\u2033\u2036]/g, '"')
+    .replace(/[\u02BC\u02BD]/g, "'");
+
+const stripWrappingQuotes = (value) => {
+  const pairs = [
+    ["'", "'"],
+    ['"', '"'],
+    ['`', '`'],
+  ];
+
+  let trimmedOnce = value.trim();
+  let changed = false;
+
+  do {
+    changed = false;
+    for (const [start, end] of pairs) {
+      if (
+        trimmedOnce.length >= 2 &&
+        trimmedOnce.startsWith(start) &&
+        trimmedOnce.endsWith(end)
+      ) {
+        trimmedOnce = trimmedOnce.slice(start.length, trimmedOnce.length - end.length).trim();
+        changed = true;
+      }
+    }
+  } while (changed);
+
+  // Handle cases where only the leading or trailing character is quoted (e.g. copied value `'path`)
+  if (trimmedOnce.startsWith("'") || trimmedOnce.startsWith('"') || trimmedOnce.startsWith('`')) {
+    trimmedOnce = trimmedOnce.slice(1).trim();
+  }
+  if (trimmedOnce.endsWith("'") || trimmedOnce.endsWith('"') || trimmedOnce.endsWith('`')) {
+    trimmedOnce = trimmedOnce.slice(0, -1).trim();
+  }
+
+  return trimmedOnce;
+};
+
 const sanitizeDestDirInput = (value) => {
   if (typeof value !== 'string') {
     return '';
   }
-  const raw = value.trim();
+  if (!value) {
+    return '';
+  }
+
+  const normalizedQuotes = normalizeQuoteCharacters(value);
+  const withoutWrappingQuotes = stripWrappingQuotes(normalizedQuotes);
+  const raw = withoutWrappingQuotes.trim();
+
   if (!raw) {
     return '';
   }
+
   const normalized = raw.replace(/\\+/g, '/').trim();
   if (!normalized || /tuo_utente/i.test(normalized)) {
     return '';
@@ -980,6 +1029,7 @@ const sanitizeDestDirInput = (value) => {
   if (normalized.toLowerCase() === 'users/' || normalized.toLowerCase() === 'users') {
     return '';
   }
+
   return raw;
 };
 
@@ -7190,4 +7240,6 @@ module.exports = {
   generateMarkdown,
   normalizeAiMarkdownBody,
   applySpeakerMapToContent,
+  resolveDestinationDirectory,
+  sanitizeDestDirInput,
 };

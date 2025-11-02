@@ -43,11 +43,48 @@ const sanitizeColor = (value, fallback = DEFAULT_WORKSPACE_COLOR) => {
   return fallback;
 };
 
+const normalizeQuoteCharacters = (value) =>
+  value
+    .replace(/[\u2018\u2019\u2032\u2035]/g, "'")
+    .replace(/[\u201C\u201D\u2033\u2036]/g, '"')
+    .replace(/[\u02BC\u02BD]/g, "'");
+
+const stripWrappingQuotes = (value) => {
+  const pairs = [
+    ["'", "'"],
+    ['"', '"'],
+    ['`', '`'],
+  ];
+
+  let trimmed = value.trim();
+  let changed = false;
+
+  do {
+    changed = false;
+    for (const [start, end] of pairs) {
+      if (trimmed.length >= 2 && trimmed.startsWith(start) && trimmed.endsWith(end)) {
+        trimmed = trimmed.slice(start.length, trimmed.length - end.length).trim();
+        changed = true;
+      }
+    }
+  } while (changed);
+
+  if (trimmed.startsWith("'") || trimmed.startsWith('"') || trimmed.startsWith('`')) {
+    trimmed = trimmed.slice(1).trim();
+  }
+  if (trimmed.endsWith("'") || trimmed.endsWith('"') || trimmed.endsWith('`')) {
+    trimmed = trimmed.slice(0, -1).trim();
+  }
+
+  return trimmed;
+};
+
 const sanitizeDestDir = (value) => {
   if (typeof value !== "string") {
     return "";
   }
-  const trimmed = value.trim();
+  const normalizedQuotes = normalizeQuoteCharacters(value);
+  const trimmed = stripWrappingQuotes(normalizedQuotes);
   if (!trimmed) {
     return "";
   }

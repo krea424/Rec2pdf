@@ -36,6 +36,24 @@ describe('GET /api/workspaces without Supabase', () => {
   });
 });
 
+describe('resolveDestinationDirectory', () => {
+  it('removes wrapping quotes before resolving absolute path', async () => {
+    const path = require('path');
+    const os = require('os');
+    const fsp = require('fs/promises');
+    const { resolveDestinationDirectory } = require('../server');
+
+    const baseDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf-dest-'));
+    const quoted = `'${baseDir}'`;
+
+    const result = await resolveDestinationDirectory(quoted);
+    expect(result.dir).toBe(path.resolve(baseDir));
+    expect(result.isCustom).toBe(true);
+
+    await fsp.rm(baseDir, { recursive: true, force: true });
+  });
+});
+
 describe('GET /api/workspaces with Supabase data', () => {
   let app;
   let request;
