@@ -28,7 +28,6 @@ const parseStatusList = (value) =>
 const emptyForm = {
   label: "",
   slug: "",
-  destDir: "",
   promptId: "",
   pdfTemplate: "",
   pdfTemplateType: "",
@@ -729,7 +728,6 @@ const WorkspaceProfilesManager = () => {
       setFormState({
         label: profile.label || "",
         slug: profile.slug || "",
-        destDir: profile.destDir || "",
         promptId: profile.promptId || "",
         pdfTemplate: profile.pdfTemplate || "",
         pdfTemplateType: profile.pdfTemplateType || "",
@@ -805,7 +803,6 @@ const WorkspaceProfilesManager = () => {
           setFormState({
             label: updated.label || "",
             slug: updated.slug || "",
-            destDir: updated.destDir || "",
             promptId: updated.promptId || "",
             pdfTemplate: updated.pdfTemplate || "",
             pdfTemplateType: updated.pdfTemplateType || "",
@@ -896,7 +893,7 @@ const WorkspaceProfilesManager = () => {
         title: "Profilo",
         icon: Sparkles,
         description:
-          "Preset riutilizzabile per slug, cartella di destinazione, prompt e template PDF della pipeline.",
+          "Preset riutilizzabile per slug, prompt e template PDF della pipeline.",
         meta:
           profiles.length > 0
             ? `${profiles.length} profil${profiles.length === 1 ? "o" : "i"} salvati`
@@ -912,24 +909,19 @@ const WorkspaceProfilesManager = () => {
     if (!prdPrompt) {
       return [];
     }
-    const normalizedDefaultDir =
-      typeof DEFAULT_DEST_DIR === "string" && DEFAULT_DEST_DIR.trim()
-        ? DEFAULT_DEST_DIR.replace(/\/$/, "")
-        : "";
     return [
       {
         key: "consulting_prd",
         label: "Profilo PRD consulting",
         description:
-          "Precompila con prompt PRD, template consulting e cartella dedicata per i requisiti prodotto.",
+          "Precompila con prompt PRD e template consulting dedicato ai requisiti prodotto.",
         promptId: "prompt_prd",
         slug: "prd_consulting",
-        destDir: normalizedDefaultDir ? `${normalizedDefaultDir}/Consulting-PRD` : "",
         pdfTemplate: "default.tex",
         pdfTemplateType: "tex",
       },
     ];
-  }, [DEFAULT_DEST_DIR, prdPrompt]);
+  }, [prdPrompt]);
 
   const handleApplyPreset = useCallback(
     (preset) => {
@@ -938,7 +930,6 @@ const WorkspaceProfilesManager = () => {
       setFormState({
         label: preset.label || "",
         slug: preset.slug || "",
-        destDir: preset.destDir || "",
         promptId: preset.promptId || "",
         pdfTemplate: preset.pdfTemplate || "",
         pdfTemplateType: preset.pdfTemplateType || "",
@@ -1261,7 +1252,6 @@ const WorkspaceProfilesManager = () => {
                                   {profile.slug || "—"}
                                 </span>
                               </span>
-                              <span className="normal-case">Cartella: {profile.destDir || "—"}</span>
                               <span className="normal-case">
                                 Prompt: {prompt?.title || profile.promptId || "—"}
                               </span>
@@ -1355,13 +1345,6 @@ const WorkspaceProfilesManager = () => {
                     onChange={handleFieldChange("slug")}
                     placeholder="es. verbale_standard"
                     helperText="Lascia vuoto per generarlo dal nome"
-                  />
-                  <Input
-                    label="Cartella destinazione"
-                    value={formState.destDir}
-                    onChange={handleFieldChange("destDir")}
-                    placeholder="/Users/nomeutente/Documenti"
-                    helperText="Cartella sul backend dove salvare PDF e Markdown"
                   />
                   <Select
                     label="Prompt"

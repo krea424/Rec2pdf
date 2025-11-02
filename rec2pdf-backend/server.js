@@ -1701,7 +1701,6 @@ const profileInputSchema = z
     id: z.string().trim().optional(),
     label: z.string().trim().min(1),
     slug: z.string().trim().optional(),
-    destDir: z.string().trim().optional(),
     promptId: z.string().trim().optional(),
     pdfTemplate: z.string().trim().optional(),
     pdfLogoPath: z.string().trim().optional(),
@@ -1809,7 +1808,6 @@ const mapProfileRowToDomain = (row) => {
     label,
     slug,
     workspaceId: typeof value.workspace_id === 'string' ? value.workspace_id : '',
-    destDir: value.dest_dir || '',
     promptId: promptIdFromRow || metadata?.promptId || '',
     pdfTemplate: pdfTemplateFromRow || metadata?.pdfTemplate || '',
     pdfLogoPath: pdfLogoPathFromRow || metadata?.pdfLogoPath || '',
@@ -1965,7 +1963,6 @@ const profileToDbPayload = (workspaceId, profile) => {
     workspace_id: workspaceId,
     slug: sanitizeSlug(profile.slug || label || 'profilo', label || 'profilo'),
     label,
-    dest_dir: profile.destDir || null,
     prompt_id: promptId,
     pdf_template: pdfTemplate,
     pdf_logo_url: pdfLogoPath || null,
@@ -2209,8 +2206,6 @@ const normalizeWorkspaceProfiles = (profiles, { existingProfiles } = {}) => {
       }
 
       const slug = sanitizeSlug(profile.slug || previous.slug || label, label);
-      const destDirInput = profile.destDir ?? previous.destDir ?? '';
-      const destDir = sanitizeDestDirInput(destDirInput) || '';
       const promptId = typeof profile.promptId === 'string'
         ? profile.promptId.trim()
         : typeof previous.promptId === 'string'
@@ -2260,7 +2255,6 @@ const normalizeWorkspaceProfiles = (profiles, { existingProfiles } = {}) => {
         id,
         label,
         slug,
-        destDir,
         promptId,
         pdfTemplate,
         pdfLogoPath,
@@ -2286,21 +2280,6 @@ const validateWorkspaceProfiles = async (profiles, { prompts } = {}) => {
   for (const profile of profiles) {
     if (!profile || typeof profile !== 'object') continue;
     const label = profile.label || profile.id;
-    if (profile.destDir) {
-      try {
-        const stats = await fsp.stat(profile.destDir);
-        if (!stats.isDirectory()) {
-          errors.push(`La cartella di destinazione per il profilo "${label}" non è una directory valida.`);
-        } else {
-          await fsp.access(profile.destDir, fs.constants.W_OK);
-        }
-      } catch (error) {
-        errors.push(
-          `La cartella di destinazione per il profilo "${label}" non è accessibile: ${error?.message || error}`
-        );
-      }
-    }
-
     if (profile.promptId) {
       const normalizedPromptId = String(profile.promptId).trim();
       if (normalizedPromptId && !promptIds.has(normalizedPromptId)) {
@@ -2342,12 +2321,6 @@ const extractProfilePayload = (body = {}) => {
     id: typeof body.id === 'string' ? body.id.trim() : undefined,
     label: typeof body.label === 'string' ? body.label.trim() : typeof body.name === 'string' ? body.name.trim() : '',
     slug: typeof body.slug === 'string' ? body.slug.trim() : '',
-    destDir:
-      typeof body.destDir === 'string'
-        ? body.destDir.trim()
-        : typeof body.destination === 'string'
-          ? body.destination.trim()
-          : '',
     promptId: typeof body.promptId === 'string' ? body.promptId.trim() : typeof body.prompt === 'string' ? body.prompt.trim() : '',
     pdfTemplate:
       typeof body.pdfTemplate === 'string'
@@ -3974,7 +3947,6 @@ app.post('/api/workspaces', async (req, res) => {
           id: profile.id || '',
           label: profile.label,
           slug: profile.slug || profile.label,
-          destDir: profile.destDir || '',
           promptId: profile.promptId || '',
           pdfTemplate: profile.pdfTemplate || '',
           pdfLogoPath: profile.pdfLogoPath || '',
@@ -4638,7 +4610,6 @@ workspaceProfilesRouter.post('/', optionalProfileUpload, async (req, res) => {
       id: resolvedProfileId,
       label: payload.label,
       slug,
-      destDir: payload.destDir || '',
       promptId: payload.promptId || '',
       pdfTemplate: payload.pdfTemplate || '',
       pdfLogoPath: typeof payload.pdfLogoPath === 'string' ? payload.pdfLogoPath.trim() : '',
@@ -4801,7 +4772,6 @@ workspaceProfilesRouter.put('/:profileId', optionalProfileUpload, async (req, re
       ...existingProfile,
       label: payload.label || existingProfile.label,
       slug,
-      destDir: payload.destDir ?? existingProfile.destDir,
       promptId: payload.promptId ?? existingProfile.promptId,
       pdfTemplate: payload.pdfTemplate ?? existingProfile.pdfTemplate,
       pdfLogoPath:
@@ -5348,6 +5318,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
 
     let workspaceMeta = null;
     let workspaceProject = null;
+    let destDir = DEFAULT_DEST_DIR;
     let workspaceProfile = null;
     if (workspaceId && supabase) {
       try {
@@ -5452,7 +5423,6 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
           id: workspaceProfileId,
           label: workspaceProfileLabel || labelCandidate || workspaceProfileId,
           slug: '',
-          destDir: '',
           promptId: '',
           pdfTemplate: workspaceProfileTemplate || '',
           pdfLogoPath: workspaceProfileLogoPath,
@@ -5474,20 +5444,35 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       promptId = String(workspaceProfile.promptId || '').trim();
     }
 
-    let destDir = DEFAULT_DEST_DIR;
-    let destIsCustom = false;
     try {
-      const destSource = req.body?.dest ? req.body.dest : workspaceProfile?.destDir;
+      const manualDestInput = req.body?.dest;
+      const projectDestCandidate =
+        (workspaceProject && workspaceProject.destDir) ||
+        sanitizeDestDirInput(req.body?.workspaceProjectDestDir || req.body?.projectDestDir || '');
+      const workspaceDestCandidate =
+        (workspaceMeta && workspaceMeta.destDir) ||
+        sanitizeDestDirInput(req.body?.workspaceDestDir || req.body?.workspaceDestination || '');
+      const destSource = manualDestInput || projectDestCandidate || workspaceDestCandidate || '';
+      const destOrigin = manualDestInput
+        ? 'manuale'
+        : projectDestCandidate
+          ? 'progetto'
+          : workspaceDestCandidate
+            ? 'workspace'
+            : 'predefinita';
       const destConfig = await resolveDestinationDirectory(destSource);
       destDir = destConfig.dir;
-      destIsCustom = destConfig.isCustom;
-      out(
-        destIsCustom
-          ? `📁 Cartella destinazione personalizzata: ${destDir}`
-          : `📁 Cartella destinazione predefinita: ${destDir}`,
-        'upload',
-        'info'
-      );
+      if (destOrigin === 'predefinita') {
+        out(`📁 Cartella destinazione predefinita: ${destDir}`, 'upload', 'info');
+      } else {
+        const originLabel =
+          destOrigin === 'manuale'
+            ? 'manuale'
+            : destOrigin === 'progetto'
+              ? 'progetto'
+              : 'workspace';
+        out(`📁 Cartella destinazione (${originLabel}): ${destDir}`, 'upload', 'info');
+      }
     } catch (destError) {
       const reason = destError?.reason || destError?.message || 'Cartella destinazione non scrivibile';
       out(`❌ Cartella destinazione non utilizzabile: ${reason}`, 'upload', 'failed');
@@ -5527,6 +5512,82 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     out('☁️ File caricato su Supabase Storage', 'upload', 'info');
 
     const slug = sanitizeSlug(slugInput || 'meeting', 'meeting');
+
+    try {
+      const manualDestInput = req.body?.dest;
+      const projectDestCandidate =
+        (workspaceProject && workspaceProject.destDir) ||
+        sanitizeDestDirInput(req.body?.workspaceProjectDestDir || req.body?.projectDestDir || '');
+      const workspaceDestCandidate =
+        (workspaceMeta && workspaceMeta.destDir) ||
+        sanitizeDestDirInput(req.body?.workspaceDestDir || req.body?.workspaceDestination || '');
+      const destSource = manualDestInput || projectDestCandidate || workspaceDestCandidate || '';
+      const destOrigin = manualDestInput
+        ? 'manuale'
+        : projectDestCandidate
+          ? 'progetto'
+          : workspaceDestCandidate
+            ? 'workspace'
+            : 'predefinita';
+      const destConfig = await resolveDestinationDirectory(destSource);
+      destDir = destConfig.dir;
+      if (destOrigin === 'predefinita') {
+        out(`📁 Cartella destinazione predefinita: ${destDir}`, 'upload', 'info');
+      } else {
+        const originLabel =
+          destOrigin === 'manuale'
+            ? 'manuale'
+            : destOrigin === 'progetto'
+              ? 'progetto'
+              : 'workspace';
+        out(`📁 Cartella destinazione (${originLabel}): ${destDir}`, 'upload', 'info');
+      }
+    } catch (destError) {
+      const reason = destError?.reason || destError?.message || 'Cartella non scrivibile';
+      out(`❌ Cartella non scrivibile: ${reason}`, 'upload', 'failed');
+      logStageEvent('upload', 'failed', reason);
+      return res
+        .status(Number(destError?.statusCode) || 400)
+        .json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`, logs, stageEvents });
+    }
+
+    try {
+      const manualDestInput = req.body?.dest;
+      const projectDestCandidate =
+        (workspaceProject && workspaceProject.destDir) ||
+        sanitizeDestDirInput(req.body?.workspaceProjectDestDir || req.body?.projectDestDir || '');
+      const workspaceDestCandidate =
+        (workspaceMeta && workspaceMeta.destDir) ||
+        sanitizeDestDirInput(req.body?.workspaceDestDir || req.body?.workspaceDestination || '');
+      const destSource = manualDestInput || projectDestCandidate || workspaceDestCandidate || '';
+      const destOrigin = manualDestInput
+        ? 'manuale'
+        : projectDestCandidate
+          ? 'progetto'
+          : workspaceDestCandidate
+            ? 'workspace'
+            : 'predefinita';
+      const destConfig = await resolveDestinationDirectory(destSource);
+      destDir = destConfig.dir;
+      if (destOrigin === 'predefinita') {
+        out(`📁 Cartella destinazione predefinita: ${destDir}`, 'upload', 'info');
+      } else {
+        const originLabel =
+          destOrigin === 'manuale'
+            ? 'manuale'
+            : destOrigin === 'progetto'
+              ? 'progetto'
+              : 'workspace';
+        out(`📁 Cartella destinazione (${originLabel}): ${destDir}`, 'upload', 'info');
+      }
+    } catch (destError) {
+      const reason = destError?.reason || destError?.message || 'Cartella non scrivibile';
+      out(`❌ Cartella non scrivibile: ${reason}`, 'upload', 'failed');
+      logStageEvent('upload', 'failed', reason);
+      return res
+        .status(Number(destError?.statusCode) || 400)
+        .json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`, logs, stageEvents });
+    }
 
     const baseName = workspaceMeta
       ? await buildWorkspaceBaseName(workspaceMeta, destDir, slug)
@@ -6455,26 +6516,6 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
       }
     }
 
-    let destDir = DEFAULT_DEST_DIR;
-    try {
-      const destConfig = await resolveDestinationDirectory(req.body?.dest);
-      destDir = destConfig.dir;
-      out(
-        destConfig.isCustom
-          ? `📁 Cartella destinazione personalizzata: ${destDir}`
-          : `📁 Cartella destinazione predefinita: ${destDir}`,
-        'upload',
-        'info'
-      );
-    } catch (destError) {
-      const reason = destError?.reason || destError?.message || 'Cartella non scrivibile';
-      out(`❌ Cartella non scrivibile: ${reason}`, 'upload', 'failed');
-      logStageEvent('upload', 'failed', reason);
-      return res
-        .status(Number(destError?.statusCode) || 400)
-        .json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`, logs, stageEvents });
-    }
-
     let workspaceMeta = null;
     let workspaceProject = null;
     if (workspaceId && supabase) {
@@ -6517,6 +6558,45 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
       }
     } else if (workspaceId && !supabase) {
       out('⚠️ Supabase non configurato: impossibile recuperare i workspace.', 'upload', 'warning');
+    }
+
+    let destDir = DEFAULT_DEST_DIR;
+    try {
+      const manualDestInput = req.body?.dest;
+      const projectDestCandidate =
+        (workspaceProject && workspaceProject.destDir) ||
+        sanitizeDestDirInput(req.body?.workspaceProjectDestDir || req.body?.projectDestDir || '');
+      const workspaceDestCandidate =
+        (workspaceMeta && workspaceMeta.destDir) ||
+        sanitizeDestDirInput(req.body?.workspaceDestDir || req.body?.workspaceDestination || '');
+      const destSource = manualDestInput || projectDestCandidate || workspaceDestCandidate || '';
+      const destOrigin = manualDestInput
+        ? 'manuale'
+        : projectDestCandidate
+          ? 'progetto'
+          : workspaceDestCandidate
+            ? 'workspace'
+            : 'predefinita';
+      const destConfig = await resolveDestinationDirectory(destSource);
+      destDir = destConfig.dir;
+      if (destOrigin === 'predefinita') {
+        out(`📁 Cartella destinazione predefinita: ${destDir}`, 'upload', 'info');
+      } else {
+        const originLabel =
+          destOrigin === 'manuale'
+            ? 'manuale'
+            : destOrigin === 'progetto'
+              ? 'progetto'
+              : 'workspace';
+        out(`📁 Cartella destinazione (${originLabel}): ${destDir}`, 'upload', 'info');
+      }
+    } catch (destError) {
+      const reason = destError?.reason || destError?.message || 'Cartella destinazione non scrivibile';
+      out(`❌ Cartella destinazione non utilizzabile: ${reason}`, 'upload', 'failed');
+      logStageEvent('upload', 'failed', reason);
+      return res
+        .status(Number(destError?.statusCode) || 400)
+        .json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`, logs, stageEvents });
     }
 
     const baseName = workspaceMeta
@@ -6764,15 +6844,34 @@ app.post(
 
       let destDir = DEFAULT_DEST_DIR;
       try {
-        const destConfig = await resolveDestinationDirectory(req.body?.dest);
+        const manualDestInput = req.body?.dest;
+        const projectDestCandidate =
+          (workspaceProject && workspaceProject.destDir) ||
+          sanitizeDestDirInput(req.body?.workspaceProjectDestDir || req.body?.projectDestDir || '');
+        const workspaceDestCandidate =
+          (workspaceMeta && workspaceMeta.destDir) ||
+          sanitizeDestDirInput(req.body?.workspaceDestDir || req.body?.workspaceDestination || '');
+        const destSource = manualDestInput || projectDestCandidate || workspaceDestCandidate || '';
+        const destOrigin = manualDestInput
+          ? 'manuale'
+          : projectDestCandidate
+            ? 'progetto'
+            : workspaceDestCandidate
+              ? 'workspace'
+              : 'predefinita';
+        const destConfig = await resolveDestinationDirectory(destSource);
         destDir = destConfig.dir;
-        out(
-          destConfig.isCustom
-            ? `📁 Cartella destinazione personalizzata: ${destDir}`
-            : `📁 Cartella destinazione predefinita: ${destDir}`,
-          'upload',
-          'info'
-        );
+        if (destOrigin === 'predefinita') {
+          out(`📁 Cartella destinazione predefinita: ${destDir}`, 'upload', 'info');
+        } else {
+          const originLabel =
+            destOrigin === 'manuale'
+              ? 'manuale'
+              : destOrigin === 'progetto'
+                ? 'progetto'
+                : 'workspace';
+          out(`📁 Cartella destinazione (${originLabel}): ${destDir}`, 'upload', 'info');
+        }
       } catch (destError) {
         const reason = destError?.reason || destError?.message || 'Cartella destinazione non scrivibile';
         out(`❌ Cartella destinazione non utilizzabile: ${reason}`, 'upload', 'failed');

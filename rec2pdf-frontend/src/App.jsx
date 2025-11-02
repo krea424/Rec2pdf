@@ -427,7 +427,6 @@ const normalizeWorkspaceProfile = (workspaceId, profile) => {
     id: profile.id || '',
     label: profile.label || '',
     slug: profile.slug || '',
-    destDir: profile.destDir || '',
     promptId: profile.promptId || '',
     pdfTemplate: profile.pdfTemplate || '',
     pdfTemplateType: profile.pdfTemplateType || profile.templateType || '',
@@ -2884,7 +2883,6 @@ function AppContent(){
         const formData = new FormData();
         formData.set('label', String(profile?.label || '').trim());
         formData.set('slug', String(profile?.slug || '').trim());
-        formData.set('destDir', String(profile?.destDir || '').trim());
         formData.set('promptId', String(profile?.promptId || '').trim());
         formData.set('pdfTemplate', String(profile?.pdfTemplate || '').trim());
         formData.set('pdfTemplateType', String(profile?.pdfTemplateType || '').trim());
@@ -2970,7 +2968,6 @@ function AppContent(){
         const formData = new FormData();
         formData.set('label', String(profile?.label || '').trim());
         formData.set('slug', String(profile?.slug || '').trim());
-        formData.set('destDir', String(profile?.destDir || '').trim());
         formData.set('promptId', String(profile?.promptId || '').trim());
         formData.set('pdfTemplate', String(profile?.pdfTemplate || '').trim());
         formData.set('pdfTemplateType', String(profile?.pdfTemplateType || '').trim());
@@ -3315,6 +3312,21 @@ function AppContent(){
     return Array.isArray(candidate) && candidate.length ? candidate : DEFAULT_WORKSPACE_STATUSES;
   }, [activeProject, activeWorkspace]);
 
+  const selectedProjectDestDir = useMemo(
+    () => sanitizeDestDirForRequest(activeProject?.destDir),
+    [activeProject?.destDir]
+  );
+  const selectedWorkspaceDestDir = useMemo(
+    () => sanitizeDestDirForRequest(activeWorkspace?.destDir),
+    [activeWorkspace?.destDir]
+  );
+
+  useEffect(() => {
+    if ((selectedProjectDestDir || selectedWorkspaceDestDir) && destDir !== '') {
+      setDestDir('');
+    }
+  }, [selectedProjectDestDir, selectedWorkspaceDestDir, destDir, setDestDir]);
+
   const handleSelectWorkspaceForPipeline = useCallback(
     (value) => {
       const workspaceId = value || '';
@@ -3426,9 +3438,6 @@ function AppContent(){
       const profile = profiles.find((item) => item.id === profileId) || null;
       if (!profile) {
         return { ok: false, message: 'Profilo non trovato' };
-      }
-      if (profile.destDir) {
-        setDestDir(profile.destDir);
       }
       if (profile.slug) {
         setSlug(profile.slug);
@@ -3633,6 +3642,12 @@ function AppContent(){
         if (workspaceSelection.status) {
           fd.append('workspaceStatus', workspaceSelection.status);
         }
+        if (selectedWorkspaceDestDir) {
+          fd.append('workspaceDestDir', selectedWorkspaceDestDir);
+        }
+        if (selectedProjectDestDir) {
+          fd.append('workspaceProjectDestDir', selectedProjectDestDir);
+        }
       }
       if (aiProviderOverrides.text) {
         fd.append('aiTextProvider', aiProviderOverrides.text);
@@ -3824,6 +3839,12 @@ function AppContent(){
         }
         if (workspaceSelection.status) {
           fd.append('workspaceStatus', workspaceSelection.status);
+        }
+        if (selectedWorkspaceDestDir) {
+          fd.append('workspaceDestDir', selectedWorkspaceDestDir);
+        }
+        if (selectedProjectDestDir) {
+          fd.append('workspaceProjectDestDir', selectedProjectDestDir);
         }
       }
       appendWorkspaceProfileDetails(fd, {

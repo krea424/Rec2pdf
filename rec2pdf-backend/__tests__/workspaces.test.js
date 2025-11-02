@@ -215,7 +215,6 @@ describe('GET /api/workspaces with Supabase data', () => {
       id: profileRow.id,
       label: 'Profilo default',
       slug: 'default-profile',
-      destDir: '/tmp/output',
       promptId: 'prompt_custom',
       pdfTemplate: 'template.tex',
       pdfLogoPath: 'https://cdn.example.com/logo.png',
@@ -226,6 +225,7 @@ describe('GET /api/workspaces with Supabase data', () => {
         storagePath: 'logos/default-profile.png',
       },
     });
+    expect(workspace.profiles[0]).not.toHaveProperty('destDir');
     expect(workspace.profiles[1]).toMatchObject({
       id: legacyProfileRow.id,
       label: 'Profilo legacy',
