@@ -36,6 +36,24 @@ describe('GET /api/workspaces without Supabase', () => {
   });
 });
 
+describe('resolveDestinationDirectory', () => {
+  it('removes wrapping quotes before resolving absolute path', async () => {
+    const path = require('path');
+    const os = require('os');
+    const fsp = require('fs/promises');
+    const { resolveDestinationDirectory } = require('../server');
+
+    const baseDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf-dest-'));
+    const quoted = `'${baseDir}'`;
+
+    const result = await resolveDestinationDirectory(quoted);
+    expect(result.dir).toBe(path.resolve(baseDir));
+    expect(result.isCustom).toBe(true);
+
+    await fsp.rm(baseDir, { recursive: true, force: true });
+  });
+});
+
 describe('GET /api/workspaces with Supabase data', () => {
   let app;
   let request;
@@ -63,6 +81,7 @@ describe('GET /api/workspaces with Supabase data', () => {
       metadata: {
         client: 'Acme Consulting',
         color: '#4f46e5',
+        destDir: '/srv/docs/acme',
         versioningPolicy: {
           retentionLimit: 5,
           freezeOnPublish: false,
@@ -74,6 +93,7 @@ describe('GET /api/workspaces with Supabase data', () => {
           id: 'proj-123',
           name: 'Discovery',
           color: '#4f46e5',
+          destDir: '/srv/docs/acme/discovery',
           statuses: ['In corso'],
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -187,6 +207,7 @@ describe('GET /api/workspaces with Supabase data', () => {
       name: 'Acme Consulting',
       client: 'Acme Consulting',
       color: '#4f46e5',
+      destDir: '/srv/docs/acme',
       defaultStatuses: ['Bozza', 'In lavorazione'],
     });
     expect(workspace.profiles).toHaveLength(2);
@@ -194,7 +215,6 @@ describe('GET /api/workspaces with Supabase data', () => {
       id: profileRow.id,
       label: 'Profilo default',
       slug: 'default-profile',
-      destDir: '/tmp/output',
       promptId: 'prompt_custom',
       pdfTemplate: 'template.tex',
       pdfLogoPath: 'https://cdn.example.com/logo.png',
@@ -205,12 +225,14 @@ describe('GET /api/workspaces with Supabase data', () => {
         storagePath: 'logos/default-profile.png',
       },
     });
+    expect(workspace.profiles[0]).not.toHaveProperty('destDir');
     expect(workspace.profiles[1]).toMatchObject({
       id: legacyProfileRow.id,
       label: 'Profilo legacy',
       slug: 'profilo_legacy',
       workspaceId: workspaceRow.id,
     });
+    expect(workspace.projects[0]).toMatchObject({ destDir: '/srv/docs/acme/discovery' });
     expect(workspace.ownerId).toBe(ownerId);
     expect(createClient).toHaveBeenCalled();
     expect(mockAuth.getUser).toHaveBeenCalledWith('test-token');

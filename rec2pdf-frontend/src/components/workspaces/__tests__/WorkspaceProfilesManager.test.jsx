@@ -27,6 +27,7 @@ const workspacesFixture = [
     name: 'Workspace Demo',
     client: 'ACME',
     color: '#6366f1',
+    destDir: '',
     defaultStatuses: ['Bozza', 'In lavorazione'],
     profiles: [],
     projects: [],
@@ -113,6 +114,7 @@ describe('WorkspaceProfilesManager', () => {
       expect(createWorkspaceProject).toHaveBeenCalledWith('ws-1', {
         name: 'Discovery',
         color: '#6366f1',
+        destDir: '',
         statuses: ['Bozza', 'Review'],
       });
     });
