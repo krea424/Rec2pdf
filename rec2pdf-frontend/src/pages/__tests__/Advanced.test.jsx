@@ -5,7 +5,7 @@ import AdvancedPage from '../Advanced.jsx'
 
 vi.mock('../../features/advanced/InputManager', () => ({
   default: ({ context }) => (
-    <div data-testid="input-manager">Input manager mock – mode {context?.mode}</div>
+    <div data-testid="input-manager">Input manager mock – theme {context?.theme}</div>
   ),
 }))
 
@@ -17,10 +17,9 @@ vi.mock('../../hooks/useAppContext', () => ({
 
 const buildContext = (overrides = {}) => {
   const flags = overrides.flags ?? ['MODE_BASE', 'MODE_ADVANCED', 'MODE_ADVANCED_V2']
-  const hasModeFlag = vi.fn((flag) => flags.includes(flag))
+  const hasFeatureFlag = overrides.hasFeatureFlag ?? vi.fn((flag) => flags.includes(flag))
 
   return {
-    mode: 'advanced',
     flags,
     theme: 'boardroom',
     themes: {
@@ -29,7 +28,8 @@ const buildContext = (overrides = {}) => {
     secureOK: true,
     errorBanner: null,
     setErrorBanner: vi.fn(),
-    hasModeFlag: overrides.hasModeFlag ?? hasModeFlag,
+    hasFeatureFlag,
+    hasModeFlag: overrides.hasModeFlag ?? hasFeatureFlag,
     ...overrides,
   }
 }
@@ -68,6 +68,6 @@ describe('AdvancedPage', () => {
 
     renderWithRouter(<AdvancedPage />)
 
-    expect(screen.getByTestId('input-manager')).toHaveTextContent('mode advanced')
+    expect(screen.getByTestId('input-manager')).toHaveTextContent('theme boardroom')
   })
 })

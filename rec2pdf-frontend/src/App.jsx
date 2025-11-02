@@ -345,75 +345,7 @@ const normalizeStructureMeta = (structure) => {
 };
 
 function AppContextComposer({ baseValue, children }) {
-  const {
-    mode,
-    setMode,
-    toggleMode,
-    availableModes,
-    isSelectionVisible,
-    isPersisting,
-    isHydrated,
-    flags,
-    hasFlag,
-  } = useMode();
-
-  useEffect(() => {
-    if (!isSelectionVisible) {
-      return undefined;
-    }
-
-    const isEditableElement = (target) => {
-      if (!target || typeof target !== 'object') {
-        return false;
-      }
-
-      const element = target;
-      const tagName = typeof element.tagName === 'string' ? element.tagName.toLowerCase() : '';
-
-      if (element.isContentEditable) {
-        return true;
-      }
-
-      return tagName === 'input' || tagName === 'textarea' || tagName === 'select';
-    };
-
-    const handleKeydown = (event) => {
-      if (!event || typeof event !== 'object') {
-        return;
-      }
-
-      if (event.defaultPrevented) {
-        return;
-      }
-
-      if (event.altKey || event.ctrlKey || event.metaKey) {
-        return;
-      }
-
-      if (isEditableElement(event.target)) {
-        return;
-      }
-
-      const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
-
-      if (key === 'b' && availableModes.includes('base')) {
-        event.preventDefault();
-        setMode('base');
-        return;
-      }
-
-      if (key === 'a' && availableModes.includes('advanced')) {
-        event.preventDefault();
-        setMode('advanced');
-      }
-    };
-
-    window.addEventListener('keydown', handleKeydown);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeydown);
-    };
-  }, [availableModes, isSelectionVisible, setMode]);
+  const { flags, hasFlag } = useMode();
 
   const resetDiarizationPreferenceFromMode = baseValue?.resetDiarizationPreference;
 
@@ -421,18 +353,13 @@ function AppContextComposer({ baseValue, children }) {
     if (typeof resetDiarizationPreferenceFromMode === 'function') {
       resetDiarizationPreferenceFromMode();
     }
-  }, [mode, resetDiarizationPreferenceFromMode]);
+  }, [resetDiarizationPreferenceFromMode]);
 
   const contextValue = {
     ...baseValue,
-    mode,
-    setMode,
-    toggleMode,
-    availableModes,
-    isModeSelectionVisible: isSelectionVisible,
-    isModePersisting: isPersisting,
-    isModeHydrated: isHydrated,
+    featureFlags: Array.from(flags),
     modeFlags: Array.from(flags),
+    hasFeatureFlag: hasFlag,
     hasModeFlag: hasFlag,
   };
 

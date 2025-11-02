@@ -4,10 +4,15 @@ import BaseHome from "../features/base/BaseHome";
 const CreatePage = () => {
   const context = useAppContext();
 
-  const hasAdvancedAccess =
-    typeof context.hasModeFlag === "function" ? context.hasModeFlag("MODE_ADVANCED") : false;
-  const hasAdvancedV2 =
-    typeof context.hasModeFlag === "function" ? context.hasModeFlag("MODE_ADVANCED_V2") : false;
+  const hasFeatureFlag =
+    typeof context.hasFeatureFlag === "function"
+      ? context.hasFeatureFlag
+      : typeof context.hasModeFlag === "function"
+        ? context.hasModeFlag
+        : null;
+
+  const hasAdvancedAccess = typeof hasFeatureFlag === "function" ? hasFeatureFlag("MODE_ADVANCED") : false;
+  const hasAdvancedV2 = typeof hasFeatureFlag === "function" ? hasFeatureFlag("MODE_ADVANCED_V2") : false;
 
   return (
     <div className="space-y-6">

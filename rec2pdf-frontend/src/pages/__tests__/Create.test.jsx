@@ -48,10 +48,9 @@ const baseStatusStyles = {
 
 const buildContext = (overrides = {}) => {
   const flags = overrides.flags ?? ['MODE_BASE']
-  const hasModeFlag = vi.fn((flag) => flags.includes(flag))
+  const hasFeatureFlag = overrides.hasFeatureFlag ?? vi.fn((flag) => flags.includes(flag))
 
   const context = {
-    mode: 'base',
     flags,
     theme: 'boardroom',
     themes: baseThemes,
@@ -91,8 +90,6 @@ const buildContext = (overrides = {}) => {
     setCustomPdfLogo: vi.fn(),
     setErrorBanner: vi.fn(),
     errorBanner: null,
-    setMode: vi.fn(),
-    toggleMode: vi.fn(),
     fileInputRef: { current: null },
     onPickFile: vi.fn(),
     markdownInputRef: { current: null },
@@ -124,7 +121,8 @@ const buildContext = (overrides = {}) => {
     ...overrides,
   }
 
-  context.hasModeFlag = overrides.hasModeFlag ?? hasModeFlag
+  context.hasFeatureFlag = hasFeatureFlag
+  context.hasModeFlag = overrides.hasModeFlag ?? hasFeatureFlag
 
   return context
 }

@@ -1,5 +1,4 @@
 import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { ModeProvider, useMode } from '../ModeContext'
 import { AnalyticsProvider } from '../AnalyticsContext'
 
@@ -7,26 +6,13 @@ describe('ModeContext', () => {
   const trackEvent = vi.fn()
   const trackToggleEvent = vi.fn()
 
-  const session = {
-    user: {
-      id: 'user-1',
-      app_metadata: {
-        feature_flags: ['MODE_BASE', 'MODE_ADVANCED'],
-      },
-    },
-  } as any
-
   const Consumer = () => {
-    const { mode, setMode, toggleMode } = useMode()
+    const { flags, hasFlag } = useMode()
     return (
       <div>
-        <span data-testid="mode-value">{mode}</span>
-        <button type="button" onClick={() => setMode('advanced')}>
-          advanced
-        </button>
-        <button type="button" onClick={() => toggleMode()}>
-          toggle
-        </button>
+        <span data-testid="has-advanced">{hasFlag('MODE_ADVANCED') ? 'yes' : 'no'}</span>
+        <span data-testid="has-advanced-v2">{hasFlag('MODE_ADVANCED_V2') ? 'yes' : 'no'}</span>
+        <span data-testid="flag-count">{Array.from(flags).length}</span>
       </div>
     )
   }
@@ -34,68 +20,62 @@ describe('ModeContext', () => {
   beforeEach(() => {
     trackEvent.mockClear()
     trackToggleEvent.mockClear()
-    window.localStorage.clear()
   })
 
-  it('switches mode explicitly and cycles back while emitting analytics', async () => {
-    const user = userEvent.setup()
-
-    render(
+  it('propagates feature flags from the session and reacts to updates', async () => {
+    const { rerender } = render(
       <AnalyticsProvider value={{ trackEvent, trackToggleEvent }}>
-        <ModeProvider session={session} syncWithSupabase={false}>
+        <ModeProvider
+          session={{
+            user: {
+              id: 'user-1',
+              app_metadata: { feature_flags: ['MODE_BASE', 'MODE_ADVANCED', 'MODE_ADVANCED_V2'] },
+            },
+          } as any}
+        >
           <Consumer />
         </ModeProvider>
       </AnalyticsProvider>,
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId('mode-value')).toHaveTextContent('base')
+      expect(screen.getByTestId('has-advanced')).toHaveTextContent('yes')
+      expect(screen.getByTestId('has-advanced-v2')).toHaveTextContent('yes')
     })
 
-    await user.click(screen.getByRole('button', { name: /advanced/i }))
+    rerender(
+      <AnalyticsProvider value={{ trackEvent, trackToggleEvent }}>
+        <ModeProvider
+          session={{
+            user: {
+              id: 'user-1',
+              app_metadata: { feature_flags: ['MODE_BASE'] },
+            },
+          } as any}
+        >
+          <Consumer />
+        </ModeProvider>
+      </AnalyticsProvider>,
+    )
 
     await waitFor(() => {
-      expect(screen.getByTestId('mode-value')).toHaveTextContent('advanced')
+      expect(screen.getByTestId('has-advanced')).toHaveTextContent('yes')
+      expect(screen.getByTestId('has-advanced-v2')).toHaveTextContent('no')
     })
+  })
 
-    expect(trackToggleEvent).toHaveBeenCalledWith(
-      'mode.toggle',
-      true,
-      expect.objectContaining({ previousMode: 'base', nextMode: 'advanced', trigger: 'explicit' }),
-    )
-    expect(trackEvent).toHaveBeenCalledWith(
-      'mode.changed',
-      expect.objectContaining({ previousMode: 'base', nextMode: 'advanced', trigger: 'explicit' }),
-    )
-
-    await user.click(screen.getByRole('button', { name: /toggle/i }))
-
-    await waitFor(() => {
-      expect(screen.getByTestId('mode-value')).toHaveTextContent('base')
-    })
-
-    expect(trackToggleEvent).toHaveBeenLastCalledWith(
-      'mode.toggle',
-      false,
-      expect.objectContaining({ previousMode: 'advanced', nextMode: 'base', trigger: 'cycle' }),
-    )
-      expect(trackEvent).toHaveBeenLastCalledWith(
-        'mode.changed',
-        expect.objectContaining({ previousMode: 'advanced', nextMode: 'base', trigger: 'cycle' }),
-      )
-    })
-
-  it('emits a flag exposure event when tracked feature flags are available', async () => {
+  it('emits a flag exposure event once per session for tracked flags', async () => {
     const { rerender } = render(
       <AnalyticsProvider value={{ trackEvent, trackToggleEvent }}>
         <ModeProvider
           session={{
             user: {
               id: 'user-2',
-              app_metadata: { feature_flags: ['MODE_BASE', 'MODE_ADVANCED', 'MODE_ADVANCED_V2'] },
+              app_metadata: {
+                feature_flags: ['MODE_BASE', 'MODE_ADVANCED', 'MODE_ADVANCED_V2'],
+              },
             },
           } as any}
-          syncWithSupabase={false}
         >
           <Consumer />
         </ModeProvider>
@@ -105,7 +85,7 @@ describe('ModeContext', () => {
     await waitFor(() => {
       expect(trackEvent).toHaveBeenCalledWith(
         'mode.flag_exposed',
-        expect.objectContaining({ flag: 'MODE_ADVANCED_V2' }),
+        expect.objectContaining({ flag: 'MODE_ADVANCED_V2', mode: 'base' }),
       )
     })
 
@@ -115,10 +95,11 @@ describe('ModeContext', () => {
           session={{
             user: {
               id: 'user-2',
-              app_metadata: { feature_flags: ['MODE_BASE', 'MODE_ADVANCED', 'MODE_ADVANCED_V2'] },
+              app_metadata: {
+                feature_flags: ['MODE_BASE', 'MODE_ADVANCED', 'MODE_ADVANCED_V2'],
+              },
             },
           } as any}
-          syncWithSupabase={false}
         >
           <Consumer />
         </ModeProvider>
@@ -126,7 +107,8 @@ describe('ModeContext', () => {
     )
 
     await waitFor(() => {
-      expect(trackEvent.mock.calls.filter(([eventName]) => eventName === 'mode.flag_exposed')).toHaveLength(1)
+      const exposures = trackEvent.mock.calls.filter(([eventName]) => eventName === 'mode.flag_exposed')
+      expect(exposures).toHaveLength(1)
     })
   })
 })

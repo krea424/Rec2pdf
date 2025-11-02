@@ -1514,14 +1514,19 @@ const AdvancedWorkspaceNavigator = ({
 
 export default function WorkspaceNavigator(props) {
   const appContext = useAppContext();
-  const hasModeFlag = typeof appContext?.hasModeFlag === "function" ? appContext.hasModeFlag : null;
+  const hasFeatureFlag =
+    typeof appContext?.hasFeatureFlag === "function"
+      ? appContext.hasFeatureFlag
+      : typeof appContext?.hasModeFlag === "function"
+        ? appContext.hasModeFlag
+        : null;
 
   const canUseAdvancedNavigator =
-    !hasModeFlag ||
-    hasModeFlag(ADVANCED_FILTERS_FLAG) ||
+    !hasFeatureFlag ||
+    hasFeatureFlag(ADVANCED_FILTERS_FLAG) ||
     ADVANCED_MODE_FLAGS.some((flag) => {
       try {
-        return hasModeFlag(flag);
+        return hasFeatureFlag(flag);
       } catch (error) {
         return false;
       }

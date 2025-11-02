@@ -33,10 +33,17 @@ const AdvancedSectionFallback = () => (
 );
 
 export default function SettingsDrawer({ open, onClose }) {
-  const { setShowSetupAssistant, activeSettingsSection, setActiveSettingsSection, hasModeFlag } =
+  const { setShowSetupAssistant, activeSettingsSection, setActiveSettingsSection, hasFeatureFlag, hasModeFlag } =
     useAppContext();
 
-  const hasAdvancedAccess = typeof hasModeFlag === "function" && hasModeFlag("MODE_ADVANCED");
+  const featureFlagChecker =
+    typeof hasFeatureFlag === "function"
+      ? hasFeatureFlag
+      : typeof hasModeFlag === "function"
+        ? hasModeFlag
+        : null;
+
+  const hasAdvancedAccess = typeof featureFlagChecker === "function" && featureFlagChecker("MODE_ADVANCED");
 
   const navigation = useMemo(() => {
     if (hasAdvancedAccess) {
