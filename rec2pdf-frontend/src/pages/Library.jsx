@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import CloudLibraryPanel from "../components/CloudLibraryPanel";
 import WorkspaceNavigator from "../components/WorkspaceNavigator";
 import { useAppContext } from "../hooks/useAppContext";
@@ -6,21 +6,9 @@ import { Tabs, TabsList, TabsTrigger } from "../components/ui";
 
 const LibraryPage = () => {
   const context = useAppContext();
-  const {
-    theme,
-    themes,
-    mode,
-    HISTORY_TABS,
-    historyTab,
-    setHistoryTab,
-  } = context;
-
-  // TODO(Task 6): Align this page with the Advanced-only library strategy and
-  // confirm navigation from the Base CTA preserves mode and history state.
+  const { theme, themes, HISTORY_TABS, historyTab, setHistoryTab } = context;
 
   const availableTabs = HISTORY_TABS;
-
-  const manualSelectionRef = useRef(false);
 
   const normalizedHistoryTab = useMemo(() => {
     if (availableTabs.some((tab) => tab.key === historyTab)) {
@@ -30,22 +18,8 @@ const LibraryPage = () => {
     return availableTabs[0]?.key;
   }, [availableTabs, historyTab]);
 
-  const cloudTabKey = useMemo(
-    () => availableTabs.find((tab) => tab.key === "cloud")?.key,
-    [availableTabs]
-  );
-
-  const activeTab = useMemo(() => {
-    if (mode === "base" && !manualSelectionRef.current && cloudTabKey) {
-      return cloudTabKey;
-    }
-
-    return normalizedHistoryTab;
-  }, [cloudTabKey, mode, normalizedHistoryTab]);
-
   const handleTabChange = useCallback(
     (nextValue) => {
-      manualSelectionRef.current = true;
       if (typeof setHistoryTab === "function") {
         setHistoryTab(nextValue);
       }
@@ -54,24 +28,17 @@ const LibraryPage = () => {
   );
 
   useEffect(() => {
-    if (mode !== "base") {
-      manualSelectionRef.current = false;
-      return;
+    if (normalizedHistoryTab && historyTab !== normalizedHistoryTab) {
+      if (typeof setHistoryTab === "function") {
+        setHistoryTab(normalizedHistoryTab);
+      }
     }
-
-    if (!cloudTabKey || manualSelectionRef.current) {
-      return;
-    }
-
-    if (typeof setHistoryTab === "function" && historyTab !== cloudTabKey) {
-      setHistoryTab(cloudTabKey);
-    }
-  }, [cloudTabKey, historyTab, mode, setHistoryTab]);
+  }, [historyTab, normalizedHistoryTab, setHistoryTab]);
 
   return (
     <div className="mt-8">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-2">
-        <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <Tabs value={normalizedHistoryTab} onValueChange={handleTabChange}>
           <TabsList className="flex gap-2 border-none bg-transparent p-0">
             {availableTabs.map((tab) => (
               <TabsTrigger key={tab.key} value={tab.key} className="px-4">
@@ -82,7 +49,7 @@ const LibraryPage = () => {
         </Tabs>
       </div>
       <div className="mt-5">
-        {activeTab === "history" ? (
+        {normalizedHistoryTab === "history" ? (
           <WorkspaceNavigator
             entries={context.history}
             workspaces={context.workspaces}
