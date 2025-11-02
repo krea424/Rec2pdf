@@ -117,157 +117,9 @@ const InputManager = ({
         </p>
       </div>
 
-      <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div
-          className={classNames(
-            "rounded-2xl border p-4 transition-all",
-            isBoardroom ? boardroomSecondarySurface : themes[theme].input
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-sm text-zinc-400">
-              <Sparkles className="h-4 w-4" /> Profilo preconfigurato
-            </label>
-            {workspaceProfileLocked && (
-              <button
-                type="button"
-                onClick={() => clearWorkspaceProfile()}
-                className="rounded-lg border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100"
-              >
-                Scollega
-              </button>
-            )}
-          </div>
-          <select
-            className={classNames(
-              "mt-3 w-full rounded-lg border px-3 py-2 text-sm text-surface-50 outline-none transition-colors",
-              "focus:border-brand-400 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
-              "disabled:cursor-not-allowed disabled:opacity-60",
-              themes[theme].input,
-              !hasWorkspaceProfiles || !context.workspaceSelection.workspaceId
-                ? "cursor-not-allowed opacity-60"
-                : ""
-            )}
-            value={workspaceProfileSelection?.profileId || ""}
-            onChange={handleWorkspaceProfileSelect}
-            disabled={!context.workspaceSelection.workspaceId || !hasWorkspaceProfiles}
-          >
-            <option value="">Nessun profilo</option>
-            {activeWorkspaceProfiles.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.label || profile.id}
-              </option>
-            ))}
-          </select>
-          {!context.workspaceSelection.workspaceId && (
-            <div className="mt-2 text-xs text-zinc-500">
-              Seleziona un workspace per visualizzare i profili salvati.
-            </div>
-          )}
-          {context.workspaceSelection.workspaceId && !hasWorkspaceProfiles && (
-            <div className="mt-2 text-xs text-zinc-500">
-              Nessun profilo configurato per questo workspace.
-            </div>
-          )}
-          {workspaceProfileLocked && activeWorkspaceProfile && (
-            <div className="mt-3 space-y-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-emerald-100">
-              <div className="text-sm font-medium text-emerald-200">
-                Profilo attivo: {activeWorkspaceProfile.label || activeWorkspaceProfile.id}
-              </div>
-              <div>Cartella: {activeWorkspaceProfile.destDir || "—"}</div>
-              <div>Slug: {activeWorkspaceProfile.slug || "—"}</div>
-              <div>Prompt: {activeWorkspaceProfile.promptId || "—"}</div>
-            </div>
-          )}
-        </div>
-        <div
-          className={classNames(
-            "rounded-2xl border p-4 transition-all",
-            isBoardroom ? boardroomSecondarySurface : themes[theme].input
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-sm text-zinc-400">
-              <FileText className="h-4 w-4" /> Cartella
-            </label>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => context.setDestDir(context.DEFAULT_DEST_DIR)}
-                className={classNames(
-                  "rounded-lg border px-2 py-1 text-xs",
-                  themes[theme].input,
-                  themes[theme].input_hover,
-                  workspaceProfileLocked && "cursor-not-allowed opacity-50"
-                )}
-                disabled={workspaceProfileLocked}
-              >
-                Reimposta
-              </button>
-              <button
-                type="button"
-                onClick={() => context.setShowDestDetails((prev) => !prev)}
-                className="text-zinc-400 hover:text-zinc-200"
-                aria-label="Mostra dettagli cartella"
-                aria-expanded={context.showDestDetails}
-              >
-                <Info className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-          <input
-            className={classNames(
-              "mt-2 w-full rounded-lg border px-3 py-2 outline-none",
-              themes[theme].input,
-              context.destIsPlaceholder &&
-                "border-rose-600 focus:border-rose-500 focus:ring-rose-500/30"
-            )}
-            value={context.destDir}
-            onChange={(event) => context.setDestDir(event.target.value)}
-            placeholder="Es. /Users/mario/Recordings"
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            disabled={workspaceProfileLocked}
-          />
-          {context.showDestDetails && (
-            <div
-              className={classNames(
-                "mt-2 text-xs",
-                context.destIsPlaceholder ? "text-rose-400" : "text-zinc-500"
-              )}
-            >
-              {context.destIsPlaceholder
-                ? `Completa il percorso partendo da "${context.DEFAULT_DEST_DIR}" con il tuo username e la cartella finale (es. /Users/mario/Recordings). Lascia "${context.DEFAULT_DEST_DIR}" o il campo vuoto per usare la cartella predefinita del backend.`
-                : `Lascia "${context.DEFAULT_DEST_DIR}" o il campo vuoto per usare la cartella predefinita del backend.`}
-            </div>
-          )}
-        </div>
-        <div
-          className={classNames(
-            "rounded-2xl border p-4 transition-all",
-            isBoardroom ? boardroomSecondarySurface : themes[theme].input
-          )}
-        >
-          <label className="flex items-center gap-2 text-sm text-zinc-400">
-            <FileText className="h-4 w-4" /> Slug
-          </label>
-          <input
-            className={classNames(
-              "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 outline-none",
-              themes[theme].input
-            )}
-            value={context.slug}
-            onChange={(event) => context.setSlug(event.target.value)}
-            placeholder="meeting"
-            disabled={workspaceProfileLocked}
-          />
-        </div>
-      </div>
-
       <div
         className={classNames(
-          "mt-4 space-y-3 rounded-2xl border p-5 transition-all",
+          "mt-8 space-y-3 rounded-2xl border p-5 transition-all",
           isBoardroom ? boardroomSecondarySurface : themes[theme].input
         )}
       >
@@ -488,6 +340,155 @@ const InputManager = ({
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div
+          className={classNames(
+            "rounded-2xl border p-4 transition-all",
+            isBoardroom ? boardroomSecondarySurface : themes[theme].input
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-sm text-zinc-400">
+              <Sparkles className="h-4 w-4" /> Profilo preconfigurato
+            </label>
+            {workspaceProfileLocked && (
+              <button
+                type="button"
+                onClick={() => clearWorkspaceProfile()}
+                className="rounded-lg border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100"
+              >
+                Scollega
+              </button>
+            )}
+          </div>
+          <select
+            className={classNames(
+              "mt-3 w-full rounded-lg border px-3 py-2 text-sm text-surface-50 outline-none transition-colors",
+              "focus:border-brand-400 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
+              "disabled:cursor-not-allowed disabled:opacity-60",
+              themes[theme].input,
+              !hasWorkspaceProfiles || !context.workspaceSelection.workspaceId
+                ? "cursor-not-allowed opacity-60"
+                : ""
+            )}
+            value={workspaceProfileSelection?.profileId || ""}
+            onChange={handleWorkspaceProfileSelect}
+            disabled={!context.workspaceSelection.workspaceId || !hasWorkspaceProfiles}
+          >
+            <option value="">Nessun profilo</option>
+            {activeWorkspaceProfiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.label || profile.id}
+              </option>
+            ))}
+          </select>
+          {!context.workspaceSelection.workspaceId && (
+            <div className="mt-2 text-xs text-zinc-500">
+              Seleziona un workspace per visualizzare i profili salvati.
+            </div>
+          )}
+          {context.workspaceSelection.workspaceId && !hasWorkspaceProfiles && (
+            <div className="mt-2 text-xs text-zinc-500">
+              Nessun profilo configurato per questo workspace.
+            </div>
+          )}
+          {workspaceProfileLocked && activeWorkspaceProfile && (
+            <div className="mt-3 space-y-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+              <div className="text-sm font-medium text-emerald-200">
+                Profilo attivo: {activeWorkspaceProfile.label || activeWorkspaceProfile.id}
+              </div>
+              <div>Cartella: {activeWorkspaceProfile.destDir || "—"}</div>
+              <div>Slug: {activeWorkspaceProfile.slug || "—"}</div>
+              <div>Prompt: {activeWorkspaceProfile.promptId || "—"}</div>
+            </div>
+          )}
+        </div>
+        <div
+          className={classNames(
+            "rounded-2xl border p-4 transition-all",
+            isBoardroom ? boardroomSecondarySurface : themes[theme].input
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-sm text-zinc-400">
+              <FileText className="h-4 w-4" /> Cartella
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => context.setDestDir(context.DEFAULT_DEST_DIR)}
+                className={classNames(
+                  "rounded-lg border px-2 py-1 text-xs",
+                  themes[theme].input,
+                  themes[theme].input_hover,
+                  workspaceProfileLocked && "cursor-not-allowed opacity-50"
+                )}
+                disabled={workspaceProfileLocked}
+              >
+                Reimposta
+              </button>
+              <button
+                type="button"
+                onClick={() => context.setShowDestDetails((prev) => !prev)}
+                className="text-zinc-400 hover:text-zinc-200"
+                aria-label="Mostra dettagli cartella"
+                aria-expanded={context.showDestDetails}
+              >
+                <Info className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          <input
+            className={classNames(
+              "mt-2 w-full rounded-lg border px-3 py-2 outline-none",
+              themes[theme].input,
+              context.destIsPlaceholder &&
+                "border-rose-600 focus:border-rose-500 focus:ring-rose-500/30"
+            )}
+            value={context.destDir}
+            onChange={(event) => context.setDestDir(event.target.value)}
+            placeholder="Es. /Users/mario/Recordings"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            disabled={workspaceProfileLocked}
+          />
+          {context.showDestDetails && (
+            <div
+              className={classNames(
+                "mt-2 text-xs",
+                context.destIsPlaceholder ? "text-rose-400" : "text-zinc-500"
+              )}
+            >
+              {context.destIsPlaceholder
+                ? `Completa il percorso partendo da "${context.DEFAULT_DEST_DIR}" con il tuo username e la cartella finale (es. /Users/mario/Recordings). Lascia "${context.DEFAULT_DEST_DIR}" o il campo vuoto per usare la cartella predefinita del backend.`
+                : `Lascia "${context.DEFAULT_DEST_DIR}" o il campo vuoto per usare la cartella predefinita del backend.`}
+            </div>
+          )}
+        </div>
+        <div
+          className={classNames(
+            "rounded-2xl border p-4 transition-all",
+            isBoardroom ? boardroomSecondarySurface : themes[theme].input
+          )}
+        >
+          <label className="flex items-center gap-2 text-sm text-zinc-400">
+            <FileText className="h-4 w-4" /> Slug
+          </label>
+          <input
+            className={classNames(
+              "mt-2 w-full rounded-lg border bg-transparent px-3 py-2 outline-none",
+              themes[theme].input
+            )}
+            value={context.slug}
+            onChange={(event) => context.setSlug(event.target.value)}
+            placeholder="meeting"
+            disabled={workspaceProfileLocked}
+          />
         </div>
       </div>
 
