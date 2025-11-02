@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { Mic, Square, Settings, Folder, FileText, FileCode, Cpu, Download, TimerIcon, Waves, CheckCircle2, AlertCircle, LinkIcon, Upload, RefreshCw, Bug, XCircle, Info, Maximize, Sparkles, Plus, Users } from "./components/icons";
 import AppShell from "./components/layout/AppShell";
 import CreatePage from "./pages/Create";
+import AdvancedPage from "./pages/Advanced";
 import LibraryPage from "./pages/Library";
 import EditorPage from "./pages/Editor";
 import { useMicrophoneAccess } from "./hooks/useMicrophoneAccess";
@@ -5219,6 +5220,7 @@ function AppContent(){
               <Route index element={<Navigate to="/create" replace />} />
               <Route path="/create" element={<CreatePage />} />
               <Route path="/library" element={<LibraryPage />} />
+              <Route path="/advanced" element={<AdvancedPage />} />
               <Route path="/editor" element={<EditorPage />} />
               <Route path="*" element={<Navigate to="/create" replace />} />
             </Route>

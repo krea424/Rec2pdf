@@ -41,6 +41,7 @@ const renderWithContext = (contextOverrides = {}, initialEntries = ['/create']) 
             <Route element={<AppShell />}>
               <Route path="/create" element={<div>Create view</div>} />
               <Route path="/library" element={<div>Library view</div>} />
+              <Route path="/advanced" element={<div>Advanced view</div>} />
             </Route>
           </Routes>
         </MemoryRouter>
@@ -59,6 +60,9 @@ describe('AppShell', () => {
 
     const createLink = screen.getByRole('link', { name: 'Create' })
     expect(createLink).toHaveAttribute('href', '/create')
+
+    const advancedLink = screen.getByRole('link', { name: 'Advanced A' })
+    expect(advancedLink).toHaveAttribute('href', '/advanced')
 
     const workspaceSettingsButton = screen.getByRole('button', { name: /impostazioni workspace/i })
     await userEvent.click(workspaceSettingsButton)

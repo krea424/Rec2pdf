@@ -23,9 +23,6 @@ const CommandPalette = () => {
     startRecording,
     stopRecording,
     fileInputRef,
-    mode,
-    setMode,
-    availableModes,
     mediaSupported,
     recorderSupported,
     busy,
@@ -57,7 +54,6 @@ const CommandPalette = () => {
   }, [fileInputRef]);
 
   const commands = useMemo(() => {
-    const canToggleMode = typeof setMode === "function";
     return [
       {
         id: "record",
@@ -85,29 +81,18 @@ const CommandPalette = () => {
         action: () => goTo("/library"),
       },
       {
-        id: "mode-base",
-        label: "Passa a Base",
-        shortcut: "B",
-        disabled: !canToggleMode || mode === "base" || !availableModes.includes("base"),
-        action: () => setMode("base"),
-      },
-      {
-        id: "mode-advanced",
-        label: "Passa a Advanced",
+        id: "advanced",
+        label: "Apri Advanced A",
         shortcut: "A",
-        disabled: !canToggleMode || mode === "advanced" || !availableModes.includes("advanced"),
-        action: () => setMode("advanced"),
+        action: () => goTo("/advanced"),
       },
     ];
   }, [
-    availableModes,
     busy,
     goTo,
     mediaSupported,
-    mode,
     recorderSupported,
     recording,
-    setMode,
     toggleRecording,
     triggerUpload,
   ]);
