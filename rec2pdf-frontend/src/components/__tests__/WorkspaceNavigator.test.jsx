@@ -62,8 +62,10 @@ describe('WorkspaceNavigator', () => {
     const onRefresh = vi.fn()
     const onSearchChange = vi.fn()
 
+    const hasFeatureFlag = vi.fn((flag) => flag === 'MODE_ADVANCED')
+
     render(
-      <AppContext.Provider value={{ mode: 'advanced', hasModeFlag: () => false }}>
+      <AppContext.Provider value={{ hasFeatureFlag, hasModeFlag: hasFeatureFlag }}>
         <WorkspaceNavigator
           entries={sampleEntries}
           workspaces={sampleWorkspaces}
@@ -100,5 +102,38 @@ describe('WorkspaceNavigator', () => {
     const searchField = screen.getByPlaceholderText(/Filtra per titolo/i)
     await userEvent.type(searchField, 'brief')
     expect(onSearchChange).toHaveBeenCalled()
+  })
+
+  it('falls back to the base navigator when advanced access flags are missing', () => {
+    const hasFeatureFlag = vi.fn(() => false)
+
+    render(
+      <AppContext.Provider value={{ hasFeatureFlag, hasModeFlag: hasFeatureFlag }}>
+        <WorkspaceNavigator
+          entries={sampleEntries}
+          workspaces={sampleWorkspaces}
+          selection={{ workspaceId: 'ws-1', projectId: '', projectName: '', status: '' }}
+          onSelectionChange={vi.fn()}
+          savedFilters={[]}
+          onSaveFilter={vi.fn()}
+          onDeleteFilter={vi.fn()}
+          onApplyFilter={vi.fn()}
+          searchTerm=""
+          onSearchChange={vi.fn()}
+          fetchPreview={vi.fn()}
+          onOpenPdf={vi.fn()}
+          onOpenMd={vi.fn()}
+          onRepublish={vi.fn()}
+          onShowLogs={vi.fn()}
+          onAssignWorkspace={vi.fn()}
+          themeStyles={themeStyles}
+          loading={false}
+          onRefresh={vi.fn()}
+          pipelineSelection={null}
+        />
+      </AppContext.Provider>
+    )
+
+    expect(screen.queryByText(/Rigenera PDF/i)).not.toBeInTheDocument()
   })
 })
