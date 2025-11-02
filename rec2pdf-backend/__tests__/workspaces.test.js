@@ -63,6 +63,7 @@ describe('GET /api/workspaces with Supabase data', () => {
       metadata: {
         client: 'Acme Consulting',
         color: '#4f46e5',
+        destDir: '/srv/docs/acme',
         versioningPolicy: {
           retentionLimit: 5,
           freezeOnPublish: false,
@@ -74,6 +75,7 @@ describe('GET /api/workspaces with Supabase data', () => {
           id: 'proj-123',
           name: 'Discovery',
           color: '#4f46e5',
+          destDir: '/srv/docs/acme/discovery',
           statuses: ['In corso'],
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -187,6 +189,7 @@ describe('GET /api/workspaces with Supabase data', () => {
       name: 'Acme Consulting',
       client: 'Acme Consulting',
       color: '#4f46e5',
+      destDir: '/srv/docs/acme',
       defaultStatuses: ['Bozza', 'In lavorazione'],
     });
     expect(workspace.profiles).toHaveLength(2);
@@ -211,6 +214,7 @@ describe('GET /api/workspaces with Supabase data', () => {
       slug: 'profilo_legacy',
       workspaceId: workspaceRow.id,
     });
+    expect(workspace.projects[0]).toMatchObject({ destDir: '/srv/docs/acme/discovery' });
     expect(workspace.ownerId).toBe(ownerId);
     expect(createClient).toHaveBeenCalled();
     expect(mockAuth.getUser).toHaveBeenCalledWith('test-token');

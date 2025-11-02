@@ -1557,6 +1557,7 @@ const workspaceMetadataSchema = z
       .string()
       .regex(/^#[0-9a-fA-F]{6}$/)
       .optional(),
+    destDir: z.string().trim().optional(),
     versioningPolicy: z
       .object({
         retentionLimit: z.number().int().min(1).optional(),
@@ -1599,6 +1600,7 @@ const projectSchema = z
       .string()
       .regex(/^#[0-9a-fA-F]{6}$/)
       .optional(),
+    destDir: z.string().trim().optional(),
     statuses: z.array(z.string().trim().min(1)).optional(),
     createdAt: z.number().int().nonnegative().optional(),
     updatedAt: z.number().int().nonnegative().optional(),
@@ -1671,6 +1673,7 @@ const workspaceInputSchema = z
     client: z.string().trim().optional(),
     color: z.string().trim().optional(),
     slug: z.string().trim().optional(),
+    destDir: z.string().trim().optional(),
     versioningPolicy: versioningPolicySchema.optional(),
     defaultStatuses: z.array(z.string().trim()).optional(),
     projects: z.array(projectSchema.partial({ id: true, createdAt: true, updatedAt: true })).optional(),
@@ -1706,6 +1709,7 @@ const normalizeProjects = (projects = [], { fallbackColor, fallbackStatuses } = 
         id: data.id || generateId('proj'),
         name: data.name,
         color: data.color || fallbackColor || '#6366f1',
+        destDir: sanitizeDestDirInput(data.destDir || ''),
         statuses: Array.isArray(data.statuses) && data.statuses.length ? data.statuses : fallbackStatuses || [],
         createdAt: data.createdAt || Date.now(),
         updatedAt: data.updatedAt || Date.now(),
@@ -1774,6 +1778,7 @@ const mapWorkspaceRowToDomain = (row, profileRows = []) => {
   const value = parsed.data;
   const metadataResult = workspaceMetadataSchema.safeParse(value.metadata || {});
   const metadata = metadataResult.success ? metadataResult.data : {};
+  const destDirFromMetadata = sanitizeDestDirInput(metadata?.destDir || '');
   const color = normalizeColor(metadata?.color || '');
   const versioning = versioningPolicySchema.safeParse(metadata?.versioningPolicy || {}).success
     ? {
@@ -1803,6 +1808,7 @@ const mapWorkspaceRowToDomain = (row, profileRows = []) => {
     name: value.name,
     client: metadata?.client || value.description || value.name,
     color,
+    destDir: destDirFromMetadata,
     versioningPolicy: versioning,
     defaultStatuses,
     projects,
@@ -1830,6 +1836,11 @@ const workspaceToDbPayload = (workspace, { ownerId } = {}) => {
         workspace.versioningPolicy?.namingConvention || DEFAULT_VERSIONING_POLICY.namingConvention,
     },
   };
+
+  const sanitizedDestDir = sanitizeDestDirInput(workspace.destDir || '');
+  if (sanitizedDestDir) {
+    metadata.destDir = sanitizedDestDir;
+  }
 
   const defaultStatuses = normalizeDefaultStatuses(workspace.defaultStatuses);
   const projects = normalizeProjects(workspace.projects, {
@@ -3811,6 +3822,9 @@ const mergeWorkspaceUpdate = (workspace, patch) => {
   if (patch.client) updated.client = String(patch.client).trim();
   if (patch.color) updated.color = normalizeColor(patch.color);
   if (patch.slug) updated.slug = String(patch.slug).trim().replace(/[^a-zA-Z0-9._-]/g, '_');
+  if (patch.destDir !== undefined) {
+    updated.destDir = sanitizeDestDirInput(patch.destDir || '');
+  }
   if (patch.versioningPolicy && typeof patch.versioningPolicy === 'object') {
     updated.versioningPolicy = {
       retentionLimit: Number.isFinite(patch.versioningPolicy.retentionLimit)
@@ -3829,6 +3843,7 @@ const mergeWorkspaceUpdate = (workspace, patch) => {
       id: project.id || generateId('proj'),
       name: String(project.name || 'Project').trim(),
       color: normalizeColor(project.color || updated.color || '#6366f1'),
+      destDir: sanitizeDestDirInput(project.destDir || ''),
       statuses: Array.isArray(project.statuses) && project.statuses.length
         ? project.statuses.map((status) => String(status).trim()).filter(Boolean)
         : [...DEFAULT_STATUSES],
