@@ -22,6 +22,7 @@ import { EmptyState, Skeleton } from "./ui";
 const DEFAULT_STATUSES = ["Bozza", "In lavorazione", "Da revisionare", "Completato"];
 const UNASSIGNED_KEY = "__unassigned__";
 const ADVANCED_FILTERS_FLAG = "ADVANCED_WORKSPACE_FILTERS";
+const ADVANCED_MODE_FLAGS = ["MODE_ADVANCED", "MODE_ADVANCED_V2"];
 
 const computeProjectKey = (id, name) => {
   if (id) return String(id);
@@ -1513,12 +1514,20 @@ const AdvancedWorkspaceNavigator = ({
 
 export default function WorkspaceNavigator(props) {
   const appContext = useAppContext();
-  const canUseAdvancedFilters =
-    typeof appContext?.hasModeFlag === "function"
-      ? appContext.hasModeFlag(ADVANCED_FILTERS_FLAG)
-      : true;
+  const hasModeFlag = typeof appContext?.hasModeFlag === "function" ? appContext.hasModeFlag : null;
 
-  if (!canUseAdvancedFilters) {
+  const canUseAdvancedNavigator =
+    !hasModeFlag ||
+    hasModeFlag(ADVANCED_FILTERS_FLAG) ||
+    ADVANCED_MODE_FLAGS.some((flag) => {
+      try {
+        return hasModeFlag(flag);
+      } catch (error) {
+        return false;
+      }
+    });
+
+  if (!canUseAdvancedNavigator) {
     return <BaseWorkspaceNavigator {...props} />;
   }
 

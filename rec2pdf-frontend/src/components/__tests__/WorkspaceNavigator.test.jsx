@@ -62,7 +62,7 @@ describe('WorkspaceNavigator', () => {
     const onRefresh = vi.fn()
     const onSearchChange = vi.fn()
 
-    const hasModeFlag = vi.fn((flag) => flag === 'ADVANCED_WORKSPACE_FILTERS')
+    const hasModeFlag = vi.fn((flag) => flag === 'MODE_ADVANCED')
 
     render(
       <AppContext.Provider value={{ hasModeFlag }}>
@@ -104,7 +104,7 @@ describe('WorkspaceNavigator', () => {
     expect(onSearchChange).toHaveBeenCalled()
   })
 
-  it('falls back to the base navigator when advanced filters are disabled', () => {
+  it('falls back to the base navigator when advanced access flags are missing', () => {
     const hasModeFlag = vi.fn(() => false)
 
     render(
