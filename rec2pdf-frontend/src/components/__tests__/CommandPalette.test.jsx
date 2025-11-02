@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import CommandPalette from '../CommandPalette'
 import { AppContext } from '../../hooks/useAppContext.jsx'
 
@@ -9,19 +9,29 @@ describe('CommandPalette', () => {
     startRecording: vi.fn(),
     stopRecording: vi.fn(),
     fileInputRef: { current: { click: vi.fn() } },
-    mode: 'advanced',
-    setMode: vi.fn(),
-    availableModes: ['base', 'advanced'],
     mediaSupported: true,
     recorderSupported: true,
     busy: false,
+  }
+
+  const Wrapper = () => {
+    const location = useLocation()
+
+    return (
+      <>
+        <span data-testid="location">{location.pathname}</span>
+        <CommandPalette />
+      </>
+    )
   }
 
   const renderPalette = (contextOverrides = {}) =>
     render(
       <MemoryRouter initialEntries={['/create']}>
         <AppContext.Provider value={{ ...baseContextValue, ...contextOverrides }}>
-          <CommandPalette />
+          <Routes>
+            <Route path="*" element={<Wrapper />} />
+          </Routes>
         </AppContext.Provider>
       </MemoryRouter>,
     )
@@ -30,20 +40,19 @@ describe('CommandPalette', () => {
     baseContextValue.startRecording.mockClear()
     baseContextValue.stopRecording.mockClear()
     baseContextValue.fileInputRef.current.click.mockClear()
-    baseContextValue.setMode.mockClear()
   })
 
-  it('opens with keyboard shortcut and toggles mode', async () => {
+  it('opens with keyboard shortcut and navigates to Advanced A', async () => {
     renderPalette()
 
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
 
     expect(await screen.findByText(/Command palette/i)).toBeInTheDocument()
 
-    fireEvent.keyDown(window, { key: 'b' })
+    fireEvent.keyDown(window, { key: 'a' })
 
     await waitFor(() => {
-      expect(baseContextValue.setMode).toHaveBeenCalledWith('base')
+      expect(screen.getByTestId('location')).toHaveTextContent('/advanced')
     })
 
     await waitFor(() => {
