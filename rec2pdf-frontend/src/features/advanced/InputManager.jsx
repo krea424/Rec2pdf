@@ -30,6 +30,7 @@ const InputManager = ({
     workspaceProfileLocked,
     applyWorkspaceProfile,
     clearWorkspaceProfile,
+    resetInputSelections,
   } = context;
 
   const pdfLogoInputRef = useRef(null);
@@ -192,9 +193,21 @@ const InputManager = ({
       )}
     >
       <div className="space-y-3">
-        <h2 className="flex items-center gap-2 text-lg font-semibold uppercase tracking-[0.32em] text-white/80">
-          <Sparkles className="h-5 w-5" /> Gestione input
-        </h2>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-semibold uppercase tracking-[0.32em] text-white/80">
+            <Sparkles className="h-5 w-5" /> Gestione input
+          </h2>
+          <button
+            type="button"
+            onClick={() => resetInputSelections?.()}
+            className={classNames(
+              "self-start rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+              chipGhostSurface,
+            )}
+          >
+            Azzera selezioni
+          </button>
+        </div>
         <p className="text-sm leading-relaxed text-white/60">
           Configura workspace, progetto, slug e branding. La pipeline avanzata
           si avvia automaticamente quando riceve nuovi input condivisi.

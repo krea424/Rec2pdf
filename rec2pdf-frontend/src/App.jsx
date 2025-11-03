@@ -3610,6 +3610,36 @@ function AppContent(){
     setCustomPdfLogo(null);
   }, [workspaceSelection.workspaceId, setCustomPdfLogo]);
 
+  const resetInputSelections = useCallback(() => {
+    setWorkspaceSelection({ workspaceId: '', projectId: '', projectName: '', status: '' });
+    setWorkspaceProfileSelection({ workspaceId: '', profileId: '' });
+    setWorkspaceProfileLocked(false);
+    setProjectCreationMode(false);
+    setStatusCreationMode(false);
+    setProjectDraft('');
+    setStatusDraft('');
+    clearPdfTemplateSelection();
+    setCustomPdfLogo(null);
+    setDestDir(DEFAULT_DEST_DIR);
+    setShowDestDetails(false);
+    setSlug('meeting');
+    setPromptState(buildPromptState());
+  }, [
+    clearPdfTemplateSelection,
+    setCustomPdfLogo,
+    setDestDir,
+    setPromptState,
+    setProjectCreationMode,
+    setProjectDraft,
+    setShowDestDetails,
+    setSlug,
+    setStatusCreationMode,
+    setStatusDraft,
+    setWorkspaceProfileLocked,
+    setWorkspaceProfileSelection,
+    setWorkspaceSelection,
+  ]);
+
   const handleCreateProjectFromDraft = useCallback(async () => {
     const name = projectDraft.trim();
     if (!workspaceSelection.workspaceId || !name) {
@@ -5282,6 +5312,7 @@ function AppContent(){
     pdfTemplateSelection,
     handleSelectPdfTemplate,
     clearPdfTemplateSelection,
+    resetInputSelections,
     workspaceLoading,
     handleSelectWorkspaceForPipeline,
     workspaceSelection,

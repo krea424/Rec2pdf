@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import InputManager from "../InputManager";
 import { MemoryRouter } from "react-router-dom";
@@ -100,6 +100,7 @@ const baseContext = {
   clearPdfTemplateSelection: vi.fn(),
   refreshPdfTemplates: vi.fn(),
   pipelineComplete: false,
+  resetInputSelections: vi.fn(),
 };
 
 const renderInputManager = (override = {}) =>
@@ -178,5 +179,16 @@ describe("InputManager", () => {
     expect(screen.queryByLabelText(/Seleziona template PDF/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Template profilo/i)).toBeInTheDocument();
     expect(screen.getByText(/verbale_meeting$/i)).toBeInTheDocument();
+  });
+
+  it("permette di azzerare le selezioni manuali", () => {
+    const resetInputSelections = vi.fn();
+    renderInputManager({ resetInputSelections });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /azzera selezioni/i })
+    );
+
+    expect(resetInputSelections).toHaveBeenCalledTimes(1);
   });
 });
