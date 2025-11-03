@@ -81,6 +81,63 @@ const InputManager = ({
     return "";
   }, [context.customPdfLogo]);
 
+  const selectedPdfTemplate = useMemo(() => {
+    if (!context.pdfTemplateSelection?.fileName) {
+      return null;
+    }
+    const templates = Array.isArray(context.pdfTemplates)
+      ? context.pdfTemplates
+      : [];
+    return (
+      templates.find(
+        (template) => template.fileName === context.pdfTemplateSelection.fileName,
+      ) || null
+    );
+  }, [context.pdfTemplates, context.pdfTemplateSelection?.fileName]);
+
+  const templateSelectValue = context.pdfTemplateSelection?.fileName || "";
+
+  const templateHelperText = useMemo(() => {
+    if (context.pdfTemplatesError) {
+      return context.pdfTemplatesError;
+    }
+    if (context.pdfTemplatesLoading) {
+      return "Caricamento template in corso…";
+    }
+    if (selectedPdfTemplate?.description) {
+      return selectedPdfTemplate.description;
+    }
+    if (templateSelectValue) {
+      const hints = [];
+      if (selectedPdfTemplate?.type) {
+        hints.push(`Tipo ${selectedPdfTemplate.type.toUpperCase()}`);
+      }
+      if (selectedPdfTemplate?.cssFileName) {
+        hints.push(`CSS: ${selectedPdfTemplate.cssFileName}`);
+      }
+      return hints.length ? hints.join(" • ") : "Template selezionato.";
+    }
+    if (Array.isArray(context.pdfTemplates) && context.pdfTemplates.length) {
+      return "Seleziona un template per personalizzare il layout del PDF.";
+    }
+    return "Nessun template disponibile. Aggiorna per sincronizzare con il backend.";
+  }, [
+    context.pdfTemplates,
+    context.pdfTemplatesError,
+    context.pdfTemplatesLoading,
+    selectedPdfTemplate,
+    templateSelectValue,
+  ]);
+
+  const handleTemplateSelect = (event) => {
+    const value = event.target.value;
+    if (!value) {
+      context.clearPdfTemplateSelection?.();
+      return;
+    }
+    context.handleSelectPdfTemplate?.(value);
+  };
+
   const hasWorkspaceProfiles = activeWorkspaceProfiles.length > 0;
 
   const handleWorkspaceProfileSelect = (event) => {
@@ -119,6 +176,7 @@ const InputManager = ({
     ? classNames("border", boardroomInfoSurface)
     : "border border-white/10 bg-white/10";
   const subtleMetaText = isBoardroom ? "text-white/75" : "text-white/65";
+  const templateHelperTone = context.pdfTemplatesError ? "text-rose-300" : subtleMetaText;
   const primaryButtonSurface = isBoardroom
     ? classNames(
         "border border-white/20 bg-white/[0.85] text-slate-900 transition hover:bg-white",
@@ -437,6 +495,94 @@ const InputManager = ({
               <div>Slug: {activeWorkspaceProfile.slug || "—"}</div>
               <div>Prompt: {activeWorkspaceProfile.promptId || "—"}</div>
             </div>
+          )}
+        </div>
+        <div
+          className={classNames(
+            "rounded-2xl border p-4 transition-all text-white/80",
+            cardSurface
+          )}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.3em] text-white/70">
+              <FileCode className="h-4 w-4" /> Template PDF
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => context.refreshPdfTemplates?.()}
+                className={classNames(
+                  "flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+                  chipSurface,
+                  context.pdfTemplatesLoading && "cursor-not-allowed opacity-60"
+                )}
+                disabled={context.pdfTemplatesLoading}
+              >
+                <RefreshCw
+                  className={classNames(
+                    "h-3.5 w-3.5",
+                    context.pdfTemplatesLoading ? "animate-spin" : ""
+                  )}
+                />
+                Aggiorna
+              </button>
+              {!workspaceProfileLocked && templateSelectValue && (
+                <button
+                  type="button"
+                  onClick={() => context.clearPdfTemplateSelection?.()}
+                  className={classNames(
+                    "rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+                    chipGhostSurface
+                  )}
+                >
+                  Svuota
+                </button>
+              )}
+            </div>
+          </div>
+          {workspaceProfileLocked && activeWorkspaceProfile ? (
+            <div className="mt-3 space-y-2 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/70">
+              <div>
+                Template profilo: {activeWorkspaceProfile.pdfTemplate || "—"}
+              </div>
+              {activeWorkspaceProfile.pdfTemplateType ? (
+                <div>
+                  Tipo: {activeWorkspaceProfile.pdfTemplateType.toUpperCase()}
+                </div>
+              ) : null}
+              {activeWorkspaceProfile.pdfTemplateCss ? (
+                <div>CSS: {activeWorkspaceProfile.pdfTemplateCss}</div>
+              ) : null}
+              <p className="pt-1 text-[11px] text-white/55">
+                Scollega il profilo per modificare manualmente il template.
+              </p>
+            </div>
+          ) : (
+            <>
+              <select
+                value={templateSelectValue}
+                onChange={handleTemplateSelect}
+                className={classNames(
+                  "mt-3 w-full rounded-2xl px-3 py-2 text-sm text-white/90 outline-none transition",
+                  "focus:border-brand-300 focus:ring-2 focus:ring-brand-300/40 focus:ring-offset-0",
+                  controlSurface,
+                  context.pdfTemplatesLoading && "cursor-not-allowed opacity-60"
+                )}
+                aria-label="Seleziona template PDF"
+                disabled={context.pdfTemplatesLoading}
+              >
+                <option value="">Nessun template predefinito</option>
+                {(context.pdfTemplates || []).map((template) => (
+                  <option key={template.fileName} value={template.fileName}>
+                    {template.name || template.fileName}
+                    {template.type ? ` (${template.type.toUpperCase()})` : ""}
+                  </option>
+                ))}
+              </select>
+              <div className={classNames("mt-2 text-xs", templateHelperTone)}>
+                {templateHelperText}
+              </div>
+            </>
           )}
         </div>
         <div
