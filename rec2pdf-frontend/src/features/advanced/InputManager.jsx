@@ -201,10 +201,12 @@ const InputManager = ({
             type="button"
             onClick={() => resetInputSelections?.()}
             className={classNames(
-              "self-start rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
-              chipGhostSurface,
+              "flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+              chipSurface,
+              "shadow-[0_14px_45px_-28px_rgba(13,62,98,0.95)]",
             )}
           >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
             Azzera selezioni
           </button>
         </div>
