@@ -19,10 +19,12 @@ describe('GET /api/templates', () => {
     process.env.PORT = '0';
     jest.resetModules();
 
-    const htmlPath = path.join(tmpDir.name, 'verbale.html');
-    const cssPath = path.join(tmpDir.name, 'verbale.css');
-    const jsonPath = path.join(tmpDir.name, 'verbale.json');
-    const texPath = path.join(tmpDir.name, 'meeting.tex');
+    const htmlPath = path.join(tmpDir.name, 'verbale_meeting.html');
+    const cssPath = path.join(tmpDir.name, 'verbale_meeting.css');
+    const jsonPath = path.join(tmpDir.name, 'verbale_meeting.json');
+    const defaultTexPath = path.join(tmpDir.name, 'default.tex');
+    const coverPath = path.join(tmpDir.name, 'cover.tex');
+    const headerPath = path.join(tmpDir.name, 'header_footer.tex');
 
     await fsp.writeFile(htmlPath, '<!--Template riunione--><html><body></body></html>');
     await fsp.writeFile(cssPath, 'body { font-family: sans-serif; }');
@@ -30,7 +32,9 @@ describe('GET /api/templates', () => {
       jsonPath,
       JSON.stringify({ name: 'Verbale Meeting', description: 'Descrizione da JSON', engine: 'weasyprint' })
     );
-    await fsp.writeFile(texPath, '% Verbale in LaTeX\n\\documentclass{article}');
+    await fsp.writeFile(defaultTexPath, '% Default corporate\n\\documentclass{article}');
+    await fsp.writeFile(coverPath, '% Cover accessoria');
+    await fsp.writeFile(headerPath, '% Header accessorio');
 
     ({ app } = require('../server'));
     request = supertest(app);
@@ -53,21 +57,37 @@ describe('GET /api/templates', () => {
     expect(res.body.ok).toBe(true);
     expect(Array.isArray(res.body.templates)).toBe(true);
     const templates = res.body.templates;
-    const htmlTemplate = templates.find((tpl) => tpl.fileName === 'verbale.html');
-    const texTemplate = templates.find((tpl) => tpl.fileName === 'meeting.tex');
+    const fallbackTemplate = templates.find((tpl) => tpl.fileName === 'pandoc_fallback');
+    const defaultTemplate = templates.find((tpl) => tpl.fileName === 'default.tex');
+    const htmlTemplate = templates.find((tpl) => tpl.fileName === 'verbale_meeting.html');
+
+    expect(defaultTemplate).toBeDefined();
+    expect(defaultTemplate).toMatchObject({
+      name: '1_Default.tex',
+      type: 'tex',
+      hasCss: false,
+    });
+
+    expect(fallbackTemplate).toEqual({
+      name: '2_semplice',
+      fileName: 'pandoc_fallback',
+      type: 'pandoc',
+      hasCss: false,
+      cssFileName: '',
+      description: 'Impaginazione base generata con il template predefinito di Pandoc.',
+      engine: '',
+    });
 
     expect(htmlTemplate).toBeDefined();
     expect(htmlTemplate).toMatchObject({
-      name: 'Verbale Meeting',
+      name: '3_verbale_meeting',
       type: 'html',
       hasCss: true,
-      cssFileName: 'verbale.css',
+      cssFileName: 'verbale_meeting.css',
       description: 'Descrizione da JSON',
       engine: 'weasyprint',
     });
-
-    expect(texTemplate).toBeDefined();
-    expect(texTemplate.type).toBe('tex');
-    expect(texTemplate.description).toBe('Verbale in LaTeX');
+    expect(templates.some((tpl) => tpl.fileName === 'cover.tex')).toBe(false);
+    expect(templates.some((tpl) => tpl.fileName === 'header_footer.tex')).toBe(false);
   });
 });

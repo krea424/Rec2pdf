@@ -531,6 +531,18 @@ const DEFAULT_LAYOUT_TEMPLATE_MAP = new Map([
   ['verbale_meeting', 'verbale_meeting.html'],
 ]);
 
+const PANDOC_FALLBACK_TEMPLATE_ID = 'pandoc_fallback';
+const PANDOC_FALLBACK_TEMPLATE_LABEL = '2_semplice';
+const PANDOC_FALLBACK_TEMPLATE_DESCRIPTION =
+  'Impaginazione base generata con il template predefinito di Pandoc.';
+
+const isPandocFallbackTemplate = (templateName) => {
+  if (!templateName) {
+    return false;
+  }
+  return String(templateName).trim().toLowerCase() === PANDOC_FALLBACK_TEMPLATE_ID;
+};
+
 const sanitizeTemplateRequestName = (name) => {
   if (!name || typeof name !== 'string') return '';
   const normalized = name.replace(/\\/g, '/').trim();
@@ -699,38 +711,80 @@ const resolveTemplateDescriptor = async (templateName) => {
   return descriptor;
 };
 
+const descriptorToMetadata = (descriptor, { nameOverride } = {}) => ({
+  name: nameOverride || descriptor.name,
+  fileName: descriptor.fileName,
+  type: descriptor.type,
+  hasCss: !!descriptor.cssFileName,
+  cssFileName: descriptor.cssFileName,
+  description: descriptor.description,
+  engine: descriptor.engine,
+});
+
 const listTemplatesMetadata = async () => {
   try {
     const dirEntries = await fsp.readdir(TEMPLATES_DIR, { withFileTypes: true });
-    const templates = [];
+    const descriptors = new Map();
     for (const entry of dirEntries) {
       if (!entry.isFile()) continue;
       const ext = path.extname(entry.name).toLowerCase();
       if (!SUPPORTED_TEMPLATE_EXTENSIONS.has(ext)) continue;
+      if (['cover.tex', 'header_footer.tex'].includes(entry.name)) continue;
       try {
         const descriptor = await resolveTemplateDescriptor(entry.name);
-        templates.push({
-          name: descriptor.name,
-          fileName: descriptor.fileName,
-          type: descriptor.type,
-          hasCss: !!descriptor.cssFileName,
-          cssFileName: descriptor.cssFileName,
-          description: descriptor.description,
-          engine: descriptor.engine,
-        });
+        descriptors.set(descriptor.fileName, descriptor);
       } catch (error) {
-        if (error instanceof TemplateResolutionError) {
-          console.warn(`⚠️  Template ignorato (${entry.name}): ${error.userMessage}`);
-        } else {
-          console.warn(`⚠️  Template ignorato (${entry.name}):`, error?.message || error);
-        }
+        const reason =
+          error instanceof TemplateResolutionError ? error.userMessage : error?.message || error;
+        console.warn(`⚠️  Template ignorato (${entry.name}): ${reason}`);
       }
     }
-    templates.sort((a, b) => a.name.localeCompare(b.name));
-    return templates;
+
+    const ordered = [];
+
+    const defaultDescriptor = descriptors.get('default.tex');
+    if (defaultDescriptor) {
+      ordered.push(descriptorToMetadata(defaultDescriptor, { nameOverride: '1_Default.tex' }));
+      descriptors.delete('default.tex');
+    }
+
+    ordered.push({
+      name: PANDOC_FALLBACK_TEMPLATE_LABEL,
+      fileName: PANDOC_FALLBACK_TEMPLATE_ID,
+      type: 'pandoc',
+      hasCss: false,
+      cssFileName: '',
+      description: PANDOC_FALLBACK_TEMPLATE_DESCRIPTION,
+      engine: '',
+    });
+
+    const verbaleDescriptor = descriptors.get('verbale_meeting.html');
+    if (verbaleDescriptor) {
+      ordered.push(
+        descriptorToMetadata(verbaleDescriptor, { nameOverride: '3_verbale_meeting' })
+      );
+      descriptors.delete('verbale_meeting.html');
+    }
+
+    const remaining = Array.from(descriptors.values())
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((descriptor) => descriptorToMetadata(descriptor));
+    ordered.push(...remaining);
+
+    return ordered;
   } catch (error) {
     if (error && error.code === 'ENOENT') {
-      return [];
+      return [
+        {
+          name: PANDOC_FALLBACK_TEMPLATE_LABEL,
+          fileName: PANDOC_FALLBACK_TEMPLATE_ID,
+          type: 'pandoc',
+          hasCss: false,
+          cssFileName: '',
+          description: PANDOC_FALLBACK_TEMPLATE_DESCRIPTION,
+          engine: '',
+        },
+      ];
     }
     throw error;
   }
@@ -856,6 +910,7 @@ const publishWithTemplateFallback = async ({
   logger,
   callPublishFn = callPublishScript,
   runPandoc = bash,
+  forcePandocFallback = false,
 }) => {
   if (!mdLocalPath || !pdfLocalPath) {
     throw new Error('Percorsi Markdown o PDF mancanti per la pubblicazione');
@@ -873,15 +928,20 @@ const publishWithTemplateFallback = async ({
   log(`templateInfo: ${JSON.stringify(templateInfo, null, 2)}`);
 
   let result;
-  try {
-    result = await callPublishFn(mdLocalPath, publishEnv);
-    log(`callPublishFn (publish.sh) result: code=${result.code}, stdout=${result.stdout}, stderr=${result.stderr}`);
-  } catch (e) {
-    log(`ERROR in callPublishFn (publish.sh): ${e.message}`, 'publish', 'failed');
-    throw e;
+  if (forcePandocFallback) {
+    log('⏭️  Skip publish.sh: selezionato template semplice Pandoc', 'publish', 'info');
+    result = { code: 1, stdout: '', stderr: 'force pandoc fallback' };
+  } else {
+    try {
+      result = await callPublishFn(mdLocalPath, publishEnv);
+      log(`callPublishFn (publish.sh) result: code=${result.code}, stdout=${result.stdout}, stderr=${result.stderr}`);
+    } catch (e) {
+      log(`ERROR in callPublishFn (publish.sh): ${e.message}`, 'publish', 'failed');
+      throw e;
+    }
   }
 
-  if (result.code !== 0) {
+  if (result.code !== 0 || forcePandocFallback) {
     log(result.stderr || result.stdout || 'publish.sh failed', 'publish', 'warning');
     log('Tentativo fallback pandoc…', 'publish', 'info');
   }
@@ -2287,7 +2347,7 @@ const validateWorkspaceProfiles = async (profiles, { prompts } = {}) => {
       }
     }
 
-    if (profile.pdfTemplate) {
+    if (profile.pdfTemplate && !isPandocFallbackTemplate(profile.pdfTemplate)) {
       try {
         await resolveTemplateDescriptor(profile.pdfTemplate);
       } catch (error) {
@@ -5742,7 +5802,13 @@ const w = await run('bash', ['-lc', whisperxCmd]);
         const profileTemplateCandidate = workspaceProfile?.pdfTemplate || workspaceProfileTemplate || '';
     let profileTemplateDescriptor = null;
     let promptTemplateDescriptor = null;
-    if (profileTemplateCandidate) {
+    const profileSelectedFallback = isPandocFallbackTemplate(profileTemplateCandidate);
+
+    if (profileSelectedFallback) {
+      out('📄 Template profilo: fallback Pandoc semplice', 'publish', 'info');
+    }
+
+    if (profileTemplateCandidate && !profileSelectedFallback) {
       try {
         profileTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateCandidate);
         out(`📄 Template profilo: ${profileTemplateDescriptor.fileName}`, 'publish', 'info');
@@ -5761,13 +5827,15 @@ const w = await run('bash', ['-lc', whisperxCmd]);
       }
     }
 
-    if (!profileTemplateDescriptor && selectedPrompt) {
+    if (!profileTemplateDescriptor && !profileSelectedFallback && selectedPrompt) {
       promptTemplateDescriptor = await resolvePromptTemplateDescriptor(selectedPrompt, { logger: out });
     }
 
-    let activeTemplateDescriptor = profileTemplateDescriptor || promptTemplateDescriptor;
+    let activeTemplateDescriptor = profileSelectedFallback
+      ? null
+      : profileTemplateDescriptor || promptTemplateDescriptor;
 
-    if (!activeTemplateDescriptor && diarizeEnabled) {
+    if (!activeTemplateDescriptor && diarizeEnabled && !profileSelectedFallback) {
       try {
         activeTemplateDescriptor = await resolveTemplateDescriptor('verbale_meeting.html');
         out(`📄 Template diarizzazione fallback: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
@@ -6030,6 +6098,7 @@ const w = await run('bash', ['-lc', whisperxCmd]);
         publishEnv,
         templateInfo: activeTemplateDescriptor,
         logger: out,
+        forcePandocFallback: profileSelectedFallback,
       });
 
       await uploadFileToBucket(

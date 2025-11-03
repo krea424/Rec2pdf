@@ -117,6 +117,7 @@ const WORKSPACE_SELECTION_KEY = 'rec2pdfWorkspaceSelection';
 const WORKSPACE_FILTERS_KEY = 'rec2pdfWorkspaceFilters';
 const PROMPT_SELECTION_KEY = 'rec2pdfPromptSelection';
 const PROMPT_FAVORITES_KEY = 'rec2pdfPromptFavorites';
+const PDF_TEMPLATE_SELECTION_KEY = 'rec2pdfPdfTemplateSelection';
 const AI_PROVIDER_PREFERENCES_KEY = 'rec2pdfAiPreferences';
 const AI_PROVIDER_PREFERENCES_VERSION = 2;
 const HISTORY_TABS = [
@@ -470,6 +471,13 @@ const buildPromptState = (overrides = {}) => ({
   ...overrides,
 });
 
+const buildPdfTemplateSelection = (overrides = {}) => {
+  const fileName = typeof overrides.fileName === 'string' ? overrides.fileName.trim() : '';
+  const type = typeof overrides.type === 'string' ? overrides.type.trim() : '';
+  const css = typeof overrides.css === 'string' ? overrides.css.trim() : '';
+  return { fileName, type, css };
+};
+
 const isFileLike = (value) => {
   if (!value) return false;
   const FileCtor = typeof File !== 'undefined' ? File : null;
@@ -668,6 +676,31 @@ const appendWorkspaceProfileDetails = (
 
   if (descriptor?.downloadUrl && !formData.has('workspaceProfileLogoDownloadUrl')) {
     formData.append('workspaceProfileLogoDownloadUrl', descriptor.downloadUrl);
+  }
+};
+
+const appendPdfTemplateSelection = (formData, selection = {}) => {
+  if (!formData) {
+    return;
+  }
+
+  const template = typeof selection.fileName === 'string' ? selection.fileName.trim() : '';
+  if (!template) {
+    return;
+  }
+
+  if (!formData.has('pdfTemplate')) {
+    formData.append('pdfTemplate', template);
+  }
+
+  const templateType = typeof selection.type === 'string' ? selection.type.trim() : '';
+  if (templateType && !formData.has('pdfTemplateType')) {
+    formData.append('pdfTemplateType', templateType);
+  }
+
+  const templateCss = typeof selection.css === 'string' ? selection.css.trim() : '';
+  if (templateCss && !formData.has('pdfTemplateCss')) {
+    formData.append('pdfTemplateCss', templateCss);
   }
 };
 
@@ -1066,6 +1099,24 @@ function AppContent(){
   const [pdfTemplates, setPdfTemplates] = useState([]);
   const [pdfTemplatesLoading, setPdfTemplatesLoading] = useState(false);
   const [pdfTemplatesError, setPdfTemplatesError] = useState(null);
+  const [pdfTemplateSelection, setPdfTemplateSelection] = useState(() => {
+    if (typeof window === 'undefined') {
+      return buildPdfTemplateSelection();
+    }
+    try {
+      const raw = localStorage.getItem(PDF_TEMPLATE_SELECTION_KEY);
+      if (!raw) {
+        return buildPdfTemplateSelection();
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') {
+        return buildPdfTemplateSelection();
+      }
+      return buildPdfTemplateSelection(parsed);
+    } catch {
+      return buildPdfTemplateSelection();
+    }
+  });
   const [promptState, setPromptState] = useState(() => {
     if (typeof window === 'undefined') {
       return buildPromptState();
@@ -1328,6 +1379,23 @@ function AppContent(){
       // ignore persistence errors
     }
   }, [promptState]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (
+        !pdfTemplateSelection.fileName &&
+        !pdfTemplateSelection.type &&
+        !pdfTemplateSelection.css
+      ) {
+        localStorage.removeItem(PDF_TEMPLATE_SELECTION_KEY);
+      } else {
+        localStorage.setItem(PDF_TEMPLATE_SELECTION_KEY, JSON.stringify(pdfTemplateSelection));
+      }
+    } catch {
+      // ignore persistence errors
+    }
+  }, [pdfTemplateSelection]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -3419,6 +3487,60 @@ function AppContent(){
     setWorkspaceSelection((prev) => ({ ...prev, status: value || '' }));
   }, []);
 
+  const handleSelectPdfTemplate = useCallback(
+    (value) => {
+      if (value && typeof value === 'object') {
+        setPdfTemplateSelection((prev) => {
+          const next = buildPdfTemplateSelection(value);
+          if (
+            prev.fileName === next.fileName &&
+            prev.type === next.type &&
+            prev.css === next.css
+          ) {
+            return prev;
+          }
+          return next;
+        });
+        return;
+      }
+
+      const fileName = typeof value === 'string' ? value.trim() : '';
+      setPdfTemplateSelection((prev) => {
+        if (!fileName) {
+          if (!prev.fileName && !prev.type && !prev.css) {
+            return prev;
+          }
+          return buildPdfTemplateSelection();
+        }
+
+        const template = pdfTemplates.find((item) => item.fileName === fileName) || null;
+        const next = buildPdfTemplateSelection({
+          fileName,
+          type: template?.type || '',
+          css: template?.cssFileName || '',
+        });
+        if (
+          prev.fileName === next.fileName &&
+          prev.type === next.type &&
+          prev.css === next.css
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    },
+    [pdfTemplates]
+  );
+
+  const clearPdfTemplateSelection = useCallback(() => {
+    setPdfTemplateSelection((prev) => {
+      if (!prev.fileName && !prev.type && !prev.css) {
+        return prev;
+      }
+      return buildPdfTemplateSelection();
+    });
+  }, []);
+
   useEffect(() => {
     if (!workspaceSelection.workspaceId) {
       setWorkspaceProfileSelection({ workspaceId: '', profileId: '' });
@@ -3487,6 +3609,36 @@ function AppContent(){
     setWorkspaceProfileLocked(false);
     setCustomPdfLogo(null);
   }, [workspaceSelection.workspaceId, setCustomPdfLogo]);
+
+  const resetInputSelections = useCallback(() => {
+    setWorkspaceSelection({ workspaceId: '', projectId: '', projectName: '', status: '' });
+    setWorkspaceProfileSelection({ workspaceId: '', profileId: '' });
+    setWorkspaceProfileLocked(false);
+    setProjectCreationMode(false);
+    setStatusCreationMode(false);
+    setProjectDraft('');
+    setStatusDraft('');
+    clearPdfTemplateSelection();
+    setCustomPdfLogo(null);
+    setDestDir(DEFAULT_DEST_DIR);
+    setShowDestDetails(false);
+    setSlug('meeting');
+    setPromptState(buildPromptState());
+  }, [
+    clearPdfTemplateSelection,
+    setCustomPdfLogo,
+    setDestDir,
+    setPromptState,
+    setProjectCreationMode,
+    setProjectDraft,
+    setShowDestDetails,
+    setSlug,
+    setStatusCreationMode,
+    setStatusDraft,
+    setWorkspaceProfileLocked,
+    setWorkspaceProfileSelection,
+    setWorkspaceSelection,
+  ]);
 
   const handleCreateProjectFromDraft = useCallback(async () => {
     const name = projectDraft.trim();
@@ -3676,6 +3828,9 @@ function AppContent(){
         logoDescriptor: customPdfLogo,
         backendUrl: normalizeBackendUrlValue(backendUrl),
       });
+      if (!workspaceProfileLocked) {
+        appendPdfTemplateSelection(fd, pdfTemplateSelection);
+      }
       if (promptState.promptId) {
         fd.append('promptId', promptState.promptId);
         if (promptState.focus && promptState.focus.trim()) {
@@ -3868,6 +4023,9 @@ function AppContent(){
         logoDescriptor: customPdfLogo,
         backendUrl: normalizeBackendUrlValue(backendUrl),
       });
+      if (!workspaceProfileLocked) {
+        appendPdfTemplateSelection(fd, pdfTemplateSelection);
+      }
       if (promptState.promptId) {
         fd.append('promptId', promptState.promptId);
         if (promptState.focus && promptState.focus.trim()) {
@@ -4631,6 +4789,9 @@ function AppContent(){
         logoDescriptor: customPdfLogo,
         backendUrl: normalizeBackendUrlValue(backendUrl),
       });
+      if (!workspaceProfileLocked) {
+        appendPdfTemplateSelection(fd, pdfTemplateSelection);
+      }
       if (hasSpeakerMapPayload) {
         fd.append('speakerMap', JSON.stringify(sanitizedSpeakerMap));
         pushLogs([
@@ -4761,7 +4922,25 @@ function AppContent(){
     } finally {
       setBusy(false);
     }
-  }, [busy, customPdfLogo, fetchWithAuth, normalizedBackendUrl, pushLogs, setActivePanel, setBusy, setErrorBanner, setHistory, setMdEditor, setMdPath, setPdfPath]);
+  }, [
+    activeWorkspaceProfile,
+    backendUrl,
+    busy,
+    customPdfLogo,
+    fetchWithAuth,
+    normalizedBackendUrl,
+    pdfTemplateSelection,
+    pushLogs,
+    setActivePanel,
+    setBusy,
+    setErrorBanner,
+    setHistory,
+    setMdEditor,
+    setMdPath,
+    setPdfPath,
+    workspaceProfileLocked,
+    workspaceProfileSelection,
+  ]);
 
   const handleMdEditorChange = useCallback((nextValue) => {
     setMdEditor((prev) => ({
@@ -5130,6 +5309,10 @@ function AppContent(){
     pdfTemplates,
     pdfTemplatesLoading,
     pdfTemplatesError,
+    pdfTemplateSelection,
+    handleSelectPdfTemplate,
+    clearPdfTemplateSelection,
+    resetInputSelections,
     workspaceLoading,
     handleSelectWorkspaceForPipeline,
     workspaceSelection,

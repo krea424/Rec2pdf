@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import InputManager from "../InputManager";
 import { MemoryRouter } from "react-router-dom";
@@ -92,7 +92,15 @@ const baseContext = {
   handleTogglePromptCue: vi.fn(),
   handleCreatePrompt: vi.fn(),
   handleDeletePrompt: vi.fn(),
+  pdfTemplates: [],
+  pdfTemplatesLoading: false,
+  pdfTemplatesError: '',
+  pdfTemplateSelection: { fileName: '', type: '', css: '' },
+  handleSelectPdfTemplate: vi.fn(),
+  clearPdfTemplateSelection: vi.fn(),
+  refreshPdfTemplates: vi.fn(),
   pipelineComplete: false,
+  resetInputSelections: vi.fn(),
 };
 
 const renderInputManager = (override = {}) =>
@@ -142,5 +150,45 @@ describe("InputManager", () => {
     expect(screen.queryByText(/nessuna clip disponibile/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /scarica audio/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /nuova sessione/i })).not.toBeInTheDocument();
+  });
+
+  it("rende disponibile la selezione template quando il profilo non è bloccato", () => {
+    renderInputManager({
+      pdfTemplates: [
+        { fileName: "default.tex", name: "1_Default.tex", type: "tex" },
+        { fileName: "semplice", name: "2_semplice", type: "pandoc" },
+      ],
+    });
+
+    expect(screen.getByLabelText(/Seleziona template PDF/i)).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /1_Default\.tex/i })).toBeInTheDocument();
+  });
+
+  it("mostra il riepilogo del template quando il profilo è bloccato", () => {
+    renderInputManager({
+      workspaceProfileLocked: true,
+      activeWorkspaceProfile: {
+        id: "profile-1",
+        label: "Profilo demo",
+        pdfTemplate: "verbale_meeting",
+        pdfTemplateType: "html",
+        pdfTemplateCss: "verbale_meeting.css",
+      },
+    });
+
+    expect(screen.queryByLabelText(/Seleziona template PDF/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Template profilo/i)).toBeInTheDocument();
+    expect(screen.getByText(/verbale_meeting$/i)).toBeInTheDocument();
+  });
+
+  it("permette di azzerare le selezioni manuali", () => {
+    const resetInputSelections = vi.fn();
+    renderInputManager({ resetInputSelections });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /azzera selezioni/i })
+    );
+
+    expect(resetInputSelections).toHaveBeenCalledTimes(1);
   });
 });
