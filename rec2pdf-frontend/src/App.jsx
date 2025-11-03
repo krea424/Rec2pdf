@@ -583,21 +583,27 @@ const appendWorkspaceProfileDetails = (
   if (!formData) {
     return;
   }
+
+  const normalizedBackendUrl = typeof backendUrl === 'string' ? backendUrl.trim() : '';
+  const selectionWorkspaceId = typeof selection?.workspaceId === 'string' ? selection.workspaceId.trim() : '';
+  const selectionProfileId = typeof selection?.profileId === 'string' ? selection.profileId.trim() : '';
+
   const descriptorCandidate = isWorkspaceProfileLogoDescriptor(logoDescriptor)
     ? logoDescriptor
-    : buildWorkspaceProfileLogoDescriptor(selection?.workspaceId, profile, { backendUrl });
-
-  if (!descriptorCandidate) {
-    return;
-  }
+    : buildWorkspaceProfileLogoDescriptor(
+        selectionWorkspaceId || (typeof profile?.workspaceId === 'string' ? profile.workspaceId.trim() : ''),
+        profile,
+        { backendUrl: normalizedBackendUrl }
+      );
 
   let descriptor = descriptorCandidate;
   if (
+    descriptorCandidate &&
     descriptorCandidate.downloadUrl &&
-    backendUrl &&
+    normalizedBackendUrl &&
     !/^https?:\/\//i.test(descriptorCandidate.downloadUrl)
   ) {
-    const normalizedBase = backendUrl.replace(/\/+$/, '');
+    const normalizedBase = normalizedBackendUrl.replace(/\/+$/, '');
     const normalizedPath = descriptorCandidate.downloadUrl.replace(/^\/+/, '');
     descriptor = {
       ...descriptorCandidate,
@@ -606,24 +612,33 @@ const appendWorkspaceProfileDetails = (
   }
 
   const profileId =
-    (selection && selection.profileId) ||
-      (descriptor && descriptor.profileId) ||
-      (profile && profile.id) ||
+    selectionProfileId ||
+    (descriptor && descriptor.profileId) ||
+    (typeof profile?.id === 'string' ? profile.id.trim() : '') ||
     '';
 
   if (!profileId) {
     return;
   }
 
-  if (!formData.has('workspaceProfileId') && profileId) {
+  if (!formData.has('workspaceProfileId')) {
     formData.append('workspaceProfileId', profileId);
   }
 
-  if (!formData.has('workspaceId') && descriptor?.workspaceId) {
-    formData.append('workspaceId', descriptor.workspaceId);
+  const workspaceIdValue =
+    selectionWorkspaceId ||
+    (descriptor && descriptor.workspaceId) ||
+    (typeof profile?.workspaceId === 'string' ? profile.workspaceId.trim() : '') ||
+    '';
+
+  if (workspaceIdValue && !formData.has('workspaceId')) {
+    formData.append('workspaceId', workspaceIdValue);
   }
 
-  const labelCandidate = profile?.label || descriptor?.label;
+  const labelCandidate =
+    (profile && typeof profile.label === 'string' ? profile.label : '') ||
+    (descriptor && descriptor.label) ||
+    '';
   if (labelCandidate && !formData.has('workspaceProfileLabel')) {
     formData.append('workspaceProfileLabel', labelCandidate);
   }
@@ -5246,4 +5261,5 @@ function AppContent(){
   );
 }
 
+export { appendWorkspaceProfileDetails };
 export default AppContent;
