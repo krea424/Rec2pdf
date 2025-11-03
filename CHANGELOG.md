@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [7.0.0] - 2025-11-03
+
+### Added
+- **Esperienza bimodale Create/Advanced**: la shell di navigazione espone un accesso dedicato alla nuova vista "Advanced A" e mantiene la pipeline base disponibile per tutti, con banner di onboarding che guidano gli utenti senza flag avanzati.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L10-L109】【F:rec2pdf-frontend/src/pages/Create.jsx†L1-L37】【F:rec2pdf-frontend/src/pages/Advanced.jsx†L65-L123】
+- **Control room boardroom v2**: la pagina Advanced introduce il nuovo `InputManager` con superfici boardroom, gestione workspace/progetto, upload logo PDF e collegamenti rapidi, affiancato da una `PipelineOverview` che evidenzia progressi, log diagnostici e call-to-action verso la Library.【F:rec2pdf-frontend/src/features/advanced/InputManager.jsx†L1-L188】【F:rec2pdf-frontend/src/features/advanced/PipelineOverview.jsx†L1-L147】
+- **Telemetry di prodotto**: `ModeContext` invia eventi `mode.flag_exposed` quando vengono abilitati i flag sperimentali e il pannello Publish traccia `pipeline.publish_requested`, `pipeline.export_pdf`, `pipeline.export_markdown` e `pipeline.reset_session` per monitorare l'uso della pipeline base.【F:rec2pdf-frontend/src/context/ModeContext.tsx†L1-L90】【F:rec2pdf-frontend/src/features/base/PipelinePanel.jsx†L1-L120】【F:rec2pdf-frontend/src/features/base/PipelinePanel.jsx†L220-L276】
+
+### Changed
+- **Accesso avanzato controllato da flag**: la Create page e la vista Advanced mostrano messaggi contestuali quando `MODE_ADVANCED` o `MODE_ADVANCED_V2` non sono presenti, chiarendo come abilitare la nuova control room.【F:rec2pdf-frontend/src/pages/Create.jsx†L17-L37】【F:rec2pdf-frontend/src/pages/Advanced.jsx†L78-L122】
+
+
 ## [6.0.0] - 2025-10-27
 
 ### BREAKING CHANGE
