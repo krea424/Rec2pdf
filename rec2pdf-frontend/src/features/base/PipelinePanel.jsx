@@ -32,6 +32,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     resetAll,
     baseJourneyVisibility,
     revealPipelinePanel,
+    openRefinementPanel,
     enableDiarization,
     setEnableDiarization,
     workspaceSelection,
@@ -44,6 +45,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   } = context;
 
   const pipelineRevealState = baseJourneyVisibility?.pipeline ?? false;
+  const refinementPanelOpen = baseJourneyVisibility?.refine ?? false;
   const [hasLaunchedPipeline, setHasLaunchedPipeline] = useState(() => pipelineRevealState);
   const canPublish =
     Boolean(audioBlob) && !busy && backendUp !== false && !hasLaunchedPipeline;
@@ -235,6 +237,19 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     processViaBackend();
   }, [audioBlob, backendUp, canPublish, processViaBackend, revealPipelinePanel, trackEvent]);
 
+  const handleRefineAndGenerate = useCallback(() => {
+    if (!canPublish) {
+      return;
+    }
+    trackEvent("pipeline.refine_panel_requested", {
+      hasAudio: Boolean(audioBlob),
+      backendReachable: backendUp !== false,
+    });
+    if (typeof openRefinementPanel === "function") {
+      openRefinementPanel();
+    }
+  }, [audioBlob, backendUp, canPublish, openRefinementPanel, trackEvent]);
+
   const handleDownload = useCallback(() => {
     if (!latestEntry?.pdfPath) {
       return;
@@ -366,6 +381,19 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     (!canPublish || publishLocked) && "cursor-not-allowed"
   );
 
+  const refineCtaClassName = classNames(
+    "flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-base font-semibold",
+    "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+    refinementPanelOpen
+      ? "border border-indigo-300/60 bg-indigo-500/30 text-indigo-100 shadow-[0_20px_60px_-35px_rgba(99,102,241,0.8)]"
+      : canPublish
+        ? "border border-white/15 bg-white/5 text-white/75 hover:border-white/25 hover:bg-white/10"
+        : publishLocked
+          ? "border border-white/10 bg-white/5 text-white/45"
+          : "border border-white/15 bg-white/5 text-white/55",
+    (!canPublish || publishLocked) && "cursor-not-allowed"
+  );
+
   const downloadButtonClass = classNames(
     "flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
     focusDownload
@@ -456,14 +484,25 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
             </button>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={handlePublish}
-          disabled={!canPublish}
-          className={publishCtaClassName}
-        >
-          <Cpu className="h-5 w-5" /> Ottieni PDF
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={handlePublish}
+            disabled={!canPublish}
+            className={classNames(publishCtaClassName, "sm:flex-1")}
+          >
+            <Cpu className="h-5 w-5" /> Ottieni PDF
+          </button>
+          <button
+            type="button"
+            onClick={handleRefineAndGenerate}
+            disabled={!canPublish}
+            aria-pressed={refinementPanelOpen}
+            className={classNames(refineCtaClassName, "sm:flex-1")}
+          >
+            <Sparkles className="h-5 w-5" /> Raffina e Genera
+          </button>
+        </div>
         {pipelineInFlight ? (
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200">
             Attendere
