@@ -462,14 +462,30 @@ const normalizeWorkspaceProfiles = (workspace) => {
     .filter(Boolean);
 };
 
-const buildPromptState = (overrides = {}) => ({
-  promptId: '',
-  focus: '',
-  notes: '',
-  cueProgress: {},
-  expandPromptDetails: true,
-  ...overrides,
-});
+const buildPromptState = (overrides = {}) => {
+  const next = {
+    promptId: '',
+    focus: '',
+    notes: '',
+    cueProgress: {},
+    cueCardAnswers: {},
+    expandPromptDetails: true,
+    ...overrides,
+  };
+
+  next.promptId = typeof next.promptId === 'string' ? next.promptId : '';
+  next.focus = typeof next.focus === 'string' ? next.focus : '';
+  next.notes = typeof next.notes === 'string' ? next.notes : '';
+  next.cueProgress =
+    next.cueProgress && typeof next.cueProgress === 'object' ? next.cueProgress : {};
+  next.cueCardAnswers =
+    next.cueCardAnswers && typeof next.cueCardAnswers === 'object'
+      ? next.cueCardAnswers
+      : {};
+  next.expandPromptDetails = next.expandPromptDetails === false ? false : true;
+
+  return next;
+};
 
 const buildPdfTemplateSelection = (overrides = {}) => {
   const fileName = typeof overrides.fileName === 'string' ? overrides.fileName.trim() : '';
@@ -1142,6 +1158,10 @@ function AppContent(){
           parsed.cueProgress && typeof parsed.cueProgress === 'object'
             ? parsed.cueProgress
             : {},
+        cueCardAnswers:
+          parsed.cueCardAnswers && typeof parsed.cueCardAnswers === 'object'
+            ? parsed.cueCardAnswers
+            : {},
         expandPromptDetails: parsed.expandPromptDetails === false ? false : true,
       });
     } catch {
@@ -1160,6 +1180,59 @@ function AppContent(){
       return [];
     }
   });
+  const [refinedData, setRefinedData] = useState(null);
+
+  const setCueCardAnswers = useCallback((valueOrUpdater) => {
+    setPromptState((prev) => {
+      const currentAnswers =
+        prev && typeof prev.cueCardAnswers === 'object' && prev.cueCardAnswers !== null
+          ? prev.cueCardAnswers
+          : {};
+      const draft = typeof valueOrUpdater === 'function'
+        ? valueOrUpdater({ ...currentAnswers })
+        : valueOrUpdater;
+      const sanitized =
+        draft && typeof draft === 'object' && draft !== null ? { ...draft } : {};
+      const sameKeys = Object.keys(sanitized);
+      const unchanged =
+        sameKeys.length === Object.keys(currentAnswers).length &&
+        sameKeys.every((key) => currentAnswers[key] === sanitized[key]);
+      if (unchanged) {
+        return prev;
+      }
+      return { ...prev, cueCardAnswers: sanitized };
+    });
+  }, []);
+
+  const setPromptFocus = useCallback((value) => {
+    const normalized = typeof value === 'string' ? value : '';
+    setPromptState((prev) => {
+      if (prev.focus === normalized) {
+        return prev;
+      }
+      return { ...prev, focus: normalized };
+    });
+  }, []);
+
+  const setPromptNotes = useCallback((value) => {
+    const normalized = typeof value === 'string' ? value : '';
+    setPromptState((prev) => {
+      if (prev.notes === normalized) {
+        return prev;
+      }
+      return { ...prev, notes: normalized };
+    });
+  }, []);
+
+  const setPromptDetailsOpen = useCallback((open) => {
+    const normalized = open !== false;
+    setPromptState((prev) => {
+      if (prev.expandPromptDetails === normalized) {
+        return prev;
+      }
+      return { ...prev, expandPromptDetails: normalized };
+    });
+  }, []);
   const [workspaces, setWorkspaces] = useState([]);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceSelection, setWorkspaceSelection] = useState(() => {
@@ -1454,6 +1527,7 @@ function AppContent(){
         focus: prev.focus || '',
         notes: prev.notes || '',
         cueProgress: {},
+        cueCardAnswers: {},
         expandPromptDetails: false,
       });
     });
@@ -1588,6 +1662,12 @@ function AppContent(){
   const startAnalyser=async(stream)=>{ if(audioCtxRef.current) return; const C=window.AudioContext||window.webkitAudioContext; if(!C) return; const ctx=new C(); const src=ctx.createMediaStreamSource(stream); const analyser=ctx.createAnalyser(); analyser.fftSize=2048; src.connect(analyser); const data=new Uint8Array(analyser.frequencyBinCount); const loop=()=>{ analyser.getByteTimeDomainData(data); let sum=0; for(let i=0;i<data.length;i++){ const v=(data[i]-128)/128; sum+=v*v; } const rms=Math.sqrt(sum/data.length); setLevel(rms); rafRef.current=requestAnimationFrame(loop); }; loop(); analyserRef.current=analyser; audioCtxRef.current=ctx; sourceRef.current=src; };
   const stopAnalyser=()=>{ if(rafRef.current) cancelAnimationFrame(rafRef.current); try{ sourceRef.current&&sourceRef.current.disconnect(); }catch{} try{ analyserRef.current&&analyserRef.current.disconnect(); }catch{} try{ audioCtxRef.current&&audioCtxRef.current.close(); }catch{} rafRef.current=null; analyserRef.current=null; audioCtxRef.current=null; sourceRef.current=null; setLevel(0); };
 
+  const resetCreationFlowState = useCallback(() => {
+    setRefinedData(null);
+    setCueCardAnswers({});
+    setPromptDetailsOpen(true);
+  }, [setCueCardAnswers, setPromptDetailsOpen, setRefinedData]);
+
   const revealPublishPanel = useCallback(() => {
     setBaseJourneyVisibility((prev) => {
       if (prev.publish) {
@@ -1625,7 +1705,7 @@ function AppContent(){
     setBaseJourneyVisibility({ publish: false, pipeline: false, refine: false });
   }, []);
 
-  const startRecording=async()=>{ setLogs([]); setPdfPath(""); setAudioBlob(null); setAudioUrl(""); setPermissionMessage(""); setErrorBanner(null); resetJourneyVisibility(); if(!recorderSupported){ setPermissionMessage("MediaRecorder non supportato. Usa il caricamento file."); return;} if(permission!=='granted'){ const ok=await requestPermission(); if(!ok) return;} try{ const constraints=selectedDeviceId?{deviceId:{exact:selectedDeviceId}}:true; const stream=await navigator.mediaDevices.getUserMedia({audio:constraints}); streamRef.current=stream; const mimeType=pickBestMime(); const rec=new MediaRecorder(stream,mimeType?{mimeType}:{}); chunksRef.current=[]; rec.ondataavailable=(e)=>{ if(e.data&&e.data.size) chunksRef.current.push(e.data); }; rec.onstop=()=>{ const blob=new Blob(chunksRef.current,{type:rec.mimeType||mimeType||'audio/webm'}); const url=URL.createObjectURL(blob); setAudioBlob(blob); setAudioUrl(url); setMime(rec.mimeType||mimeType||'audio/webm'); revealPublishPanel(); stopAnalyser(); stream.getTracks().forEach(t=>t.stop()); streamRef.current=null; }; mediaRecorderRef.current=rec; await startAnalyser(stream); rec.start(250); startAtRef.current=Date.now(); setElapsed(0); setRecording(true); }catch(e){ const name=e?.name||""; const msg=e?.message||String(e); setLastMicError({name,message:msg}); if(name==='NotAllowedError'){ setPermission('denied'); setPermissionMessage("Permesso negato. Abilita il microfono dalle impostazioni del sito e riprova."); } else if(name==='NotFoundError'||name==='OverconstrainedError'){ setPermission('denied'); setPermissionMessage("Nessun microfono disponibile o vincoli non validi."); } else if(name==='NotReadableError'){ setPermission('denied'); setPermissionMessage("Il microfono è occupato da un'altra app. Chiudi Zoom/Teams/OBS e riprova."); } else if(!secureOK){ setPermission('denied'); setPermissionMessage("Serve HTTPS o localhost per usare il microfono."); } else { setPermission('unknown'); setPermissionMessage(`Errore: ${msg}`);} } };
+  const startRecording=async()=>{ setLogs([]); setPdfPath(""); setAudioBlob(null); setAudioUrl(""); setPermissionMessage(""); setErrorBanner(null); resetJourneyVisibility(); resetCreationFlowState(); if(!recorderSupported){ setPermissionMessage("MediaRecorder non supportato. Usa il caricamento file."); return;} if(permission!=='granted'){ const ok=await requestPermission(); if(!ok) return;} try{ const constraints=selectedDeviceId?{deviceId:{exact:selectedDeviceId}}:true; const stream=await navigator.mediaDevices.getUserMedia({audio:constraints}); streamRef.current=stream; const mimeType=pickBestMime(); const rec=new MediaRecorder(stream,mimeType?{mimeType}:{}); chunksRef.current=[]; rec.ondataavailable=(e)=>{ if(e.data&&e.data.size) chunksRef.current.push(e.data); }; rec.onstop=()=>{ const blob=new Blob(chunksRef.current,{type:rec.mimeType||mimeType||'audio/webm'}); const url=URL.createObjectURL(blob); setAudioBlob(blob); setAudioUrl(url); setMime(rec.mimeType||mimeType||'audio/webm'); revealPublishPanel(); stopAnalyser(); stream.getTracks().forEach(t=>t.stop()); streamRef.current=null; }; mediaRecorderRef.current=rec; await startAnalyser(stream); rec.start(250); startAtRef.current=Date.now(); setElapsed(0); setRecording(true); }catch(e){ const name=e?.name||""; const msg=e?.message||String(e); setLastMicError({name,message:msg}); if(name==='NotAllowedError'){ setPermission('denied'); setPermissionMessage("Permesso negato. Abilita il microfono dalle impostazioni del sito e riprova."); } else if(name==='NotFoundError'||name==='OverconstrainedError'){ setPermission('denied'); setPermissionMessage("Nessun microfono disponibile o vincoli non validi."); } else if(name==='NotReadableError'){ setPermission('denied'); setPermissionMessage("Il microfono è occupato da un'altra app. Chiudi Zoom/Teams/OBS e riprova."); } else if(!secureOK){ setPermission('denied'); setPermissionMessage("Serve HTTPS o localhost per usare il microfono."); } else { setPermission('unknown'); setPermissionMessage(`Errore: ${msg}`);} } };
 
   const stopRecording=()=>{ const rec=mediaRecorderRef.current; if(rec&&rec.state!=="inactive") rec.stop(); setRecording(false); };
   useEffect(()=>{ if(recording&&secondsCap&&elapsed>=secondsCap) stopRecording(); },[recording,secondsCap,elapsed]);
@@ -1651,6 +1731,7 @@ function AppContent(){
     }
     resetJourneyVisibility();
     setEnableDiarization(false);
+    resetCreationFlowState();
   };
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
@@ -3256,13 +3337,19 @@ function AppContent(){
     setPromptState(buildPromptState());
   }, []);
 
-  const handlePromptFocusChange = useCallback((value) => {
-    setPromptState((prev) => ({ ...prev, focus: value }));
-  }, []);
+  const handlePromptFocusChange = useCallback(
+    (value) => {
+      setPromptFocus(value);
+    },
+    [setPromptFocus],
+  );
 
-  const handlePromptNotesChange = useCallback((value) => {
-    setPromptState((prev) => ({ ...prev, notes: value }));
-  }, []);
+  const handlePromptNotesChange = useCallback(
+    (value) => {
+      setPromptNotes(value);
+    },
+    [setPromptNotes],
+  );
 
   const handleTogglePromptCue = useCallback((cueKey) => {
     setPromptState((prev) => {
@@ -4500,7 +4587,7 @@ function AppContent(){
     setShowSetupAssistant(false);
   }, [setOnboardingComplete, setShowSetupAssistant]);
 
-  const onPickFile=(e)=>{ const f=e.target.files?.[0]; if(!f) return; setAudioBlob(f); setAudioUrl(URL.createObjectURL(f)); setMime(f.type||""); setErrorBanner(null); revealPublishPanel(); };
+  const onPickFile=(e)=>{ const f=e.target.files?.[0]; if(!f) return; resetCreationFlowState(); setAudioBlob(f); setAudioUrl(URL.createObjectURL(f)); setMime(f.type||""); setErrorBanner(null); revealPublishPanel(); };
 
   const cycleTheme = () => {
     const themeKeys = Object.keys(themes);
@@ -5377,6 +5464,8 @@ function AppContent(){
     prompts,
     promptLoading,
     promptState,
+    refinedData,
+    setRefinedData,
     handleSelectPromptTemplate,
     handleClearPromptSelection,
     promptFavorites,
@@ -5386,6 +5475,10 @@ function AppContent(){
     handlePromptFocusChange,
     handlePromptNotesChange,
     handleTogglePromptCue,
+    setCueCardAnswers,
+    setPromptFocus,
+    setPromptNotes,
+    setPromptDetailsOpen,
     handleCreatePrompt,
     handleDeletePrompt,
     mime,
@@ -5459,6 +5552,7 @@ function AppContent(){
     openRefinementPanel,
     closeRefinementPanel,
     resetJourneyVisibility,
+    resetCreationFlowState,
     pipelineComplete,
     resetDiarizationPreference,
   };
