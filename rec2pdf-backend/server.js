@@ -1,3 +1,5 @@
+const { PromptService } = require('./services/promptService');
+const promptService = new PromptService();
 require('dotenv').config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const express = require('express');
@@ -1533,95 +1535,81 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
   try {
     const transcript = await loadTranscriptForPrompt(txtPath);
 
-    let promptLines = [
-      "Sei un assistente AI specializzato nell'analisi di trascrizioni e appunti. Il tuo compito è analizzare il testo fornito e generare contenuti per un documento professionale.",
-      "Il tuo output DEVE essere un singolo oggetto JSON valido, senza codice Markdown o testo attorno ad esso.",
-      "L'oggetto JSON deve avere ESATTAMENTE le seguenti quattro chiavi: `title`, `summary`, `author`, `body`.",
-      "- `title`: Un titolo breve, accattivante e pertinente per il documento (massimo 15 parole).",
-      "- `summary`: Un sommario esecutivo conciso del contenuto (massimo 3 frasi).",
-      "- `author`: Il ruolo professionale dell'autore del documento (es. 'Analista Finanziario', 'Marketing Strategist').",
-      "- `body`: Il corpo completo del documento, formattato in Markdown, in lingua italiana.",
-      "Il `body` deve iniziare con il primo titolo (es. `# Introduzione`) e non deve contenere il front-matter YAML."
-    ];
-
-    if (promptPayload) {
-      const { persona, description, markdownRules, focus, notes } = promptPayload;
-      const rules = [];
-
-      if (persona) {
-        promptLines[0] = `Agisci con la persona di un ${persona}. ${promptLines[0]}`;
+    // 1. Prepara i dati per il template
+    const templateData = {
+      persona: promptPayload?.persona,
+      description: promptPayload?.description,
+      markdownRules: promptPayload?.markdownRules,
+      focus: promptPayload?.focus,
+      notes: promptPayload?.notes,
+      knowledgeContext: knowledgeContext,
+      transcript: transcript,
+      _meta: {
+        promptId: promptPayload?.id,
+        promptVersion: promptPayload?.version || '1.1.2',
+        timestamp: new Date().toISOString(),
       }
-      
-      if (description) rules.push(`Obiettivo del documento: ${description}.`);
+    };
 
-      if (markdownRules) {
-        if (markdownRules.tone) rules.push(`Tono: ${markdownRules.tone}.`);
-        if (markdownRules.voice) rules.push(`Voce: ${markdownRules.voice}.`);
-        if (markdownRules.bulletStyle) rules.push(`Stile elenchi: ${markdownRules.bulletStyle}.`);
-        if (markdownRules.summaryStyle) rules.push(`Stile sommario: ${markdownRules.summaryStyle}.`);
-      }
+    // 2. Renderizza il prompt
+    const fullPrompt = await promptService.render('base_generation', templateData);
 
-      if (focus) rules.push(`Focus particolare: ${focus}.`);
-      if (notes) rules.push(`Note aggiuntive: ${notes}.`);
-
-      if (rules.length > 0) {
-        promptLines.push("\nSegui queste regole specifiche per il contenuto del `body`:");
-        promptLines.push(...rules.map(r => `- ${r}`));
-      }
+    if (process.env.DEBUG_PROMPTS === 'true') {
+      console.log('\n--- RENDERED PROMPT ---\n', fullPrompt, '\n--- END PROMPT ---\n');
     }
 
-    const prompt = promptLines.join('\n');
-    const normalizedContext = typeof knowledgeContext === 'string' ? knowledgeContext.trim() : '';
-    
-    const promptWithContext = normalizedContext
-      ? `${prompt}\n\nCONTESTO AGGIUNTIVO DALLA KNOWLEDGE BASE:\n---\n${normalizedContext}\n---\n`
-      : prompt;
-      
-    const fullPrompt = `${promptWithContext}\n\nTRASCRIZIONE DA ELABORARE:\n---\n${transcript}`;
-
+    // 3. Chiama il servizio AI
     let aiGenerator;
     let textProvider;
     try {
       textProvider = resolveAiProvider('text', options.textProvider || options.aiTextProvider);
       aiGenerator = getAIService(textProvider.id, textProvider.apiKey, textProvider.model);
     } catch (error) {
-      const reason = error?.message ? `: ${error.message}` : '';
-      throw new Error(`Provider di testo non disponibile${reason}`);
+      console.error(`❌ Provider di testo non disponibile: ${error.message}`);
+      throw new Error(`Provider di testo non disponibile: ${error.message}`);
     }
 
     let generatedContent = '';
     try {
       generatedContent = await aiGenerator.generateContent(fullPrompt);
-    } catch (error) {
-      throw new Error(error?.message || 'Errore durante la generazione del contenuto.');
+         } catch (error) {
+      console.error(`❌ Errore durante la generazione del contenuto AI: ${error.message}`);
+      throw new Error(`Errore durante la generazione del contenuto AI: ${error.message}`);
     }
 
+    // 4. Esegui il parsing dell'output JSON
     const activeModelName = textProvider?.model || aiGenerator?.modelName || '';
     const cleanedJsonString = generatedContent.replace(/^```(json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
 
     try {
       const parsed = JSON.parse(cleanedJsonString);
+
+      // --- MODIFICA CRUCIALE ---
+      // NON scriviamo più il file qui.
+      // Invece, restituiamo un oggetto che il resto del sistema rec2pdf si aspetta,
+      // contenente tutti i dati grezzi.
       return {
         title: parsed.title || '',
         summary: parsed.summary || '',
         author: parsed.author || '',
-        content: applyAiModelToFrontMatter(parsed.body || '', activeModelName),
+        content: parsed.body || '', // Restituiamo il body nella chiave 'content'
         modelName: activeModelName,
       };
     } catch (jsonError) {
-      console.warn('⚠️  L\'output AI non era un JSON valido. Trattato come solo corpo.', jsonError.message);
+      console.warn('⚠️ L\'output AI non era un JSON valido. Trattato come solo corpo.', jsonError.message);
+      // Fallback: se non è JSON, restituiamo l'intero output come 'content'
       return {
         title: '',
         summary: '',
         author: '',
-        content: applyAiModelToFrontMatter(generatedContent, activeModelName),
+        content: generatedContent, // Restituiamo l'output grezzo come 'content'
         modelName: activeModelName,
       };
     }
 
   } catch (error) {
     console.error("❌ Errore imprevisto in generateMarkdown:", error);
-    throw error;
+    throw error; // Propaga l'errore al chiamante
   }
 };
 const generateId = (prefix) => {
@@ -3520,6 +3508,65 @@ const DEFAULT_PROMPTS = [
         'Opzioni valutate',
         'Impatto economico',
         'Piano di implementazione',
+      ],
+    },
+    builtIn: true,
+  },
+  
+  {
+    // --- ID CORRETTO ---
+    id: '1a7a4a2a-7c3d-4b8e-9d2a-8e3b1c4b9c4d',
+    // --------------------
+    slug: 'elevator_pitch',
+    title: 'Elevator Pitch Strategico',
+    description:
+      "Trasforma un'idea grezza in un elevator pitch incisivo e memorabile, progettato per catturare l'attenzione e ottenere il buy-in da stakeholder C-Level.",
+    persona: 'Senior Strategy Advisor',
+    color: '#1e3a8a', // Un blu corporate, che ispira fiducia e serietà
+    tags: ['strategy', 'c-level', 'funding', 'pitch'],
+    cueCards: [
+      {
+        key: 'problem_statement',
+        title: 'Il Problema Rilevante',
+        hint: 'Descrivi il problema di business che il CEO riconosce e vuole risolvere. Usa dati per quantificare il costo o l\'opportunità persa (es. "Oggi perdiamo il X% di MQL per...").',
+      },
+      {
+        key: 'solution_concept',
+        title: 'La Nostra Soluzione Unica',
+        hint: 'In una frase, qual è la tua soluzione? Qual è il suo nome o concetto chiave (es. "Proponiamo una piattaforma di IA predittiva chiamata \'Project Foresight\'...").',
+      },
+      {
+        key: 'value_proposition',
+        title: 'Il Valore e l\'Impatto',
+        hint: 'Perché questa soluzione vincerà? Quantifica l\'impatto atteso in termini che contano per il business: +X% revenue, -Y% costi operativi, Z% market share, +W punti di NPS.',
+      },
+      {
+        key: 'the_ask',
+        title: 'La Richiesta Chiara',
+        hint: "Cosa ti serve per procedere? Sii specifico. (Es. 'Un meeting di 30 min per la demo', 'Approvazione del budget di €X per la fase pilota', 'La sua sponsorizzazione per il prossimo board').",
+      },
+    ],
+    markdownRules: {
+      tone: 'Assertivo, sicuro e orientato al valore. Evita gergo tecnico non essenziale. Ogni parola deve avere uno scopo.',
+      voice: "Prima persona plurale ('noi proponiamo', 'il nostro team ha sviluppato') per creare un senso di team e ownership.",
+      bulletStyle: 'Nessuno. La struttura deve essere un discorso fluido e narrativo, non un elenco puntato.',
+      summaryStyle: "La prima frase deve essere un 'hook' che cattura immediatamente l'attenzione, legando il problema a un obiettivo strategico aziendale.",
+      pointOfView: "Quello di un partner strategico che parla al suo pari (il CEO), non di un venditore o di un tecnico.",
+    },
+    pdfRules: {
+      accentColor: '#1e3a8a',
+      layout: 'consulting', // Layout pulito e professionale
+      includeCover: true, // Deve apparire come un memo formale, anche se breve
+      includeToc: false, // Troppo corto per un indice
+    },
+    checklist: {
+      sections: [
+        'Aggancio Iniziale (Hook)',
+        'Definizione del Problema e Rilevanza Strategica',
+        'Presentazione della Soluzione',
+        'Proposta di Valore Unica (Why Us, Why Now)',
+        'Impatto sul Business (Quantificato)',
+        'La Chiamata all\'Azione (The Ask)',
       ],
     },
     builtIn: true,
@@ -5923,8 +5970,15 @@ const w = await run('bash', ['-lc', whisperxCmd]);
       
       mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
 
-      const { title: aiTitle, summary: aiSummary, author: aiAuthor, content: markdownBody, modelName: aiModel } = await generateMarkdown(
+      const {
+        title: aiTitle,
+        summary: aiSummary,
+        author: aiAuthor,
+        content: markdownBody,
+        modelName: aiModel,
+      } = await generateMarkdown(
         transcriptLocalForMarkdown,
+        mdLocalPath,
         promptRulePayload,
         retrievedWorkspaceContext || res.locals?.retrievedWorkspaceContext || '',
         { textProvider: aiOverrides.text }
@@ -7025,6 +7079,7 @@ app.post(
           modelName: aiModel,
         } = await generateMarkdown(
           txtLocalPath,
+          mdLocalPath,
           promptRulePayload,
           retrievedWorkspaceContext || '',
           { textProvider: aiOverrides.text }
