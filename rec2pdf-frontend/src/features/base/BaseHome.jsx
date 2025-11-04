@@ -5,6 +5,7 @@ import { Toast } from "../../components/ui";
 import PipelinePanel from "./PipelinePanel";
 import UploadCard from "./UploadCard";
 import BaseSummaryCards from "./BaseSummaryCards";
+import RefinementPanel from "./RefinementPanel";
 import { classNames } from "../../utils/classNames";
 
 const ErrorBanner = () => {
@@ -119,6 +120,8 @@ const BaseHome = () => {
           <PipelinePanel latestEntry={latestEntry} journeyStage={journeyStage} />
         ) : null}
       </section>
+
+      {baseJourneyVisibility?.refine ? <RefinementPanel /> : null}
     </div>
   );
 };
