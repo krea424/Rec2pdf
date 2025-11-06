@@ -213,6 +213,385 @@ const extractAiProviderOverrides = (req = {}) => {
   };
 };
 
+const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const sanitizeRefinedString = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '[object Object]') {
+    return '';
+  }
+  return trimmed;
+};
+
+const sanitizeRefinedNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+};
+
+const sanitizeRefinedHighlightEntry = (entry, index) => {
+  if (typeof entry === 'string') {
+    const text = sanitizeRefinedString(entry);
+    if (!text) {
+      return null;
+    }
+    return { id: `highlight_${index}`, title: '', detail: text };
+  }
+  if (!isPlainObject(entry)) {
+    return null;
+  }
+  const id = sanitizeRefinedString(entry.id || entry.key || entry.slug) || `highlight_${index}`;
+  const title = sanitizeRefinedString(entry.title || entry.label || entry.heading || entry.name);
+  const detail = sanitizeRefinedString(entry.detail || entry.description || entry.summary || entry.text);
+  const score = sanitizeRefinedNumber(
+    entry.score ?? entry.value ?? entry.metric ?? entry.weight ?? entry.confidence ?? null
+  );
+  if (!title && !detail && score === null) {
+    return null;
+  }
+  const payload = { id };
+  if (title) payload.title = title;
+  if (detail) payload.detail = detail;
+  if (score !== null) payload.score = score;
+  return payload;
+};
+
+const sanitizeRefinedHighlightList = (value) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map(sanitizeRefinedHighlightEntry).filter(Boolean);
+};
+
+const sanitizeRefinedSectionEntry = (entry, index) => {
+  if (typeof entry === 'string') {
+    const text = sanitizeRefinedString(entry);
+    if (!text) {
+      return null;
+    }
+    return { id: `section_${index}`, title: '', text, highlights: [] };
+  }
+  if (!isPlainObject(entry)) {
+    return null;
+  }
+  const id = sanitizeRefinedString(entry.id || entry.key || entry.slug) || `section_${index}`;
+  const title = sanitizeRefinedString(entry.title || entry.heading || entry.label || entry.name);
+  const text = sanitizeRefinedString(entry.text || entry.summary || entry.content || entry.body);
+  const highlights = sanitizeRefinedHighlightList(
+    entry.highlights || entry.points || entry.items || entry.bullets || entry.notes || []
+  );
+  if (!title && !text && !highlights.length) {
+    return null;
+  }
+  const payload = { id };
+  if (title) payload.title = title;
+  if (text) payload.text = text;
+  if (highlights.length) payload.highlights = highlights;
+  return payload;
+};
+
+const sanitizeRefinedSectionList = (value) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map(sanitizeRefinedSectionEntry).filter(Boolean);
+};
+
+const sanitizeRefinedSegmentEntry = (entry, index) => {
+  if (typeof entry === 'string') {
+    const text = sanitizeRefinedString(entry);
+    if (!text) {
+      return null;
+    }
+    return { id: `segment_${index}`, text };
+  }
+  if (!isPlainObject(entry)) {
+    return null;
+  }
+  const text = sanitizeRefinedString(
+    entry.text || entry.transcript || entry.content || entry.caption || entry.body
+  );
+  if (!text) {
+    return null;
+  }
+  const id = sanitizeRefinedString(entry.id || entry.key || entry.segmentId) || `segment_${index}`;
+  const speaker = sanitizeRefinedString(entry.speaker || entry.speakerLabel || entry.speakerName);
+  const start = sanitizeRefinedNumber(entry.start ?? entry.startTime ?? entry.begin ?? entry.offset);
+  const end = sanitizeRefinedNumber(entry.end ?? entry.endTime ?? entry.finish ?? entry.to);
+  const payload = { id, text };
+  if (speaker) payload.speaker = speaker;
+  if (start !== null) payload.start = start;
+  if (end !== null) payload.end = end;
+  return payload;
+};
+
+const sanitizeRefinedSegmentListFromArray = (value) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map(sanitizeRefinedSegmentEntry).filter(Boolean);
+};
+
+const buildRefinedSegments = (input) => {
+  const candidates = [
+    { key: 'segments', value: input?.segments },
+    { key: 'transcriptSegments', value: input?.transcriptSegments },
+    { key: 'transcriptionSegments', value: input?.transcriptionSegments },
+    { key: 'chunks', value: input?.chunks },
+  ];
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate.value)) {
+      continue;
+    }
+    const sanitized = sanitizeRefinedSegmentListFromArray(candidate.value);
+    if (sanitized.length) {
+      return { list: sanitized };
+    }
+    if (candidate.value.length > 0) {
+      return {
+        error: `I segmenti forniti nel campo "${candidate.key}" non contengono testo valido.`,
+      };
+    }
+  }
+  const textCandidates = [
+    sanitizeRefinedString(input?.transcription),
+    sanitizeRefinedString(input?.transcript),
+    sanitizeRefinedString(input?.text),
+    typeof input === 'string' ? sanitizeRefinedString(input) : '',
+  ].filter(Boolean);
+  for (const text of textCandidates) {
+    const segments = text
+      .split(/\r?\n/)
+      .map((line, index) => {
+        const trimmed = sanitizeRefinedString(line);
+        if (!trimmed) {
+          return null;
+        }
+        return { id: `segment_${index}`, text: trimmed };
+      })
+      .filter(Boolean);
+    if (segments.length) {
+      return { list: segments };
+    }
+  }
+  return { list: [] };
+};
+
+const sanitizeRefinedCueCardEntry = (entry, index) => {
+  if (typeof entry === 'string') {
+    const title = sanitizeRefinedString(entry);
+    if (!title) {
+      return null;
+    }
+    return { key: `cue_${index}`, title };
+  }
+  if (!isPlainObject(entry)) {
+    return null;
+  }
+  const title = sanitizeRefinedString(entry.title || entry.label || entry.name);
+  if (!title) {
+    return null;
+  }
+  const key =
+    sanitizeRefinedString(entry.key || entry.id || entry.slug || entry.field) || `cue_${index}`;
+  const hint = sanitizeRefinedString(entry.hint || entry.placeholder || entry.description || entry.example);
+  const value = sanitizeRefinedString(entry.value || entry.answer || entry.response || entry.text);
+  const payload = { key, title };
+  if (hint) payload.hint = hint;
+  if (value) payload.value = value;
+  return payload;
+};
+
+const sanitizeRefinedCueCardList = (value) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map(sanitizeRefinedCueCardEntry).filter(Boolean);
+};
+
+const sanitizeRefinedMetadata = (value) => {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  const entries = Object.entries(value).reduce((acc, [key, raw]) => {
+    const name = sanitizeRefinedString(key);
+    if (!name) {
+      return acc;
+    }
+    if (raw === null || raw === undefined) {
+      return acc;
+    }
+    if (isPlainObject(raw)) {
+      const nested = sanitizeRefinedMetadata(raw);
+      if (nested && Object.keys(nested).length) {
+        acc[name] = nested;
+      }
+      return acc;
+    }
+    if (Array.isArray(raw)) {
+      const sanitizedArray = raw
+        .map((item) => {
+          if (isPlainObject(item)) {
+            const nested = sanitizeRefinedMetadata(item);
+            return nested && Object.keys(nested).length ? nested : null;
+          }
+          if (typeof item === 'string') {
+            const text = sanitizeRefinedString(item);
+            if (!text) {
+              return null;
+            }
+            const numeric = sanitizeRefinedNumber(text);
+            return numeric !== null ? numeric : text;
+          }
+          if (typeof item === 'number' && Number.isFinite(item)) {
+            return item;
+          }
+          if (typeof item === 'boolean') {
+            return item;
+          }
+          if (typeof item === 'string') {
+            const parsed = sanitizeRefinedNumber(item);
+            return parsed !== null ? parsed : null;
+          }
+          return null;
+        })
+        .filter((item) => {
+          if (item === null) {
+            return false;
+          }
+          if (isPlainObject(item)) {
+            return Object.keys(item).length > 0;
+          }
+          return true;
+        });
+      if (sanitizedArray.length) {
+        acc[name] = sanitizedArray;
+      }
+      return acc;
+    }
+    if (typeof raw === 'string') {
+      const text = sanitizeRefinedString(raw);
+      if (text) {
+        const numeric = sanitizeRefinedNumber(text);
+        acc[name] = numeric !== null ? numeric : text;
+      }
+      return acc;
+    }
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      acc[name] = raw;
+      return acc;
+    }
+    if (typeof raw === 'boolean') {
+      acc[name] = raw;
+      return acc;
+    }
+    const numeric = sanitizeRefinedNumber(raw);
+    if (numeric !== null) {
+      acc[name] = numeric;
+    }
+    return acc;
+  }, {});
+  return Object.keys(entries).length ? entries : null;
+};
+
+const sanitizeRefinedCueCardAnswers = (value) => {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  const payload = Object.entries(value).reduce((acc, [key, raw]) => {
+    const name = sanitizeRefinedString(key);
+    if (!name) {
+      return acc;
+    }
+    const text = sanitizeRefinedString(raw);
+    if (text) {
+      acc[name] = text;
+    }
+    return acc;
+  }, {});
+  return Object.keys(payload).length ? payload : null;
+};
+
+const sanitizeRefinedDataInput = (input) => {
+  if (input === null || input === undefined) {
+    return { ok: true, value: null };
+  }
+  if (!isPlainObject(input)) {
+    return { ok: false, error: 'refinedData deve essere un oggetto JSON' };
+  }
+  const payload = {};
+  const summary = sanitizeRefinedString(input.summary || input.overview || input.description);
+  if (summary) {
+    payload.summary = summary;
+  }
+  const focus = sanitizeRefinedString(input.focus);
+  if (focus) {
+    payload.focus = focus;
+  }
+  const notes = sanitizeRefinedString(input.notes);
+  if (notes) {
+    payload.notes = notes;
+  }
+  const highlights = sanitizeRefinedHighlightList(
+    input.highlights || input.insights || input.bullets || input.points
+  );
+  if (highlights.length) {
+    payload.highlights = highlights;
+  }
+  const sections = sanitizeRefinedSectionList(input.sections || input.blocks || input.items || []);
+  if (sections.length) {
+    payload.sections = sections;
+  }
+  const segmentsResult = buildRefinedSegments(input);
+  if (segmentsResult.error) {
+    return { ok: false, error: segmentsResult.error };
+  }
+  if (segmentsResult.list.length) {
+    payload.segments = segmentsResult.list;
+  }
+  const cueCards = sanitizeRefinedCueCardList(input.cueCards || input.cards || []);
+  if (Array.isArray(input.cueCards) && input.cueCards.length > 0 && cueCards.length === 0) {
+    return { ok: false, error: 'Le cue card fornite non contengono titoli validi.' };
+  }
+  if (cueCards.length) {
+    payload.cueCards = cueCards;
+  }
+  const metadata = sanitizeRefinedMetadata(input.metadata);
+  if (metadata) {
+    payload.metadata = metadata;
+  }
+  const tokens = sanitizeRefinedNumber(input.tokens ?? input.totalTokens ?? input.tokenCount);
+  if (tokens !== null) {
+    payload.tokens = tokens;
+  }
+  const source = sanitizeRefinedString(input.source || input.provider);
+  if (source) {
+    payload.source = source;
+  }
+  const version = sanitizeRefinedString(input.version);
+  if (version) {
+    payload.version = version;
+  }
+  const cueCardAnswers = sanitizeRefinedCueCardAnswers(input.cueCardAnswers);
+  if (cueCardAnswers) {
+    payload.cueCardAnswers = cueCardAnswers;
+  }
+  if (Object.keys(payload).length === 0) {
+    return { ok: true, value: null };
+  }
+  return { ok: true, value: payload };
+};
+
 const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => {
   const normalizedWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
   if (!normalizedWorkspaceId) {
@@ -1535,6 +1914,12 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
   try {
     const transcript = await loadTranscriptForPrompt(txtPath);
 
+    const normalizedKnowledgeContext =
+      typeof knowledgeContext === 'string' ? knowledgeContext.trim() : '';
+    const decoratedKnowledgeContext = normalizedKnowledgeContext
+      ? ['CONTESTO AGGIUNTIVO DALLA KNOWLEDGE BASE', normalizedKnowledgeContext].join('\n')
+      : '';
+
     // 1. Prepara i dati per il template
     const templateData = {
       persona: promptPayload?.persona,
@@ -1542,7 +1927,7 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
       markdownRules: promptPayload?.markdownRules,
       focus: promptPayload?.focus,
       notes: promptPayload?.notes,
-      knowledgeContext: knowledgeContext,
+      knowledgeContext: decoratedKnowledgeContext,
       transcript: transcript,
       _meta: {
         promptId: promptPayload?.id,
@@ -1553,6 +1938,13 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
 
     // 2. Renderizza il prompt
     const fullPrompt = await promptService.render('base_generation', templateData);
+    let promptForAi = fullPrompt;
+    if (!promptForAi.includes('TRASCRIZIONE DA ELABORARE:')) {
+      promptForAi = promptForAi.replace(
+        '📄 TRASCRIZIONE DA ELABORARE',
+        'TRASCRIZIONE DA ELABORARE:\n📄 TRASCRIZIONE DA ELABORARE'
+      );
+    }
 
     if (process.env.DEBUG_PROMPTS === 'true') {
       console.log('\n--- RENDERED PROMPT ---\n', fullPrompt, '\n--- END PROMPT ---\n');
@@ -1571,7 +1963,7 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
 
     let generatedContent = '';
     try {
-      generatedContent = await aiGenerator.generateContent(fullPrompt);
+      generatedContent = await aiGenerator.generateContent(promptForAi);
          } catch (error) {
       console.error(`❌ Errore durante la generazione del contenuto AI: ${error.message}`);
       throw new Error(`Errore durante la generazione del contenuto AI: ${error.message}`);
@@ -1598,11 +1990,12 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
     } catch (jsonError) {
       console.warn('⚠️ L\'output AI non era un JSON valido. Trattato come solo corpo.', jsonError.message);
       // Fallback: se non è JSON, restituiamo l'intero output come 'content'
+      const enrichedContent = applyAiModelToFrontMatter(generatedContent, activeModelName);
       return {
         title: '',
         summary: '',
         author: '',
-        content: generatedContent, // Restituiamo l'output grezzo come 'content'
+        content: enrichedContent, // Restituiamo l'output grezzo come 'content'
         modelName: activeModelName,
       };
     }
@@ -5318,6 +5711,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
   let promptFocus = '';
   let promptNotes = '';
   let promptCuesCompleted = [];
+  let refinedDataPayload = null;
   const tempFiles = new Set();
   const tempDirs = new Set();
     let speakerLabels = [];
@@ -5384,6 +5778,31 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         }
       } catch {
         promptCuesCompleted = [];
+      }
+    }
+
+    if (typeof req.body?.refinedData !== 'undefined') {
+      let parsedRefined = req.body.refinedData;
+      if (typeof parsedRefined === 'string') {
+        const trimmed = parsedRefined.trim();
+        if (!trimmed || trimmed === 'null' || trimmed === 'undefined') {
+          parsedRefined = null;
+        } else {
+          try {
+            parsedRefined = JSON.parse(trimmed);
+          } catch (parseError) {
+            out(`⚠️ refinedData JSON non valido: ${parseError?.message || parseError}`, 'upload', 'warning');
+            parsedRefined = null;
+          }
+        }
+      }
+
+      const refinedResult = sanitizeRefinedDataInput(parsedRefined);
+      if (!refinedResult.ok) {
+        out(`⚠️ refinedData non valido: ${refinedResult.error}`, 'upload', 'warning');
+      } else if (refinedResult.value) {
+        refinedDataPayload = refinedResult.value;
+        out('✨ Dati di raffinazione ricevuti', 'upload', 'info');
       }
     }
 
@@ -5953,6 +6372,29 @@ const w = await run('bash', ['-lc', whisperxCmd]);
         if (promptNotes) {
           queryParts.push(promptNotes);
         }
+        if (refinedDataPayload?.summary) {
+          queryParts.push(refinedDataPayload.summary);
+        }
+        if (Array.isArray(refinedDataPayload?.sections) && refinedDataPayload.sections.length) {
+          refinedDataPayload.sections.forEach((section) => {
+            if (section?.title) {
+              queryParts.push(section.title);
+            }
+            if (section?.text) {
+              queryParts.push(section.text);
+            }
+          });
+        }
+        if (Array.isArray(refinedDataPayload?.highlights) && refinedDataPayload.highlights.length) {
+          refinedDataPayload.highlights.forEach((highlight) => {
+            if (highlight?.title) {
+              queryParts.push(highlight.title);
+            }
+            if (highlight?.detail) {
+              queryParts.push(highlight.detail);
+            }
+          });
+        }
         if (transcriptTextForQuery) {
           queryParts.push(transcriptTextForQuery);
         }
@@ -6058,6 +6500,10 @@ const w = await run('bash', ['-lc', whisperxCmd]);
           frontMatter.metadata && typeof frontMatter.metadata === 'object' ? { ...frontMatter.metadata } : {};
         nestedMetadata.transcript = transcriptBlocks;
         frontMatter.metadata = nestedMetadata;
+      }
+
+      if (refinedDataPayload) {
+        frontMatter.refined = refinedDataPayload;
       }
 
       // Rimuovi chiavi vuote per un YAML pulito
@@ -6217,6 +6663,7 @@ const w = await run('bash', ['-lc', whisperxCmd]);
       prompt: promptAssignment,
       structure,
       speakers: speakerLabels,
+      refinedData: refinedDataPayload,
     });
   } catch (err) {
     const message = String(err && err.message ? err.message : err);
