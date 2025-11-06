@@ -385,6 +385,7 @@ const AdvancedWorkspaceNavigator = ({
   searchTerm = "",
   onSearchChange,
   fetchPreview,
+  fetchPreAnalysis,
   onOpenPdf,
   onOpenMd,
   onRepublish,
@@ -411,8 +412,14 @@ const AdvancedWorkspaceNavigator = ({
     mdUrl: "",
     pdfUrl: "",
   });
+  const [preAnalysisState, setPreAnalysisState] = useState({
+    loading: false,
+    error: "",
+    result: null,
+  });
   const [assigning, setAssigning] = useState(false);
   const previewCache = useRef(new Map());
+  const preAnalysisCache = useRef(new Map());
   const [expandedPanels, setExpandedPanels] = useState(() => ({
     navigator: Boolean(normalizedSelection.workspaceId),
     filters: Boolean((searchTerm || "").trim()) || savedFilters.length > 0,
@@ -742,6 +749,51 @@ const AdvancedWorkspaceNavigator = ({
       active = false;
     };
   }, [selectedEntry, fetchPreview]);
+
+  useEffect(() => {
+    if (!selectedEntry || typeof fetchPreAnalysis !== "function") {
+      setPreAnalysisState((prev) => ({ ...prev, loading: false, error: "", result: null }));
+      return;
+    }
+
+    const cacheKey = selectedEntry.id;
+    if (preAnalysisCache.current.has(cacheKey)) {
+      const cached = preAnalysisCache.current.get(cacheKey);
+      setPreAnalysisState({ loading: false, error: "", result: cached });
+      return;
+    }
+
+    let active = true;
+    setPreAnalysisState({ loading: true, error: "", result: null });
+
+    Promise.resolve(fetchPreAnalysis(selectedEntry))
+      .then((response) => {
+        if (!active) return;
+        if (response?.ok) {
+          const payload =
+            response?.data && typeof response.data === "object"
+              ? response.data
+              : null;
+          preAnalysisCache.current.set(cacheKey, payload);
+          setPreAnalysisState({ loading: false, error: "", result: payload });
+        } else {
+          const message = response?.message || 'Pre-analisi non disponibile.';
+          setPreAnalysisState({ loading: false, error: message, result: null });
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        setPreAnalysisState({
+          loading: false,
+          error: error?.message || 'Errore durante la pre-analisi.',
+          result: null,
+        });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedEntry, fetchPreAnalysis]);
 
   const statusLabels = useMemo(() => statusCatalog.map((status) => status.label), [statusCatalog]);
 
@@ -1416,20 +1468,144 @@ const AdvancedWorkspaceNavigator = ({
                         {selectedEntry.prompt?.focus && (
                           <div className="text-[11px] text-indigo-200/80">Focus: {selectedEntry.prompt.focus}</div>
                         )}
-                        {selectedEntry.prompt?.notes && (
-                          <div className="text-[11px] text-indigo-200/70">Note: {selectedEntry.prompt.notes}</div>
-                        )}
-                        {Array.isArray(selectedEntry.prompt?.completedCues) && selectedEntry.prompt.completedCues.length > 0 && (
-                          <div className="text-[11px] text-indigo-200/70">
-                            Cue completate: {selectedEntry.prompt.completedCues.join(', ')}
-                          </div>
-                        )}
+                    {selectedEntry.prompt?.notes && (
+                      <div className="text-[11px] text-indigo-200/70">Note: {selectedEntry.prompt.notes}</div>
+                    )}
+                    {Array.isArray(selectedEntry.prompt?.completedCues) && selectedEntry.prompt.completedCues.length > 0 && (
+                      <div className="text-[11px] text-indigo-200/70">
+                        Cue completate: {selectedEntry.prompt.completedCues.join(', ')}
                       </div>
                     )}
-                    <div className="max-h-48 overflow-auto rounded-lg border border-zinc-800/60 bg-black/20 p-3 text-sm text-zinc-200">
-                      {previewState.loading ? (
-                        <div className="text-xs text-zinc-500">Caricamento anteprima…</div>
-                      ) : previewState.error ? (
+                  </div>
+                )}
+                {typeof fetchPreAnalysis === "function" && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.3em] text-indigo-200">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Pre-analisi
+                    </div>
+                    <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-indigo-100">
+                      {preAnalysisState.loading ? (
+                        <div className="flex items-center gap-2 text-[11px] text-indigo-200/80">
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          Analisi in corso…
+                        </div>
+                      ) : preAnalysisState.error ? (
+                        <div className="text-[11px] text-rose-200">{preAnalysisState.error}</div>
+                      ) : preAnalysisState.result ? (
+                        <div className="space-y-3">
+                          {preAnalysisState.result.summary && (
+                            <p className="text-sm leading-relaxed text-indigo-50">
+                              {preAnalysisState.result.summary}
+                            </p>
+                          )}
+                          {Array.isArray(preAnalysisState.result.highlights) &&
+                            preAnalysisState.result.highlights.length > 0 && (
+                              <ul className="space-y-1 text-[11px] text-indigo-100/80">
+                                {preAnalysisState.result.highlights.map((highlight, index) => {
+                                  const key = `${highlight.id || highlight.title || highlight.detail || 'highlight'}_${index}`;
+                                  return (
+                                    <li key={key} className="flex gap-2">
+                                      <span
+                                        className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-indigo-300"
+                                        aria-hidden="true"
+                                      />
+                                      <span>
+                                        {highlight.title && (
+                                          <span className="font-semibold text-indigo-100">
+                                            {highlight.title}
+                                            {highlight.detail ? ': ' : ''}
+                                          </span>
+                                        )}
+                                        {highlight.detail}
+                                        {Number.isFinite(highlight.score) && (
+                                          <span className="ml-1 text-indigo-200/70">
+                                            ({Math.round(highlight.score * 100) / 100})
+                                          </span>
+                                        )}
+                                      </span>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            )}
+                          {Array.isArray(preAnalysisState.result.sections) &&
+                            preAnalysisState.result.sections.length > 0 && (
+                              <div className="space-y-2">
+                                {preAnalysisState.result.sections.map((section, sectionIndex) => {
+                                  const sectionKey = section.id || section.title || section.text || 'section';
+                                  const resolvedSectionKey = `${sectionKey}_${sectionIndex}`;
+                                  return (
+                                    <div
+                                      key={resolvedSectionKey}
+                                      className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 p-2"
+                                    >
+                                      {section.title && (
+                                        <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-indigo-200">
+                                          {section.title}
+                                        </div>
+                                      )}
+                                      {section.text && (
+                                        <p className="mt-1 text-[11px] leading-relaxed text-indigo-100/90">
+                                          {section.text}
+                                        </p>
+                                      )}
+                                      {Array.isArray(section.highlights) && section.highlights.length > 0 && (
+                                        <ul className="mt-1 space-y-1 text-[11px] text-indigo-100/80">
+                                          {section.highlights.map((item, itemIndex) => {
+                                            const itemKey = `${resolvedSectionKey}_${item.id || item.title || item.detail || 'item'}_${itemIndex}`;
+                                            return (
+                                              <li key={itemKey} className="flex gap-2">
+                                                <span
+                                                  className="mt-[6px] h-1 w-1 flex-shrink-0 rounded-full bg-indigo-200"
+                                                  aria-hidden="true"
+                                                />
+                                                <span>
+                                                  {item.title && (
+                                                    <span className="font-medium text-indigo-100">
+                                                      {item.title}
+                                                      {item.detail ? ': ' : ''}
+                                                    </span>
+                                                  )}
+                                                  {item.detail}
+                                                </span>
+                                              </li>
+                                            );
+                                          })}
+                                        </ul>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          {preAnalysisState.result.tokens !== null && Number.isFinite(preAnalysisState.result.tokens) && (
+                            <div className="text-[10px] uppercase tracking-[0.28em] text-indigo-200/60">
+                              Token stimati: {Math.round(preAnalysisState.result.tokens)}
+                            </div>
+                          )}
+                          {!preAnalysisState.result.summary &&
+                            (!Array.isArray(preAnalysisState.result.highlights) ||
+                              preAnalysisState.result.highlights.length === 0) &&
+                            (!Array.isArray(preAnalysisState.result.sections) ||
+                              preAnalysisState.result.sections.length === 0) && (
+                              <div className="text-[11px] text-indigo-200/70">
+                                Nessuna insight generata dalla pre-analisi.
+                              </div>
+                            )}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-indigo-200/70">
+                          Nessuna insight generata dalla pre-analisi.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="max-h-48 overflow-auto rounded-lg border border-zinc-800/60 bg-black/20 p-3 text-sm text-zinc-200">
+                  {previewState.loading ? (
+                    <div className="text-xs text-zinc-500">Caricamento anteprima…</div>
+                  ) : previewState.error ? (
                         <div className="text-xs text-rose-300">{previewState.error}</div>
                       ) : previewState.markdown ? (
                         <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-200">

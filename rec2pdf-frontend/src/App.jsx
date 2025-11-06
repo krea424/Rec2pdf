@@ -29,6 +29,10 @@ import {
   parseWorkspaceResponse,
   parseWorkspacesResponse,
 } from "./api/workspaces.js";
+import {
+  buildPreAnalyzeRequest,
+  postPreAnalyze,
+} from "./api/preAnalyze.js";
 
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
 const DEFAULT_DEST_DIR = '/Users/';
@@ -3023,6 +3027,50 @@ function AppContent(){
     [backendUrl, fetchWithAuth, getSessionToken]
   );
 
+  const fetchEntryPreAnalysis = useCallback(
+    async (entry, options = {}) => {
+      if (!entry) {
+        return { ok: false, message: 'Nessun documento selezionato.' };
+      }
+
+      const backendTarget = normalizeBackendUrlValue(entry?.backendUrl || backendUrl);
+      if (!backendTarget) {
+        return { ok: false, message: 'Backend non configurato per il documento selezionato.' };
+      }
+
+      const payload = buildPreAnalyzeRequest(entry, options?.overrides || {});
+      if (!payload || Object.keys(payload).length === 0) {
+        return { ok: false, message: 'Dati insufficienti per eseguire la pre-analisi.' };
+      }
+
+      try {
+        const result = await postPreAnalyze({
+          backendUrl: backendTarget,
+          fetcher: (url, fetchOptions) => fetchBodyWithAuth(url, fetchOptions),
+          payload,
+        });
+
+        if (result.ok) {
+          if (result.message) {
+            pushLogs([`ℹ️ Pre-analisi: ${result.message}`]);
+          }
+          return { ok: true, data: result.data, raw: result.raw };
+        }
+
+        if (!result.skipped && result.message) {
+          pushLogs([`⚠️ Pre-analisi: ${result.message}`]);
+        }
+
+        return { ok: false, message: result.message || 'Pre-analisi non disponibile.' };
+      } catch (error) {
+        const message = error?.message || 'Errore durante la pre-analisi.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+    },
+    [backendUrl, fetchBodyWithAuth, pushLogs]
+  );
+
   const handleSaveWorkspaceFilter = useCallback(
     (filter) => {
       const name = filter?.name?.trim() || `Filtro ${savedWorkspaceFilters.length + 1}`;
@@ -5523,6 +5571,7 @@ function AppContent(){
     historyFilter,
     setHistoryFilter,
     fetchEntryPreview,
+    fetchEntryPreAnalysis,
     handleOpenHistoryPdf,
     handleOpenHistoryMd,
     handleRepublishFromMd,
