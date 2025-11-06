@@ -419,6 +419,163 @@ const sanitizeRefinedCueCardList = (value) => {
   return value.map(sanitizeRefinedCueCardEntry).filter(Boolean);
 };
 
+const sanitizeMultilineString = (value) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === '[object Object]') {
+      return '';
+    }
+    return trimmed
+      .replace(/\r\n/g, '\n')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\n{3,}/g, '\n\n');
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+  if (Array.isArray(value)) {
+    const parts = value.map((item) => sanitizeMultilineString(item)).filter(Boolean);
+    return parts.join('\n');
+  }
+  if (value && typeof value === 'object') {
+    const candidateKeys = [
+      'answer',
+      'text',
+      'value',
+      'response',
+      'content',
+      'summary',
+      'description',
+      'detail',
+      'body',
+      'notes',
+      'insights',
+      'bullets',
+      'points',
+      'highlights',
+    ];
+    for (const key of candidateKeys) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        const nested = sanitizeMultilineString(value[key]);
+        if (nested) {
+          return nested;
+        }
+      }
+    }
+  }
+  return '';
+};
+
+const buildSuggestedAnswers = (rawSuggestions, cueCards, anomalies = []) => {
+  if (!Array.isArray(cueCards) || cueCards.length === 0) {
+    return [];
+  }
+
+  const reportAnomaly = (code) => {
+    if (Array.isArray(anomalies) && code) {
+      anomalies.push(code);
+    }
+  };
+
+  const keyToIndex = new Map();
+  const titleToKey = new Map();
+  const normalized = cueCards.map((card, index) => {
+    keyToIndex.set(card.key, index);
+    titleToKey.set(card.title.toLowerCase(), card.key);
+    return { key: card.key, title: card.title, answer: '' };
+  });
+
+  if (!Array.isArray(rawSuggestions)) {
+    reportAnomaly('suggested_answers_not_array');
+  }
+
+  const suggestions = Array.isArray(rawSuggestions) ? rawSuggestions : [];
+
+  suggestions.forEach((entry, index) => {
+    const answerText = sanitizeMultilineString(entry);
+    const isObjectEntry = entry && typeof entry === 'object' && !Array.isArray(entry);
+    let targetKey = '';
+
+    if (isObjectEntry) {
+      const keyCandidate = sanitizeRefinedString(
+        entry.key ||
+          entry.cueKey ||
+          entry.cue_key ||
+          entry.id ||
+          entry.slug ||
+          entry.field ||
+          entry.name
+      );
+      if (keyCandidate && keyToIndex.has(keyCandidate)) {
+        targetKey = keyCandidate;
+      } else {
+        const titleCandidate = sanitizeRefinedString(
+          entry.title ||
+            entry.cueTitle ||
+            entry.cue_title ||
+            entry.label ||
+            entry.heading ||
+            entry.prompt
+        );
+        if (titleCandidate) {
+          const normalizedTitleKey = titleToKey.get(titleCandidate.toLowerCase());
+          if (normalizedTitleKey) {
+            targetKey = normalizedTitleKey;
+          }
+        }
+      }
+    }
+
+    if (!targetKey && cueCards[index]) {
+      targetKey = cueCards[index].key;
+    }
+
+    if (!targetKey && isObjectEntry) {
+      const indexCandidate = sanitizeRefinedNumber(entry.index ?? entry.position ?? entry.order);
+      if (indexCandidate !== null && cueCards[indexCandidate]) {
+        targetKey = cueCards[indexCandidate].key;
+      }
+    }
+
+    if (!targetKey) {
+      reportAnomaly(`unmatched_suggestion_index_${index}`);
+      return;
+    }
+
+    const targetIndex = keyToIndex.get(targetKey);
+    if (typeof targetIndex !== 'number') {
+      reportAnomaly(`unknown_cue_key_${targetKey}`);
+      return;
+    }
+
+    const previous = normalized[targetIndex];
+    const normalizedAnswer = answerText;
+    if (!normalizedAnswer && previous?.answer) {
+      return;
+    }
+
+    normalized[targetIndex] = {
+      key: cueCards[targetIndex].key,
+      title: cueCards[targetIndex].title,
+      answer: normalizedAnswer,
+    };
+  });
+
+  if (suggestions.length && suggestions.length < cueCards.length) {
+    const missingKeys = normalized
+      .filter((entry) => !entry.answer)
+      .map((entry) => entry.key);
+    if (missingKeys.length) {
+      reportAnomaly(`missing_answers_for_keys:${missingKeys.join(',')}`);
+    }
+  }
+
+  return normalized;
+};
+
 const sanitizeRefinedMetadata = (value) => {
   if (!isPlainObject(value)) {
     return null;
@@ -5643,6 +5800,132 @@ app.get('/api/ai/providers', (req, res) => {
     const message = error?.message || 'Impossibile recuperare i provider AI';
     return res.status(500).json({ message });
   }
+});
+
+app.post('/api/pre-analyze', async (req, res) => {
+  const workspaceId = getWorkspaceIdFromRequest(req);
+  const anomalies = [];
+
+  const aiOverrides = extractAiProviderOverrides(req);
+  const transcriptionCandidates = [req.body?.transcription, req.body?.transcript, req.body?.text];
+  let transcription = '';
+  for (const candidate of transcriptionCandidates) {
+    const sanitized = sanitizeMultilineString(candidate);
+    if (sanitized) {
+      transcription = sanitized;
+      break;
+    }
+  }
+
+  if (!transcription) {
+    return res.status(400).json({ ok: false, message: 'Campo "transcription" obbligatorio.' });
+  }
+
+  if (!Array.isArray(req.body?.cueCards)) {
+    return res.status(400).json({ ok: false, message: '"cueCards" deve essere un array.' });
+  }
+
+  const cueCards = sanitizeRefinedCueCardList(req.body.cueCards);
+  if (!cueCards.length) {
+    return res.status(400).json({ ok: false, message: 'Nessuna cue card valida fornita.' });
+  }
+
+  let provider;
+  try {
+    provider = resolveAiProvider('text', aiOverrides.text);
+  } catch (error) {
+    console.error('❌ Provider AI non disponibile per /api/pre-analyze:', error);
+    return res
+      .status(503)
+      .json({ ok: false, message: error?.message || 'Provider AI non disponibile per la pre-analisi.' });
+  }
+
+  const promptPayload = {
+    transcription,
+    cueCards,
+  };
+
+  if (workspaceId) {
+    promptPayload.workspaceId = workspaceId;
+  }
+
+  let prompt;
+  try {
+    prompt = await promptService.render('pre_analyze', promptPayload);
+  } catch (error) {
+    console.error('❌ Errore durante il rendering del prompt pre-analyze:', error);
+    return res.status(500).json({ ok: false, message: 'Impossibile preparare il prompt di analisi.' });
+  }
+
+  if (process.env.DEBUG_PROMPTS === 'true') {
+    console.log('\n--- PRE-ANALYZE PROMPT ---\n', prompt, '\n--- END PRE-ANALYZE PROMPT ---\n');
+  }
+
+  const aiClient = getAIService(provider.id, provider.apiKey, provider.model);
+
+  let aiOutput = '';
+  try {
+    aiOutput = await aiClient.generateContent(prompt);
+  } catch (error) {
+    console.error('❌ Errore AI /api/pre-analyze:', error);
+    return res
+      .status(502)
+      .json({ ok: false, message: 'Errore durante la generazione delle risposte suggerite.' });
+  }
+
+  const cleanedOutput = (aiOutput || '')
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
+
+  let parsed = {};
+  if (cleanedOutput) {
+    try {
+      parsed = JSON.parse(cleanedOutput);
+    } catch (error) {
+      anomalies.push(`json_parse_error:${error.message}`);
+      const start = cleanedOutput.indexOf('{');
+      const end = cleanedOutput.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && end > start) {
+        const candidate = cleanedOutput.slice(start, end + 1);
+        try {
+          parsed = JSON.parse(candidate);
+        } catch (fallbackError) {
+          anomalies.push(`json_parse_fallback_error:${fallbackError.message}`);
+          parsed = {};
+        }
+      }
+    }
+  }
+
+  let suggestionsSource = [];
+  if (Array.isArray(parsed.suggestedAnswers)) {
+    suggestionsSource = parsed.suggestedAnswers;
+  } else if (Array.isArray(parsed.answers)) {
+    anomalies.push('missing_suggestedAnswers_field');
+    suggestionsSource = parsed.answers;
+  } else if (Array.isArray(parsed.cueCards)) {
+    anomalies.push('missing_suggestedAnswers_field');
+    suggestionsSource = parsed.cueCards;
+  } else if (cleanedOutput) {
+    anomalies.push('missing_suggestions_array');
+  }
+
+  const suggestedAnswers = buildSuggestedAnswers(suggestionsSource, cueCards, anomalies);
+
+  const modelName = aiClient.modelName || provider.model || '';
+
+  if (anomalies.length) {
+    console.warn('⚠️ /api/pre-analyze anomalies', {
+      anomalies,
+      provider: provider.id,
+      model: modelName,
+      workspaceId: workspaceId || null,
+      rawOutputSample: cleanedOutput.slice(0, 400),
+    });
+  }
+
+  return res.json({ ok: true, suggestedAnswers });
 });
 
 app.get('/api/diag', async (req, res) => {
