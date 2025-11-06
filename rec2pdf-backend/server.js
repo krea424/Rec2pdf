@@ -2190,6 +2190,65 @@ const applyAiModelToFrontMatter = (markdown, modelName) => {
   return `${updatedFrontMatter}${markdown.slice(match[0].length)}`;
 };
 
+const normalizeTemplateString = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const aggregateCueCardsMarkdown = (promptCueCards = [], refinedData = null, fallbackCueCards = []) => {
+  const refinedCards = Array.isArray(refinedData?.cueCards) ? refinedData.cueCards : [];
+  const answersMap = isPlainObject(refinedData?.cueCardAnswers) ? refinedData.cueCardAnswers : {};
+
+  const baseCards = refinedCards.length
+    ? refinedCards
+    : promptCueCards.length
+      ? promptCueCards
+      : fallbackCueCards;
+
+  if (!Array.isArray(baseCards) || baseCards.length === 0) {
+    return '';
+  }
+
+  const normalizedAnswers = Object.entries(answersMap || {}).reduce((acc, [answerKey, answerValue]) => {
+    const safeKey = normalizeTemplateString(answerKey);
+    const safeValue = normalizeTemplateString(answerValue);
+    if (safeKey && safeValue) {
+      acc[safeKey] = safeValue;
+    }
+    return acc;
+  }, {});
+
+  const sections = baseCards
+    .map((card, index) => {
+      if (!card || typeof card !== 'object') {
+        return null;
+      }
+
+      const title = normalizeTemplateString(card.title || card.label || card.name);
+      if (!title) {
+        return null;
+      }
+
+      const explicitKey = normalizeTemplateString(card.key || card.id || card.slug || card.field);
+      const retrievalKey = explicitKey || `cue_${index}`;
+      const hint = normalizeTemplateString(card.hint || card.description || card.placeholder || card.example);
+
+      const answer = normalizeTemplateString(
+        card.value || card.answer || card.response || (retrievalKey ? normalizedAnswers[retrievalKey] : '')
+      );
+
+      const lines = [`- **${title}**${explicitKey ? ` _(chiave: ${explicitKey})_` : ''}`];
+      if (hint) {
+        lines.push(`  - Suggerimento: ${hint}`);
+      }
+      if (answer) {
+        lines.push(`  - Risposta attuale: ${answer}`);
+      }
+
+      return lines.join('\n');
+    })
+    .filter(Boolean);
+
+  return sections.length ? sections.join('\n') : '';
+};
+
 const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', options = {}) => {
   try {
     const transcript = await loadTranscriptForPrompt(txtPath);
@@ -2208,8 +2267,6 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
       persona: promptPayload?.persona,
       description: promptPayload?.description,
       markdownRules: promptPayload?.markdownRules,
-      focus: promptPayload?.focus,
-      notes: promptPayload?.notes,
       knowledgeContext: decoratedKnowledgeContext,
       transcript: transcript,
       _meta: {
@@ -2218,6 +2275,27 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
         timestamp: new Date().toISOString(),
       }
     };
+
+    const focusValue = [promptPayload?.focus, options?.focus]
+      .map(normalizeTemplateString)
+      .find(Boolean);
+    if (focusValue) {
+      templateData.focus = focusValue;
+    }
+
+    const notesValue = [promptPayload?.notes, options?.notes]
+      .map(normalizeTemplateString)
+      .find(Boolean);
+    if (notesValue) {
+      templateData.notes = notesValue;
+    }
+
+    const promptCueCards = Array.isArray(promptPayload?.cueCards) ? promptPayload.cueCards : [];
+    const fallbackCueCards = Array.isArray(options?.cueCards) ? options.cueCards : [];
+    const cueCardsMarkdown = aggregateCueCardsMarkdown(promptCueCards, refinedDataForPrompt, fallbackCueCards);
+    if (cueCardsMarkdown) {
+      templateData.cueCardsMarkdown = cueCardsMarkdown;
+    }
 
     if (refinedDataForPrompt) {
       templateData.refinedData = refinedDataForPrompt;
@@ -6828,7 +6906,12 @@ const w = await run('bash', ['-lc', whisperxCmd]);
         mdLocalPath,
         promptRulePayload,
         retrievedWorkspaceContext || res.locals?.retrievedWorkspaceContext || '',
-        { textProvider: aiOverrides.text, refinedData: refinedDataPayload }
+        {
+          textProvider: aiOverrides.text,
+          refinedData: refinedDataPayload,
+          focus: promptFocus,
+          notes: promptNotes,
+        }
       );
 
       // Costruisci i metadati in un oggetto JS
@@ -7934,7 +8017,12 @@ app.post(
           mdLocalPath,
           promptRulePayload,
           retrievedWorkspaceContext || '',
-          { textProvider: aiOverrides.text, refinedData: refinedDataPayload }
+          {
+            textProvider: aiOverrides.text,
+            refinedData: refinedDataPayload,
+            focus: promptFocus,
+            notes: promptNotes,
+          }
         );
 
         const now = new Date();
