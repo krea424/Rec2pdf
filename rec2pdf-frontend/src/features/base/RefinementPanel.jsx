@@ -152,10 +152,14 @@ const normalizeCueCards = (activePrompt, refinedData) => {
       const hint = [cue.hint, cue.placeholder, cue.description, cue.example]
         .map((value) => (typeof value === "string" ? value.trim() : ""))
         .find((value) => value);
+      const value = [cue.value, cue.answer, cue.response, cue.text]
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .find((entry) => entry);
       return {
         key,
         title,
         hint: hint || "",
+        value: value || "",
       };
     })
     .filter(Boolean);
@@ -185,6 +189,30 @@ const RefinementPanel = () => {
   const notesFieldId = `${sanitizedPrefix || "refine"}-notes`;
 
   const cueCardAnswers = promptState?.cueCardAnswers || {};
+  const refinedCueCardAnswers = useMemo(() => {
+    if (!refinedData || typeof refinedData !== "object") {
+      return {};
+    }
+    const answers = refinedData.cueCardAnswers;
+    if (!answers || typeof answers !== "object") {
+      return {};
+    }
+    return Object.entries(answers).reduce((acc, [key, value]) => {
+      if (typeof key !== "string") {
+        return acc;
+      }
+      const trimmedKey = key.trim();
+      if (!trimmedKey) {
+        return acc;
+      }
+      const text = typeof value === "string" ? value.trim() : "";
+      if (!text) {
+        return acc;
+      }
+      acc[trimmedKey] = text;
+      return acc;
+    }, {});
+  }, [refinedData]);
   const focusValue = promptState?.focus || "";
   const notesValue = promptState?.notes || "";
 
@@ -352,7 +380,10 @@ const RefinementPanel = () => {
               <div className="space-y-4">
                 {cueCards.map((cue) => {
                   const fieldId = sanitizeId(sanitizedPrefix || "refine", cue.key || cue.title);
-                  const value = cueCardAnswers[cue.key] || "";
+                  const value =
+                    cueCardAnswers[cue.key] ??
+                    refinedCueCardAnswers[cue.key] ??
+                    (cue.value || "");
                   const placeholder = cue.hint || `Aggiungi dettagli per ${cue.title.toLowerCase()}`;
                   return (
                     <label

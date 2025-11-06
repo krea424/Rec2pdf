@@ -6289,6 +6289,23 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       }
     }
 
+    if (refinedDataPayload) {
+      let mergedRefined = refinedDataPayload;
+      if (!promptFocus && refinedDataPayload.focus) {
+        promptFocus = refinedDataPayload.focus;
+      } else if (promptFocus && refinedDataPayload.focus !== promptFocus) {
+        mergedRefined = { ...mergedRefined, focus: promptFocus };
+      }
+
+      if (!promptNotes && refinedDataPayload.notes) {
+        promptNotes = refinedDataPayload.notes;
+      } else if (promptNotes && refinedDataPayload.notes !== promptNotes) {
+        mergedRefined = { ...mergedRefined, notes: promptNotes };
+      }
+
+      refinedDataPayload = mergedRefined;
+    }
+
     const diarizeRaw = typeof req.body?.diarize === 'string' ? req.body.diarize : '';
     const diarizeEnabled = (() => {
       if (typeof req.body?.diarize === 'boolean') return req.body.diarize;
