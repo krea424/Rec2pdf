@@ -4071,6 +4071,19 @@ function AppContent(){
       handlePipelineEvents(successEvents, { animate: true });
       if(data?.logs) appendLogs(data.logs);
       if(data?.pdfPath){
+        let refinedResult = refinedPayloadForUpload;
+        if (Object.prototype.hasOwnProperty.call(data || {}, 'refinedData')) {
+          const normalizedRefined = normalizeRefinedDataForUpload(data.refinedData);
+          refinedResult = normalizedRefined.ok ? normalizedRefined.value : null;
+        }
+        setRefinedData(refinedResult || null);
+        if (typeof setCueCardAnswers === 'function') {
+          if (refinedResult && typeof refinedResult.cueCardAnswers === 'object' && refinedResult.cueCardAnswers !== null) {
+            setCueCardAnswers(refinedResult.cueCardAnswers);
+          } else if (!refinedResult) {
+            setCueCardAnswers({});
+          }
+        }
         setPdfPath(data.pdfPath);
         setMdPath(data.mdPath || "");
         const normalizedBackend = normalizeBackendUrlValue(backendUrl || '');
@@ -4141,7 +4154,7 @@ function AppContent(){
           prompt: promptSummary,
           speakers: Array.isArray(data?.speakers) ? data.speakers : [],
           speakerMap: data?.speakerMap || {},
-          refinedData: data?.refinedData || refinedPayloadForUpload || null,
+          refinedData: refinedResult,
         });
         setHistory(prev=>{
           const next=[historyEntry,...prev];
