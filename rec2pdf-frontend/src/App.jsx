@@ -9,6 +9,7 @@ import EditorPage from "./pages/Editor";
 import { useMicrophoneAccess } from "./hooks/useMicrophoneAccess";
 import { useBackendDiagnostics } from "./hooks/useBackendDiagnostics";
 import { pickBestMime } from "./utils/media";
+import { normalizeRefinedDataForUpload } from "./utils/refinedData.js";
 import LoginPage from "./components/LoginPage";
 import supabase from "./supabaseClient";
 import { AppProvider } from "./hooks/useAppContext";
@@ -758,6 +759,13 @@ const hydrateHistoryEntry = (entry) => {
   const prompt = normalizePromptEntry(entry.prompt);
   const speakers = normalizeSpeakers(entry.speakers);
   const speakerMap = buildSpeakerMap(speakers, entry.speakerMap);
+  let refined = null;
+  if (entry && typeof entry === 'object' && 'refinedData' in entry) {
+    const refinedResult = normalizeRefinedDataForUpload(entry.refinedData);
+    if (refinedResult.ok) {
+      refined = refinedResult.value;
+    }
+  }
 
   return {
     ...entry,
@@ -778,6 +786,7 @@ const hydrateHistoryEntry = (entry) => {
     prompt,
     speakers,
     speakerMap,
+    refinedData: refined,
   };
 };
 
@@ -3957,6 +3966,20 @@ function AppContent(){
       sessionLogs.push(...sanitized);
       setLogs(ls=>ls.concat(sanitized));
     };
+    let refinedPayloadForUpload=null;
+    const refinedValidation=normalizeRefinedDataForUpload(refinedData);
+    if(!refinedValidation.ok){
+      const message=refinedValidation.error||'Dati di raffinazione non validi.';
+      handlePipelineEvents([
+        { stage: 'upload', status: 'failed', message },
+        { stage: 'complete', status: 'failed', message },
+      ],{ animate:false });
+      appendLogs([`❌ ${message}`]);
+      setErrorBanner({ title: 'Dati di raffinazione non validi', details: message });
+      setBusy(false);
+      return;
+    }
+    refinedPayloadForUpload=refinedValidation.value;
     try{
       const fd=new FormData();
       const m=(mime||blob.type||"").toLowerCase();
@@ -4021,6 +4044,9 @@ function AppContent(){
       }
       const cap=Number(secondsCap||0);
       if(cap>0) fd.append('seconds',String(cap));
+      if(refinedPayloadForUpload){
+        fd.append('refinedData',JSON.stringify(refinedPayloadForUpload));
+      }
       const {ok,status,data,raw}=await fetchBodyWithAuth(`${backendUrl}/api/rec2pdf`,{method:'POST',body:fd});
       const stageEventsPayload = Array.isArray(data?.stageEvents) ? data.stageEvents : [];
       if(!ok){
@@ -4115,6 +4141,7 @@ function AppContent(){
           prompt: promptSummary,
           speakers: Array.isArray(data?.speakers) ? data.speakers : [],
           speakerMap: data?.speakerMap || {},
+          refinedData: data?.refinedData || refinedPayloadForUpload || null,
         });
         setHistory(prev=>{
           const next=[historyEntry,...prev];
