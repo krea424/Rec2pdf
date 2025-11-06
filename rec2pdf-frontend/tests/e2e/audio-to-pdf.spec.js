@@ -72,6 +72,14 @@ const pipelineResponse = {
   },
 }
 
+const preAnalyzeResponse = {
+  ok: true,
+  suggestedAnswers: [
+    { key: 'intro', title: 'Introduzione', answer: 'Sintesi flash della riunione' },
+    { key: 'actions', title: 'Azioni', answer: 'Prepara follow-up operativo' },
+  ],
+}
+
 test.describe('Audio to PDF flow', () => {
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/*', async (route) => {
@@ -97,6 +105,14 @@ test.describe('Audio to PDF flow', () => {
         await route.fulfill({
           status: 200,
           body: JSON.stringify(pipelineResponse),
+          headers: { 'content-type': 'application/json' },
+        })
+        return
+      }
+      if (pathname.endsWith('/api/pre-analyze') && route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify(preAnalyzeResponse),
           headers: { 'content-type': 'application/json' },
         })
         return

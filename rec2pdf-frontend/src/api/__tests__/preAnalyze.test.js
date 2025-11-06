@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { buildPreAnalyzeRequest, parsePreAnalyzeData } from '../preAnalyze.js';
+import { describe, expect, it, vi } from 'vitest';
+import { buildPreAnalyzeRequest, parsePreAnalyzeData, postPreAnalyze } from '../preAnalyze.js';
 
 describe('preAnalyze API helpers', () => {
   it('buildPreAnalyzeRequest normalizes entry payload', () => {
@@ -107,5 +107,70 @@ describe('preAnalyze API helpers', () => {
   it('parsePreAnalyzeData gracefully handles invalid payloads', () => {
     const result = parsePreAnalyzeData(null);
     expect(result).toMatchObject({ summary: '', highlights: [], sections: [], tokens: null });
+  });
+
+  describe('postPreAnalyze', () => {
+    it('invoca il fetcher con il payload serializzato e normalizza la risposta', async () => {
+      const fetcher = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: {
+          message: 'Suggerimenti pronti',
+          summary: '  Sintesi ',
+          highlights: [' Primo punto '],
+          sections: [{ title: 'Decisioni', text: ' Approva budget ' }],
+          tokens: 512,
+        },
+      });
+
+      const result = await postPreAnalyze({
+        backendUrl: 'https://backend.local',
+        fetcher,
+        payload: { workspaceId: 'ws-1', transcription: 'Test' },
+      });
+
+      expect(fetcher).toHaveBeenCalledWith('https://backend.local/api/pre-analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId: 'ws-1', transcription: 'Test' }),
+      });
+      expect(result.ok).toBe(true);
+      expect(result.data.summary).toBe('Sintesi');
+      expect(result.data.highlights[0]).toMatchObject({ detail: 'Primo punto' });
+      expect(result.data.sections[0]).toMatchObject({ title: 'Decisioni', text: 'Approva budget' });
+      expect(result.message).toBe('Suggerimenti pronti');
+    });
+
+    it('propaga stato e messaggi quando il backend fallisce', async () => {
+      const fetcher = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        data: { message: 'Servizio non disponibile' },
+      });
+
+      const result = await postPreAnalyze({
+        backendUrl: 'http://localhost:7788',
+        fetcher,
+        payload: { transcription: 'Test', cueCards: [] },
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.status).toBe(503);
+      expect(result.message).toBe('Servizio non disponibile');
+    });
+
+    it('riporta errori di rete senza marcare il risultato come skipped', async () => {
+      const fetcher = vi.fn().mockRejectedValue(new Error('Network down'));
+
+      const result = await postPreAnalyze({
+        backendUrl: 'http://localhost:7788',
+        fetcher,
+        payload: { transcription: 'Test', cueCards: [] },
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.skipped).toBe(false);
+      expect(result.message).toBe('Network down');
+    });
   });
 });

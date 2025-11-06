@@ -268,6 +268,7 @@ describe('generateMarkdown prompt composition', () => {
     expect(capturedPrompt).not.toContain('Fallback senza risposta');
   });
 
+
   describe('normalizeAiMarkdownBody', () => {
     it('rimuove il front matter iniziale lasciando solo il corpo', () => {
       const raw = ['---', 'title: Test', 'ai.model: "gpt"', '---', '', '# Titolo'].join('\n');
