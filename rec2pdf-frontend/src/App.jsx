@@ -9,7 +9,7 @@ import EditorPage from "./pages/Editor";
 import { useMicrophoneAccess } from "./hooks/useMicrophoneAccess";
 import { useBackendDiagnostics } from "./hooks/useBackendDiagnostics";
 import { pickBestMime } from "./utils/media";
-import { normalizeRefinedDataForUpload } from "./utils/refinedData.js";
+import { mergePromptStateIntoRefinedPayload, normalizeRefinedDataForUpload } from "./utils/refinedData.js";
 import LoginPage from "./components/LoginPage";
 import supabase from "./supabaseClient";
 import { AppProvider } from "./hooks/useAppContext";
@@ -4026,17 +4026,26 @@ function AppContent(){
       if (!workspaceProfileLocked) {
         appendPdfTemplateSelection(fd, pdfTemplateSelection);
       }
+      const trimmedFocusForAudio = typeof promptState.focus === 'string' ? promptState.focus.trim() : '';
+      const trimmedNotesForAudio = typeof promptState.notes === 'string' ? promptState.notes.trim() : '';
+
+      refinedPayloadForUpload = mergePromptStateIntoRefinedPayload(refinedPayloadForUpload, {
+        focus: promptState?.focus,
+        notes: promptState?.notes,
+        cueCardAnswers: promptState?.cueCardAnswers,
+      });
+
       if (promptState.promptId) {
         fd.append('promptId', promptState.promptId);
-        if (promptState.focus && promptState.focus.trim()) {
-          fd.append('promptFocus', promptState.focus.trim());
-        }
-        if (promptState.notes && promptState.notes.trim()) {
-          fd.append('promptNotes', promptState.notes.trim());
-        }
         if (promptCompletedCues.length) {
           fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
         }
+      }
+      if (trimmedFocusForAudio) {
+        fd.append('promptFocus', trimmedFocusForAudio);
+      }
+      if (trimmedNotesForAudio) {
+        fd.append('promptNotes', trimmedNotesForAudio);
       }
       if(enableDiarization){
         fd.append('diarize','true');
@@ -4071,6 +4080,19 @@ function AppContent(){
       handlePipelineEvents(successEvents, { animate: true });
       if(data?.logs) appendLogs(data.logs);
       if(data?.pdfPath){
+        let refinedResult = refinedPayloadForUpload;
+        if (Object.prototype.hasOwnProperty.call(data || {}, 'refinedData')) {
+          const normalizedRefined = normalizeRefinedDataForUpload(data.refinedData);
+          refinedResult = normalizedRefined.ok ? normalizedRefined.value : null;
+        }
+        setRefinedData(refinedResult || null);
+        if (typeof setCueCardAnswers === 'function') {
+          if (refinedResult && typeof refinedResult.cueCardAnswers === 'object' && refinedResult.cueCardAnswers !== null) {
+            setCueCardAnswers(refinedResult.cueCardAnswers);
+          } else if (!refinedResult) {
+            setCueCardAnswers({});
+          }
+        }
         setPdfPath(data.pdfPath);
         setMdPath(data.mdPath || "");
         const normalizedBackend = normalizeBackendUrlValue(backendUrl || '');
@@ -4141,7 +4163,7 @@ function AppContent(){
           prompt: promptSummary,
           speakers: Array.isArray(data?.speakers) ? data.speakers : [],
           speakerMap: data?.speakerMap || {},
-          refinedData: data?.refinedData || refinedPayloadForUpload || null,
+          refinedData: refinedResult,
         });
         setHistory(prev=>{
           const next=[historyEntry,...prev];
@@ -4225,17 +4247,20 @@ function AppContent(){
       if (!workspaceProfileLocked) {
         appendPdfTemplateSelection(fd, pdfTemplateSelection);
       }
+      const trimmedFocusForUpload = typeof promptState.focus === 'string' ? promptState.focus.trim() : '';
+      const trimmedNotesForUpload = typeof promptState.notes === 'string' ? promptState.notes.trim() : '';
+
       if (promptState.promptId) {
         fd.append('promptId', promptState.promptId);
-        if (promptState.focus && promptState.focus.trim()) {
-          fd.append('promptFocus', promptState.focus.trim());
-        }
-        if (promptState.notes && promptState.notes.trim()) {
-          fd.append('promptNotes', promptState.notes.trim());
-        }
         if (promptCompletedCues.length) {
           fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
         }
+      }
+      if (trimmedFocusForUpload) {
+        fd.append('promptFocus', trimmedFocusForUpload);
+      }
+      if (trimmedNotesForUpload) {
+        fd.append('promptNotes', trimmedNotesForUpload);
       }
       if (aiProviderOverrides.text) {
         fd.append('aiTextProvider', aiProviderOverrides.text);

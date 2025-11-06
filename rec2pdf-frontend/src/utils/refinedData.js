@@ -347,6 +347,31 @@ const sanitizeCueCardAnswers = (value) => {
   return Object.keys(payload).length ? payload : null;
 };
 
+export const mergePromptStateIntoRefinedPayload = (payload, promptState = {}) => {
+  const base = isPlainObject(payload) ? { ...payload } : {};
+
+  const focus = sanitizeString(promptState?.focus);
+  if (focus) {
+    base.focus = focus;
+  }
+
+  const notes = sanitizeString(promptState?.notes);
+  if (notes) {
+    base.notes = notes;
+  }
+
+  const baseAnswers = isPlainObject(base.cueCardAnswers) ? { ...base.cueCardAnswers } : {};
+  const overrideAnswers = sanitizeCueCardAnswers(promptState?.cueCardAnswers);
+  const mergedAnswers = { ...baseAnswers, ...(overrideAnswers || {}) };
+  if (Object.keys(mergedAnswers).length) {
+    base.cueCardAnswers = mergedAnswers;
+  } else if (base.cueCardAnswers) {
+    delete base.cueCardAnswers;
+  }
+
+  return Object.keys(base).length ? base : null;
+};
+
 export const normalizeRefinedDataForUpload = (input) => {
   if (input === null || input === undefined) {
     return { ok: true, value: null };
