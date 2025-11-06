@@ -3979,12 +3979,15 @@ function AppContent(){
       setBusy(false);
       return;
     }
-    refinedPayloadForUpload=refinedValidation.value;
+    refinedPayloadForUpload = mergePromptStateIntoRefinedPayload(refinedValidation.value, promptState);
     try{
       const fd=new FormData();
       const m=(mime||blob.type||"").toLowerCase();
       const ext=m.includes('webm')?'webm':m.includes('ogg')?'ogg':m.includes('wav')?'wav':'m4a';
       fd.append('audio',blob,`${blobSource}.${ext}`);
+      if (refinedPayloadForUpload) {
+        fd.append('refinedData', JSON.stringify(refinedPayloadForUpload));
+      }
       appendPdfLogoIfPresent(fd, customPdfLogo);
       const isPlaceholder=isDestDirPlaceholder(destDir);
       if (!isPlaceholder) {
@@ -4029,12 +4032,6 @@ function AppContent(){
       const trimmedFocusForAudio = typeof promptState.focus === 'string' ? promptState.focus.trim() : '';
       const trimmedNotesForAudio = typeof promptState.notes === 'string' ? promptState.notes.trim() : '';
 
-      refinedPayloadForUpload = mergePromptStateIntoRefinedPayload(refinedPayloadForUpload, {
-        focus: promptState?.focus,
-        notes: promptState?.notes,
-        cueCardAnswers: promptState?.cueCardAnswers,
-      });
-
       if (promptState.promptId) {
         fd.append('promptId', promptState.promptId);
         if (promptCompletedCues.length) {
@@ -4053,9 +4050,6 @@ function AppContent(){
       }
       const cap=Number(secondsCap||0);
       if(cap>0) fd.append('seconds',String(cap));
-      if(refinedPayloadForUpload){
-        fd.append('refinedData',JSON.stringify(refinedPayloadForUpload));
-      }
       const {ok,status,data,raw}=await fetchBodyWithAuth(`${backendUrl}/api/rec2pdf`,{method:'POST',body:fd});
       const stageEventsPayload = Array.isArray(data?.stageEvents) ? data.stageEvents : [];
       if(!ok){
