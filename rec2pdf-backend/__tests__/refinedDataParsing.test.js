@@ -60,4 +60,26 @@ describe('refined data parsing helpers', () => {
 
     expect(extraction).toEqual({ found: false });
   });
+
+  it('sanitizza highlights e metadata annidati quando presenti', () => {
+    const sanitized = sanitizeRefinedDataInput({
+      summary: '  Visione futura ',
+      highlights: [
+        { title: '  Rischi ', detail: '  Fornitore in ritardo ' },
+        '  ',
+      ],
+      metadata: {
+        owner: '  PM  ',
+        empty: '   ',
+        nested: { field: ' valore ' },
+      },
+    });
+
+    expect(sanitized.ok).toBe(true);
+    expect(sanitized.value.summary).toBe('Visione futura');
+    expect(sanitized.value.highlights).toEqual([
+      expect.objectContaining({ title: 'Rischi', detail: 'Fornitore in ritardo' }),
+    ]);
+    expect(sanitized.value.metadata).toEqual({ owner: 'PM', nested: { field: 'valore' } });
+  });
 });
