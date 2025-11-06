@@ -3918,25 +3918,76 @@ const processKnowledgeTask = async (task = {}) => {
   }
 };
 
+const isSupabaseHtmlError = (error) => {
+  if (!error) return false;
+  const message = typeof error.message === 'string' ? error.message : '';
+  if (!message) {
+    return false;
+  }
+  const normalized = message.toLowerCase();
+  return normalized.includes('unexpected token <') || normalized.includes('<html');
+};
+
+const buildSupabaseErrorHint = (error) => {
+  if (!error) return '';
+  const message = typeof error.message === 'string' ? error.message : '';
+  if (!message) {
+    return '';
+  }
+  const normalized = message.toLowerCase();
+  if (normalized.includes('unexpected token <')) {
+    return 'Verifica che SUPABASE_URL punti al dominio API del progetto (es. https://<id>.supabase.co) e che non ci siano proxy che restituiscono HTML.';
+  }
+  if (
+    normalized.includes('fetch failed') ||
+    normalized.includes('network') ||
+    normalized.includes('timeout') ||
+    normalized.includes('etimedout')
+  ) {
+    return 'Controlla la connettività verso Supabase o eventuali firewall intermedi.';
+  }
+  return '';
+};
+
 const uploadFileToBucket = async (bucket, objectPath, buffer, contentType, options = {}) => {
   if (!supabase) {
     throw new Error('Supabase client is not configured');
   }
 
-
-
+  const attempts = Math.max(1, Number(options.attempts) || 3);
+  const retryDelay = Number(options.retryDelayMs) || 250;
   const cacheControl =
     options.cacheControl !== undefined && options.cacheControl !== null
       ? String(options.cacheControl)
       : '0';
-  const { error } = await supabase.storage.from(bucket).upload(objectPath, buffer, {
-    cacheControl,
-    contentType: contentType || 'application/octet-stream',
-    upsert: options.upsert ?? true,
-  });
-  if (error) {
-    throw new Error(`Upload fallito su Supabase (${bucket}/${objectPath}): ${error.message}`);
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const { error } = await supabase.storage.from(bucket).upload(objectPath, buffer, {
+      cacheControl,
+      contentType: contentType || 'application/octet-stream',
+      upsert: options.upsert ?? true,
+    });
+
+    if (!error) {
+      return;
+    }
+
+    lastError = error;
+    const status = Number(error.statusCode || error.status) || 0;
+    const retryableHtml = isSupabaseHtmlError(error);
+    const retryableStatus = status >= 500 || status === 0;
+    if (attempt < attempts && (retryableHtml || retryableStatus)) {
+      await sleep(retryDelay * attempt);
+      continue;
+    }
+    break;
   }
+
+  const hint = buildSupabaseErrorHint(lastError);
+  const reason = (lastError && lastError.message) || 'errore sconosciuto';
+  const details = hint ? `${reason}. ${hint}` : reason;
+  throw new Error(`Upload fallito su Supabase (${bucket}/${objectPath}): ${details}`);
 };
 
 const buildSupabasePublicUrl = (bucket, objectPath) => {
@@ -4072,7 +4123,8 @@ const isRetryableSupabaseDownloadError = (status, message) => {
       normalized.includes('timeout') ||
       normalized.includes('econn') ||
       normalized.includes('etimedout') ||
-      normalized.includes('enotfound')
+      normalized.includes('enotfound') ||
+      normalized.includes('unexpected token <')
     );
   }
   return false;

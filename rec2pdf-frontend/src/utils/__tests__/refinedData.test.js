@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeRefinedDataForUpload } from "../refinedData.js";
+import { mergePromptStateIntoRefinedPayload, normalizeRefinedDataForUpload } from "../refinedData.js";
 
 describe("normalizeRefinedDataForUpload", () => {
   it("returns null payload when input is missing", () => {
@@ -86,5 +86,37 @@ describe("normalizeRefinedDataForUpload", () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/segmenti/i);
+  });
+
+  it("merges prompt focus, notes and cue card answers", () => {
+    const basePayload = {
+      summary: "Sintesi",
+      cueCardAnswers: { existing: "Presente" },
+    };
+
+    const merged = mergePromptStateIntoRefinedPayload(basePayload, {
+      focus: "  Nuovo focus  ",
+      notes: "  ",
+      cueCardAnswers: {
+        existing: "  Aggiornato  ",
+        extra: "  Dettaglio  ",
+        vuoto: "   ",
+      },
+    });
+
+    expect(merged).toEqual({
+      summary: "Sintesi",
+      focus: "Nuovo focus",
+      cueCardAnswers: {
+        existing: "Aggiornato",
+        extra: "Dettaglio",
+      },
+    });
+  });
+
+  it("returns null when no payload or overrides are provided", () => {
+    const merged = mergePromptStateIntoRefinedPayload(null, { focus: "  " });
+
+    expect(merged).toBeNull();
   });
 });

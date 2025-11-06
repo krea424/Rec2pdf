@@ -9,7 +9,7 @@ import EditorPage from "./pages/Editor";
 import { useMicrophoneAccess } from "./hooks/useMicrophoneAccess";
 import { useBackendDiagnostics } from "./hooks/useBackendDiagnostics";
 import { pickBestMime } from "./utils/media";
-import { normalizeRefinedDataForUpload } from "./utils/refinedData.js";
+import { mergePromptStateIntoRefinedPayload, normalizeRefinedDataForUpload } from "./utils/refinedData.js";
 import LoginPage from "./components/LoginPage";
 import supabase from "./supabaseClient";
 import { AppProvider } from "./hooks/useAppContext";
@@ -4028,6 +4028,12 @@ function AppContent(){
       }
       const trimmedFocusForAudio = typeof promptState.focus === 'string' ? promptState.focus.trim() : '';
       const trimmedNotesForAudio = typeof promptState.notes === 'string' ? promptState.notes.trim() : '';
+
+      refinedPayloadForUpload = mergePromptStateIntoRefinedPayload(refinedPayloadForUpload, {
+        focus: promptState?.focus,
+        notes: promptState?.notes,
+        cueCardAnswers: promptState?.cueCardAnswers,
+      });
 
       if (promptState.promptId) {
         fd.append('promptId', promptState.promptId);
