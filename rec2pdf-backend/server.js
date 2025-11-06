@@ -15,6 +15,7 @@ const pdfParse = require('pdf-parse');
 const { createClient } = require('@supabase/supabase-js');
 const { z } = require('zod');
 const yaml = require('js-yaml'); // <-- Importato js-yaml
+const qs = require('qs');
 const { getAIService } = require('./services/aiService');
 const {
   listProviders: listAiProviders,
@@ -239,6 +240,116 @@ const sanitizeRefinedNumber = (value) => {
   return null;
 };
 
+const toArrayLike = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (isPlainObject(value)) {
+    return Object.values(value);
+  }
+  return [];
+};
+
+const coerceRefinedFormValue = (raw) => {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  if (Array.isArray(raw)) {
+    const normalized = raw
+      .map((item) => coerceRefinedFormValue(item))
+      .filter((item) => item !== undefined);
+    if (!normalized.length) {
+      return null;
+    }
+    return normalized.length === 1 ? normalized[0] : normalized;
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return '';
+    }
+    if (trimmed === 'null' || trimmed === 'undefined') {
+      return null;
+    }
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+  return raw;
+};
+
+const buildRefinedDataFromFormBody = (body) => {
+  const entries = Object.entries(body || {}).filter(([key]) =>
+    typeof key === 'string' && (key.startsWith('refinedData[') || key.startsWith('refinedData.'))
+  );
+  if (!entries.length) {
+    return { found: false };
+  }
+
+  const parts = [];
+  entries.forEach(([key, rawValue]) => {
+    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+    values.forEach((value) => {
+      if (value === undefined) {
+        return;
+      }
+      const text = typeof value === 'string' ? value : String(value ?? '');
+      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(text)}`);
+    });
+  });
+
+  if (!parts.length) {
+    return { found: true, value: null };
+  }
+
+  const parsed = qs.parse(parts.join('&'), {
+    allowDots: true,
+    depth: 10,
+    parameterLimit: 1000,
+    arrayLimit: 1000,
+  });
+
+  if (Object.prototype.hasOwnProperty.call(parsed, 'refinedData')) {
+    return { found: true, value: parsed.refinedData };
+  }
+
+  return { found: true, value: null };
+};
+
+const extractRefinedDataFromBody = (body) => {
+  if (!body || typeof body !== 'object') {
+    return { found: false };
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'refinedData')) {
+    const raw = body.refinedData;
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim();
+      if (!trimmed || trimmed === 'null' || trimmed === 'undefined') {
+        return { found: true, value: null };
+      }
+      try {
+        return { found: true, value: JSON.parse(trimmed) };
+      } catch (error) {
+        return {
+          found: true,
+          value: trimmed,
+          error: error?.message ? `refinedData JSON non valido: ${error.message}` : 'refinedData JSON non valido',
+        };
+      }
+    }
+    const normalized = coerceRefinedFormValue(raw);
+    return { found: true, value: normalized };
+  }
+
+  return buildRefinedDataFromFormBody(body);
+};
+
 const sanitizeRefinedHighlightEntry = (entry, index) => {
   if (typeof entry === 'string') {
     const text = sanitizeRefinedString(entry);
@@ -267,10 +378,11 @@ const sanitizeRefinedHighlightEntry = (entry, index) => {
 };
 
 const sanitizeRefinedHighlightList = (value) => {
-  if (!Array.isArray(value)) {
+  const list = toArrayLike(value);
+  if (!list.length) {
     return [];
   }
-  return value.map(sanitizeRefinedHighlightEntry).filter(Boolean);
+  return list.map(sanitizeRefinedHighlightEntry).filter(Boolean);
 };
 
 const sanitizeRefinedSectionEntry = (entry, index) => {
@@ -301,10 +413,11 @@ const sanitizeRefinedSectionEntry = (entry, index) => {
 };
 
 const sanitizeRefinedSectionList = (value) => {
-  if (!Array.isArray(value)) {
+  const list = toArrayLike(value);
+  if (!list.length) {
     return [];
   }
-  return value.map(sanitizeRefinedSectionEntry).filter(Boolean);
+  return list.map(sanitizeRefinedSectionEntry).filter(Boolean);
 };
 
 const sanitizeRefinedSegmentEntry = (entry, index) => {
@@ -336,10 +449,11 @@ const sanitizeRefinedSegmentEntry = (entry, index) => {
 };
 
 const sanitizeRefinedSegmentListFromArray = (value) => {
-  if (!Array.isArray(value)) {
+  const list = toArrayLike(value);
+  if (!list.length) {
     return [];
   }
-  return value.map(sanitizeRefinedSegmentEntry).filter(Boolean);
+  return list.map(sanitizeRefinedSegmentEntry).filter(Boolean);
 };
 
 const buildRefinedSegments = (input) => {
@@ -350,14 +464,15 @@ const buildRefinedSegments = (input) => {
     { key: 'chunks', value: input?.chunks },
   ];
   for (const candidate of candidates) {
-    if (!Array.isArray(candidate.value)) {
+    const normalizedSource = toArrayLike(candidate.value);
+    if (!normalizedSource.length) {
       continue;
     }
-    const sanitized = sanitizeRefinedSegmentListFromArray(candidate.value);
+    const sanitized = sanitizeRefinedSegmentListFromArray(normalizedSource);
     if (sanitized.length) {
       return { list: sanitized };
     }
-    if (candidate.value.length > 0) {
+    if (normalizedSource.length > 0) {
       return {
         error: `I segmenti forniti nel campo "${candidate.key}" non contengono testo valido.`,
       };
@@ -413,10 +528,11 @@ const sanitizeRefinedCueCardEntry = (entry, index) => {
 };
 
 const sanitizeRefinedCueCardList = (value) => {
-  if (!Array.isArray(value)) {
+  const list = toArrayLike(value);
+  if (!list.length) {
     return [];
   }
-  return value.map(sanitizeRefinedCueCardEntry).filter(Boolean);
+  return list.map(sanitizeRefinedCueCardEntry).filter(Boolean);
 };
 
 const sanitizeMultilineString = (value) => {
@@ -682,6 +798,13 @@ const sanitizeRefinedCueCardAnswers = (value) => {
 const sanitizeRefinedDataInput = (input) => {
   if (input === null || input === undefined) {
     return { ok: true, value: null };
+  }
+  if (typeof input === 'string') {
+    const summary = sanitizeRefinedString(input);
+    if (!summary) {
+      return { ok: true, value: null };
+    }
+    return { ok: true, value: { summary } };
   }
   if (!isPlainObject(input)) {
     return { ok: false, error: 'refinedData deve essere un oggetto JSON' };
@@ -2078,6 +2201,9 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
       : '';
 
     // 1. Prepara i dati per il template
+    const refinedDataForPrompt =
+      options && isPlainObject(options.refinedData) ? options.refinedData : null;
+
     const templateData = {
       persona: promptPayload?.persona,
       description: promptPayload?.description,
@@ -2092,6 +2218,13 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
         timestamp: new Date().toISOString(),
       }
     };
+
+    if (refinedDataForPrompt) {
+      templateData.refinedData = refinedDataForPrompt;
+      templateData._meta.refinedDataProvided = true;
+    } else {
+      templateData._meta.refinedDataProvided = false;
+    }
 
     // 2. Renderizza il prompt
     const fullPrompt = await promptService.render('base_generation', templateData);
@@ -6064,23 +6197,12 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       }
     }
 
-    if (typeof req.body?.refinedData !== 'undefined') {
-      let parsedRefined = req.body.refinedData;
-      if (typeof parsedRefined === 'string') {
-        const trimmed = parsedRefined.trim();
-        if (!trimmed || trimmed === 'null' || trimmed === 'undefined') {
-          parsedRefined = null;
-        } else {
-          try {
-            parsedRefined = JSON.parse(trimmed);
-          } catch (parseError) {
-            out(`⚠️ refinedData JSON non valido: ${parseError?.message || parseError}`, 'upload', 'warning');
-            parsedRefined = null;
-          }
-        }
+    const refinedExtraction = extractRefinedDataFromBody(req.body);
+    if (refinedExtraction.found) {
+      if (refinedExtraction.error) {
+        out(`⚠️ ${refinedExtraction.error}`, 'upload', 'warning');
       }
-
-      const refinedResult = sanitizeRefinedDataInput(parsedRefined);
+      const refinedResult = sanitizeRefinedDataInput(refinedExtraction.value);
       if (!refinedResult.ok) {
         out(`⚠️ refinedData non valido: ${refinedResult.error}`, 'upload', 'warning');
       } else if (refinedResult.value) {
@@ -6706,7 +6828,7 @@ const w = await run('bash', ['-lc', whisperxCmd]);
         mdLocalPath,
         promptRulePayload,
         retrievedWorkspaceContext || res.locals?.retrievedWorkspaceContext || '',
-        { textProvider: aiOverrides.text }
+        { textProvider: aiOverrides.text, refinedData: refinedDataPayload }
       );
 
       // Costruisci i metadati in un oggetto JS
@@ -7812,7 +7934,7 @@ app.post(
           mdLocalPath,
           promptRulePayload,
           retrievedWorkspaceContext || '',
-          { textProvider: aiOverrides.text }
+          { textProvider: aiOverrides.text, refinedData: refinedDataPayload }
         );
 
         const now = new Date();
@@ -8195,4 +8317,6 @@ module.exports = {
   applySpeakerMapToContent,
   resolveDestinationDirectory,
   sanitizeDestDirInput,
+  extractRefinedDataFromBody,
+  sanitizeRefinedDataInput,
 };
