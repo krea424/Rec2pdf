@@ -9,6 +9,7 @@ import EditorPage from "./pages/Editor";
 import { useMicrophoneAccess } from "./hooks/useMicrophoneAccess";
 import { useBackendDiagnostics } from "./hooks/useBackendDiagnostics";
 import { pickBestMime } from "./utils/media";
+import { mergePromptStateIntoRefinedPayload, normalizeRefinedDataForUpload } from "./utils/refinedData.js";
 import LoginPage from "./components/LoginPage";
 import supabase from "./supabaseClient";
 import { AppProvider } from "./hooks/useAppContext";
@@ -29,6 +30,11 @@ import {
   parseWorkspaceResponse,
   parseWorkspacesResponse,
 } from "./api/workspaces.js";
+import {
+  buildPreAnalyzeRequest,
+  buildRefinementPreAnalyzePayload, // <-- Aggiungi la nuova funzione qui
+  postPreAnalyze,
+} from "./api/preAnalyze.js";
 
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
 const DEFAULT_DEST_DIR = '/Users/';
@@ -462,14 +468,30 @@ const normalizeWorkspaceProfiles = (workspace) => {
     .filter(Boolean);
 };
 
-const buildPromptState = (overrides = {}) => ({
-  promptId: '',
-  focus: '',
-  notes: '',
-  cueProgress: {},
-  expandPromptDetails: true,
-  ...overrides,
-});
+const buildPromptState = (overrides = {}) => {
+  const next = {
+    promptId: '',
+    focus: '',
+    notes: '',
+    cueProgress: {},
+    cueCardAnswers: {},
+    expandPromptDetails: true,
+    ...overrides,
+  };
+
+  next.promptId = typeof next.promptId === 'string' ? next.promptId : '';
+  next.focus = typeof next.focus === 'string' ? next.focus : '';
+  next.notes = typeof next.notes === 'string' ? next.notes : '';
+  next.cueProgress =
+    next.cueProgress && typeof next.cueProgress === 'object' ? next.cueProgress : {};
+  next.cueCardAnswers =
+    next.cueCardAnswers && typeof next.cueCardAnswers === 'object'
+      ? next.cueCardAnswers
+      : {};
+  next.expandPromptDetails = next.expandPromptDetails === false ? false : true;
+
+  return next;
+};
 
 const buildPdfTemplateSelection = (overrides = {}) => {
   const fileName = typeof overrides.fileName === 'string' ? overrides.fileName.trim() : '';
@@ -738,6 +760,13 @@ const hydrateHistoryEntry = (entry) => {
   const prompt = normalizePromptEntry(entry.prompt);
   const speakers = normalizeSpeakers(entry.speakers);
   const speakerMap = buildSpeakerMap(speakers, entry.speakerMap);
+  let refined = null;
+  if (entry && typeof entry === 'object' && 'refinedData' in entry) {
+    const refinedResult = normalizeRefinedDataForUpload(entry.refinedData);
+    if (refinedResult.ok) {
+      refined = refinedResult.value;
+    }
+  }
 
   return {
     ...entry,
@@ -758,6 +787,7 @@ const hydrateHistoryEntry = (entry) => {
     prompt,
     speakers,
     speakerMap,
+    refinedData: refined,
   };
 };
 
@@ -936,7 +966,11 @@ function AppContent(){
   const [audioBlob,setAudioBlob]=useState(null);
   const [audioUrl,setAudioUrl]=useState("");
   const [mime,setMime]=useState("");
-  const [baseJourneyVisibility,setBaseJourneyVisibility]=useState({publish:false,pipeline:false});
+  const [baseJourneyVisibility, setBaseJourneyVisibility] = useState({
+    publish: false,
+    pipeline: false,
+    refine: false,
+  });
   const [destDir,setDestDir]=useState(()=>{
     if(typeof window==='undefined'){
       return DEFAULT_DEST_DIR;
@@ -1138,6 +1172,10 @@ function AppContent(){
           parsed.cueProgress && typeof parsed.cueProgress === 'object'
             ? parsed.cueProgress
             : {},
+        cueCardAnswers:
+          parsed.cueCardAnswers && typeof parsed.cueCardAnswers === 'object'
+            ? parsed.cueCardAnswers
+            : {},
         expandPromptDetails: parsed.expandPromptDetails === false ? false : true,
       });
     } catch {
@@ -1156,6 +1194,63 @@ function AppContent(){
       return [];
     }
   });
+  const [refinedData, setRefinedData] = useState(null);
+  const activePrompt = useMemo(
+    () => findPromptByIdentifier(prompts, promptState.promptId) || null,
+    [prompts, promptState.promptId]
+  );
+
+  const setCueCardAnswers = useCallback((valueOrUpdater) => {
+    setPromptState((prev) => {
+      const currentAnswers =
+        prev && typeof prev.cueCardAnswers === 'object' && prev.cueCardAnswers !== null
+          ? prev.cueCardAnswers
+          : {};
+      const draft = typeof valueOrUpdater === 'function'
+        ? valueOrUpdater({ ...currentAnswers })
+        : valueOrUpdater;
+      const sanitized =
+        draft && typeof draft === 'object' && draft !== null ? { ...draft } : {};
+      const sameKeys = Object.keys(sanitized);
+      const unchanged =
+        sameKeys.length === Object.keys(currentAnswers).length &&
+        sameKeys.every((key) => currentAnswers[key] === sanitized[key]);
+      if (unchanged) {
+        return prev;
+      }
+      return { ...prev, cueCardAnswers: sanitized };
+    });
+  }, []);
+
+  const setPromptFocus = useCallback((value) => {
+    const normalized = typeof value === 'string' ? value : '';
+    setPromptState((prev) => {
+      if (prev.focus === normalized) {
+        return prev;
+      }
+      return { ...prev, focus: normalized };
+    });
+  }, []);
+
+  const setPromptNotes = useCallback((value) => {
+    const normalized = typeof value === 'string' ? value : '';
+    setPromptState((prev) => {
+      if (prev.notes === normalized) {
+        return prev;
+      }
+      return { ...prev, notes: normalized };
+    });
+  }, []);
+
+  const setPromptDetailsOpen = useCallback((open) => {
+    const normalized = open !== false;
+    setPromptState((prev) => {
+      if (prev.expandPromptDetails === normalized) {
+        return prev;
+      }
+      return { ...prev, expandPromptDetails: normalized };
+    });
+  }, []);
   const [workspaces, setWorkspaces] = useState([]);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceSelection, setWorkspaceSelection] = useState(() => {
@@ -1450,6 +1545,7 @@ function AppContent(){
         focus: prev.focus || '',
         notes: prev.notes || '',
         cueProgress: {},
+        cueCardAnswers: {},
         expandPromptDetails: false,
       });
     });
@@ -1584,11 +1680,50 @@ function AppContent(){
   const startAnalyser=async(stream)=>{ if(audioCtxRef.current) return; const C=window.AudioContext||window.webkitAudioContext; if(!C) return; const ctx=new C(); const src=ctx.createMediaStreamSource(stream); const analyser=ctx.createAnalyser(); analyser.fftSize=2048; src.connect(analyser); const data=new Uint8Array(analyser.frequencyBinCount); const loop=()=>{ analyser.getByteTimeDomainData(data); let sum=0; for(let i=0;i<data.length;i++){ const v=(data[i]-128)/128; sum+=v*v; } const rms=Math.sqrt(sum/data.length); setLevel(rms); rafRef.current=requestAnimationFrame(loop); }; loop(); analyserRef.current=analyser; audioCtxRef.current=ctx; sourceRef.current=src; };
   const stopAnalyser=()=>{ if(rafRef.current) cancelAnimationFrame(rafRef.current); try{ sourceRef.current&&sourceRef.current.disconnect(); }catch{} try{ analyserRef.current&&analyserRef.current.disconnect(); }catch{} try{ audioCtxRef.current&&audioCtxRef.current.close(); }catch{} rafRef.current=null; analyserRef.current=null; audioCtxRef.current=null; sourceRef.current=null; setLevel(0); };
 
-  const revealPublishPanel=useCallback(()=>{ setBaseJourneyVisibility(prev=>{ if(prev.publish){ return prev;} return {...prev,publish:true}; }); },[]);
-  const revealPipelinePanel=useCallback(()=>{ setBaseJourneyVisibility(prev=>{ if(prev.publish&&prev.pipeline){ return prev;} return {publish:true,pipeline:true}; }); },[]);
-  const resetJourneyVisibility=useCallback(()=>{ setBaseJourneyVisibility({publish:false,pipeline:false}); },[]);
+  const resetCreationFlowState = useCallback(() => {
+    setRefinedData(null);
+    setCueCardAnswers({});
+    setPromptDetailsOpen(true);
+  }, [setCueCardAnswers, setPromptDetailsOpen, setRefinedData]);
 
-  const startRecording=async()=>{ setLogs([]); setPdfPath(""); setAudioBlob(null); setAudioUrl(""); setPermissionMessage(""); setErrorBanner(null); resetJourneyVisibility(); if(!recorderSupported){ setPermissionMessage("MediaRecorder non supportato. Usa il caricamento file."); return;} if(permission!=='granted'){ const ok=await requestPermission(); if(!ok) return;} try{ const constraints=selectedDeviceId?{deviceId:{exact:selectedDeviceId}}:true; const stream=await navigator.mediaDevices.getUserMedia({audio:constraints}); streamRef.current=stream; const mimeType=pickBestMime(); const rec=new MediaRecorder(stream,mimeType?{mimeType}:{}); chunksRef.current=[]; rec.ondataavailable=(e)=>{ if(e.data&&e.data.size) chunksRef.current.push(e.data); }; rec.onstop=()=>{ const blob=new Blob(chunksRef.current,{type:rec.mimeType||mimeType||'audio/webm'}); const url=URL.createObjectURL(blob); setAudioBlob(blob); setAudioUrl(url); setMime(rec.mimeType||mimeType||'audio/webm'); revealPublishPanel(); stopAnalyser(); stream.getTracks().forEach(t=>t.stop()); streamRef.current=null; }; mediaRecorderRef.current=rec; await startAnalyser(stream); rec.start(250); startAtRef.current=Date.now(); setElapsed(0); setRecording(true); }catch(e){ const name=e?.name||""; const msg=e?.message||String(e); setLastMicError({name,message:msg}); if(name==='NotAllowedError'){ setPermission('denied'); setPermissionMessage("Permesso negato. Abilita il microfono dalle impostazioni del sito e riprova."); } else if(name==='NotFoundError'||name==='OverconstrainedError'){ setPermission('denied'); setPermissionMessage("Nessun microfono disponibile o vincoli non validi."); } else if(name==='NotReadableError'){ setPermission('denied'); setPermissionMessage("Il microfono è occupato da un'altra app. Chiudi Zoom/Teams/OBS e riprova."); } else if(!secureOK){ setPermission('denied'); setPermissionMessage("Serve HTTPS o localhost per usare il microfono."); } else { setPermission('unknown'); setPermissionMessage(`Errore: ${msg}`);} } };
+  const revealPublishPanel = useCallback(() => {
+    setBaseJourneyVisibility((prev) => {
+      if (prev.publish) {
+        return prev;
+      }
+      return { ...prev, publish: true };
+    });
+  }, []);
+  const revealPipelinePanel = useCallback(() => {
+    setBaseJourneyVisibility((prev) => {
+      if (prev.publish && prev.pipeline) {
+        return prev;
+      }
+      return { ...prev, publish: true, pipeline: true };
+    });
+  }, []);
+  const openRefinementPanel = useCallback(() => {
+    setBaseJourneyVisibility((prev) => {
+      if (prev.refine) {
+        return prev;
+      }
+      return { ...prev, publish: true, pipeline: true, refine: true };
+    });
+  }, []);
+  const closeRefinementPanel = useCallback(() => {
+    setBaseJourneyVisibility((prev) => {
+      if (!prev.refine) {
+        return prev;
+      }
+      const next = { ...prev, refine: false };
+      return next;
+    });
+  }, []);
+  const resetJourneyVisibility = useCallback(() => {
+    setBaseJourneyVisibility({ publish: false, pipeline: false, refine: false });
+  }, []);
+
+  const startRecording=async()=>{ setLogs([]); setPdfPath(""); setAudioBlob(null); setAudioUrl(""); setPermissionMessage(""); setErrorBanner(null); resetJourneyVisibility(); resetCreationFlowState(); if(!recorderSupported){ setPermissionMessage("MediaRecorder non supportato. Usa il caricamento file."); return;} if(permission!=='granted'){ const ok=await requestPermission(); if(!ok) return;} try{ const constraints=selectedDeviceId?{deviceId:{exact:selectedDeviceId}}:true; const stream=await navigator.mediaDevices.getUserMedia({audio:constraints}); streamRef.current=stream; const mimeType=pickBestMime(); const rec=new MediaRecorder(stream,mimeType?{mimeType}:{}); chunksRef.current=[]; rec.ondataavailable=(e)=>{ if(e.data&&e.data.size) chunksRef.current.push(e.data); }; rec.onstop=()=>{ const blob=new Blob(chunksRef.current,{type:rec.mimeType||mimeType||'audio/webm'}); const url=URL.createObjectURL(blob); setAudioBlob(blob); setAudioUrl(url); setMime(rec.mimeType||mimeType||'audio/webm'); revealPublishPanel(); stopAnalyser(); stream.getTracks().forEach(t=>t.stop()); streamRef.current=null; }; mediaRecorderRef.current=rec; await startAnalyser(stream); rec.start(250); startAtRef.current=Date.now(); setElapsed(0); setRecording(true); }catch(e){ const name=e?.name||""; const msg=e?.message||String(e); setLastMicError({name,message:msg}); if(name==='NotAllowedError'){ setPermission('denied'); setPermissionMessage("Permesso negato. Abilita il microfono dalle impostazioni del sito e riprova."); } else if(name==='NotFoundError'||name==='OverconstrainedError'){ setPermission('denied'); setPermissionMessage("Nessun microfono disponibile o vincoli non validi."); } else if(name==='NotReadableError'){ setPermission('denied'); setPermissionMessage("Il microfono è occupato da un'altra app. Chiudi Zoom/Teams/OBS e riprova."); } else if(!secureOK){ setPermission('denied'); setPermissionMessage("Serve HTTPS o localhost per usare il microfono."); } else { setPermission('unknown'); setPermissionMessage(`Errore: ${msg}`);} } };
 
   const stopRecording=()=>{ const rec=mediaRecorderRef.current; if(rec&&rec.state!=="inactive") rec.stop(); setRecording(false); };
   useEffect(()=>{ if(recording&&secondsCap&&elapsed>=secondsCap) stopRecording(); },[recording,secondsCap,elapsed]);
@@ -1614,6 +1749,7 @@ function AppContent(){
     }
     resetJourneyVisibility();
     setEnableDiarization(false);
+    resetCreationFlowState();
   };
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
@@ -2905,6 +3041,50 @@ function AppContent(){
     [backendUrl, fetchWithAuth, getSessionToken]
   );
 
+  const fetchEntryPreAnalysis = useCallback(
+    async (entry, options = {}) => {
+      if (!entry) {
+        return { ok: false, message: 'Nessun documento selezionato.' };
+      }
+
+      const backendTarget = normalizeBackendUrlValue(entry?.backendUrl || backendUrl);
+      if (!backendTarget) {
+        return { ok: false, message: 'Backend non configurato per il documento selezionato.' };
+      }
+
+      const payload = buildPreAnalyzeRequest(entry, options?.overrides || {});
+      if (!payload || Object.keys(payload).length === 0) {
+        return { ok: false, message: 'Dati insufficienti per eseguire la pre-analisi.' };
+      }
+
+      try {
+        const result = await postPreAnalyze({
+          backendUrl: backendTarget,
+          fetcher: (url, fetchOptions) => fetchBodyWithAuth(url, fetchOptions),
+          payload,
+        });
+
+        if (result.ok) {
+          if (result.message) {
+            pushLogs([`ℹ️ Pre-analisi: ${result.message}`]);
+          }
+          return { ok: true, data: result.data, raw: result.raw };
+        }
+
+        if (!result.skipped && result.message) {
+          pushLogs([`⚠️ Pre-analisi: ${result.message}`]);
+        }
+
+        return { ok: false, message: result.message || 'Pre-analisi non disponibile.' };
+      } catch (error) {
+        const message = error?.message || 'Errore durante la pre-analisi.';
+        pushLogs([`❌ ${message}`]);
+        return { ok: false, message };
+      }
+    },
+    [backendUrl, fetchBodyWithAuth, pushLogs]
+  );
+
   const handleSaveWorkspaceFilter = useCallback(
     (filter) => {
       const name = filter?.name?.trim() || `Filtro ${savedWorkspaceFilters.length + 1}`;
@@ -3219,13 +3399,19 @@ function AppContent(){
     setPromptState(buildPromptState());
   }, []);
 
-  const handlePromptFocusChange = useCallback((value) => {
-    setPromptState((prev) => ({ ...prev, focus: value }));
-  }, []);
+  const handlePromptFocusChange = useCallback(
+    (value) => {
+      setPromptFocus(value);
+    },
+    [setPromptFocus],
+  );
 
-  const handlePromptNotesChange = useCallback((value) => {
-    setPromptState((prev) => ({ ...prev, notes: value }));
-  }, []);
+  const handlePromptNotesChange = useCallback(
+    (value) => {
+      setPromptNotes(value);
+    },
+    [setPromptNotes],
+  );
 
   const handleTogglePromptCue = useCallback((cueKey) => {
     setPromptState((prev) => {
@@ -3760,6 +3946,104 @@ function AppContent(){
     setStatusCreationMode,
   ]);
 
+  // In App.jsx, all'interno del componente AppContent
+
+// ... vicino alle altre funzioni come processViaBackend ...
+
+const handleRefineAndGenerate = useCallback(async () => {
+  const blob = audioBlob;
+  if (!blob) {
+    setErrorBanner({ title: 'Nessun file audio', details: 'Carica o registra un audio prima di avviare il raffinamento.' });
+    return;
+  }
+  if (busy) {
+    setErrorBanner({ title: 'Pipeline in corso', details: 'Attendi il termine del processo attuale.' });
+    return;
+  }
+
+  setBusy(true);
+  setErrorBanner(null);
+  openRefinementPanel(); // Apre subito il pannello in stato di caricamento
+  pushLogs(['🚀 Avvio del flusso di raffinamento...']);
+
+  try {
+    // 1. Esegui solo la trascrizione (creeremo un endpoint apposito)
+    const formData = new FormData();
+    formData.append('audio', blob, blob.name || 'audio.webm');
+    
+    // Aggiungiamo i provider AI per coerenza
+    if (aiProviderOverrides.text) {
+      formData.append('aiTextProvider', aiProviderOverrides.text);
+    }
+
+    // Chiamata a un nuovo endpoint SOLO per la trascrizione
+    const transcribeResponse = await fetchBodyWithAuth(`${backendUrl}/api/transcribe-only`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!transcribeResponse.ok) {
+      throw new Error(transcribeResponse.data?.message || 'Trascrizione fallita');
+    }
+
+    const { transcription, speakers } = transcribeResponse.data;
+    pushLogs(['✅ Trascrizione completata.']);
+
+    // 2. Popola `refinedData` con la trascrizione
+    const initialRefinedData = {
+      transcription,
+      speakers: speakers || [],
+    };
+    setRefinedData(initialRefinedData);
+    
+    // 3. Chiama /api/pre-analyze per i suggerimenti
+    pushLogs(['🧠 Richiesta suggerimenti AI per le cue card...']);
+    // RIGA CORRETTA
+    const preAnalyzePayload = buildRefinementPreAnalyzePayload({
+      transcription,
+      prompt: activePrompt,
+      workspaceId: workspaceSelection?.workspaceId,
+    });
+    
+    const preAnalyzeResult = await postPreAnalyze({
+      backendUrl,
+      fetcher: fetchBodyWithAuth,
+      payload: preAnalyzePayload,
+    });
+
+    if (preAnalyzeResult.ok) {
+      pushLogs(['✅ Suggerimenti ricevuti.']);
+      
+      // La risposta grezza dal backend è in `preAnalyzeResult.raw`
+      const suggestedAnswers = preAnalyzeResult.raw?.suggestedAnswers;
+    
+      // Controlliamo che `suggestedAnswers` sia un array prima di usarlo
+      if (Array.isArray(suggestedAnswers)) {
+        const answersMap = suggestedAnswers.reduce((acc, item) => {
+          if (item && typeof item.key === 'string') {
+            acc[item.key] = item.answer || '';
+          }
+          return acc;
+        }, {});
+        setCueCardAnswers(answersMap);
+      } else {
+        // Se non è un array, logghiamo un avviso ma non blocchiamo l'app
+        console.warn('La risposta di pre-analisi non conteneva un array `suggestedAnswers` valido.', preAnalyzeResult.raw);
+        pushLogs(['⚠️ Formato suggerimenti non valido ricevuto dal backend.']);
+      }
+    } else {
+      pushLogs([`⚠️ Pre-analisi fallita: ${preAnalyzeResult.message}`]);
+    }
+
+  } catch (error) {
+    const message = error.message || 'Errore imprevisto nel flusso di raffinamento.';
+    setErrorBanner({ title: 'Flusso di Raffinamento Fallito', details: message });
+    pushLogs([`❌ ${message}`]);
+    closeRefinementPanel();
+  } finally {
+    setBusy(false);
+  }
+}, [audioBlob, busy, backendUrl, fetchBodyWithAuth, activePrompt, aiProviderOverrides.text, openRefinementPanel, closeRefinementPanel, setRefinedData, setCueCardAnswers, setErrorBanner, pushLogs]);
   const processViaBackend=async()=>{
     const blob=audioBlob;
     if(!blob) return;
@@ -3785,11 +4069,28 @@ function AppContent(){
       sessionLogs.push(...sanitized);
       setLogs(ls=>ls.concat(sanitized));
     };
+    let refinedPayloadForUpload=null;
+    const refinedValidation=normalizeRefinedDataForUpload(refinedData);
+    if(!refinedValidation.ok){
+      const message=refinedValidation.error||'Dati di raffinazione non validi.';
+      handlePipelineEvents([
+        { stage: 'upload', status: 'failed', message },
+        { stage: 'complete', status: 'failed', message },
+      ],{ animate:false });
+      appendLogs([`❌ ${message}`]);
+      setErrorBanner({ title: 'Dati di raffinazione non validi', details: message });
+      setBusy(false);
+      return;
+    }
+    refinedPayloadForUpload = mergePromptStateIntoRefinedPayload(refinedValidation.value, promptState);
     try{
       const fd=new FormData();
       const m=(mime||blob.type||"").toLowerCase();
       const ext=m.includes('webm')?'webm':m.includes('ogg')?'ogg':m.includes('wav')?'wav':'m4a';
       fd.append('audio',blob,`${blobSource}.${ext}`);
+      if (refinedPayloadForUpload) {
+        fd.append('refinedData', JSON.stringify(refinedPayloadForUpload));
+      }
       appendPdfLogoIfPresent(fd, customPdfLogo);
       const isPlaceholder=isDestDirPlaceholder(destDir);
       if (!isPlaceholder) {
@@ -3831,17 +4132,20 @@ function AppContent(){
       if (!workspaceProfileLocked) {
         appendPdfTemplateSelection(fd, pdfTemplateSelection);
       }
+      const trimmedFocusForAudio = typeof promptState.focus === 'string' ? promptState.focus.trim() : '';
+      const trimmedNotesForAudio = typeof promptState.notes === 'string' ? promptState.notes.trim() : '';
+
       if (promptState.promptId) {
         fd.append('promptId', promptState.promptId);
-        if (promptState.focus && promptState.focus.trim()) {
-          fd.append('promptFocus', promptState.focus.trim());
-        }
-        if (promptState.notes && promptState.notes.trim()) {
-          fd.append('promptNotes', promptState.notes.trim());
-        }
         if (promptCompletedCues.length) {
           fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
         }
+      }
+      if (trimmedFocusForAudio) {
+        fd.append('promptFocus', trimmedFocusForAudio);
+      }
+      if (trimmedNotesForAudio) {
+        fd.append('promptNotes', trimmedNotesForAudio);
       }
       if(enableDiarization){
         fd.append('diarize','true');
@@ -3873,6 +4177,19 @@ function AppContent(){
       handlePipelineEvents(successEvents, { animate: true });
       if(data?.logs) appendLogs(data.logs);
       if(data?.pdfPath){
+        let refinedResult = refinedPayloadForUpload;
+        if (Object.prototype.hasOwnProperty.call(data || {}, 'refinedData')) {
+          const normalizedRefined = normalizeRefinedDataForUpload(data.refinedData);
+          refinedResult = normalizedRefined.ok ? normalizedRefined.value : null;
+        }
+        setRefinedData(refinedResult || null);
+        if (typeof setCueCardAnswers === 'function') {
+          if (refinedResult && typeof refinedResult.cueCardAnswers === 'object' && refinedResult.cueCardAnswers !== null) {
+            setCueCardAnswers(refinedResult.cueCardAnswers);
+          } else if (!refinedResult) {
+            setCueCardAnswers({});
+          }
+        }
         setPdfPath(data.pdfPath);
         setMdPath(data.mdPath || "");
         const normalizedBackend = normalizeBackendUrlValue(backendUrl || '');
@@ -3943,6 +4260,7 @@ function AppContent(){
           prompt: promptSummary,
           speakers: Array.isArray(data?.speakers) ? data.speakers : [],
           speakerMap: data?.speakerMap || {},
+          refinedData: refinedResult,
         });
         setHistory(prev=>{
           const next=[historyEntry,...prev];
@@ -4026,17 +4344,20 @@ function AppContent(){
       if (!workspaceProfileLocked) {
         appendPdfTemplateSelection(fd, pdfTemplateSelection);
       }
+      const trimmedFocusForUpload = typeof promptState.focus === 'string' ? promptState.focus.trim() : '';
+      const trimmedNotesForUpload = typeof promptState.notes === 'string' ? promptState.notes.trim() : '';
+
       if (promptState.promptId) {
         fd.append('promptId', promptState.promptId);
-        if (promptState.focus && promptState.focus.trim()) {
-          fd.append('promptFocus', promptState.focus.trim());
-        }
-        if (promptState.notes && promptState.notes.trim()) {
-          fd.append('promptNotes', promptState.notes.trim());
-        }
         if (promptCompletedCues.length) {
           fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
         }
+      }
+      if (trimmedFocusForUpload) {
+        fd.append('promptFocus', trimmedFocusForUpload);
+      }
+      if (trimmedNotesForUpload) {
+        fd.append('promptNotes', trimmedNotesForUpload);
       }
       if (aiProviderOverrides.text) {
         fd.append('aiTextProvider', aiProviderOverrides.text);
@@ -4463,7 +4784,7 @@ function AppContent(){
     setShowSetupAssistant(false);
   }, [setOnboardingComplete, setShowSetupAssistant]);
 
-  const onPickFile=(e)=>{ const f=e.target.files?.[0]; if(!f) return; setAudioBlob(f); setAudioUrl(URL.createObjectURL(f)); setMime(f.type||""); setErrorBanner(null); revealPublishPanel(); };
+  const onPickFile=(e)=>{ const f=e.target.files?.[0]; if(!f) return; resetCreationFlowState(); setAudioBlob(f); setAudioUrl(URL.createObjectURL(f)); setMime(f.type||""); setErrorBanner(null); revealPublishPanel(); };
 
   const cycleTheme = () => {
     const themeKeys = Object.keys(themes);
@@ -5173,10 +5494,7 @@ function AppContent(){
       .filter(([, value]) => Boolean(value))
       .map(([key]) => key);
   }, [promptState.cueProgress]);
-  const activePrompt = useMemo(
-    () => findPromptByIdentifier(prompts, promptState.promptId) || null,
-    [prompts, promptState.promptId]
-  );
+  
 
   const headerStatus = useMemo(() => {
     if (failedStage) {
@@ -5340,6 +5658,8 @@ function AppContent(){
     prompts,
     promptLoading,
     promptState,
+    refinedData,
+    setRefinedData,
     handleSelectPromptTemplate,
     handleClearPromptSelection,
     promptFavorites,
@@ -5349,6 +5669,10 @@ function AppContent(){
     handlePromptFocusChange,
     handlePromptNotesChange,
     handleTogglePromptCue,
+    setCueCardAnswers,
+    setPromptFocus,
+    setPromptNotes,
+    setPromptDetailsOpen,
     handleCreatePrompt,
     handleDeletePrompt,
     mime,
@@ -5393,6 +5717,7 @@ function AppContent(){
     historyFilter,
     setHistoryFilter,
     fetchEntryPreview,
+    fetchEntryPreAnalysis,
     handleOpenHistoryPdf,
     handleOpenHistoryMd,
     handleRepublishFromMd,
@@ -5419,9 +5744,13 @@ function AppContent(){
     baseJourneyVisibility,
     revealPublishPanel,
     revealPipelinePanel,
+    openRefinementPanel,
+    closeRefinementPanel,
     resetJourneyVisibility,
+    resetCreationFlowState,
     pipelineComplete,
     resetDiarizationPreference,
+    handleRefineAndGenerate,
   };
 
   return (

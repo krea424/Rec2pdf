@@ -62,6 +62,7 @@ const LibraryPage = () => {
             searchTerm={context.historyFilter}
             onSearchChange={context.setHistoryFilter}
             fetchPreview={context.fetchEntryPreview}
+            fetchPreAnalysis={context.fetchEntryPreAnalysis}
             onOpenPdf={context.handleOpenHistoryPdf}
             onOpenMd={context.handleOpenHistoryMd}
             onRepublish={context.handleRepublishFromMd}

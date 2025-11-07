@@ -181,6 +181,94 @@ describe('generateMarkdown prompt composition', () => {
     expect(result.content).toContain('ai.model: "gemini-2.5-flash"');
   });
 
+  it('propaga focus e note dalle opzioni quando il prompt è assente', async () => {
+    const transcriptPath = path.join(tempDir.name, 'focus-options.txt');
+    await fsp.writeFile(transcriptPath, 'Contenuto per focus.', 'utf8');
+
+    let capturedPrompt = '';
+    mockGetAIService.mockImplementation(() => ({
+      generateContent: (prompt) => {
+        capturedPrompt = prompt;
+        return JSON.stringify({ title: '', summary: '', author: '', body: '## Corpo' });
+      },
+      generateEmbedding: mockGenerateEmbedding,
+    }));
+
+    await generateMarkdown(transcriptPath, null, '', {
+      focus: 'Allinea il piano marketing',
+      notes: 'Evidenzia KPI 2024',
+    });
+
+    expect(capturedPrompt).toContain('concentrati in particolare su: Allinea il piano marketing');
+    expect(capturedPrompt).toContain('Considera anche queste note: Evidenzia KPI 2024');
+  });
+
+  it('include il blocco cue card basato sul prompt quando presenti', async () => {
+    const transcriptPath = path.join(tempDir.name, 'cue-prompt.txt');
+    await fsp.writeFile(transcriptPath, 'Trascrizione con cue.', 'utf8');
+
+    let capturedPrompt = '';
+    mockGetAIService.mockImplementation(() => ({
+      generateContent: (prompt) => {
+        capturedPrompt = prompt;
+        return JSON.stringify({ title: '', summary: '', author: '', body: '## Corpo' });
+      },
+      generateEmbedding: mockGenerateEmbedding,
+    }));
+
+    const promptPayload = {
+      cueCards: [
+        { key: 'intro', title: 'Introduzione', hint: 'Riassumi in 3 frasi' },
+        { key: 'actions', title: 'Azioni chiave' },
+      ],
+    };
+
+    await generateMarkdown(transcriptPath, promptPayload, '');
+
+    expect(capturedPrompt).toContain('🧭 CUE CARD DA COPRIRE');
+    expect(capturedPrompt).toContain('**Introduzione**');
+    expect(capturedPrompt).toContain('Suggerimento: Riassumi in 3 frasi');
+    expect(capturedPrompt).toContain('**Azioni chiave**');
+  });
+
+  it('preferisce le cue card fornite da refinedData e include le risposte', async () => {
+    const transcriptPath = path.join(tempDir.name, 'cue-refined.txt');
+    await fsp.writeFile(transcriptPath, 'Trascrizione con refined.', 'utf8');
+
+    let capturedPrompt = '';
+    mockGetAIService.mockImplementation(() => ({
+      generateContent: (prompt) => {
+        capturedPrompt = prompt;
+        return JSON.stringify({ title: '', summary: '', author: '', body: '## Corpo' });
+      },
+      generateEmbedding: mockGenerateEmbedding,
+    }));
+
+    const promptPayload = {
+      cueCards: [{ key: 'fallback', title: 'Fallback senza risposta' }],
+    };
+
+    const refinedData = {
+      cueCards: [
+        {
+          key: 'strategie',
+          title: 'Strategie principali',
+          hint: 'Evidenzia priorità',
+          value: 'Focus su partner locali',
+        },
+      ],
+      cueCardAnswers: { fallback: 'Questa risposta non dovrebbe comparire' },
+    };
+
+    await generateMarkdown(transcriptPath, promptPayload, '', { refinedData });
+
+    expect(capturedPrompt).toContain('**Strategie principali**');
+    expect(capturedPrompt).toContain('Suggerimento: Evidenzia priorità');
+    expect(capturedPrompt).toContain('Risposta attuale: Focus su partner locali');
+    expect(capturedPrompt).not.toContain('Fallback senza risposta');
+  });
+
+
   describe('normalizeAiMarkdownBody', () => {
     it('rimuove il front matter iniziale lasciando solo il corpo', () => {
       const raw = ['---', 'title: Test', 'ai.model: "gpt"', '---', '', '# Titolo'].join('\n');

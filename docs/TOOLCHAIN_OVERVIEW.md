@@ -1,72 +1,50 @@
-# Rec2PDF Toolchain Overview 
-v3.0.0
+# Rec2PDF Toolchain Overview
+v4.0.0
 
-This document provides a technical illustration of the `rec2pdf` toolchain, from file upload to the final, high-quality PDF.
+Questo documento illustra l'orchestrazione end-to-end della toolchain `rec2pdf`, evidenziando come frontend e backend collaborano nelle fasi di pre-analisi, generazione Markdown raffinata e pubblicazione PDF.
 
-### 1. Input: The User's Action
+## 1. Input e raccolta contesto
 
-The process begins in the `rec2pdf-frontend` when a user on the `CreatePage` performs one of these actions:
+Nel frontend (`rec2pdf-frontend/src/App.jsx`) l'utente può:
 
-*   **Records audio:** The browser's `MediaRecorder` API captures audio, storing it in the `audioBlob` state.
-*   **Uploads an audio file:** The selected file is stored in `audioBlob`.
-*   **Uploads a Markdown or TXT file:** The user selects a text-based file.
+- **Registrare o caricare audio** tramite le card della pipeline base/advanced; i file vengono mantenuti nello stato `pipeline.audioBlob` insieme ai metadati di workspace/progetto e al prompt selezionato.【F:rec2pdf-frontend/src/App.jsx†L1658-L1888】
+- **Caricare Markdown/TXT esistenti** che saltano la fase di trascrizione ma condividono la stessa pipeline di generazione e publish.【F:rec2pdf-frontend/src/App.jsx†L1889-L2360】
+- **Richiedere insight preliminari** dal Navigator o dalla Library: `fetchEntryPreAnalysis` costruisce il payload con `buildPreAnalyzeRequest` includendo slug, tag, struttura mancante e punteggi di qualità già salvati.【F:rec2pdf-frontend/src/App.jsx†L3003-L3086】【F:rec2pdf-frontend/src/api/preAnalyze.js†L83-L183】
 
-### 2. The "Avvia pipeline executive" Button
+## 2. Handshake di pre-analisi
 
-Clicking this button triggers the `processViaBackend` function in `App.jsx`, the main entry point for backend processing.
+Quando la pre-analisi è disponibile viene eseguito `postPreAnalyze`:
 
-### 3. The Backend API Call
+1. Il payload viene inviato in JSON a `POST /api/pre-analyze` del backend corrente.【F:rec2pdf-frontend/src/api/preAnalyze.js†L185-L273】
+2. Il backend valida trascrizione e cue card, renderizza il prompt Handlebars `pre_analyze` e chiama il provider AI risolto da `resolveAiProvider`/`getAIService` per generare un blocco JSON con suggerimenti.【F:rec2pdf-backend/server.js†L6016-L6138】
+3. La risposta viene normalizzata in `parsePreAnalyzeData`, producendo sommario, highlight e sezioni pronti per essere mostrati nel Navigator o precompilati come risposte per la generazione successiva.【F:rec2pdf-frontend/src/api/preAnalyze.js†L200-L247】
 
-`processViaBackend` gathers all necessary information and sends it to the `rec2pdf-backend` via a `POST` request to the `/api/process` endpoint. The payload is a `FormData` object containing:
+Le anomalie (JSON invalido, cue card non abbinate) vengono tracciate dal backend per semplificare il debugging senza interrompere il flusso principale.【F:rec2pdf-backend/server.js†L6087-L6138】
 
-*   The audio file (`audioBlob`).
-*   The destination directory (`destDir`).
-*   The filename slug (`slug`).
-*   The `promptState`, which includes:
-    *   `promptId`: The ID of the selected prompt template.
-    *   `focus`: Text from the "focus del monologo" field.
-    *   `notes`: Text from the "note personali" field.
-*   Workspace and project information.
-*   A custom PDF logo, if provided.
+## 3. Avvio della pipeline executive
 
-### 4. The Backend: `server.js`
+`processViaBackend` confeziona un `FormData` con:
 
-The `rec2pdf-backend`'s `server.js` (an Express.js app) listens at `/api/process`. Here’s the request handling process:
+- File audio o testo normalizzato,
+- Identificativi di workspace/profilo/progetto,
+- Prompt selezionato (incluso override provider AI),
+- Eventuali `refinedData` provenienti dalla sessione precedente o dalla pre-analisi,
+- Opzioni aggiuntive (focus, note, diarizzazione).【F:rec2pdf-frontend/src/App.jsx†L3944-L4306】
 
-1.  **File Upload:** `multer` middleware saves the uploaded audio to a temporary server directory.
+Il `FormData` viene inviato a `POST /api/rec2pdf` tramite `fetchBodyWithAuth`, che gestisce automaticamente il refresh token Supabase e serializza i log di avanzamento nel pannello pipeline.【F:rec2pdf-frontend/src/App.jsx†L1760-L1860】【F:rec2pdf-frontend/src/App.jsx†L4024-L4306】
 
-2.  **Pipeline Execution:** The backend executes a sequence of shell commands, updating the frontend on the status of each stage via Server-Sent Events (SSE).
+## 4. Pipeline backend
 
-    **Key Stages:**
+Nel backend (`rec2pdf-backend/server.js`) l'endpoint `/api/rec2pdf` orchestra le fasi sequenziali, pubblicando eventi di stato:
 
-    a.  **Transcoding:** `ffmpeg` converts the uploaded audio to a 16kHz mono WAV file, the required format for the Whisper model.
+1. **Upload & normalizzazione** – `multer` salva gli allegati, `ffmpeg` effettua transcode 16kHz mono, e viene preparato il manifest locale/Supabase.【F:rec2pdf-backend/server.js†L1312-L1669】
+2. **Trascrizione Whisper** – avvia il CLI configurato, opzionalmente con diarizzazione WhisperX quando è presente il token HuggingFace.【F:rec2pdf-backend/server.js†L1669-L1912】
+3. **Ingestione knowledge base** – se richiesto costruisce il contesto RAG interrogando Supabase embeddings e unendo risultati con il transcript.【F:rec2pdf-backend/server.js†L6855-L6998】
+4. **Generazione Markdown raffinata** – `generateMarkdown` unisce trascrizione, contesto, cue card e `refinedData` (summary, highlights, cueCardAnswers). Il prompt risultante viene inviato al provider AI, il corpo Markdown viene normalizzato e arricchito con front matter aggiornato (`ai.model`, `refined`).【F:rec2pdf-backend/server.js†L2195-L2305】【F:rec2pdf-backend/server.js†L6208-L6998】
+5. **Publish PDF** – `publishWithTemplateFallback` invoca `Scripts/publish.sh` con il template selezionato, gestendo fallback Pandoc/LaTeX o HTML in base al profilo workspace; gli artefatti vengono poi caricati su Supabase Storage con link firmati per il frontend.【F:rec2pdf-backend/server.js†L2003-L2295】【F:Scripts/publish.sh†L1-L103】【F:rec2pdf-backend/server.js†L6471-L7927】
 
-    b.  **Transcription:** A local `whisper` command transcribes the WAV file to a `.txt` file containing the raw transcript.
+## 5. Output e revisione
 
-    c.  **Markdown Generation (`generateMarkdown` function):** This is the AI-driven step.
-        *   The function is called with the transcript file path and the `promptPayload` (including `focus` and `notes`).
-        *   A detailed prompt is constructed.
-        *   The `gemini` command-line tool is executed with the full prompt and transcript.
-        *   The `gemini` tool sends the prompt to the Gemini API and receives the generated Markdown.
-        *   The output is cleaned (e.g., removing Markdown code fences) and saved to a `.md` file.
+Il backend restituisce percorsi Markdown/PDF, `stageEvents` e metadati del prompt utilizzato. Il frontend aggiorna la UI mostrando pulsanti di download, log riepilogativi e rende disponibile il bottone "Vai alla Library" nella dashboard advanced.【F:rec2pdf-backend/server.js†L6990-L7058】【F:rec2pdf-frontend/src/features/advanced/PipelineOverview.jsx†L21-L162】
 
-    d.  **PDF Publishing (`publishWithTemplateFallback` function):** The final step converts the Markdown to a professional PDF.
-        *   The system first attempts to use `publish.sh`, a flexible script that can be configured with different PDF engines and templates.
-        *   **Templates:** The script uses HTML (`.html`) or LaTeX (`.tex`) templates from the `Templates` directory to define the PDF's layout, fonts, and colors. For example, `verbale_meeting.html` is designed for a polished meeting report.
-        *   **CSS Styling:** For HTML templates, a corresponding CSS file (e.g., `verbale_meeting.css`) provides extensive styling customization.
-        *   **Pandoc Fallback:** If `publish.sh` fails, the system uses `pandoc`, a universal document converter. `pandoc` can also use the HTML or LaTeX templates and supports various PDF engines like `wkhtmltopdf`, `weasyprint`, or `xelatex`.
-        *   **High-Quality Output:** The combination of `pandoc` and well-designed templates (with CSS for HTML or LaTeX commands for `.tex`) ensures a high-quality final PDF, complete with headers, footers, logos, and other branding for a professional look.
-
-### 5. The Final Result
-
-The generated PDF is saved to the user-specified directory. The frontend receives a "complete" event, and the user can then access the PDF from their file system or the application's library.
-
-In essence, the `rec2pdf` toolchain is a sophisticated pipeline that combines:
-
-*   **A React frontend** for user interaction.
-*   **A Node.js backend** to orchestrate the workflow.
-*   **Best-in-class open-source tools** like `ffmpeg`, `whisper`, and `pandoc`.
-*   **The power of the Gemini LLM** for content generation.
-*   **A flexible templating system** for creating high-quality, professional PDFs.
-
-This architecture allows for extensive customization of both the content and appearance of the final output.
+Le revisioni successive (editor Markdown, rimappatura speaker, republish) riutilizzano gli stessi endpoint `/api/markdown`, `/api/rec2pdf` e `/api/pre-analyze`, mantenendo consistenza dei template e dei suggerimenti generati.

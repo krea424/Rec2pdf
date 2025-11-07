@@ -15,6 +15,7 @@ const pdfParse = require('pdf-parse');
 const { createClient } = require('@supabase/supabase-js');
 const { z } = require('zod');
 const yaml = require('js-yaml'); // <-- Importato js-yaml
+const qs = require('qs');
 const { getAIService } = require('./services/aiService');
 const {
   listProviders: listAiProviders,
@@ -213,6 +214,665 @@ const extractAiProviderOverrides = (req = {}) => {
   };
 };
 
+const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const sanitizeRefinedString = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '[object Object]') {
+    return '';
+  }
+  return trimmed;
+};
+
+const sanitizeRefinedNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+};
+
+const toArrayLike = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (isPlainObject(value)) {
+    return Object.values(value);
+  }
+  return [];
+};
+
+const coerceRefinedFormValue = (raw) => {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  if (Array.isArray(raw)) {
+    const normalized = raw
+      .map((item) => coerceRefinedFormValue(item))
+      .filter((item) => item !== undefined);
+    if (!normalized.length) {
+      return null;
+    }
+    return normalized.length === 1 ? normalized[0] : normalized;
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return '';
+    }
+    if (trimmed === 'null' || trimmed === 'undefined') {
+      return null;
+    }
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+  return raw;
+};
+
+const buildRefinedDataFromFormBody = (body) => {
+  const entries = Object.entries(body || {}).filter(([key]) =>
+    typeof key === 'string' && (key.startsWith('refinedData[') || key.startsWith('refinedData.'))
+  );
+  if (!entries.length) {
+    return { found: false };
+  }
+
+  const parts = [];
+  entries.forEach(([key, rawValue]) => {
+    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+    values.forEach((value) => {
+      if (value === undefined) {
+        return;
+      }
+      const text = typeof value === 'string' ? value : String(value ?? '');
+      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(text)}`);
+    });
+  });
+
+  if (!parts.length) {
+    return { found: true, value: null };
+  }
+
+  const parsed = qs.parse(parts.join('&'), {
+    allowDots: true,
+    depth: 10,
+    parameterLimit: 1000,
+    arrayLimit: 1000,
+  });
+
+  if (Object.prototype.hasOwnProperty.call(parsed, 'refinedData')) {
+    return { found: true, value: parsed.refinedData };
+  }
+
+  return { found: true, value: null };
+};
+
+const extractRefinedDataFromBody = (body) => {
+  if (!body || typeof body !== 'object') {
+    return { found: false };
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'refinedData')) {
+    const raw = body.refinedData;
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim();
+      if (!trimmed || trimmed === 'null' || trimmed === 'undefined') {
+        return { found: true, value: null };
+      }
+      try {
+        return { found: true, value: JSON.parse(trimmed) };
+      } catch (error) {
+        return {
+          found: true,
+          value: trimmed,
+          error: error?.message ? `refinedData JSON non valido: ${error.message}` : 'refinedData JSON non valido',
+        };
+      }
+    }
+    const normalized = coerceRefinedFormValue(raw);
+    return { found: true, value: normalized };
+  }
+
+  return buildRefinedDataFromFormBody(body);
+};
+
+const sanitizeRefinedHighlightEntry = (entry, index) => {
+  if (typeof entry === 'string') {
+    const text = sanitizeRefinedString(entry);
+    if (!text) {
+      return null;
+    }
+    return { id: `highlight_${index}`, title: '', detail: text };
+  }
+  if (!isPlainObject(entry)) {
+    return null;
+  }
+  const id = sanitizeRefinedString(entry.id || entry.key || entry.slug) || `highlight_${index}`;
+  const title = sanitizeRefinedString(entry.title || entry.label || entry.heading || entry.name);
+  const detail = sanitizeRefinedString(entry.detail || entry.description || entry.summary || entry.text);
+  const score = sanitizeRefinedNumber(
+    entry.score ?? entry.value ?? entry.metric ?? entry.weight ?? entry.confidence ?? null
+  );
+  if (!title && !detail && score === null) {
+    return null;
+  }
+  const payload = { id };
+  if (title) payload.title = title;
+  if (detail) payload.detail = detail;
+  if (score !== null) payload.score = score;
+  return payload;
+};
+
+const sanitizeRefinedHighlightList = (value) => {
+  const list = toArrayLike(value);
+  if (!list.length) {
+    return [];
+  }
+  return list.map(sanitizeRefinedHighlightEntry).filter(Boolean);
+};
+
+const sanitizeRefinedSectionEntry = (entry, index) => {
+  if (typeof entry === 'string') {
+    const text = sanitizeRefinedString(entry);
+    if (!text) {
+      return null;
+    }
+    return { id: `section_${index}`, title: '', text, highlights: [] };
+  }
+  if (!isPlainObject(entry)) {
+    return null;
+  }
+  const id = sanitizeRefinedString(entry.id || entry.key || entry.slug) || `section_${index}`;
+  const title = sanitizeRefinedString(entry.title || entry.heading || entry.label || entry.name);
+  const text = sanitizeRefinedString(entry.text || entry.summary || entry.content || entry.body);
+  const highlights = sanitizeRefinedHighlightList(
+    entry.highlights || entry.points || entry.items || entry.bullets || entry.notes || []
+  );
+  if (!title && !text && !highlights.length) {
+    return null;
+  }
+  const payload = { id };
+  if (title) payload.title = title;
+  if (text) payload.text = text;
+  if (highlights.length) payload.highlights = highlights;
+  return payload;
+};
+
+const sanitizeRefinedSectionList = (value) => {
+  const list = toArrayLike(value);
+  if (!list.length) {
+    return [];
+  }
+  return list.map(sanitizeRefinedSectionEntry).filter(Boolean);
+};
+
+const sanitizeRefinedSegmentEntry = (entry, index) => {
+  if (typeof entry === 'string') {
+    const text = sanitizeRefinedString(entry);
+    if (!text) {
+      return null;
+    }
+    return { id: `segment_${index}`, text };
+  }
+  if (!isPlainObject(entry)) {
+    return null;
+  }
+  const text = sanitizeRefinedString(
+    entry.text || entry.transcript || entry.content || entry.caption || entry.body
+  );
+  if (!text) {
+    return null;
+  }
+  const id = sanitizeRefinedString(entry.id || entry.key || entry.segmentId) || `segment_${index}`;
+  const speaker = sanitizeRefinedString(entry.speaker || entry.speakerLabel || entry.speakerName);
+  const start = sanitizeRefinedNumber(entry.start ?? entry.startTime ?? entry.begin ?? entry.offset);
+  const end = sanitizeRefinedNumber(entry.end ?? entry.endTime ?? entry.finish ?? entry.to);
+  const payload = { id, text };
+  if (speaker) payload.speaker = speaker;
+  if (start !== null) payload.start = start;
+  if (end !== null) payload.end = end;
+  return payload;
+};
+
+const sanitizeRefinedSegmentListFromArray = (value) => {
+  const list = toArrayLike(value);
+  if (!list.length) {
+    return [];
+  }
+  return list.map(sanitizeRefinedSegmentEntry).filter(Boolean);
+};
+
+const buildRefinedSegments = (input) => {
+  const candidates = [
+    { key: 'segments', value: input?.segments },
+    { key: 'transcriptSegments', value: input?.transcriptSegments },
+    { key: 'transcriptionSegments', value: input?.transcriptionSegments },
+    { key: 'chunks', value: input?.chunks },
+  ];
+  for (const candidate of candidates) {
+    const normalizedSource = toArrayLike(candidate.value);
+    if (!normalizedSource.length) {
+      continue;
+    }
+    const sanitized = sanitizeRefinedSegmentListFromArray(normalizedSource);
+    if (sanitized.length) {
+      return { list: sanitized };
+    }
+    if (normalizedSource.length > 0) {
+      return {
+        error: `I segmenti forniti nel campo "${candidate.key}" non contengono testo valido.`,
+      };
+    }
+  }
+  const textCandidates = [
+    sanitizeRefinedString(input?.transcription),
+    sanitizeRefinedString(input?.transcript),
+    sanitizeRefinedString(input?.text),
+    typeof input === 'string' ? sanitizeRefinedString(input) : '',
+  ].filter(Boolean);
+  for (const text of textCandidates) {
+    const segments = text
+      .split(/\r?\n/)
+      .map((line, index) => {
+        const trimmed = sanitizeRefinedString(line);
+        if (!trimmed) {
+          return null;
+        }
+        return { id: `segment_${index}`, text: trimmed };
+      })
+      .filter(Boolean);
+    if (segments.length) {
+      return { list: segments };
+    }
+  }
+  return { list: [] };
+};
+
+const sanitizeRefinedCueCardEntry = (entry, index) => {
+  if (typeof entry === 'string') {
+    const title = sanitizeRefinedString(entry);
+    if (!title) {
+      return null;
+    }
+    return { key: `cue_${index}`, title };
+  }
+  if (!isPlainObject(entry)) {
+    return null;
+  }
+  const title = sanitizeRefinedString(entry.title || entry.label || entry.name);
+  if (!title) {
+    return null;
+  }
+  const key =
+    sanitizeRefinedString(entry.key || entry.id || entry.slug || entry.field) || `cue_${index}`;
+  const hint = sanitizeRefinedString(entry.hint || entry.placeholder || entry.description || entry.example);
+  const value = sanitizeRefinedString(entry.value || entry.answer || entry.response || entry.text);
+  const payload = { key, title };
+  if (hint) payload.hint = hint;
+  if (value) payload.value = value;
+  return payload;
+};
+
+const sanitizeRefinedCueCardList = (value) => {
+  const list = toArrayLike(value);
+  if (!list.length) {
+    return [];
+  }
+  return list.map(sanitizeRefinedCueCardEntry).filter(Boolean);
+};
+
+const sanitizeMultilineString = (value) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === '[object Object]') {
+      return '';
+    }
+    return trimmed
+      .replace(/\r\n/g, '\n')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\n{3,}/g, '\n\n');
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+  if (Array.isArray(value)) {
+    const parts = value.map((item) => sanitizeMultilineString(item)).filter(Boolean);
+    return parts.join('\n');
+  }
+  if (value && typeof value === 'object') {
+    const candidateKeys = [
+      'answer',
+      'text',
+      'value',
+      'response',
+      'content',
+      'summary',
+      'description',
+      'detail',
+      'body',
+      'notes',
+      'insights',
+      'bullets',
+      'points',
+      'highlights',
+    ];
+    for (const key of candidateKeys) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        const nested = sanitizeMultilineString(value[key]);
+        if (nested) {
+          return nested;
+        }
+      }
+    }
+  }
+  return '';
+};
+
+const buildSuggestedAnswers = (rawSuggestions, cueCards, anomalies = []) => {
+  if (!Array.isArray(cueCards) || cueCards.length === 0) {
+    return [];
+  }
+
+  const reportAnomaly = (code) => {
+    if (Array.isArray(anomalies) && code) {
+      anomalies.push(code);
+    }
+  };
+
+  const keyToIndex = new Map();
+  const titleToKey = new Map();
+  const normalized = cueCards.map((card, index) => {
+    keyToIndex.set(card.key, index);
+    titleToKey.set(card.title.toLowerCase(), card.key);
+    return { key: card.key, title: card.title, answer: '' };
+  });
+
+  if (!Array.isArray(rawSuggestions)) {
+    reportAnomaly('suggested_answers_not_array');
+  }
+
+  const suggestions = Array.isArray(rawSuggestions) ? rawSuggestions : [];
+
+  suggestions.forEach((entry, index) => {
+    const answerText = sanitizeMultilineString(entry);
+    const isObjectEntry = entry && typeof entry === 'object' && !Array.isArray(entry);
+    let targetKey = '';
+
+    if (isObjectEntry) {
+      const keyCandidate = sanitizeRefinedString(
+        entry.key ||
+          entry.cueKey ||
+          entry.cue_key ||
+          entry.id ||
+          entry.slug ||
+          entry.field ||
+          entry.name
+      );
+      if (keyCandidate && keyToIndex.has(keyCandidate)) {
+        targetKey = keyCandidate;
+      } else {
+        const titleCandidate = sanitizeRefinedString(
+          entry.title ||
+            entry.cueTitle ||
+            entry.cue_title ||
+            entry.label ||
+            entry.heading ||
+            entry.prompt
+        );
+        if (titleCandidate) {
+          const normalizedTitleKey = titleToKey.get(titleCandidate.toLowerCase());
+          if (normalizedTitleKey) {
+            targetKey = normalizedTitleKey;
+          }
+        }
+      }
+    }
+
+    if (!targetKey && cueCards[index]) {
+      targetKey = cueCards[index].key;
+    }
+
+    if (!targetKey && isObjectEntry) {
+      const indexCandidate = sanitizeRefinedNumber(entry.index ?? entry.position ?? entry.order);
+      if (indexCandidate !== null && cueCards[indexCandidate]) {
+        targetKey = cueCards[indexCandidate].key;
+      }
+    }
+
+    if (!targetKey) {
+      reportAnomaly(`unmatched_suggestion_index_${index}`);
+      return;
+    }
+
+    const targetIndex = keyToIndex.get(targetKey);
+    if (typeof targetIndex !== 'number') {
+      reportAnomaly(`unknown_cue_key_${targetKey}`);
+      return;
+    }
+
+    const previous = normalized[targetIndex];
+    const normalizedAnswer = answerText;
+    if (!normalizedAnswer && previous?.answer) {
+      return;
+    }
+
+    normalized[targetIndex] = {
+      key: cueCards[targetIndex].key,
+      title: cueCards[targetIndex].title,
+      answer: normalizedAnswer,
+    };
+  });
+
+  if (suggestions.length && suggestions.length < cueCards.length) {
+    const missingKeys = normalized
+      .filter((entry) => !entry.answer)
+      .map((entry) => entry.key);
+    if (missingKeys.length) {
+      reportAnomaly(`missing_answers_for_keys:${missingKeys.join(',')}`);
+    }
+  }
+
+  return normalized;
+};
+
+const sanitizeRefinedMetadata = (value) => {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  const entries = Object.entries(value).reduce((acc, [key, raw]) => {
+    const name = sanitizeRefinedString(key);
+    if (!name) {
+      return acc;
+    }
+    if (raw === null || raw === undefined) {
+      return acc;
+    }
+    if (isPlainObject(raw)) {
+      const nested = sanitizeRefinedMetadata(raw);
+      if (nested && Object.keys(nested).length) {
+        acc[name] = nested;
+      }
+      return acc;
+    }
+    if (Array.isArray(raw)) {
+      const sanitizedArray = raw
+        .map((item) => {
+          if (isPlainObject(item)) {
+            const nested = sanitizeRefinedMetadata(item);
+            return nested && Object.keys(nested).length ? nested : null;
+          }
+          if (typeof item === 'string') {
+            const text = sanitizeRefinedString(item);
+            if (!text) {
+              return null;
+            }
+            const numeric = sanitizeRefinedNumber(text);
+            return numeric !== null ? numeric : text;
+          }
+          if (typeof item === 'number' && Number.isFinite(item)) {
+            return item;
+          }
+          if (typeof item === 'boolean') {
+            return item;
+          }
+          if (typeof item === 'string') {
+            const parsed = sanitizeRefinedNumber(item);
+            return parsed !== null ? parsed : null;
+          }
+          return null;
+        })
+        .filter((item) => {
+          if (item === null) {
+            return false;
+          }
+          if (isPlainObject(item)) {
+            return Object.keys(item).length > 0;
+          }
+          return true;
+        });
+      if (sanitizedArray.length) {
+        acc[name] = sanitizedArray;
+      }
+      return acc;
+    }
+    if (typeof raw === 'string') {
+      const text = sanitizeRefinedString(raw);
+      if (text) {
+        const numeric = sanitizeRefinedNumber(text);
+        acc[name] = numeric !== null ? numeric : text;
+      }
+      return acc;
+    }
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      acc[name] = raw;
+      return acc;
+    }
+    if (typeof raw === 'boolean') {
+      acc[name] = raw;
+      return acc;
+    }
+    const numeric = sanitizeRefinedNumber(raw);
+    if (numeric !== null) {
+      acc[name] = numeric;
+    }
+    return acc;
+  }, {});
+  return Object.keys(entries).length ? entries : null;
+};
+
+const sanitizeRefinedCueCardAnswers = (value) => {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  const payload = Object.entries(value).reduce((acc, [key, raw]) => {
+    const name = sanitizeRefinedString(key);
+    if (!name) {
+      return acc;
+    }
+    const text = sanitizeRefinedString(raw);
+    if (text) {
+      acc[name] = text;
+    }
+    return acc;
+  }, {});
+  return Object.keys(payload).length ? payload : null;
+};
+
+const sanitizeRefinedDataInput = (input) => {
+  if (input === null || input === undefined) {
+    return { ok: true, value: null };
+  }
+  if (typeof input === 'string') {
+    const summary = sanitizeRefinedString(input);
+    if (!summary) {
+      return { ok: true, value: null };
+    }
+    return { ok: true, value: { summary } };
+  }
+  if (!isPlainObject(input)) {
+    return { ok: false, error: 'refinedData deve essere un oggetto JSON' };
+  }
+  const payload = {};
+  const summary = sanitizeRefinedString(input.summary || input.overview || input.description);
+  if (summary) {
+    payload.summary = summary;
+  }
+  const focus = sanitizeRefinedString(input.focus);
+  if (focus) {
+    payload.focus = focus;
+  }
+  const notes = sanitizeRefinedString(input.notes);
+  if (notes) {
+    payload.notes = notes;
+  }
+  const highlights = sanitizeRefinedHighlightList(
+    input.highlights || input.insights || input.bullets || input.points
+  );
+  if (highlights.length) {
+    payload.highlights = highlights;
+  }
+  const sections = sanitizeRefinedSectionList(input.sections || input.blocks || input.items || []);
+  if (sections.length) {
+    payload.sections = sections;
+  }
+  const segmentsResult = buildRefinedSegments(input);
+  if (segmentsResult.error) {
+    return { ok: false, error: segmentsResult.error };
+  }
+  if (segmentsResult.list.length) {
+    payload.segments = segmentsResult.list;
+  }
+  const cueCards = sanitizeRefinedCueCardList(input.cueCards || input.cards || []);
+  if (Array.isArray(input.cueCards) && input.cueCards.length > 0 && cueCards.length === 0) {
+    return { ok: false, error: 'Le cue card fornite non contengono titoli validi.' };
+  }
+  if (cueCards.length) {
+    payload.cueCards = cueCards;
+  }
+  const metadata = sanitizeRefinedMetadata(input.metadata);
+  if (metadata) {
+    payload.metadata = metadata;
+  }
+  const tokens = sanitizeRefinedNumber(input.tokens ?? input.totalTokens ?? input.tokenCount);
+  if (tokens !== null) {
+    payload.tokens = tokens;
+  }
+  const source = sanitizeRefinedString(input.source || input.provider);
+  if (source) {
+    payload.source = source;
+  }
+  const version = sanitizeRefinedString(input.version);
+  if (version) {
+    payload.version = version;
+  }
+  const cueCardAnswers = sanitizeRefinedCueCardAnswers(input.cueCardAnswers);
+  if (cueCardAnswers) {
+    payload.cueCardAnswers = cueCardAnswers;
+  }
+  if (Object.keys(payload).length === 0) {
+    return { ok: true, value: null };
+  }
+  return { ok: true, value: payload };
+};
+
+// SOSTITUISCI LA TUA FUNZIONE CON QUESTA VERSIONE CORRETTA
 const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => {
   const normalizedWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
   if (!normalizedWorkspaceId) {
@@ -249,10 +909,14 @@ const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => 
   try {
     const embedding = await aiEmbedder.generateEmbedding(normalizedQuery);
     if (!Array.isArray(embedding) || embedding.length === 0) {
+      console.error('[retrieveRelevantContext] Errore: la generazione dell-embedding non ha restituito un array valido.');
       return '';
     }
+    console.log(`[retrieveRelevantContext] Embedding generato con successo (dimensione: ${embedding.length}).`);
 
-    // VERSIONE CORRETTA
+    // La chiamata a Supabase viene fatta qui. Le variabili `data` ed `error`
+    // vengono create solo DOPO che la chiamata ha restituito un risultato.
+    console.log(`[retrieveRelevantContext] Chiamata a match_knowledge_chunks con workspace: ${normalizedWorkspaceId}, project: ${normalizedProjectId}`);
     const { data, error } = await supabase.rpc('match_knowledge_chunks', {
       query_embedding: embedding,
       match_workspace_id: normalizedWorkspaceId,
@@ -266,15 +930,18 @@ const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => 
     }
 
     if (!Array.isArray(data) || data.length === 0) {
+      console.warn('[retrieveRelevantContext] La chiamata RPC ha avuto successo ma non ha restituito dati (possibile mismatch di ID?).');
       return '';
     }
 
+    console.log(`[retrieveRelevantContext] Ricevuti ${data.length} chunk da Supabase.`);
     const chunks = data
       .map((row) => (row && typeof row.content === 'string' ? row.content.trim() : ''))
       .filter(Boolean);
 
     return chunks.length ? chunks.join(CONTEXT_SEPARATOR) : '';
   } catch (error) {
+    // Questo `catch` ora catturerà solo errori imprevisti (es. di rete)
     console.error('retrieveRelevantContext fallita:', error);
     return '';
   }
@@ -1531,18 +2198,84 @@ const applyAiModelToFrontMatter = (markdown, modelName) => {
   return `${updatedFrontMatter}${markdown.slice(match[0].length)}`;
 };
 
+const normalizeTemplateString = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const aggregateCueCardsMarkdown = (promptCueCards = [], refinedData = null, fallbackCueCards = []) => {
+  const refinedCards = Array.isArray(refinedData?.cueCards) ? refinedData.cueCards : [];
+  const answersMap = isPlainObject(refinedData?.cueCardAnswers) ? refinedData.cueCardAnswers : {};
+
+  const baseCards = refinedCards.length
+    ? refinedCards
+    : promptCueCards.length
+      ? promptCueCards
+      : fallbackCueCards;
+
+  if (!Array.isArray(baseCards) || baseCards.length === 0) {
+    return '';
+  }
+
+  const normalizedAnswers = Object.entries(answersMap || {}).reduce((acc, [answerKey, answerValue]) => {
+    const safeKey = normalizeTemplateString(answerKey);
+    const safeValue = normalizeTemplateString(answerValue);
+    if (safeKey && safeValue) {
+      acc[safeKey] = safeValue;
+    }
+    return acc;
+  }, {});
+
+  const sections = baseCards
+    .map((card, index) => {
+      if (!card || typeof card !== 'object') {
+        return null;
+      }
+
+      const title = normalizeTemplateString(card.title || card.label || card.name);
+      if (!title) {
+        return null;
+      }
+
+      const explicitKey = normalizeTemplateString(card.key || card.id || card.slug || card.field);
+      const retrievalKey = explicitKey || `cue_${index}`;
+      const hint = normalizeTemplateString(card.hint || card.description || card.placeholder || card.example);
+
+      const answer = normalizeTemplateString(
+        card.value || card.answer || card.response || (retrievalKey ? normalizedAnswers[retrievalKey] : '')
+      );
+
+      const lines = [`- **${title}**${explicitKey ? ` _(chiave: ${explicitKey})_` : ''}`];
+      if (hint) {
+        lines.push(`  - Suggerimento: ${hint}`);
+      }
+      if (answer) {
+        lines.push(`  - Risposta attuale: ${answer}`);
+      }
+
+      return lines.join('\n');
+    })
+    .filter(Boolean);
+
+  return sections.length ? sections.join('\n') : '';
+};
+
 const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', options = {}) => {
   try {
     const transcript = await loadTranscriptForPrompt(txtPath);
 
+    const normalizedKnowledgeContext =
+      typeof knowledgeContext === 'string' ? knowledgeContext.trim() : '';
+    const decoratedKnowledgeContext = normalizedKnowledgeContext
+      ? ['CONTESTO AGGIUNTIVO DALLA KNOWLEDGE BASE', normalizedKnowledgeContext].join('\n')
+      : '';
+
     // 1. Prepara i dati per il template
+    const refinedDataForPrompt =
+      options && isPlainObject(options.refinedData) ? options.refinedData : null;
+
     const templateData = {
       persona: promptPayload?.persona,
       description: promptPayload?.description,
       markdownRules: promptPayload?.markdownRules,
-      focus: promptPayload?.focus,
-      notes: promptPayload?.notes,
-      knowledgeContext: knowledgeContext,
+      knowledgeContext: decoratedKnowledgeContext,
       transcript: transcript,
       _meta: {
         promptId: promptPayload?.id,
@@ -1551,8 +2284,43 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
       }
     };
 
+    const focusValue = [promptPayload?.focus, options?.focus]
+      .map(normalizeTemplateString)
+      .find(Boolean);
+    if (focusValue) {
+      templateData.focus = focusValue;
+    }
+
+    const notesValue = [promptPayload?.notes, options?.notes]
+      .map(normalizeTemplateString)
+      .find(Boolean);
+    if (notesValue) {
+      templateData.notes = notesValue;
+    }
+
+    const promptCueCards = Array.isArray(promptPayload?.cueCards) ? promptPayload.cueCards : [];
+    const fallbackCueCards = Array.isArray(options?.cueCards) ? options.cueCards : [];
+    const cueCardsMarkdown = aggregateCueCardsMarkdown(promptCueCards, refinedDataForPrompt, fallbackCueCards);
+    if (cueCardsMarkdown) {
+      templateData.cueCardsMarkdown = cueCardsMarkdown;
+    }
+
+    if (refinedDataForPrompt) {
+      templateData.refinedData = refinedDataForPrompt;
+      templateData._meta.refinedDataProvided = true;
+    } else {
+      templateData._meta.refinedDataProvided = false;
+    }
+
     // 2. Renderizza il prompt
     const fullPrompt = await promptService.render('base_generation', templateData);
+    let promptForAi = fullPrompt;
+    if (!promptForAi.includes('TRASCRIZIONE DA ELABORARE:')) {
+      promptForAi = promptForAi.replace(
+        '📄 TRASCRIZIONE DA ELABORARE',
+        'TRASCRIZIONE DA ELABORARE:\n📄 TRASCRIZIONE DA ELABORARE'
+      );
+    }
 
     if (process.env.DEBUG_PROMPTS === 'true') {
       console.log('\n--- RENDERED PROMPT ---\n', fullPrompt, '\n--- END PROMPT ---\n');
@@ -1571,7 +2339,7 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
 
     let generatedContent = '';
     try {
-      generatedContent = await aiGenerator.generateContent(fullPrompt);
+      generatedContent = await aiGenerator.generateContent(promptForAi);
          } catch (error) {
       console.error(`❌ Errore durante la generazione del contenuto AI: ${error.message}`);
       throw new Error(`Errore durante la generazione del contenuto AI: ${error.message}`);
@@ -1598,11 +2366,12 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
     } catch (jsonError) {
       console.warn('⚠️ L\'output AI non era un JSON valido. Trattato come solo corpo.', jsonError.message);
       // Fallback: se non è JSON, restituiamo l'intero output come 'content'
+      const enrichedContent = applyAiModelToFrontMatter(generatedContent, activeModelName);
       return {
         title: '',
         summary: '',
         author: '',
-        content: generatedContent, // Restituiamo l'output grezzo come 'content'
+        content: enrichedContent, // Restituiamo l'output grezzo come 'content'
         modelName: activeModelName,
       };
     }
@@ -3157,25 +3926,76 @@ const processKnowledgeTask = async (task = {}) => {
   }
 };
 
+const isSupabaseHtmlError = (error) => {
+  if (!error) return false;
+  const message = typeof error.message === 'string' ? error.message : '';
+  if (!message) {
+    return false;
+  }
+  const normalized = message.toLowerCase();
+  return normalized.includes('unexpected token <') || normalized.includes('<html');
+};
+
+const buildSupabaseErrorHint = (error) => {
+  if (!error) return '';
+  const message = typeof error.message === 'string' ? error.message : '';
+  if (!message) {
+    return '';
+  }
+  const normalized = message.toLowerCase();
+  if (normalized.includes('unexpected token <')) {
+    return 'Verifica che SUPABASE_URL punti al dominio API del progetto (es. https://<id>.supabase.co) e che non ci siano proxy che restituiscono HTML.';
+  }
+  if (
+    normalized.includes('fetch failed') ||
+    normalized.includes('network') ||
+    normalized.includes('timeout') ||
+    normalized.includes('etimedout')
+  ) {
+    return 'Controlla la connettività verso Supabase o eventuali firewall intermedi.';
+  }
+  return '';
+};
+
 const uploadFileToBucket = async (bucket, objectPath, buffer, contentType, options = {}) => {
   if (!supabase) {
     throw new Error('Supabase client is not configured');
   }
 
-
-
+  const attempts = Math.max(1, Number(options.attempts) || 3);
+  const retryDelay = Number(options.retryDelayMs) || 250;
   const cacheControl =
     options.cacheControl !== undefined && options.cacheControl !== null
       ? String(options.cacheControl)
       : '0';
-  const { error } = await supabase.storage.from(bucket).upload(objectPath, buffer, {
-    cacheControl,
-    contentType: contentType || 'application/octet-stream',
-    upsert: options.upsert ?? true,
-  });
-  if (error) {
-    throw new Error(`Upload fallito su Supabase (${bucket}/${objectPath}): ${error.message}`);
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const { error } = await supabase.storage.from(bucket).upload(objectPath, buffer, {
+      cacheControl,
+      contentType: contentType || 'application/octet-stream',
+      upsert: options.upsert ?? true,
+    });
+
+    if (!error) {
+      return;
+    }
+
+    lastError = error;
+    const status = Number(error.statusCode || error.status) || 0;
+    const retryableHtml = isSupabaseHtmlError(error);
+    const retryableStatus = status >= 500 || status === 0;
+    if (attempt < attempts && (retryableHtml || retryableStatus)) {
+      await sleep(retryDelay * attempt);
+      continue;
+    }
+    break;
   }
+
+  const hint = buildSupabaseErrorHint(lastError);
+  const reason = (lastError && lastError.message) || 'errore sconosciuto';
+  const details = hint ? `${reason}. ${hint}` : reason;
+  throw new Error(`Upload fallito su Supabase (${bucket}/${objectPath}): ${details}`);
 };
 
 const buildSupabasePublicUrl = (bucket, objectPath) => {
@@ -3311,7 +4131,8 @@ const isRetryableSupabaseDownloadError = (status, message) => {
       normalized.includes('timeout') ||
       normalized.includes('econn') ||
       normalized.includes('etimedout') ||
-      normalized.includes('enotfound')
+      normalized.includes('enotfound') ||
+      normalized.includes('unexpected token <')
     );
   }
   return false;
@@ -5252,6 +6073,132 @@ app.get('/api/ai/providers', (req, res) => {
   }
 });
 
+app.post('/api/pre-analyze', async (req, res) => {
+  const workspaceId = getWorkspaceIdFromRequest(req);
+  const anomalies = [];
+
+  const aiOverrides = extractAiProviderOverrides(req);
+  const transcriptionCandidates = [req.body?.transcription, req.body?.transcript, req.body?.text];
+  let transcription = '';
+  for (const candidate of transcriptionCandidates) {
+    const sanitized = sanitizeMultilineString(candidate);
+    if (sanitized) {
+      transcription = sanitized;
+      break;
+    }
+  }
+
+  if (!transcription) {
+    return res.status(400).json({ ok: false, message: 'Campo "transcription" obbligatorio.' });
+  }
+
+  if (!Array.isArray(req.body?.cueCards)) {
+    return res.status(400).json({ ok: false, message: '"cueCards" deve essere un array.' });
+  }
+
+  const cueCards = sanitizeRefinedCueCardList(req.body.cueCards);
+  if (!cueCards.length) {
+    return res.status(400).json({ ok: false, message: 'Nessuna cue card valida fornita.' });
+  }
+
+  let provider;
+  try {
+    provider = resolveAiProvider('text', aiOverrides.text);
+  } catch (error) {
+    console.error('❌ Provider AI non disponibile per /api/pre-analyze:', error);
+    return res
+      .status(503)
+      .json({ ok: false, message: error?.message || 'Provider AI non disponibile per la pre-analisi.' });
+  }
+
+  const promptPayload = {
+    transcription,
+    cueCards,
+  };
+
+  if (workspaceId) {
+    promptPayload.workspaceId = workspaceId;
+  }
+
+  let prompt;
+  try {
+    prompt = await promptService.render('pre_analyze', promptPayload);
+  } catch (error) {
+    console.error('❌ Errore durante il rendering del prompt pre-analyze:', error);
+    return res.status(500).json({ ok: false, message: 'Impossibile preparare il prompt di analisi.' });
+  }
+
+  if (process.env.DEBUG_PROMPTS === 'true') {
+    console.log('\n--- PRE-ANALYZE PROMPT ---\n', prompt, '\n--- END PRE-ANALYZE PROMPT ---\n');
+  }
+
+  const aiClient = getAIService(provider.id, provider.apiKey, provider.model);
+
+  let aiOutput = '';
+  try {
+    aiOutput = await aiClient.generateContent(prompt);
+  } catch (error) {
+    console.error('❌ Errore AI /api/pre-analyze:', error);
+    return res
+      .status(502)
+      .json({ ok: false, message: 'Errore durante la generazione delle risposte suggerite.' });
+  }
+
+  const cleanedOutput = (aiOutput || '')
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
+
+  let parsed = {};
+  if (cleanedOutput) {
+    try {
+      parsed = JSON.parse(cleanedOutput);
+    } catch (error) {
+      anomalies.push(`json_parse_error:${error.message}`);
+      const start = cleanedOutput.indexOf('{');
+      const end = cleanedOutput.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && end > start) {
+        const candidate = cleanedOutput.slice(start, end + 1);
+        try {
+          parsed = JSON.parse(candidate);
+        } catch (fallbackError) {
+          anomalies.push(`json_parse_fallback_error:${fallbackError.message}`);
+          parsed = {};
+        }
+      }
+    }
+  }
+
+  let suggestionsSource = [];
+  if (Array.isArray(parsed.suggestedAnswers)) {
+    suggestionsSource = parsed.suggestedAnswers;
+  } else if (Array.isArray(parsed.answers)) {
+    anomalies.push('missing_suggestedAnswers_field');
+    suggestionsSource = parsed.answers;
+  } else if (Array.isArray(parsed.cueCards)) {
+    anomalies.push('missing_suggestedAnswers_field');
+    suggestionsSource = parsed.cueCards;
+  } else if (cleanedOutput) {
+    anomalies.push('missing_suggestions_array');
+  }
+
+  const suggestedAnswers = buildSuggestedAnswers(suggestionsSource, cueCards, anomalies);
+
+  const modelName = aiClient.modelName || provider.model || '';
+
+  if (anomalies.length) {
+    console.warn('⚠️ /api/pre-analyze anomalies', {
+      anomalies,
+      provider: provider.id,
+      model: modelName,
+      workspaceId: workspaceId || null,
+      rawOutputSample: cleanedOutput.slice(0, 400),
+    });
+  }
+
+  return res.json({ ok: true, suggestedAnswers });
+});
+
 app.get('/api/diag', async (req, res) => {
   const logs = [];
   const out = (s) => { logs.push(s); };
@@ -5318,6 +6265,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
   let promptFocus = '';
   let promptNotes = '';
   let promptCuesCompleted = [];
+  let refinedDataPayload = null;
   const tempFiles = new Set();
   const tempDirs = new Set();
     let speakerLabels = [];
@@ -5385,6 +6333,37 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       } catch {
         promptCuesCompleted = [];
       }
+    }
+
+    const refinedExtraction = extractRefinedDataFromBody(req.body);
+    if (refinedExtraction.found) {
+      if (refinedExtraction.error) {
+        out(`⚠️ ${refinedExtraction.error}`, 'upload', 'warning');
+      }
+      const refinedResult = sanitizeRefinedDataInput(refinedExtraction.value);
+      if (!refinedResult.ok) {
+        out(`⚠️ refinedData non valido: ${refinedResult.error}`, 'upload', 'warning');
+      } else if (refinedResult.value) {
+        refinedDataPayload = refinedResult.value;
+        out('✨ Dati di raffinazione ricevuti', 'upload', 'info');
+      }
+    }
+
+    if (refinedDataPayload) {
+      let mergedRefined = refinedDataPayload;
+      if (!promptFocus && refinedDataPayload.focus) {
+        promptFocus = refinedDataPayload.focus;
+      } else if (promptFocus && refinedDataPayload.focus !== promptFocus) {
+        mergedRefined = { ...mergedRefined, focus: promptFocus };
+      }
+
+      if (!promptNotes && refinedDataPayload.notes) {
+        promptNotes = refinedDataPayload.notes;
+      } else if (promptNotes && refinedDataPayload.notes !== promptNotes) {
+        mergedRefined = { ...mergedRefined, notes: promptNotes };
+      }
+
+      refinedDataPayload = mergedRefined;
     }
 
     const diarizeRaw = typeof req.body?.diarize === 'string' ? req.body.diarize : '';
@@ -5846,41 +6825,62 @@ const w = await run('bash', ['-lc', whisperxCmd]);
       await safeUnlink(transcriptLocalPath);
     }
 
-        const profileTemplateCandidate = workspaceProfile?.pdfTemplate || workspaceProfileTemplate || '';
-    let profileTemplateDescriptor = null;
-    let promptTemplateDescriptor = null;
-    const profileSelectedFallback = isPandocFallbackTemplate(profileTemplateCandidate);
+        // BLOCCO CORRETTO E OTTIMIZZATO
+const manualTemplateSelection = workspaceProfileTemplate; // La selezione dal pannello Advanced
+const profileTemplateSetting = workspaceProfile?.pdfTemplate; // Il template salvato nel profilo (se esiste)
 
-    if (profileSelectedFallback) {
-      out('📄 Template profilo: fallback Pandoc semplice', 'publish', 'info');
+let activeTemplateDescriptor = null;
+let activeTemplateIsFallback = false;
+
+// 1. Priorità massima: la selezione manuale dell'utente dal pannello Advanced.
+if (manualTemplateSelection) {
+  if (isPandocFallbackTemplate(manualTemplateSelection)) {
+    out('📄 Template manuale selezionato: fallback Pandoc semplice', 'publish', 'info');
+    activeTemplateIsFallback = true;
+  } else {
+    try {
+      activeTemplateDescriptor = await resolveTemplateDescriptor(manualTemplateSelection);
+      out(`📄 Template manuale applicato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+    } catch (templateError) {
+      const reason = templateError instanceof TemplateResolutionError ? templateError.userMessage : templateError?.message || templateError;
+      out(`⚠️ Template manuale non accessibile (${manualTemplateSelection}): ${reason}`, 'publish', 'warning');
     }
+  }
+}
 
-    if (profileTemplateCandidate && !profileSelectedFallback) {
-      try {
-        profileTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateCandidate);
-        out(`📄 Template profilo: ${profileTemplateDescriptor.fileName}`, 'publish', 'info');
-        if (profileTemplateDescriptor.cssFileName) {
-          out(`🎨 CSS template: ${profileTemplateDescriptor.cssFileName}`, 'publish', 'info');
+// 2. Se non c'è selezione manuale, usa il template del profilo (se esiste).
+if (!activeTemplateDescriptor && !activeTemplateIsFallback && profileTemplateSetting) {
+    if (isPandocFallbackTemplate(profileTemplateSetting)) {
+        out('📄 Template del profilo: fallback Pandoc semplice', 'publish', 'info');
+        activeTemplateIsFallback = true;
+    } else {
+        try {
+            activeTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateSetting);
+            out(`📄 Template del profilo applicato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+        } catch (templateError) {
+            const reason = templateError instanceof TemplateResolutionError ? templateError.userMessage : templateError?.message || templateError;
+            out(`⚠️ Template del profilo non accessibile (${profileTemplateSetting}): ${reason}`, 'publish', 'warning');
         }
-        if (profileTemplateDescriptor.engine) {
-          out(`⚙️ Motore HTML preferito: ${profileTemplateDescriptor.engine}`, 'publish', 'info');
-        }
-      } catch (templateError) {
-        const reason =
-          templateError instanceof TemplateResolutionError
-            ? templateError.userMessage
-            : templateError?.message || templateError;
-        out(`⚠️ Template profilo non accessibile: ${reason}`, 'publish', 'warning');
-      }
     }
+}
 
-    if (!profileTemplateDescriptor && !profileSelectedFallback && selectedPrompt) {
-      promptTemplateDescriptor = await resolvePromptTemplateDescriptor(selectedPrompt, { logger: out });
-    }
+// 3. Se ancora nessun template, usa quello definito nel prompt (se esiste).
+if (!activeTemplateDescriptor && !activeTemplateIsFallback && selectedPrompt) {
+  activeTemplateDescriptor = await resolvePromptTemplateDescriptor(selectedPrompt, { logger: out });
+}
 
-    let activeTemplateDescriptor = profileSelectedFallback
-      ? null
-      : profileTemplateDescriptor || promptTemplateDescriptor;
+// 4. Se ancora nulla e la diarizzazione è attiva, usa il fallback per i verbali.
+if (!activeTemplateDescriptor && !activeTemplateIsFallback && diarizeEnabled) {
+  try {
+    activeTemplateDescriptor = await resolveTemplateDescriptor('verbale_meeting.html');
+    out(`📄 Template diarizzazione fallback: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+  } catch (templateError) {
+    // ... log errore
+  }
+}
+
+// Alla fine, la variabile `forcePandocFallback` deve riflettere la scelta.
+const forcePandocFallback = activeTemplateIsFallback;
 
     if (!activeTemplateDescriptor && diarizeEnabled && !profileSelectedFallback) {
       try {
@@ -5953,6 +6953,29 @@ const w = await run('bash', ['-lc', whisperxCmd]);
         if (promptNotes) {
           queryParts.push(promptNotes);
         }
+        if (refinedDataPayload?.summary) {
+          queryParts.push(refinedDataPayload.summary);
+        }
+        if (Array.isArray(refinedDataPayload?.sections) && refinedDataPayload.sections.length) {
+          refinedDataPayload.sections.forEach((section) => {
+            if (section?.title) {
+              queryParts.push(section.title);
+            }
+            if (section?.text) {
+              queryParts.push(section.text);
+            }
+          });
+        }
+        if (Array.isArray(refinedDataPayload?.highlights) && refinedDataPayload.highlights.length) {
+          refinedDataPayload.highlights.forEach((highlight) => {
+            if (highlight?.title) {
+              queryParts.push(highlight.title);
+            }
+            if (highlight?.detail) {
+              queryParts.push(highlight.detail);
+            }
+          });
+        }
         if (transcriptTextForQuery) {
           queryParts.push(transcriptTextForQuery);
         }
@@ -5977,11 +7000,15 @@ const w = await run('bash', ['-lc', whisperxCmd]);
         content: markdownBody,
         modelName: aiModel,
       } = await generateMarkdown(
-        transcriptLocalForMarkdown,
-        mdLocalPath,
+        transcriptLocalForMarkdown,        
         promptRulePayload,
         retrievedWorkspaceContext || res.locals?.retrievedWorkspaceContext || '',
-        { textProvider: aiOverrides.text }
+        {
+          textProvider: aiOverrides.text,
+          refinedData: refinedDataPayload,
+          focus: promptFocus,
+          notes: promptNotes,
+        }
       );
 
       // Costruisci i metadati in un oggetto JS
@@ -6058,6 +7085,10 @@ const w = await run('bash', ['-lc', whisperxCmd]);
           frontMatter.metadata && typeof frontMatter.metadata === 'object' ? { ...frontMatter.metadata } : {};
         nestedMetadata.transcript = transcriptBlocks;
         frontMatter.metadata = nestedMetadata;
+      }
+
+      if (refinedDataPayload) {
+        frontMatter.refined = refinedDataPayload;
       }
 
       // Rimuovi chiavi vuote per un YAML pulito
@@ -6152,7 +7183,7 @@ const w = await run('bash', ['-lc', whisperxCmd]);
         publishEnv,
         templateInfo: activeTemplateDescriptor,
         logger: out,
-        forcePandocFallback: profileSelectedFallback,
+        forcePandocFallback,
       });
 
       await uploadFileToBucket(
@@ -6217,6 +7248,7 @@ const w = await run('bash', ['-lc', whisperxCmd]);
       prompt: promptAssignment,
       structure,
       speakers: speakerLabels,
+      refinedData: refinedDataPayload,
     });
   } catch (err) {
     const message = String(err && err.message ? err.message : err);
@@ -7054,10 +8086,24 @@ app.post(
             if (transcriptTextForQuery) queryParts.push(transcriptTextForQuery);
             const combinedQuery = queryParts.join('\n\n').slice(0, CONTEXT_QUERY_MAX_CHARS);
             if (combinedQuery) {
+              console.log('--- DEBUG RAG: Inizio Recupero Contesto ---');
+              console.log(`Workspace ID per la ricerca: ${workspaceId}`);
+              console.log(`Project ID per la ricerca: ${workspaceProjectId}`);
+              console.log(`Query di ricerca (primi 200 char): ${combinedQuery.substring(0, 200)}...`);
+            
               retrievedWorkspaceContext = await retrieveRelevantContext(combinedQuery, workspaceId, {
                 provider: aiOverrides.embedding,
                 projectId: workspaceProjectId,
               });
+            
+              if (retrievedWorkspaceContext) {
+                console.log(`✅ Contesto RAG recuperato con successo (${retrievedWorkspaceContext.length} caratteri).`);
+                console.log(`Contesto (primi 200 char): ${retrievedWorkspaceContext.substring(0, 200)}...`);
+              } else {
+                console.warn('⚠️ ATTENZIONE: Nessun contesto RAG recuperato. La funzione ha restituito una stringa vuota.');
+              }
+              console.log('--- DEBUG RAG: Fine Recupero Contesto ---'); 
+             
               if (retrievedWorkspaceContext) {
                 res.locals.retrievedWorkspaceContext = retrievedWorkspaceContext;
               }
@@ -7078,11 +8124,15 @@ app.post(
           content: markdownBody,
           modelName: aiModel,
         } = await generateMarkdown(
-          txtLocalPath,
-          mdLocalPath,
+          txtLocalPath,      
           promptRulePayload,
           retrievedWorkspaceContext || '',
-          { textProvider: aiOverrides.text }
+          {
+            textProvider: aiOverrides.text,
+            refinedData: refinedDataPayload,
+            focus: promptFocus,
+            notes: promptNotes,
+          }
         );
 
         const now = new Date();
@@ -7429,6 +8479,47 @@ app.get('/api/file', async (req, res) => {
     return res.status(500).json({ ok: false, message });
   }
 });
+app.post('/api/transcribe-only', uploadMiddleware.single('audio'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ ok: false, message: 'Nessun file audio fornito.' });
+  }
+
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf_transcribe_'));
+  let audioLocalPath = req.file.path;
+  let wavLocalPath = path.join(tempDir, 'audio.wav');
+  let transcriptLocalPath = '';
+
+  try {
+    // 1. Transcodifica
+    const ff = await run('ffmpeg', ['-y', '-i', audioLocalPath, '-ac', '1', '-ar', '16000', wavLocalPath]);
+    if (ff.code !== 0) throw new Error(ff.stderr || 'ffmpeg failed');
+
+    // 2. Trascrizione
+    const whisperxCmd = [
+      'whisperx', JSON.stringify(wavLocalPath),
+      '--language it', '--model small', '--device cpu', '--compute_type float32',
+      '--output_format', 'txt',
+      '--output_dir', JSON.stringify(tempDir)
+    ].join(' ');
+    const w = await run('bash', ['-lc', whisperxCmd]);
+    if (w.code !== 0) throw new Error(w.stderr || 'whisper failed');
+    
+    const transcriptFileName = (await fsp.readdir(tempDir)).find(f => f.endsWith('.txt'));
+    if (!transcriptFileName) throw new Error('File di trascrizione non trovato.');
+    
+    transcriptLocalPath = path.join(tempDir, transcriptFileName);
+    const transcription = await fsp.readFile(transcriptLocalPath, 'utf8');
+
+    return res.json({ ok: true, transcription, speakers: [] });
+
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: error.message || 'Errore durante la trascrizione.' });
+  } finally {
+    await safeRemoveDir(tempDir);
+    await safeUnlink(req.file.path).catch(() => {});
+  }
+});
+
 
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {
@@ -7465,4 +8556,6 @@ module.exports = {
   applySpeakerMapToContent,
   resolveDestinationDirectory,
   sanitizeDestDirInput,
+  extractRefinedDataFromBody,
+  sanitizeRefinedDataInput,
 };
