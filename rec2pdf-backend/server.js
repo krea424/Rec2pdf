@@ -872,6 +872,7 @@ const sanitizeRefinedDataInput = (input) => {
   return { ok: true, value: payload };
 };
 
+// SOSTITUISCI LA TUA FUNZIONE CON QUESTA VERSIONE CORRETTA
 const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => {
   const normalizedWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
   if (!normalizedWorkspaceId) {
@@ -908,10 +909,14 @@ const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => 
   try {
     const embedding = await aiEmbedder.generateEmbedding(normalizedQuery);
     if (!Array.isArray(embedding) || embedding.length === 0) {
+      console.error('[retrieveRelevantContext] Errore: la generazione dell-embedding non ha restituito un array valido.');
       return '';
     }
+    console.log(`[retrieveRelevantContext] Embedding generato con successo (dimensione: ${embedding.length}).`);
 
-    // VERSIONE CORRETTA
+    // La chiamata a Supabase viene fatta qui. Le variabili `data` ed `error`
+    // vengono create solo DOPO che la chiamata ha restituito un risultato.
+    console.log(`[retrieveRelevantContext] Chiamata a match_knowledge_chunks con workspace: ${normalizedWorkspaceId}, project: ${normalizedProjectId}`);
     const { data, error } = await supabase.rpc('match_knowledge_chunks', {
       query_embedding: embedding,
       match_workspace_id: normalizedWorkspaceId,
@@ -925,15 +930,18 @@ const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => 
     }
 
     if (!Array.isArray(data) || data.length === 0) {
+      console.warn('[retrieveRelevantContext] La chiamata RPC ha avuto successo ma non ha restituito dati (possibile mismatch di ID?).');
       return '';
     }
 
+    console.log(`[retrieveRelevantContext] Ricevuti ${data.length} chunk da Supabase.`);
     const chunks = data
       .map((row) => (row && typeof row.content === 'string' ? row.content.trim() : ''))
       .filter(Boolean);
 
     return chunks.length ? chunks.join(CONTEXT_SEPARATOR) : '';
   } catch (error) {
+    // Questo `catch` ora catturerà solo errori imprevisti (es. di rete)
     console.error('retrieveRelevantContext fallita:', error);
     return '';
   }
@@ -6817,41 +6825,62 @@ const w = await run('bash', ['-lc', whisperxCmd]);
       await safeUnlink(transcriptLocalPath);
     }
 
-        const profileTemplateCandidate = workspaceProfile?.pdfTemplate || workspaceProfileTemplate || '';
-    let profileTemplateDescriptor = null;
-    let promptTemplateDescriptor = null;
-    const profileSelectedFallback = isPandocFallbackTemplate(profileTemplateCandidate);
+        // BLOCCO CORRETTO E OTTIMIZZATO
+const manualTemplateSelection = workspaceProfileTemplate; // La selezione dal pannello Advanced
+const profileTemplateSetting = workspaceProfile?.pdfTemplate; // Il template salvato nel profilo (se esiste)
 
-    if (profileSelectedFallback) {
-      out('📄 Template profilo: fallback Pandoc semplice', 'publish', 'info');
+let activeTemplateDescriptor = null;
+let activeTemplateIsFallback = false;
+
+// 1. Priorità massima: la selezione manuale dell'utente dal pannello Advanced.
+if (manualTemplateSelection) {
+  if (isPandocFallbackTemplate(manualTemplateSelection)) {
+    out('📄 Template manuale selezionato: fallback Pandoc semplice', 'publish', 'info');
+    activeTemplateIsFallback = true;
+  } else {
+    try {
+      activeTemplateDescriptor = await resolveTemplateDescriptor(manualTemplateSelection);
+      out(`📄 Template manuale applicato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+    } catch (templateError) {
+      const reason = templateError instanceof TemplateResolutionError ? templateError.userMessage : templateError?.message || templateError;
+      out(`⚠️ Template manuale non accessibile (${manualTemplateSelection}): ${reason}`, 'publish', 'warning');
     }
+  }
+}
 
-    if (profileTemplateCandidate && !profileSelectedFallback) {
-      try {
-        profileTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateCandidate);
-        out(`📄 Template profilo: ${profileTemplateDescriptor.fileName}`, 'publish', 'info');
-        if (profileTemplateDescriptor.cssFileName) {
-          out(`🎨 CSS template: ${profileTemplateDescriptor.cssFileName}`, 'publish', 'info');
+// 2. Se non c'è selezione manuale, usa il template del profilo (se esiste).
+if (!activeTemplateDescriptor && !activeTemplateIsFallback && profileTemplateSetting) {
+    if (isPandocFallbackTemplate(profileTemplateSetting)) {
+        out('📄 Template del profilo: fallback Pandoc semplice', 'publish', 'info');
+        activeTemplateIsFallback = true;
+    } else {
+        try {
+            activeTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateSetting);
+            out(`📄 Template del profilo applicato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+        } catch (templateError) {
+            const reason = templateError instanceof TemplateResolutionError ? templateError.userMessage : templateError?.message || templateError;
+            out(`⚠️ Template del profilo non accessibile (${profileTemplateSetting}): ${reason}`, 'publish', 'warning');
         }
-        if (profileTemplateDescriptor.engine) {
-          out(`⚙️ Motore HTML preferito: ${profileTemplateDescriptor.engine}`, 'publish', 'info');
-        }
-      } catch (templateError) {
-        const reason =
-          templateError instanceof TemplateResolutionError
-            ? templateError.userMessage
-            : templateError?.message || templateError;
-        out(`⚠️ Template profilo non accessibile: ${reason}`, 'publish', 'warning');
-      }
     }
+}
 
-    if (!profileTemplateDescriptor && !profileSelectedFallback && selectedPrompt) {
-      promptTemplateDescriptor = await resolvePromptTemplateDescriptor(selectedPrompt, { logger: out });
-    }
+// 3. Se ancora nessun template, usa quello definito nel prompt (se esiste).
+if (!activeTemplateDescriptor && !activeTemplateIsFallback && selectedPrompt) {
+  activeTemplateDescriptor = await resolvePromptTemplateDescriptor(selectedPrompt, { logger: out });
+}
 
-    let activeTemplateDescriptor = profileSelectedFallback
-      ? null
-      : profileTemplateDescriptor || promptTemplateDescriptor;
+// 4. Se ancora nulla e la diarizzazione è attiva, usa il fallback per i verbali.
+if (!activeTemplateDescriptor && !activeTemplateIsFallback && diarizeEnabled) {
+  try {
+    activeTemplateDescriptor = await resolveTemplateDescriptor('verbale_meeting.html');
+    out(`📄 Template diarizzazione fallback: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+  } catch (templateError) {
+    // ... log errore
+  }
+}
+
+// Alla fine, la variabile `forcePandocFallback` deve riflettere la scelta.
+const forcePandocFallback = activeTemplateIsFallback;
 
     if (!activeTemplateDescriptor && diarizeEnabled && !profileSelectedFallback) {
       try {
@@ -6971,8 +7000,7 @@ const w = await run('bash', ['-lc', whisperxCmd]);
         content: markdownBody,
         modelName: aiModel,
       } = await generateMarkdown(
-        transcriptLocalForMarkdown,
-        mdLocalPath,
+        transcriptLocalForMarkdown,        
         promptRulePayload,
         retrievedWorkspaceContext || res.locals?.retrievedWorkspaceContext || '',
         {
@@ -7155,7 +7183,7 @@ const w = await run('bash', ['-lc', whisperxCmd]);
         publishEnv,
         templateInfo: activeTemplateDescriptor,
         logger: out,
-        forcePandocFallback: profileSelectedFallback,
+        forcePandocFallback,
       });
 
       await uploadFileToBucket(
@@ -8058,10 +8086,24 @@ app.post(
             if (transcriptTextForQuery) queryParts.push(transcriptTextForQuery);
             const combinedQuery = queryParts.join('\n\n').slice(0, CONTEXT_QUERY_MAX_CHARS);
             if (combinedQuery) {
+              console.log('--- DEBUG RAG: Inizio Recupero Contesto ---');
+              console.log(`Workspace ID per la ricerca: ${workspaceId}`);
+              console.log(`Project ID per la ricerca: ${workspaceProjectId}`);
+              console.log(`Query di ricerca (primi 200 char): ${combinedQuery.substring(0, 200)}...`);
+            
               retrievedWorkspaceContext = await retrieveRelevantContext(combinedQuery, workspaceId, {
                 provider: aiOverrides.embedding,
                 projectId: workspaceProjectId,
               });
+            
+              if (retrievedWorkspaceContext) {
+                console.log(`✅ Contesto RAG recuperato con successo (${retrievedWorkspaceContext.length} caratteri).`);
+                console.log(`Contesto (primi 200 char): ${retrievedWorkspaceContext.substring(0, 200)}...`);
+              } else {
+                console.warn('⚠️ ATTENZIONE: Nessun contesto RAG recuperato. La funzione ha restituito una stringa vuota.');
+              }
+              console.log('--- DEBUG RAG: Fine Recupero Contesto ---'); 
+             
               if (retrievedWorkspaceContext) {
                 res.locals.retrievedWorkspaceContext = retrievedWorkspaceContext;
               }
@@ -8082,8 +8124,7 @@ app.post(
           content: markdownBody,
           modelName: aiModel,
         } = await generateMarkdown(
-          txtLocalPath,
-          mdLocalPath,
+          txtLocalPath,      
           promptRulePayload,
           retrievedWorkspaceContext || '',
           {
@@ -8438,6 +8479,47 @@ app.get('/api/file', async (req, res) => {
     return res.status(500).json({ ok: false, message });
   }
 });
+app.post('/api/transcribe-only', uploadMiddleware.single('audio'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ ok: false, message: 'Nessun file audio fornito.' });
+  }
+
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf_transcribe_'));
+  let audioLocalPath = req.file.path;
+  let wavLocalPath = path.join(tempDir, 'audio.wav');
+  let transcriptLocalPath = '';
+
+  try {
+    // 1. Transcodifica
+    const ff = await run('ffmpeg', ['-y', '-i', audioLocalPath, '-ac', '1', '-ar', '16000', wavLocalPath]);
+    if (ff.code !== 0) throw new Error(ff.stderr || 'ffmpeg failed');
+
+    // 2. Trascrizione
+    const whisperxCmd = [
+      'whisperx', JSON.stringify(wavLocalPath),
+      '--language it', '--model small', '--device cpu', '--compute_type float32',
+      '--output_format', 'txt',
+      '--output_dir', JSON.stringify(tempDir)
+    ].join(' ');
+    const w = await run('bash', ['-lc', whisperxCmd]);
+    if (w.code !== 0) throw new Error(w.stderr || 'whisper failed');
+    
+    const transcriptFileName = (await fsp.readdir(tempDir)).find(f => f.endsWith('.txt'));
+    if (!transcriptFileName) throw new Error('File di trascrizione non trovato.');
+    
+    transcriptLocalPath = path.join(tempDir, transcriptFileName);
+    const transcription = await fsp.readFile(transcriptLocalPath, 'utf8');
+
+    return res.json({ ok: true, transcription, speakers: [] });
+
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: error.message || 'Errore durante la trascrizione.' });
+  } finally {
+    await safeRemoveDir(tempDir);
+    await safeUnlink(req.file.path).catch(() => {});
+  }
+});
+
 
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {

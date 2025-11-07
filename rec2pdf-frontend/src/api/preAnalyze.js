@@ -1,4 +1,35 @@
 const isNonEmptyString = (value) => typeof value === "string" && value.trim().length > 0;
+export const buildRefinementPreAnalyzePayload = ({ transcription, prompt, workspaceId }) => {
+  const sanitizedTranscription = (typeof transcription === 'string' && transcription.trim()) ? transcription.trim() : '';
+
+  const cueCardsSource = (prompt && Array.isArray(prompt.cueCards)) ? prompt.cueCards : [];
+
+  const cueCards = cueCardsSource
+    .map((card) => {
+      if (!card || typeof card !== 'object') return null;
+      const key = card.key || card.id || '';
+      const title = card.title || card.label || '';
+      const hint = card.hint || card.description || '';
+      // Il backend si aspetta solo la struttura, non il valore
+      if (!key || !title) return null;
+      return { key, title, hint };
+    })
+    .filter(Boolean);
+
+  const payload = {
+    transcription: sanitizedTranscription,
+    cueCards,
+  };
+
+  if (workspaceId) {
+    payload.workspaceId = workspaceId;
+  }
+  if (prompt && prompt.id) {
+    payload.promptId = prompt.id;
+  }
+
+  return payload;
+};
 
 const normalizeBackendUrl = (url) => {
   if (!isNonEmptyString(url)) {

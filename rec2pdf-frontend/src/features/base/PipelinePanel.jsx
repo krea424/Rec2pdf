@@ -22,6 +22,8 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     STAGE_STATUS_LABELS,
     progressPercent,
     processViaBackend,
+    // MODIFICA CHIAVE #1: Importiamo la nuova funzione dal contesto e la rinominiamo
+    handleRefineAndGenerate: startRefinementFlow,
     audioBlob,
     backendUp,
     busy,
@@ -32,7 +34,6 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     resetAll,
     baseJourneyVisibility,
     revealPipelinePanel,
-    openRefinementPanel,
     enableDiarization,
     setEnableDiarization,
     workspaceSelection,
@@ -237,18 +238,8 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     processViaBackend();
   }, [audioBlob, backendUp, canPublish, processViaBackend, revealPipelinePanel, trackEvent]);
 
-  const handleRefineAndGenerate = useCallback(() => {
-    if (!canPublish) {
-      return;
-    }
-    trackEvent("pipeline.refine_panel_requested", {
-      hasAudio: Boolean(audioBlob),
-      backendReachable: backendUp !== false,
-    });
-    if (typeof openRefinementPanel === "function") {
-      openRefinementPanel();
-    }
-  }, [audioBlob, backendUp, canPublish, openRefinementPanel, trackEvent]);
+  // MODIFICA CHIAVE #2: La vecchia funzione locale viene rimossa.
+  // La logica è ora gestita da `startRefinementFlow` importato dal contesto.
 
   const handleDownload = useCallback(() => {
     if (!latestEntry?.pdfPath) {
@@ -493,9 +484,10 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
           >
             <Cpu className="h-5 w-5" /> Ottieni PDF
           </button>
+          {/* MODIFICA CHIAVE #3: Il pulsante ora chiama `startRefinementFlow` */}
           <button
             type="button"
-            onClick={handleRefineAndGenerate}
+            onClick={startRefinementFlow}
             disabled={!canPublish}
             aria-pressed={refinementPanelOpen}
             className={classNames(refineCtaClassName, "sm:flex-1")}

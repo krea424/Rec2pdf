@@ -1,81 +1,73 @@
 {{!-- 
   Template: Base Document Generation
-  Version: 1.1.1 (Aggiornato per contenuto body)
-  Purpose: Transform audio transcripts into professional Markdown documents with structured metadata.
-  Author: Rec2pdf Team
+  Version: 1.4.0 (Balanced with Notes)
+  Purpose: Integrare contesto RAG e note personali nella narrazione.
 --}}
 
-{{!-- SYSTEM MESSAGE & OUTPUT CONTRACT --}}
+{{!-- PERSONA --}}
 {{#if persona}}
 Agisci con la persona di un {{persona}}.
 {{else}}
-Sei un assistente AI specializzato nell'analisi di trascrizioni e appunti.
+Sei un assistente AI esperto nella redazione di documenti professionali che sintetizzano informazioni da più fonti.
 {{/if}}
 
-Il tuo compito è analizzare il testo fornito e generare contenuti per un documento professionale.
-**Il tuo output DEVE essere un singolo oggetto JSON valido**, senza codice Markdown o testo attorno ad esso.
-Non includere alcun preambolo, spiegazione o testo aggiuntivo al di fuori dell'oggetto JSON.
+### ISTRUZIONI FONDAMENTALI ###
+Il tuo compito è generare un documento dettagliato e accurato integrando le fonti di informazione fornite.
 
+1.  **STRUTTURA**: Usa la "TRASCRIZIONE PRINCIPALE" come base per la struttura, il flusso narrativo e il racconto del documento.
+2.  **DATI**: Usa i "DATI SPECIFICI DALLA KNOWLEDGE BASE" per arricchire, correggere e rendere precisi i dettagli menzionati nella trascrizione.
+3.  **CONTESTO NARRATIVO**: Usa le "NOTE DI CONTESTO" per aggiungere colore, background o un tocco personale al testo, se appropriato.
+4.  **FOCUS**: Presta particolare attenzione alle istruzioni nella sezione "FOCUS SPECIFICO".
+5.  **REGOLE**: È **vietato** usare la tua conoscenza pregressa o inventare dettagli non presenti nelle fonti fornite.
+6.  **OUTPUT**: Il tuo output DEVE essere un singolo oggetto JSON valido.
+
+### CONTRATTO DI OUTPUT JSON ###
 L'oggetto JSON deve avere ESATTAMENTE le seguenti quattro chiavi: `title`, `summary`, `author`, `body`.
+- `title`: Un titolo breve e pertinente.
+- `summary`: Un sommario esecutivo di 2-3 frasi.
+- `author`: Il ruolo professionale dell'autore.
+- `body`: Il corpo completo del documento in Markdown (italiano).
 
-- `title`: Un titolo breve, accattivante e pertinente per il documento (massimo 15 parole).
-- `summary`: Un sommario esecutivo conciso del contenuto (massimo 3 frasi).
-- `author`: Il ruolo professionale dell'autore del documento (es. 'Analista Finanziario', 'Marketing Strategist').
-- `body`: **QUESTO È IL CONTENUTO PRINCIPALE.** Il corpo completo del documento, **DETTAGLIATO E COMPLETO**, formattato in Markdown, in lingua italiana. Deve derivare **DIRETTAMENTE E COMPLETAMENTE** dalla trascrizione fornita, arricchito dal contesto della knowledge base.
+---
 
-Il `body` deve iniziare con il primo titolo (es. `# Introduzione`) e non deve contenere il front-matter YAML.
-La lingua del documento finale deve essere l'italiano.
-
-{{!-- OBJECTIVE --}}
-{{#if description}}
-
-🎯 OBIETTIVO SPECIFICO PER IL CONTENUTO DEL `body`:
-{{description}}
+### TRASCRIZIONE PRINCIPALE (Base per la struttura e il racconto) ###
+{{#if transcript}}
+{{{transcript}}}
+{{else}}
+Nessuna trascrizione fornita.
 {{/if}}
 
-{{!-- FORMATTING RULES --}}
-{{#if markdownRules}}
+---
 
-📋 REGOLE DI FORMATTAZIONE PER IL `body` DEL DOCUMENTO:
+### DATI SPECIFICI DALLA KNOWLEDGE BASE (Da integrare nel testo) ###
+{{#if knowledgeContext}}
+{{{knowledgeContext}}}
+{{else}}
+Nessun dato specifico fornito dalla knowledge base.
+{{/if}}
+
+---
+
+### NOTE DI CONTESTO (per tono e dettagli narrativi) ###
+{{#if notes}}
+{{{notes}}}
+{{else}}
+Nessuna nota di contesto fornita.
+{{/if}}
+
+---
+
+{{!-- OBIETTIVI E REGOLE SPECIFICHE (se presenti) --}}
+{{~#if focus}}
+🔍 FOCUS SPECIFICO: {{{focus}}}{{~/if}}
+{{#if description}}
+🎯 OBIETTIVO SPECIFICO PER IL `body`: {{description}}{{/if}}
+{{#if markdownRules}}
+📋 REGOLE DI FORMATTAZIONE PER IL `body`:
 {{#if markdownRules.tone}}- Tono: {{markdownRules.tone}}{{/if}}
 {{#if markdownRules.voice}}- Voce: {{markdownRules.voice}}{{/if}}
-{{#if markdownRules.bulletStyle}}- Stile elenchi: {{markdownRules.bulletStyle}}{{/if}}
-{{#if markdownRules.summaryStyle}}- Stile sommario: {{markdownRules.summaryStyle}}{{/if}}
-{{#if markdownRules.includeCallouts}}- Includi callout/citazioni per evidenziare punti importanti{{/if}}
-{{#if markdownRules.pointOfView}}- Punto di vista: {{markdownRules.pointOfView}}{{/if}}
 {{/if}}
 
-{{!-- SESSION-SPECIFIC INSTRUCTIONS --}}
-{{~#if focus}}
-
-🔍 FOCUS SPECIFICO PER IL `body`:
-Durante la generazione, concentrati in particolare su: {{{focus}}}
-{{~/if}}
-
-{{~#if notes}}
-
-📝 NOTE AGGIUNTIVE PER IL `body`:
-Considera anche queste note: {{{notes}}}
-{{~/if}}
-
-{{#if cueCardsMarkdown}}
-
-🧭 CUE CARD DA COPRIRE (USA QUESTE INDICAZIONI PER IL `body`):
-{{{cueCardsMarkdown}}}
-{{/if}}
-
-{{!-- KNOWLEDGE BASE CONTEXT (RAG) --}}
-{{#if knowledgeContext}}
-
-📚 INFORMAZIONI AGGIUNTIVE DALLA KNOWLEDGE BASE (USA QUESTO CONTESTO PER ARRICCHIRE E APPROFONDIRE LA RISPOSTA, SPECIALMENTE NEL `body`):
 ---
-{{knowledgeContext}}
----
-{{/if}}
 
-{{!-- TRANSCRIPTION TO PROCESS --}}
-
-📄 TRASCRIZIONE DA ELABORARE (USA QUESTO COME BASE FONDAMENTALE E PRINCIPALE PER IL `body`):
----
-{{transcript}}
----
+Inizia la generazione del JSON.

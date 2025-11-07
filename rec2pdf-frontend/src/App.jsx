@@ -32,6 +32,7 @@ import {
 } from "./api/workspaces.js";
 import {
   buildPreAnalyzeRequest,
+  buildRefinementPreAnalyzePayload, // <-- Aggiungi la nuova funzione qui
   postPreAnalyze,
 } from "./api/preAnalyze.js";
 
@@ -1194,6 +1195,10 @@ function AppContent(){
     }
   });
   const [refinedData, setRefinedData] = useState(null);
+  const activePrompt = useMemo(
+    () => findPromptByIdentifier(prompts, promptState.promptId) || null,
+    [prompts, promptState.promptId]
+  );
 
   const setCueCardAnswers = useCallback((valueOrUpdater) => {
     setPromptState((prev) => {
@@ -3941,6 +3946,104 @@ function AppContent(){
     setStatusCreationMode,
   ]);
 
+  // In App.jsx, all'interno del componente AppContent
+
+// ... vicino alle altre funzioni come processViaBackend ...
+
+const handleRefineAndGenerate = useCallback(async () => {
+  const blob = audioBlob;
+  if (!blob) {
+    setErrorBanner({ title: 'Nessun file audio', details: 'Carica o registra un audio prima di avviare il raffinamento.' });
+    return;
+  }
+  if (busy) {
+    setErrorBanner({ title: 'Pipeline in corso', details: 'Attendi il termine del processo attuale.' });
+    return;
+  }
+
+  setBusy(true);
+  setErrorBanner(null);
+  openRefinementPanel(); // Apre subito il pannello in stato di caricamento
+  pushLogs(['🚀 Avvio del flusso di raffinamento...']);
+
+  try {
+    // 1. Esegui solo la trascrizione (creeremo un endpoint apposito)
+    const formData = new FormData();
+    formData.append('audio', blob, blob.name || 'audio.webm');
+    
+    // Aggiungiamo i provider AI per coerenza
+    if (aiProviderOverrides.text) {
+      formData.append('aiTextProvider', aiProviderOverrides.text);
+    }
+
+    // Chiamata a un nuovo endpoint SOLO per la trascrizione
+    const transcribeResponse = await fetchBodyWithAuth(`${backendUrl}/api/transcribe-only`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!transcribeResponse.ok) {
+      throw new Error(transcribeResponse.data?.message || 'Trascrizione fallita');
+    }
+
+    const { transcription, speakers } = transcribeResponse.data;
+    pushLogs(['✅ Trascrizione completata.']);
+
+    // 2. Popola `refinedData` con la trascrizione
+    const initialRefinedData = {
+      transcription,
+      speakers: speakers || [],
+    };
+    setRefinedData(initialRefinedData);
+    
+    // 3. Chiama /api/pre-analyze per i suggerimenti
+    pushLogs(['🧠 Richiesta suggerimenti AI per le cue card...']);
+    // RIGA CORRETTA
+    const preAnalyzePayload = buildRefinementPreAnalyzePayload({
+      transcription,
+      prompt: activePrompt,
+      workspaceId: workspaceSelection?.workspaceId,
+    });
+    
+    const preAnalyzeResult = await postPreAnalyze({
+      backendUrl,
+      fetcher: fetchBodyWithAuth,
+      payload: preAnalyzePayload,
+    });
+
+    if (preAnalyzeResult.ok) {
+      pushLogs(['✅ Suggerimenti ricevuti.']);
+      
+      // La risposta grezza dal backend è in `preAnalyzeResult.raw`
+      const suggestedAnswers = preAnalyzeResult.raw?.suggestedAnswers;
+    
+      // Controlliamo che `suggestedAnswers` sia un array prima di usarlo
+      if (Array.isArray(suggestedAnswers)) {
+        const answersMap = suggestedAnswers.reduce((acc, item) => {
+          if (item && typeof item.key === 'string') {
+            acc[item.key] = item.answer || '';
+          }
+          return acc;
+        }, {});
+        setCueCardAnswers(answersMap);
+      } else {
+        // Se non è un array, logghiamo un avviso ma non blocchiamo l'app
+        console.warn('La risposta di pre-analisi non conteneva un array `suggestedAnswers` valido.', preAnalyzeResult.raw);
+        pushLogs(['⚠️ Formato suggerimenti non valido ricevuto dal backend.']);
+      }
+    } else {
+      pushLogs([`⚠️ Pre-analisi fallita: ${preAnalyzeResult.message}`]);
+    }
+
+  } catch (error) {
+    const message = error.message || 'Errore imprevisto nel flusso di raffinamento.';
+    setErrorBanner({ title: 'Flusso di Raffinamento Fallito', details: message });
+    pushLogs([`❌ ${message}`]);
+    closeRefinementPanel();
+  } finally {
+    setBusy(false);
+  }
+}, [audioBlob, busy, backendUrl, fetchBodyWithAuth, activePrompt, aiProviderOverrides.text, openRefinementPanel, closeRefinementPanel, setRefinedData, setCueCardAnswers, setErrorBanner, pushLogs]);
   const processViaBackend=async()=>{
     const blob=audioBlob;
     if(!blob) return;
@@ -5391,10 +5494,7 @@ function AppContent(){
       .filter(([, value]) => Boolean(value))
       .map(([key]) => key);
   }, [promptState.cueProgress]);
-  const activePrompt = useMemo(
-    () => findPromptByIdentifier(prompts, promptState.promptId) || null,
-    [prompts, promptState.promptId]
-  );
+  
 
   const headerStatus = useMemo(() => {
     if (failedStage) {
@@ -5650,6 +5750,7 @@ function AppContent(){
     resetCreationFlowState,
     pipelineComplete,
     resetDiarizationPreference,
+    handleRefineAndGenerate,
   };
 
   return (
