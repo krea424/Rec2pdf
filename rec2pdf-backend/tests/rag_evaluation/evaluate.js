@@ -17,6 +17,11 @@ const BACKEND_BASE_URL =
   process.env.EVAL_BACKEND_URL || process.env.BACKEND_URL || "http://localhost:8080";
 const limit = pLimit(CONCURRENCY);
 
+const AUTH_HEADER_NAME = (process.env.EVAL_AUTH_HEADER_NAME || "Authorization").trim();
+const AUTH_HEADER_VALUE = (process.env.EVAL_AUTH_HEADER_VALUE || "").trim();
+const AUTH_BEARER = (process.env.EVAL_AUTH_TOKEN || "").trim();
+const COOKIE_HEADER = (process.env.EVAL_COOKIE || "").trim();
+
 // === SCHEMA DATASET ===
 const CaseSchema = z.object({
   id: z.string(),
@@ -37,9 +42,18 @@ async function runBaselineRag(query, options = {}) {
   const endpointUrl = new URL(ENDPOINT_PATH, backend).toString();
   let res;
   try {
+    const headers = { "Content-Type": "application/json" };
+    const authValue = AUTH_HEADER_VALUE || (AUTH_BEARER ? `Bearer ${AUTH_BEARER}` : "");
+    if (authValue) {
+      headers[AUTH_HEADER_NAME || "Authorization"] = authValue;
+    }
+    if (COOKIE_HEADER) {
+      headers.Cookie = COOKIE_HEADER;
+    }
+
     res = await fetch(endpointUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ query, ...options }),
       signal: controller.signal
     });
@@ -60,6 +74,22 @@ async function runBaselineRag(query, options = {}) {
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    if (res.status === 401) {
+      const authHints = [
+        AUTH_BEARER || AUTH_HEADER_VALUE
+          ? "Verifica che il token/grant fornito sia valido e non scaduto."
+          : "Imposta EVAL_AUTH_TOKEN (o EVAL_AUTH_HEADER_VALUE) con un token valido per l'endpoint di baseline.",
+        COOKIE_HEADER ? "Controlla anche eventuali cookie di sessione impostati in EVAL_COOKIE." : "",
+      ].filter(Boolean).join(" ");
+      throw new Error(
+        `RAG baseline HTTP 401 su ${endpointUrl}. Corpo risposta: ${body.slice(0, 200) || "<vuoto>"}. ${authHints}`
+      );
+    }
+    if (res.status === 404) {
+      throw new Error(
+        `Endpoint ${endpointUrl} non trovato (HTTP 404). Controlla che EVAL_RAG_ENDPOINT punti al percorso corretto del tuo backend.`
+      );
+    }
     throw new Error(
       `RAG baseline HTTP ${res.status} su ${endpointUrl}. Corpo risposta: ${body.slice(0, 200) || "<vuoto>"}`
     );
@@ -125,6 +155,9 @@ async function main() {
   console.log(`• Dataset: ${DATASET_PATH}`);
   console.log(`• Backend URL: ${BACKEND_BASE_URL}`);
   console.log(`• Endpoint: ${ENDPOINT_PATH}`);
+  console.log(
+    `• Autenticazione: ${AUTH_BEARER || AUTH_HEADER_VALUE ? `${AUTH_HEADER_NAME || "Authorization"} impostato` : "nessuna"}`
+  );
   console.log(`• Output atteso: ${REPORT_PATH}`);
 
   const rows = await Promise.all(

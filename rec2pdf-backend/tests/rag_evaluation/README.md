@@ -11,11 +11,15 @@ Valuta il RAG attuale (baseline) con 4 metriche: Context Precision, Context Reca
   - GOOGLE_API_KEY o OPENAI_API_KEY
   - (opzionale) EVAL_BACKEND_URL=http://localhost:8080 (per override locale)
   - (opzionale) EVAL_RAG_ENDPOINT=/api/rag/baseline
+  - (se richiesto) EVAL_AUTH_TOKEN=<jwt_utente> oppure EVAL_AUTH_HEADER_VALUE="Bearer <token>"
+  - (se richiesto) EVAL_AUTH_HEADER_NAME=Authorization (default) | X-Api-Key | …
+  - (se usi cookie) EVAL_COOKIE=access_token=...
 
 ## Esecuzione
 1) Avvia il backend baseline (`npm start` o `npm run dev`) così da esporre l'endpoint RAG.
-2) `npm run test:rag-eval`
-3) Output:
+2) Se l'endpoint richiede autenticazione, esporta prima il token (es. `export EVAL_AUTH_TOKEN=<jwt>` o imposta `EVAL_AUTH_HEADER_VALUE`).
+3) `npm run test:rag-eval`
+4) Output:
    - Console: riepilogo delle metriche e percorso del report generato
    - File: `tests/rag_evaluation/report_baseline.json`
 
