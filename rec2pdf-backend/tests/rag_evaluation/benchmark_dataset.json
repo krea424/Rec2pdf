@@ -1,0 +1,50 @@
+[
+  {
+    "id": "meet_verbale_sprint",
+    "query": "Fai un executive summary di 5 punti dell'ultima call di progetto.",
+    "gold_notes": "Sintesi puntata dei temi discussi, decisioni, next steps, owner e scadenze.",
+    "expected_focus": "decisioni e azioni",
+    "workspace": "Default",
+    "lang": "it"
+  },
+  {
+    "id": "estrazione_task",
+    "query": "Elenca le azioni assegnate con responsabile e data.",
+    "gold_notes": "Tabella semplice: azione | owner | data.",
+    "expected_focus": "task & responsabilità",
+    "workspace": "Default",
+    "lang": "it"
+  },
+  {
+    "id": "riepilogo_cliente",
+    "query": "Scrivi un paragrafo per il cliente con impatto e benefici.",
+    "gold_notes": "Breve, tono professionale, richiamo a KPI citati in riunione.",
+    "expected_focus": "valore per stakeholder",
+    "workspace": "Default",
+    "lang": "it"
+  },
+  {
+    "id": "contesto_tecnico",
+    "query": "Riassumi le criticità tecniche emerse e le proposte di soluzione.",
+    "gold_notes": "Elenco criticità -> soluzione -> owner tecnico.",
+    "expected_focus": "issue/solutions",
+    "workspace": "Default",
+    "lang": "it"
+  },
+  {
+    "id": "kpi_progress",
+    "query": "Quali KPI sono stati citati e con quale trend?",
+    "gold_notes": "Elenco KPI e breve commento trend.",
+    "expected_focus": "metriche",
+    "workspace": "Default",
+    "lang": "it"
+  },
+  {
+    "id": "estrazione_decisioni",
+    "query": "Quali decisioni sono state prese? Includi riferimento al contesto.",
+    "gold_notes": "Elenco decisioni con 1 riga di contesto ognuna.",
+    "expected_focus": "decision log",
+    "workspace": "Default",
+    "lang": "it"
+  }
+]
