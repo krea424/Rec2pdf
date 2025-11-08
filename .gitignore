@@ -140,6 +140,7 @@ frontend.log
 *.jpeg
 *.html
 *.json
+!rec2pdf-backend/tests/rag_evaluation/*.json
 
 # Eccezioni per snapshot controllati
 !backups/.rec2pdf_snapshot/prompts.json
