@@ -9,11 +9,13 @@ Valuta il RAG attuale (baseline) con 4 metriche: Context Precision, Context Reca
   - EVAL_LLM_PROVIDER=gemini|openai|mock
   - EVAL_MODEL_NAME=gemini-2.5-flash|gpt-4o-mini
   - GOOGLE_API_KEY o OPENAI_API_KEY
+  - (opzionale) EVAL_RAG_ENDPOINT=/api/rag/baseline
 
 ## Esecuzione
-1) `npm run test:rag-eval`
-2) Output:
-   - Console: media metriche
+1) Avvia il backend baseline (`npm start` o `npm run dev`) così da esporre l'endpoint RAG.
+2) `npm run test:rag-eval`
+3) Output:
+   - Console: riepilogo delle metriche e percorso del report generato
    - File: `tests/rag_evaluation/report_baseline.json`
 
 ## Note pratiche

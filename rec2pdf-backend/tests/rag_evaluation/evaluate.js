@@ -12,6 +12,7 @@ const REPORT_PATH = path.resolve("tests/rag_evaluation/report_baseline.json");
 const MAX_CTX = Number(process.env.EVAL_MAX_CONTEXT_CHARS || 2000);
 const CONCURRENCY = Number(process.env.EVAL_CONCURRENCY || 2);
 const TIMEOUT_MS = Number(process.env.EVAL_TIMEOUT_MS || 20000);
+const ENDPOINT_PATH = process.env.EVAL_RAG_ENDPOINT || "/api/rag/baseline";
 const limit = pLimit(CONCURRENCY);
 
 // === SCHEMA DATASET ===
@@ -31,13 +32,30 @@ async function runBaselineRag(query, options = {}) {
   // Adatta URL/shape a quello che hai già
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  const res = await fetch(`${backend}/api/rag/baseline`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, ...options }),
-    signal: controller.signal
-  }).finally(() => clearTimeout(timeout));
-  if (!res.ok) throw new Error(`RAG HTTP ${res.status}`);
+  const endpointUrl = new URL(ENDPOINT_PATH, backend).toString();
+  let res;
+  try {
+    res = await fetch(endpointUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, ...options }),
+      signal: controller.signal
+    });
+  } catch (error) {
+    const hint = error?.code === "ECONNREFUSED"
+      ? "Verifica che il backend sia in esecuzione e che BACKEND_URL punti all'host/porta corretti."
+      : "Controlla che l'endpoint di baseline RAG sia disponibile e che eventuali proxy/firewall non blocchino la richiesta.";
+    throw new Error(`Impossibile contattare ${endpointUrl}: ${error.message || error}. ${hint}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `RAG baseline HTTP ${res.status} su ${endpointUrl}. Corpo risposta: ${body.slice(0, 200) || "<vuoto>"}`
+    );
+  }
   const data = await res.json();
   // Normalizza: { answer, context: [{id, text}] }
   return {
@@ -94,6 +112,11 @@ async function main() {
   const cases = JSON.parse(raw);
   // Validazione
   cases.forEach((c) => CaseSchema.parse(c));
+
+  console.log("📊 Avvio baseline RAG evaluation");
+  console.log(`• Dataset: ${DATASET_PATH}`);
+  console.log(`• Endpoint: ${ENDPOINT_PATH}`);
+  console.log(`• Output atteso: ${REPORT_PATH}`);
 
   const rows = await Promise.all(
     cases.map((c) => limit(() => evaluateOne(c)))
