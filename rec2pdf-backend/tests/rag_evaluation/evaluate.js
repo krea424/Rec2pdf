@@ -13,6 +13,8 @@ const MAX_CTX = Number(process.env.EVAL_MAX_CONTEXT_CHARS || 2000);
 const CONCURRENCY = Number(process.env.EVAL_CONCURRENCY || 2);
 const TIMEOUT_MS = Number(process.env.EVAL_TIMEOUT_MS || 20000);
 const ENDPOINT_PATH = process.env.EVAL_RAG_ENDPOINT || "/api/rag/baseline";
+const BACKEND_BASE_URL =
+  process.env.EVAL_BACKEND_URL || process.env.BACKEND_URL || "http://localhost:8080";
 const limit = pLimit(CONCURRENCY);
 
 // === SCHEMA DATASET ===
@@ -28,7 +30,7 @@ const CaseSchema = z.object({
 // === INTEGRA QUI IL TUO RAG BASELINE ===
 // Opzione A: HTTP verso il backend esistente
 async function runBaselineRag(query, options = {}) {
-  const backend = process.env.BACKEND_URL || "http://localhost:3001";
+  const backend = BACKEND_BASE_URL;
   // Adatta URL/shape a quello che hai già
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -42,10 +44,16 @@ async function runBaselineRag(query, options = {}) {
       signal: controller.signal
     });
   } catch (error) {
-    const hint = error?.code === "ECONNREFUSED"
-      ? "Verifica che il backend sia in esecuzione e che BACKEND_URL punti all'host/porta corretti."
-      : "Controlla che l'endpoint di baseline RAG sia disponibile e che eventuali proxy/firewall non blocchino la richiesta.";
-    throw new Error(`Impossibile contattare ${endpointUrl}: ${error.message || error}. ${hint}`);
+    const connectionHint =
+      error?.code === "ECONNREFUSED"
+        ? "Verifica che il backend sia in esecuzione e che BACKEND_URL o EVAL_BACKEND_URL puntino all'host/porta corretti (default http://localhost:8080)."
+        : "Controlla che l'endpoint di baseline RAG sia disponibile e che eventuali proxy/firewall non blocchino la richiesta.";
+    const endpointHint =
+      ENDPOINT_PATH === "/api/rag/baseline"
+        ? "Se il tuo backend espone un percorso differente, imposta EVAL_RAG_ENDPOINT di conseguenza (es. /api/rec2pdf-rag)."
+        : "";
+    const hints = [connectionHint, endpointHint].filter(Boolean).join(" ");
+    throw new Error(`Impossibile contattare ${endpointUrl}: ${error.message || error}. ${hints}`);
   } finally {
     clearTimeout(timeout);
   }
@@ -115,6 +123,7 @@ async function main() {
 
   console.log("📊 Avvio baseline RAG evaluation");
   console.log(`• Dataset: ${DATASET_PATH}`);
+  console.log(`• Backend URL: ${BACKEND_BASE_URL}`);
   console.log(`• Endpoint: ${ENDPOINT_PATH}`);
   console.log(`• Output atteso: ${REPORT_PATH}`);
 

@@ -5,10 +5,11 @@ Valuta il RAG attuale (baseline) con 4 metriche: Context Precision, Context Reca
 
 ## Requisiti
 - Node 18+
-- `.env` con BACKEND_URL e provider LLM:
+- `.env` con BACKEND_URL (porta di default 8080) e provider LLM:
   - EVAL_LLM_PROVIDER=gemini|openai|mock
   - EVAL_MODEL_NAME=gemini-2.5-flash|gpt-4o-mini
   - GOOGLE_API_KEY o OPENAI_API_KEY
+  - (opzionale) EVAL_BACKEND_URL=http://localhost:8080 (per override locale)
   - (opzionale) EVAL_RAG_ENDPOINT=/api/rag/baseline
 
 ## Esecuzione
