@@ -55,6 +55,10 @@ async function callModel(prompt) {
   }
   if (provider === "gemini") {
     const model = genAI.getGenerativeModel({ model: modelName });
+    // <-- AGGIUNGI QUESTA CONFIGURAZIONE
+    generationConfig: {
+      temperature: 0
+    }
     const result = await model.generateContent(prompt);
     const text = result.response.text().trim();
     return parseFloat(text);

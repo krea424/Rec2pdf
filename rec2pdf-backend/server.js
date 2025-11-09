@@ -3663,31 +3663,95 @@ const normalizeKnowledgeText = (text = '') => {
     .trim();
 };
 
-const createKnowledgeChunks = (text, chunkSize = KNOWLEDGE_CHUNK_SIZE, overlap = KNOWLEDGE_CHUNK_OVERLAP) => {
-  const normalized = typeof text === 'string' ? text.trim() : '';
-  if (!normalized) {
+// CANCELLA qualsiasi import di langchain o text_splitter in cima al file. Non ci servono più.
+
+// ... (resto del file) ...
+
+// TROVA E SOSTITUISCI LA VECCHIA FUNZIONE createKnowledgeChunks CON QUESTA NUOVA VERSIONE:
+
+const createKnowledgeChunks = (text, chunkSize = 1000, chunkOverlap = 200) => {
+  // Nota: chunkSize e chunkOverlap sono ora in CARATTERI per coerenza con la logica.
+  // 1000 caratteri sono circa 200-250 parole.
+  
+  const normalizedText = typeof text === 'string' ? text.trim() : '';
+  if (!normalizedText) {
     return [];
   }
-  const words = normalized.split(/\s+/).filter(Boolean);
-  if (!words.length) {
-    return [];
+
+  // Gerarchia dei separatori, dal più grande al più piccolo.
+  const separators = ["\n\n", "\n", ". ", " ", ""];
+
+  // Funzione ricorsiva interna
+  function splitTextRecursive(textToSplit, currentSeparators) {
+    if (textToSplit.length <= chunkSize) {
+      return [textToSplit];
+    }
+
+    // Prendi il separatore più importante dalla lista
+    const currentSeparator = currentSeparators[0];
+    const nextSeparators = currentSeparators.slice(1);
+
+    // Se abbiamo esaurito i separatori, dividiamo forzatamente per dimensione
+    if (currentSeparator === "") {
+      const chunks = [];
+      for (let i = 0; i < textToSplit.length; i += chunkSize) {
+        chunks.push(textToSplit.slice(i, i + chunkSize));
+      }
+      return chunks;
+    }
+
+    // Prova a dividere con il separatore corrente
+    const splits = textToSplit.split(currentSeparator);
+    const finalChunks = [];
+    let currentChunk = "";
+
+    for (const split of splits) {
+      // Se un pezzo è già più grande della dimensione del chunk,
+      // lo dividiamo ulteriormente con i separatori successivi.
+      if (split.length > chunkSize) {
+        finalChunks.push(...splitTextRecursive(split, nextSeparators));
+        continue;
+      }
+
+      // Altrimenti, proviamo ad aggregare i pezzi
+      const potentialChunk = currentChunk ? `${currentChunk}${currentSeparator}${split}` : split;
+      if (potentialChunk.length > chunkSize) {
+        finalChunks.push(currentChunk);
+        currentChunk = split;
+      } else {
+        currentChunk = potentialChunk;
+      }
+    }
+    if (currentChunk) {
+      finalChunks.push(currentChunk);
+    }
+    
+    return finalChunks;
   }
-  const chunks = [];
-  const step = Math.max(chunkSize - overlap, 1);
-  for (let index = 0; index < words.length; index += step) {
-    const slice = words.slice(index, index + chunkSize);
-    if (!slice.length) {
-      continue;
+
+  // Funzione per aggiungere l'overlap
+  function addOverlap(chunks) {
+    if (chunkOverlap <= 0 || chunks.length <= 1) {
+      return chunks;
     }
-    const chunk = slice.join(' ').trim();
-    if (chunk) {
-      chunks.push(chunk);
+    const overlappedChunks = [chunks[0]];
+    for (let i = 1; i < chunks.length; i++) {
+      const prevChunk = chunks[i-1];
+      const currentChunk = chunks[i];
+      const overlapText = prevChunk.slice(-chunkOverlap);
+      overlappedChunks.push(`${overlapText}... ${currentChunk}`);
     }
-    if (slice.length < chunkSize) {
-      break;
-    }
+    return overlappedChunks;
   }
-  return chunks;
+  
+  const initialChunks = splitTextRecursive(normalizedText, separators);
+  // Per ora, non aggiungiamo l'overlap per mantenere la logica semplice.
+  // Possiamo aggiungerlo in un secondo momento se necessario.
+  const finalChunks = initialChunks.filter(c => c.trim().length > 10); // Filtra chunk troppo piccoli
+
+  console.log(`[Chunking] Documento diviso in ${finalChunks.length} chunk (strategia: semantica custom).`);
+  
+  return finalChunks;
 };
 
 const extractSourceFileName = (metadata = {}) => {
@@ -8521,13 +8585,98 @@ app.post('/api/transcribe-only', uploadMiddleware.single('audio'), async (req, r
 });
 
 
+// ==========================================================
+// == ENDPOINT DEDICATO PER LA VALUTAZIONE RAG (BASELINE) ==
+// ==========================================================
+// POSIZIONE CORRETTA: Prima del middleware 404
+app.post('/api/rag/baseline', async (req, res) => {
+  // Questo endpoint è protetto dall'autenticazione globale su /api
+  try {
+    const query = String(req.body?.query || '').trim();
+    const workspaceId = getWorkspaceIdFromRequest(req); // Ottiene workspace da header/body
+    const aiOverrides = extractAiProviderOverrides(req);
+    res.locals.aiProviderOverrides = aiOverrides;
+
+    if (!query) {
+      return res.status(400).json({ error: 'La query è obbligatoria nel corpo della richiesta.' });
+    }
+
+    console.log(`[EVAL] Ricevuta richiesta per /api/rag/baseline. Query: "${query}", Workspace: "${workspaceId || 'N/A'}"`);
+
+    // 1. Recupera il contesto usando la tua logica RAG esistente.
+    const contextString = await retrieveRelevantContext(query, workspaceId, {});
+
+    // 2. Genera una VERA risposta basata sul contesto recuperato.
+    let answer = "Nessun contesto pertinente trovato per generare una risposta.";
+    if (contextString && contextString.trim().length > 0) {
+        const generationPrompt = `
+            Sei un assistente AI che risponde a domande in modo fattuale e conciso.
+            Basati ESCLUSIVAMENTE sul "Contesto" fornito per formulare la tua risposta.
+            Non inventare informazioni e non usare conoscenza pregressa.
+            Se il contesto non contiene la risposta, rispondi "Le informazioni non sono disponibili nel contesto fornito.".
+
+            Contesto:
+            ---
+            ${contextString}
+            ---
+
+            Domanda: "${query}"
+
+            Risposta concisa:`;
+        
+        try {
+            // Risolvi il provider AI (assicurati che queste funzioni siano accessibili)
+            // Usiamo un modello veloce ed economico per la valutazione.
+            const textProvider = resolveAiProvider('text', aiOverrides.text);
+            const aiGenerator = getAIService(textProvider.id, textProvider.apiKey, textProvider.model);
+            
+            console.log(`[EVAL] Generazione risposta con il modello: ${textProvider.model || textProvider.id}`);
+            answer = await aiGenerator.generateContent(generationPrompt);
+
+        } catch (genError) {
+            console.error("❌ Errore durante la generazione della risposta per la valutazione:", genError);
+            answer = "Errore durante la fase di generazione della risposta.";
+        }
+    } else {
+        console.log("[EVAL] Contesto vuoto, la risposta sarà generica.");
+    }
+
+    // 3. Formatta il contesto per il report, come prima.
+    const contextChunks = contextString.split('\n\n---\n\n').map((text, i) => ({
+      id: `eval_chunk_${i}`,
+      content: text
+    }));
+
+    // 4. Invia la risposta reale e il contesto.
+    res.json({
+      answer: answer.trim(),
+      context: contextChunks
+    });
+
+  } catch (error) {
+    console.error("❌ Errore grave nell'endpoint /api/rag/baseline:", error);
+    res.status(500).json({ error: 'Errore interno del server durante la valutazione RAG.', details: error.message });
+  }
+});
+
+
+// ==========================================================
+// == MIDDLEWARE PER GESTIRE ENDPOINT API NON TROVATI (404) ==
+// ==========================================================
+// Questa deve essere una delle ULTIME definizioni relative alle API.
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {
+    // Se la richiesta inizia con /api/ e non ha trovato una rotta corrispondente prima, è un 404.
     return res.status(404).json({ ok: false, message: `Endpoint ${req.method} ${req.path} non disponibile sul backend.` });
   }
+  // Se non è una richiesta API, passa al prossimo middleware (es. servire il frontend)
   return next();
 });
 
+
+// ==========================================================
+// == AVVIO DEL SERVER ==
+// ==========================================================
 const startServer = () => {
   const server = app.listen(PORT, () => {
     console.log(`rec2pdf backend in ascolto sulla porta ${PORT}`);

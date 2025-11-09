@@ -1,50 +1,26 @@
 [
   {
-    "id": "meet_verbale_sprint",
-    "query": "Fai un executive summary di 5 punti dell'ultima call di progetto.",
-    "gold_notes": "Sintesi puntata dei temi discussi, decisioni, next steps, owner e scadenze.",
-    "expected_focus": "decisioni e azioni",
-    "workspace": "Default",
-    "lang": "it"
+    "id": "vanguard_summary",
+    "query": "Fai un riassunto della sprint review del Progetto Vanguard.",
+    "gold_notes": "Il riassunto deve menzionare il modulo di autenticazione, la decisione su OAuth2, il KPI di adozione utente e le azioni assegnate a Marco e Giulia.",
+    "workspace": "0724ff8c-92cd-4019-92fb-7b74e27a8c57"
   },
   {
-    "id": "estrazione_task",
-    "query": "Elenca le azioni assegnate con responsabile e data.",
-    "gold_notes": "Tabella semplice: azione | owner | data.",
-    "expected_focus": "task & responsabilità",
-    "workspace": "Default",
-    "lang": "it"
+    "id": "vanguard_azioni",
+    "query": "Elenca le azioni assegnate per il progetto Vanguard con responsabile e data.",
+    "gold_notes": "Deve restituire i task di Marco Rossi (API, 05/11/2025) e Giulia Bianchi (test, 10/11/2025).",
+    "workspace": "0724ff8c-92cd-4019-92fb-7b74e27a8c57"
   },
   {
-    "id": "riepilogo_cliente",
-    "query": "Scrivi un paragrafo per il cliente con impatto e benefici.",
-    "gold_notes": "Breve, tono professionale, richiamo a KPI citati in riunione.",
-    "expected_focus": "valore per stakeholder",
-    "workspace": "Default",
-    "lang": "it"
+    "id": "vanguard_kpi",
+    "query": "Qual è il trend del KPI di adozione utente?",
+    "gold_notes": "La risposta deve contenere 'crescita del 15%'.",
+    "workspace": "0724ff8c-92cd-4019-92fb-7b74e27a8c57"
   },
   {
-    "id": "contesto_tecnico",
-    "query": "Riassumi le criticità tecniche emerse e le proposte di soluzione.",
-    "gold_notes": "Elenco criticità -> soluzione -> owner tecnico.",
-    "expected_focus": "issue/solutions",
-    "workspace": "Default",
-    "lang": "it"
-  },
-  {
-    "id": "kpi_progress",
-    "query": "Quali KPI sono stati citati e con quale trend?",
-    "gold_notes": "Elenco KPI e breve commento trend.",
-    "expected_focus": "metriche",
-    "workspace": "Default",
-    "lang": "it"
-  },
-  {
-    "id": "estrazione_decisioni",
-    "query": "Quali decisioni sono state prese? Includi riferimento al contesto.",
-    "gold_notes": "Elenco decisioni con 1 riga di contesto ognuna.",
-    "expected_focus": "decision log",
-    "workspace": "Default",
-    "lang": "it"
+    "id": "vanguard_tecnico",
+    "query": "Qual era il problema tecnico e chi se ne occupa?",
+    "gold_notes": "Deve menzionare la latenza del database e Marco Rossi come responsabile della soluzione.",
+    "workspace": "0724ff8c-92cd-4019-92fb-7b74e27a8c57"
   }
 ]
