@@ -1,45 +1,28 @@
 .
 ├── AGENTS.md
-├── CHANGELOG.md
-├── LICENSE
-├── README.md
-├── Scripts
-│   └── publish.sh
-├── Templates
-│   ├── cover.tex
-│   ├── default.tex
-│   ├── header_footer.tex
-│   ├── verbale_meeting
-│   │   └── check.svg
-│   ├── verbale_meeting.css
-│   ├── verbale_meeting.html
-│   └── verbale_meeting.json
 ├── assets
+│   ├── BiteTheHand2.png
 │   ├── BLD_LOGO_Primary_Horizontal_RGB copy.png
 │   ├── BLD_LOGO_Primary_Horizontal_RGB.pdf
-│   ├── BiteTheHand2.png
 │   ├── HelloKitty.png
-│   ├── logo-thinkdoc-flow-v1 2.svg
-│   ├── logo-thinkdoc-flow-v1.pdf
-│   ├── logo-thinkdoc-flow-v1.svg
-│   ├── logo-thinkdoc-flow-v1_.svg
-│   ├── logo-thinkdoc_sfondo_scuro copy.jpeg
-│   ├── logo-thinkdoc_sfondo_scuro copy.png
-│   ├── logo-thinkdoc_sfondo_scuro.svg
-│   ├── logo3.png
-│   ├── logo_PM.png
 │   ├── logo_colorato.pdf
 │   ├── logo_colorato.png
 │   ├── logo_github.png
 │   ├── logo_google.svg
+│   ├── logo_PM.png
 │   ├── logo_thinkDOC.svg
+│   ├── logo-thinkdoc_sfondo_scuro copy.jpeg
+│   ├── logo-thinkdoc_sfondo_scuro copy.png
+│   ├── logo-thinkdoc_sfondo_scuro.svg
+│   ├── logo-thinkdoc-flow-v1 2.svg
+│   ├── logo-thinkdoc-flow-v1_.svg
+│   ├── logo-thinkdoc-flow-v1.pdf
+│   ├── logo-thinkdoc-flow-v1.svg
+│   ├── logo3.png
 │   ├── thinkDOC 2.svg
 │   ├── thinkDOC 3.svg
 │   ├── thinkDOC copy.pdf
 │   ├── thinkDOC copy.svg
-│   ├── thinkDOC.pdf
-│   ├── thinkDOC.svg
-│   ├── thinkDOC2.pdf
 │   ├── thinkdoc_logo (1).svg
 │   ├── thinkdoc_logo (2).svg
 │   ├── thinkdoc_logo (3).svg
@@ -48,38 +31,42 @@
 │   ├── thinkdoc_logo (6).svg
 │   ├── thinkdoc_logo (7).svg
 │   ├── thinkdoc_logo (8).svg
-│   └── thinkdoc_logo.svg
+│   ├── thinkdoc_logo.svg
+│   ├── thinkDOC.pdf
+│   ├── thinkDOC.svg
+│   └── thinkDOC2.pdf
 ├── backups
+├── CHANGELOG.md
 ├── docs
 │   ├── ACCESSIBILITY_CHECKLIST.md
 │   ├── ADVANCED_GUIDE.md
-│   ├── Brand_Vision_and_Creative_Brief.md
-│   ├── BusinessCase.md
-│   ├── Manuale utente – Workspace Navigator mul.md
-│   ├── PROMPT_SYSTEM_ANALYSIS.md
-│   ├── RELEASE_NOTES.md
-│   ├── Rec2pdf Monorepo Audit & Improvement Plan — Markdown.pdf
-│   ├── SITEMAP.md
-│   ├── TOOLCHAIN_OVERVIEW.md
-│   ├── UI.md
-│   ├── UI_AUDIT.md
-│   ├── USER_JOURNEYS.md
 │   ├── advanced_mode_discovery.md
 │   ├── analisi_mercato_rec2pdf.pdf
 │   ├── architecture
 │   │   └── supabase_rls_access_matrix.md
 │   ├── boardroom_theme_refresh.md
+│   ├── Brand_Vision_and_Creative_Brief.md
+│   ├── BusinessCase.md
 │   ├── documento_20251018T13012_brightledger_nuovo_template_verbale.pdf
 │   ├── esempio_template_verbale_meeting.html
+│   ├── Manuale utente – Workspace Navigator mul.md
 │   ├── meeting_template_quickstart.md
 │   ├── operations
 │   │   ├── deploy_backend_container.md
 │   │   └── migrations.md
 │   ├── project_profiles.md
+│   ├── PROMPT_SYSTEM_ANALYSIS.md
+│   ├── Rec2pdf Monorepo Audit & Improvement Plan — Markdown.pdf
+│   ├── RELEASE_NOTES.md
 │   ├── sample_verbale_meeting.md
+│   ├── SITEMAP.md
 │   ├── sviluppo_web_app_rec2pdf_AIStudio.md
 │   ├── sviluppo_web_app_rec2pdf_Codex copy.md
-│   └── sviluppo_web_app_rec2pdf_Codex.md
+│   ├── sviluppo_web_app_rec2pdf_Codex.md
+│   ├── TOOLCHAIN_OVERVIEW.md
+│   ├── UI_AUDIT.md
+│   ├── UI.md
+│   └── USER_JOURNEYS.md
 ├── file_system.png
 ├── gemini-conversation-1761465588732.json
 ├── knowledge_sources
@@ -100,12 +87,10 @@
 │       ├── glossario_progetto_phoenix.md
 │       ├── project_phoenix_charter.md
 │       └── verbale_kickoff_meeting_20251005.md
+├── LICENSE
 ├── project_structure.txt
+├── README.md
 ├── rec2pdf-backend
-│   ├── '
-│   │   └── Users
-│   │       └── moromoro
-│   ├── Dockerfile
 │   ├── __tests__
 │   │   ├── aiProviders.test.js
 │   │   ├── generateMarkdown.test.js
@@ -118,6 +103,10 @@
 │   │   ├── speakerMapping.test.js
 │   │   ├── templates.test.js
 │   │   └── workspaces.test.js
+│   ├── '
+│   │   └── Users
+│   │       └── moromoro
+│   ├── Dockerfile
 │   ├── package-lock.json
 │   ├── package.json
 │   ├── prompts
@@ -140,146 +129,166 @@
 │   │   ├── aiProviders.js
 │   │   ├── aiService.js
 │   │   └── promptService.js
-│   └── supabase
-│       └── migrations
-│           ├── 20240506_add_workspace_id_to_knowledge_chunks.sql
-│           ├── 20240703_create_match_knowledge_chunks_function.sql
-│           ├── 20250219_add_project_id_to_knowledge_chunks.sql
-│           ├── 20250219_update_match_knowledge_chunks_function.sql
-│           └── 20251026_001_initial_schema.sql
-└── rec2pdf-frontend
-    ├── README.md
-    ├── index.html
-    ├── logo-thinkdoc-sfondo_scuro.svg
-    ├── package-lock.json
-    ├── package.json
-    ├── playwright.config.js
-    ├── postcss.config.js
-    ├── src
-    │   ├── App.jsx
-    │   ├── __tests__
-    │   │   └── appendWorkspaceProfileDetails.test.jsx
-    │   ├── api
-    │   │   ├── __tests__
-    │   │   │   ├── preAnalyze.test.js
-    │   │   │   └── workspaces.test.js
-    │   │   ├── preAnalyze.js
-    │   │   ├── prompts.js
-    │   │   └── workspaces.js
-    │   ├── assets
-    │   │   ├── BiteTheHand.png
-    │   │   ├── BrightLedger.png
-    │   │   ├── github-mark-white.png
-    │   │   ├── google_logo.svg
-    │   │   ├── logo-thinkdoc_sfondo_scuro.svg
-    │   │   ├── logo.svg
-    │   │   └── thinkDOC.svg
-    │   ├── components
-    │   │   ├── CloudLibraryPanel.jsx
-    │   │   ├── CommandPalette.jsx
-    │   │   ├── LibraryPanel.jsx
-    │   │   ├── LoginPage.jsx
-    │   │   ├── MarkdownEditorModal.jsx
-    │   │   ├── PermissionBanner.jsx
-    │   │   ├── PromptLibrary.jsx
-    │   │   ├── SetupAssistant.jsx
-    │   │   ├── SpeakerMapper.jsx
-    │   │   ├── WorkspaceNavigator.jsx
-    │   │   ├── __tests__
-    │   │   │   ├── CommandPalette.test.jsx
-    │   │   │   └── WorkspaceNavigator.test.jsx
-    │   │   ├── icons
-    │   │   │   ├── GitHubIcon.jsx
-    │   │   │   └── GoogleIcon.jsx
-    │   │   ├── icons.jsx
-    │   │   ├── layout
-    │   │   │   ├── AppShell.jsx
-    │   │   │   ├── SettingsDrawer.jsx
-    │   │   │   └── __tests__
-    │   │   │       └── AppShell.test.jsx
-    │   │   ├── ui
-    │   │   │   ├── Badge.jsx
-    │   │   │   ├── Button.jsx
-    │   │   │   ├── Drawer.jsx
-    │   │   │   ├── EmptyState.jsx
-    │   │   │   ├── Input.jsx
-    │   │   │   ├── Select.jsx
-    │   │   │   ├── Skeleton.jsx
-    │   │   │   ├── Tabs.jsx
-    │   │   │   ├── Toast.jsx
-    │   │   │   └── index.js
-    │   │   └── workspaces
-    │   │       ├── KnowledgeBaseManager.jsx
-    │   │       ├── WorkspaceProfilesManager.jsx
-    │   │       └── __tests__
-    │   │           ├── KnowledgeBaseManager.test.jsx
-    │   │           └── WorkspaceProfilesManager.test.jsx
-    │   ├── context
-    │   │   ├── AnalyticsContext.tsx
-    │   │   ├── ModeContext.tsx
-    │   │   ├── PromptsContext.jsx
-    │   │   └── __tests__
-    │   │       └── ModeContext.test.tsx
-    │   ├── features
-    │   │   ├── advanced
-    │   │   │   ├── InputManager.jsx
-    │   │   │   ├── PipelineOverview.jsx
-    │   │   │   ├── SetupPanel.jsx
-    │   │   │   └── __tests__
-    │   │   │       ├── InputManager.test.jsx
-    │   │   │       ├── PipelineOverview.test.jsx
-    │   │   │       └── SetupPanel.test.jsx
-    │   │   ├── base
-    │   │   │   ├── BaseHome.jsx
-    │   │   │   ├── BaseSummaryCards.jsx
-    │   │   │   ├── PipelinePanel.jsx
-    │   │   │   ├── RecordingToggleButton.jsx
-    │   │   │   ├── RefinementPanel.jsx
-    │   │   │   ├── UploadCard.jsx
-    │   │   │   └── __tests__
-    │   │   │       ├── BaseSummaryCards.test.jsx
-    │   │   │       ├── RecordingToggleButton.test.jsx
-    │   │   │       ├── RefinementPanel.test.jsx
-    │   │   │       └── UploadCard.test.jsx
-    │   │   └── settings
-    │   │       └── sections
-    │   │           ├── AccountSection.tsx
-    │   │           ├── AdvancedBackendSection.tsx
-    │   │           ├── BrandingSection.tsx
-    │   │           ├── DiagnosticsSection.tsx
-    │   │           ├── PromptInsightsSection.tsx
-    │   │           ├── RecordingSection.tsx
-    │   │           └── WorkspaceSection.tsx
-    │   ├── hooks
-    │   │   ├── useAppContext.jsx
-    │   │   ├── useBackendDiagnostics.js
-    │   │   └── useMicrophoneAccess.js
-    │   ├── index.css
-    │   ├── main.jsx
-    │   ├── pages
-    │   │   ├── Advanced.jsx
-    │   │   ├── Create.jsx
-    │   │   ├── Editor.jsx
-    │   │   ├── Library.jsx
-    │   │   └── __tests__
-    │   │       ├── Advanced.test.jsx
-    │   │       ├── Create.test.jsx
-    │   │       └── Library.test.jsx
-    │   ├── setupTests.js
-    │   ├── supabaseClient.js
-    │   └── utils
-    │       ├── __tests__
-    │       │   └── refinedData.test.js
-    │       ├── analytics.ts
-    │       ├── classNames.js
-    │       ├── media.js
-    │       └── refinedData.js
-    ├── tailwind.config.js
-    ├── tests
-    │   ├── e2e
-    │   │   └── audio-to-pdf.spec.js
-    │   └── unit
-    │       └── meetingPrompt.test.js
-    └── vite.config.js
+│   ├── supabase
+│   │   └── migrations
+│   │       ├── 20240506_add_workspace_id_to_knowledge_chunks.sql
+│   │       ├── 20240703_create_match_knowledge_chunks_function.sql
+│   │       ├── 20250219_add_project_id_to_knowledge_chunks.sql
+│   │       ├── 20250219_update_match_knowledge_chunks_function.sql
+│   │       └── 20251026_001_initial_schema.sql
+│   └── tests
+│       ├── kb_progetto_vanguard.txt
+│       └── rag_evaluation
+│           ├── benchmark_dataset.json
+│           ├── evalLLMClient.js
+│           ├── evaluate.js
+│           ├── README.md
+│           ├── report_baseline.json
+│           └── test_knowledge.txt
+├── rec2pdf-frontend
+│   ├── index.html
+│   ├── logo-thinkdoc-sfondo_scuro.svg
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── playwright.config.js
+│   ├── postcss.config.js
+│   ├── README.md
+│   ├── src
+│   │   ├── __tests__
+│   │   │   └── appendWorkspaceProfileDetails.test.jsx
+│   │   ├── api
+│   │   │   ├── __tests__
+│   │   │   │   ├── preAnalyze.test.js
+│   │   │   │   └── workspaces.test.js
+│   │   │   ├── preAnalyze.js
+│   │   │   ├── prompts.js
+│   │   │   └── workspaces.js
+│   │   ├── App.jsx
+│   │   ├── assets
+│   │   │   ├── BiteTheHand.png
+│   │   │   ├── BrightLedger.png
+│   │   │   ├── github-mark-white.png
+│   │   │   ├── google_logo.svg
+│   │   │   ├── logo-thinkdoc_sfondo_scuro.svg
+│   │   │   ├── logo.svg
+│   │   │   └── thinkDOC.svg
+│   │   ├── components
+│   │   │   ├── __tests__
+│   │   │   │   ├── CommandPalette.test.jsx
+│   │   │   │   └── WorkspaceNavigator.test.jsx
+│   │   │   ├── CloudLibraryPanel.jsx
+│   │   │   ├── CommandPalette.jsx
+│   │   │   ├── icons
+│   │   │   │   ├── GitHubIcon.jsx
+│   │   │   │   └── GoogleIcon.jsx
+│   │   │   ├── icons.jsx
+│   │   │   ├── layout
+│   │   │   │   ├── __tests__
+│   │   │   │   │   └── AppShell.test.jsx
+│   │   │   │   ├── AppShell.jsx
+│   │   │   │   └── SettingsDrawer.jsx
+│   │   │   ├── LibraryPanel.jsx
+│   │   │   ├── LoginPage.jsx
+│   │   │   ├── MarkdownEditorModal.jsx
+│   │   │   ├── PermissionBanner.jsx
+│   │   │   ├── PromptLibrary.jsx
+│   │   │   ├── SetupAssistant.jsx
+│   │   │   ├── SpeakerMapper.jsx
+│   │   │   ├── ui
+│   │   │   │   ├── Badge.jsx
+│   │   │   │   ├── Button.jsx
+│   │   │   │   ├── Drawer.jsx
+│   │   │   │   ├── EmptyState.jsx
+│   │   │   │   ├── index.js
+│   │   │   │   ├── Input.jsx
+│   │   │   │   ├── Select.jsx
+│   │   │   │   ├── Skeleton.jsx
+│   │   │   │   ├── Tabs.jsx
+│   │   │   │   └── Toast.jsx
+│   │   │   ├── WorkspaceNavigator.jsx
+│   │   │   └── workspaces
+│   │   │       ├── __tests__
+│   │   │       │   ├── KnowledgeBaseManager.test.jsx
+│   │   │       │   └── WorkspaceProfilesManager.test.jsx
+│   │   │       ├── KnowledgeBaseManager.jsx
+│   │   │       └── WorkspaceProfilesManager.jsx
+│   │   ├── context
+│   │   │   ├── __tests__
+│   │   │   │   └── ModeContext.test.tsx
+│   │   │   ├── AnalyticsContext.tsx
+│   │   │   ├── ModeContext.tsx
+│   │   │   └── PromptsContext.jsx
+│   │   ├── features
+│   │   │   ├── advanced
+│   │   │   │   ├── __tests__
+│   │   │   │   │   ├── InputManager.test.jsx
+│   │   │   │   │   ├── PipelineOverview.test.jsx
+│   │   │   │   │   └── SetupPanel.test.jsx
+│   │   │   │   ├── InputManager.jsx
+│   │   │   │   ├── PipelineOverview.jsx
+│   │   │   │   └── SetupPanel.jsx
+│   │   │   ├── base
+│   │   │   │   ├── __tests__
+│   │   │   │   │   ├── BaseSummaryCards.test.jsx
+│   │   │   │   │   ├── RecordingToggleButton.test.jsx
+│   │   │   │   │   ├── RefinementPanel.test.jsx
+│   │   │   │   │   └── UploadCard.test.jsx
+│   │   │   │   ├── BaseHome.jsx
+│   │   │   │   ├── BaseSummaryCards.jsx
+│   │   │   │   ├── PipelinePanel.jsx
+│   │   │   │   ├── RecordingToggleButton.jsx
+│   │   │   │   ├── RefinementPanel.jsx
+│   │   │   │   └── UploadCard.jsx
+│   │   │   └── settings
+│   │   │       └── sections
+│   │   │           ├── AccountSection.tsx
+│   │   │           ├── AdvancedBackendSection.tsx
+│   │   │           ├── BrandingSection.tsx
+│   │   │           ├── DiagnosticsSection.tsx
+│   │   │           ├── PromptInsightsSection.tsx
+│   │   │           ├── RecordingSection.tsx
+│   │   │           └── WorkspaceSection.tsx
+│   │   ├── hooks
+│   │   │   ├── useAppContext.jsx
+│   │   │   ├── useBackendDiagnostics.js
+│   │   │   └── useMicrophoneAccess.js
+│   │   ├── index.css
+│   │   ├── main.jsx
+│   │   ├── pages
+│   │   │   ├── __tests__
+│   │   │   │   ├── Advanced.test.jsx
+│   │   │   │   ├── Create.test.jsx
+│   │   │   │   └── Library.test.jsx
+│   │   │   ├── Advanced.jsx
+│   │   │   ├── Create.jsx
+│   │   │   ├── Editor.jsx
+│   │   │   └── Library.jsx
+│   │   ├── setupTests.js
+│   │   ├── supabaseClient.js
+│   │   └── utils
+│   │       ├── __tests__
+│   │       │   └── refinedData.test.js
+│   │       ├── analytics.ts
+│   │       ├── classNames.js
+│   │       ├── media.js
+│   │       └── refinedData.js
+│   ├── tailwind.config.js
+│   ├── tests
+│   │   ├── e2e
+│   │   │   └── audio-to-pdf.spec.js
+│   │   └── unit
+│   │       └── meetingPrompt.test.js
+│   └── vite.config.js
+├── Scripts
+│   └── publish.sh
+└── Templates
+    ├── cover.tex
+    ├── default.tex
+    ├── header_footer.tex
+    ├── verbale_meeting
+    │   └── check.svg
+    ├── verbale_meeting.css
+    ├── verbale_meeting.html
+    └── verbale_meeting.json
 
-56 directories, 227 files
+58 directories, 234 files
