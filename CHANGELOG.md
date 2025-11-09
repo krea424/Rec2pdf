@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [10.0.0] - 2025-11-09
+
+### Added
+- **Pipeline RAG con Re-ranking**: Introdotta una nuova pipeline RAG avanzata che utilizza un modello LLM per riordinare i chunk di contesto recuperati. Questo approccio, noto come "LLM-as-a-reranker", migliora significativamente la `Context Precision` (+20% secondo i test), fornendo al modello di generazione un contesto più pulito e pertinente.
+- **Servizio RAG dedicato**: Tutta la logica RAG è stata centralizzata nel nuovo `RAGService`, migliorando la manutenibilità e la leggibilità del codice.
+
+### Changed
+- **Refactoring del codice**: Le funzioni di utilità sono state spostate in un file dedicato (`services/utils.js`) per una migliore organizzazione del codice.
+
 ## [9.0.0] - 2025-11-09
 
 ### Added

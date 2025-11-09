@@ -1,3 +1,5 @@
+const { canonicalizeProjectScopeId, sanitizeProjectIdentifier } = require('./services/utils.js');
+const { RAGService } = require('./services/ragService');
 const { PromptService } = require('./services/promptService');
 const promptService = new PromptService();
 require('dotenv').config();
@@ -39,6 +41,7 @@ const supabase =
         },
       })
     : null;
+const ragService = supabase ? new RAGService(supabase) : null;
 
 const getSupabaseClient = () => {
   if (!supabase) {
@@ -84,36 +87,17 @@ const LOGO_CONTENT_TYPE_MAP = new Map([
   ['.pdf', 'application/pdf'],
 ]);
 
-const CONTEXT_SEPARATOR = '\n\n---\n\n';
+
 const CONTEXT_QUERY_MAX_CHARS = 4000;
 
-const PROJECT_SCOPE_NAMESPACE = 'rec2pdf:knowledge:project:';
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const formatUuidFromBytes = (bytes) => {
-  const hex = Buffer.from(bytes).toString('hex');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-};
 
-const deterministicUuidFromString = (value) => {
-  const hash = crypto.createHash('sha1').update(PROJECT_SCOPE_NAMESPACE).update(value).digest();
-  const bytes = Buffer.from(hash.subarray(0, 16));
-  bytes[6] = (bytes[6] & 0x0f) | 0x50; // versione 5
-  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variante RFC 4122
-  return formatUuidFromBytes(bytes);
-};
 
-const canonicalizeProjectScopeId = (value) => {
-  const sanitized = sanitizeProjectIdentifier(value);
-  if (!sanitized) {
-    return '';
-  }
-  const normalized = sanitized.toLowerCase();
-  if (UUID_REGEX.test(normalized)) {
-    return normalized;
-  }
-  return deterministicUuidFromString(normalized);
-};
+
+
+
+
+
 
 const resolveProjectScopeIdentifiers = (value) => {
   const sanitized = sanitizeProjectIdentifier(value);
@@ -146,24 +130,7 @@ const getWorkspaceIdFromRequest = (req = {}) => {
   return '';
 };
 
-const sanitizeProjectIdentifier = (value) => {
-  if (Array.isArray(value) && value.length) {
-    return sanitizeProjectIdentifier(value[0]);
-  }
-  if (value === null || value === undefined) {
-    return '';
-  }
-  const raw = typeof value === 'string' ? value : String(value);
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return '';
-  }
-  const lowered = trimmed.toLowerCase();
-  if (lowered === 'null' || lowered === 'undefined' || trimmed === '[object Object]') {
-    return '';
-  }
-  return trimmed;
-};
+
 
 const sanitizeProjectName = (value) => sanitizeProjectIdentifier(value);
 
@@ -872,80 +839,16 @@ const sanitizeRefinedDataInput = (input) => {
   return { ok: true, value: payload };
 };
 
-// SOSTITUISCI LA TUA FUNZIONE CON QUESTA VERSIONE CORRETTA
+// AGGIUNGI QUESTA NUOVA FUNZIONE IN server.js solo wrapper il resto si trova in ragService.js
 const retrieveRelevantContext = async (queryText, workspaceId, options = {}) => {
-  const normalizedWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
-  if (!normalizedWorkspaceId) {
+  if (!ragService) {
+    console.warn('⚠️ RAGService non è disponibile (Supabase non configurato?). Impossibile recuperare il contesto.');
     return '';
   }
-
-  const normalizedQuery = typeof queryText === 'string' ? queryText.trim() : '';
-  if (!normalizedQuery) {
-    return '';
-  }
-
-  const normalizedProjectId = canonicalizeProjectScopeId(options.projectId);
-  const matchCountCandidate = Number(options.matchCount);
-  const matchCount = Number.isFinite(matchCountCandidate) && matchCountCandidate > 0 ? matchCountCandidate : 4;
-
-  if (!supabase) {
-    console.warn('⚠️  Supabase non configurato: impossibile eseguire retrieveRelevantContext.');
-    return '';
-  }
-
-  let aiEmbedder;
-  let embeddingProviderId = '';
-  try {
-    const embeddingProvider = resolveAiProvider('embedding', options.provider || options.embeddingProvider);
-    embeddingProviderId = embeddingProvider.id;
-    aiEmbedder = getAIService(embeddingProvider.id, embeddingProvider.apiKey, embeddingProvider.model);
-  } catch (error) {
-    const reason = error?.message ? `: ${error.message}` : '';
-    const providerLabel = embeddingProviderId || sanitizeAiProviderInput(options.provider || options.embeddingProvider) || 'default embedding';
-    console.warn(`⚠️  Client embedding (${providerLabel}) non disponibile${reason}`);
-    return '';
-  }
-
-  try {
-    const embedding = await aiEmbedder.generateEmbedding(normalizedQuery);
-    if (!Array.isArray(embedding) || embedding.length === 0) {
-      console.error('[retrieveRelevantContext] Errore: la generazione dell-embedding non ha restituito un array valido.');
-      return '';
-    }
-    console.log(`[retrieveRelevantContext] Embedding generato con successo (dimensione: ${embedding.length}).`);
-
-    // La chiamata a Supabase viene fatta qui. Le variabili `data` ed `error`
-    // vengono create solo DOPO che la chiamata ha restituito un risultato.
-    console.log(`[retrieveRelevantContext] Chiamata a match_knowledge_chunks con workspace: ${normalizedWorkspaceId}, project: ${normalizedProjectId}`);
-    const { data, error } = await supabase.rpc('match_knowledge_chunks', {
-      query_embedding: embedding,
-      match_workspace_id: normalizedWorkspaceId,
-      match_project_id: normalizedProjectId || null,
-      match_count: matchCount,
-    });
-
-    if (error) {
-      console.error('Errore RPC match_knowledge_chunks:', error);
-      return '';
-    }
-
-    if (!Array.isArray(data) || data.length === 0) {
-      console.warn('[retrieveRelevantContext] La chiamata RPC ha avuto successo ma non ha restituito dati (possibile mismatch di ID?).');
-      return '';
-    }
-
-    console.log(`[retrieveRelevantContext] Ricevuti ${data.length} chunk da Supabase.`);
-    const chunks = data
-      .map((row) => (row && typeof row.content === 'string' ? row.content.trim() : ''))
-      .filter(Boolean);
-
-    return chunks.length ? chunks.join(CONTEXT_SEPARATOR) : '';
-  } catch (error) {
-    // Questo `catch` ora catturerà solo errori imprevisti (es. di rete)
-    console.error('retrieveRelevantContext fallita:', error);
-    return '';
-  }
+  // Deleghiamo tutta la logica al metodo corrispondente nel nostro servizio!
+  return ragService.retrieveRelevantContext(queryText, workspaceId, options);
 };
+
 
 // DICHIARA QUI LA VARIABILE MANCANTE
 const isAuthEnabled = !!supabase;

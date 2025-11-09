@@ -1,175 +1,38 @@
-# Rec2PDF
+# Rec2pdf
 
-<p align="center">
-  <img src="rec2pdf-frontend/logo-thinkdoc-sfondo_scuro.svg" alt="Rec2PDF" width="260" />
-</p>
+Rec2pdf è una web app che trascrive registrazioni audio di meeting, le analizza con un LLM e genera verbali professionali in formato PDF.
 
-Rec2PDF automatizza il flusso **voce → trascrizione → documento editoriale** trasformando i pensieri a voce alta, i brainstorming con se stessi e le registrazioni vocali in genere in PDF strutturati e pronti per la distribuzione. Oggi il progetto integra autenticazione e storage gestiti da Supabase, con un frontend che offre login, librerie cloud e strumenti di revisione, e un backend che coordina pipeline audio/testo, generazione Markdown e impaginazione. Con la release 7.0.0 l'interfaccia introduce un'esperienza bimodale con nav persistente verso la nuova vista "Advanced A", messaggi di onboarding per i flag avanzati e un control room boardroom rinnovato che orchestra Input Manager e Pipeline Overview con call-to-action verso la Library e log diagnostici; in parallelo, la pipeline base emette eventi di telemetry per monitorare publish, export e reset.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L10-L109】【F:rec2pdf-frontend/src/pages/Advanced.jsx†L1-L125】【F:rec2pdf-frontend/src/features/advanced/InputManager.jsx†L1-L170】【F:rec2pdf-frontend/src/features/advanced/PipelineOverview.jsx†L1-L147】【F:rec2pdf-frontend/src/features/base/PipelinePanel.jsx†L1-L120】【F:rec2pdf-frontend/src/features/base/PipelinePanel.jsx†L220-L276】
+## Novità v10.0.0
 
-## Sommario
-- [Panoramica](#panoramica)
-- [Modalità Base](#modalità-base)
-- [Modalità Advanced](#modalità-advanced)
-- [Caratteristiche principali](#caratteristiche-principali)
-- [Architettura](#architettura)
-- [RAG multi-tenant](#rag-multi-tenant)
-- [Prerequisiti](#prerequisiti)
-- [Autenticazione & Supabase](#autenticazione--supabase)
-- [Quick start](#quick-start)
-- [Bootstrap Supabase](#bootstrap-supabase)
-- [Backend HTTP](#backend-http)
-- [Interfaccia web](#interfaccia-web)
-- [Scorciatoie da tastiera](#scorciatoie-da-tastiera)
-- [Workflow tipico](#workflow-tipico)
-- [Personalizzazione template PDF](#personalizzazione-template-pdf)
-- [Struttura del repository](#struttura-del-repository)
-- [Licenza](#licenza)
+L'ultima versione introduce una **pipeline RAG (Retrieval-Augmented Generation) con re-ranking**, un'architettura avanzata che migliora drasticamente la qualità e la pertinenza del contesto fornito al modello LLM.
 
-## Novità v9.0.0
-- **Framework di Valutazione RAG**: Introdotto un sistema completo per valutare le performance del RAG basato su metriche standard del settore. Utilizza un LLM come "giudice" per calcolare `Context Precision`, `Context Recall`, `Faithfulness` e `Answer Relevance`. I risultati sono salvati in un report JSON per analisi comparative.
-- **Chunking Semantico Personalizzato**: Implementata una strategia di chunking ricorsiva e basata su separatori gerarchichici. Questo approccio migliora la qualità della suddivisione del testo, creando chunk più coerenti e semanticamente rilevanti per il sistema RAG, superando i limiti del chunking a dimensione fissa.
+- **Precisione Migliorata**: La nuova pipeline aumenta la `Context Precision` del **+20%**, garantendo che solo le informazioni più rilevanti dalla knowledge base vengano utilizzate per generare i documenti.
+- **Servizio RAG Dedicato**: Tutta la logica RAG è ora centralizzata in un `RAGService` dedicato, rendendo il codice più pulito, modulare e manutenibile.
 
-## Novità v7.0.0
-- **Esperienza bimodale Create/Advanced**: la navigazione include il pulsante "Advanced A" e la Create page mostra banner contestuali per chi non possiede `MODE_ADVANCED` o `MODE_ADVANCED_V2`, guidando l'abilitazione dei flag e mantenendo la pipeline base sempre disponibile.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L10-L109】【F:rec2pdf-frontend/src/pages/Create.jsx†L1-L37】【F:rec2pdf-frontend/src/pages/Advanced.jsx†L65-L123】
-- **Control room boardroom rinnovata**: la vista Advanced offre un `InputManager` con superfici boardroom per gestire workspace, profili e loghi, mentre la `PipelineOverview` mette in risalto progressi, log dettagliati e il link "Vai alla Library" al completamento della pipeline.【F:rec2pdf-frontend/src/features/advanced/InputManager.jsx†L1-L188】【F:rec2pdf-frontend/src/features/advanced/PipelineOverview.jsx†L1-L147】
-- **Telemetry e osservabilità pipeline**: `ModeContext` invia eventi `mode.flag_exposed` quando vengono attivati i flag sperimentali e il pannello Publish tiene traccia di publish, download PDF/Markdown e reset della sessione con eventi dedicati per le analytics.【F:rec2pdf-frontend/src/context/ModeContext.tsx†L1-L90】【F:rec2pdf-frontend/src/features/base/PipelinePanel.jsx†L1-L120】【F:rec2pdf-frontend/src/features/base/PipelinePanel.jsx†L220-L276】
+## Architettura RAG Avanzata
 
-## Panoramica
-Rec2PDF nasce per supportare team editoriali e professionisti che necessitano di verbalizzazioni affidabili. Il sistema accetta registrazioni vocali, file di testo già trascritti o Markdown esistente e coordina automaticamente:
-1. normalizzazione e transcodifica audio,
-2. trascrizione tramite Whisper,
-3. generazione del contenuto in Markdown con regole derivate dai prompt scelti,
-4. impaginazione in PDF professionale con template LaTeX dedicati,
-5. archiviazione su Supabase Storage e analisi strutturale del documento.
+La nostra pipeline RAG è progettata per massimizzare la pertinenza del contesto. Invece di passare direttamente al modello il primo risultato di una ricerca vettoriale, adottiamo un approccio più sofisticato in tre fasi:
 
-La componente frontend guida l'utente con login (magic link o GitHub), diagnostica delle dipendenze, gestione di workspace/progetti, revisione del contenuto generato e accesso alla libreria cloud sincronizzata con Supabase.
+1.  **Retrieval (Recupero Ampio)**: Inizialmente, recuperiamo una rosa allargata di **10 chunk candidati** dalla nostra knowledge base vettoriale (Supabase Vector). Questo ci assicura di non perdere informazioni potenzialmente utili.
 
-## Modalità Base
-La modalità **Base** è attiva per impostazione predefinita e offre un pannello essenziale incentrato sulla pipeline voce → PDF, accessibile a qualsiasi account abilitato al flag `MODE_BASE`. Il routing della pagina Create monta automaticamente questa modalità quando il contesto `ModeContext` restituisce `base` o quando l'utente non possiede il flag avanzato.【F:rec2pdf-frontend/src/pages/Create.jsx†L65-L90】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L7-L177】
+2.  **Re-ranking (LLM-as-a-Reranker)**: I 10 chunk candidati vengono poi passati a un secondo LLM, che agisce da "giudice di pertinenza". Questo modello valuta ogni chunk in relazione alla query originale e gli assegna un punteggio da 0 a 100.
 
-- **Executive pipeline con stato immediato**: hero, banner di completamento e guard-rail di connettività guidano l'utente attraverso lo stato corrente della pipeline e invitano a completare l'onboarding quando necessario.【F:rec2pdf-frontend/src/features/base/BaseHome.jsx†L10-L108】
-- **Card REC unica**: registrazione e caricamento file sono unificati in una singola card che verifica permessi microfono, formato audio e livello d'ingresso prima di consentire la pubblicazione.【F:rec2pdf-frontend/src/features/base/UploadCard.jsx†L6-L138】
-- **Pannello Publish**: progress bar, lista degli stadi (`Upload`, `Transcodifica`, `Whisper`, `Sintesi`, `Impaginazione`, `Conclusione`) e azioni rapide per download PDF/Markdown sono disponibili senza lasciare la vista principale.【F:rec2pdf-frontend/src/features/base/PipelinePanel.jsx†L15-L191】
+3.  **Selezione**: Infine, selezioniamo solo i **3 chunk con il punteggio più alto** (e superiore a una soglia minima di 50) per costruire il contesto finale.
 
-## Modalità Advanced
-La modalità **Advanced** abilita la “control room” boardroom experience. È disponibile agli utenti con il flag `MODE_ADVANCED` (persistito su Supabase e unito ai flag di default) e può essere affiancata alla modalità base per un’esperienza bimodale.【F:rec2pdf-frontend/src/pages/Create.jsx†L69-L187】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L21-L258】
+Questo processo a più fasi garantisce che il contesto fornito al modello di generazione sia estremamente focalizzato e pertinente, riducendo il "rumore" e migliorando la qualità dell'output finale.
 
-- **Control room modulare**: tab Destinazioni, Branding, Prompt, Diagnostica e Context Packs sono caricati lazy e strumentati con `trackEvent` per monitorare engagement su workspace, profili e libreria prompt.【F:rec2pdf-frontend/src/features/advanced/AdvancedDashboard.tsx†L1-L209】【F:rec2pdf-frontend/src/utils/analytics.ts†L29-L60】
-- **Esperienza boardroom**: superfici, badge e highlight dinamici riprendono il tema `boardroom`, estendendo i controlli della pipeline con wizard workspace/progetto, upload logo PDF e gestione slug direttamente dalla dashboard.【F:rec2pdf-frontend/src/pages/Create.jsx†L92-L210】
-- **Roadmap guidata da placeholder**: variabili d'ambiente `VITE_ENABLE_FS_INTEGRATION_PLACEHOLDER` e `VITE_ENABLE_RAG_PLACEHOLDER` mostrano card contestuali per preview funzionalità future e raccolta feedback degli stakeholder.【F:rec2pdf-frontend/src/features/advanced/AdvancedDashboard.tsx†L18-L109】
+## Features Principali
 
-## Caratteristiche principali
-- **Framework di Valutazione RAG**: sistema di valutazione per misurare le performance del RAG con metriche standard (`Context Precision`, `Context Recall`, `Faithfulness`, `Answer Relevance`) e un LLM come giudice.
-- **Chunking Semantico Personalizzato**: strategia di chunking ricorsiva basata su separatori gerarchici per una suddivisione del testo più coerente.
-- **Autenticazione centralizzata**: Supabase gestisce login (magic link e GitHub) e protegge tutte le rotte `/api` con bearer token automatici nel frontend.【F:rec2pdf-backend/server.js†L13-L105】【F:rec2pdf-frontend/src/App.jsx†L385-L439】【F:rec2pdf-frontend/src/components/LoginPage.jsx†L1-L82】
-- **Pipeline audio end-to-end**: upload o registrazione browser, normalizzazione, trascrizione Whisper, generazione Markdown e pubblicazione PDF con log di stato e assegnazione workspace/progetto.【F:rec2pdf-backend/server.js†L1312-L1669】【F:rec2pdf-frontend/src/App.jsx†L1660-L1807】
-- **Upload testo e Markdown**: endpoint dedicati per TXT e `.md` pre-esistenti replicano le fasi di generazione, consentendo reimpaginazioni e conversioni veloci con gli stessi metadati della pipeline audio.【F:rec2pdf-backend/server.js†L1673-L2348】【F:rec2pdf-frontend/src/App.jsx†L1810-L2075】
-- **Prompt library e generazione guidata**: i prompt preconfigurati (con cue card, checklist e regole PDF) sono persistiti su filesystem, modificabili via API e applicati nel comando `gemini` che produce il Markdown finale.【F:rec2pdf-backend/server.js†L376-L445】【F:rec2pdf-backend/server.js†L833-L1250】【F:rec2pdf-frontend/src/App.jsx†L1360-L1456】
-- **Impaginazione professionale**: `publish.sh` orchestra `pandoc`/`xelatex`, gestisce logo custom e fallback automatico, mentre il backend replica la stessa logica anche per rigenerazioni da Supabase.【F:Scripts/publish.sh†L1-L103】【F:rec2pdf-backend/server.js†L2003-L2055】【F:rec2pdf-backend/server.js†L2232-L2295】
-- **Workspace Navigator**: gestione avanzata di clienti, progetti e stati con filtri salvabili, sincronizzazione pipeline e assegnazioni massive direttamente dalla cronologia.【F:rec2pdf-backend/server.js†L448-L676】【F:rec2pdf-frontend/src/components/WorkspaceNavigator.jsx†L520-L719】
-- **Cloud library su Supabase**: browsing, anteprima e download sicuro degli artefatti archiviati nei bucket (`processed-media`, `audio-uploads`, `text-uploads`) con query filtrate per workspace/progetto.【F:rec2pdf-backend/server.js†L2352-L2513】【F:rec2pdf-frontend/src/components/CloudLibraryPanel.jsx†L75-L198】
-- **Knowledge base multi-formato**: carica testi, PDF e audio dal tab dedicato per avviare l'ingestione RAG, monitora chunk e metadati e sfrutta automaticamente il contesto durante la generazione dei documenti.【rec2pdf-backend/server.js†L2236-L2314】【rec2pdf-backend/server.js†L3010-L3043】【rec2pdf-frontend/src/components/workspaces/KnowledgeBaseManager.jsx†L1-L220】
-- **Markdown editor e analisi struttura**: l'editor modale applica controlli su heading, checklist del prompt e completezza percentuale sfruttando la metrica calcolata dal backend.【F:rec2pdf-backend/server.js†L573-L643】【F:rec2pdf-frontend/src/App.jsx†L1980-L1999】【F:rec2pdf-frontend/src/components/MarkdownEditorModal.jsx†L1-L200】
-- **Setup Assistant & diagnostica**: check list delle dipendenze CLI, verifica permessi di scrittura e fetch autenticati tramite l'hook `useBackendDiagnostics` integrato nell'onboarding.【F:rec2pdf-backend/server.js†L1274-L1309】【F:rec2pdf-frontend/src/hooks/useBackendDiagnostics.js†L1-L85】【F:rec2pdf-frontend/src/components/SetupAssistant.jsx†L1-L200】
-- **Esperienza boardroom personalizzabile**: temi consultabili, loghi custom e wizard di onboarding sono salvati lato client e richiamabili dal cassetto impostazioni, con possibilità di creare workspace/progetti/stati senza lasciare la modale.【F:rec2pdf-frontend/src/App.jsx†L361-L714】【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L15-L139】【F:rec2pdf-frontend/src/components/layout/SettingsDrawer.jsx†L47-L199】
+- **Trascrizione Audio**: Supporto per i più comuni formati audio e trascrizione tramite **WhisperX** per un'accuratezza elevata.
+- **Identificazione Speaker**: Riconoscimento e mappatura dei diversi speaker presenti nella registrazione (diarizzazione).
+- **Generazione Contenuti con AI**: Integrazione con **Google Gemini** per analizzare la trascrizione e generare riassunti, decisioni e azioni.
+- **Knowledge Base (RAG)**: Ogni workspace ha una sua knowledge base vettoriale che fornisce contesto aggiuntivo al LLM per generazioni più accurate e personalizzate.
+- **Template PDF**: Supporto per template multipli (LaTeX e HTML) per personalizzare l'aspetto dei documenti finali.
+- **Accesso Multi-Utente**: Architettura sicura basata su Supabase con policy di Row Level Security (RLS).
 
-## Architettura
-```text
-┌────────────────┐   HTTP    ┌────────────────────┐    CLI    ┌────────────────────┐
-│ Frontend (Vite │──────────►│ Backend Express    │──────────►│ Toolchain locale   │
-│ + React)       │           │ orchestrator       │           │ ffmpeg/whisper/    │
-└────────────────┘           └────────────────────┘           │ gemini/pandoc/...  │
-        │                           │                        └────────────────────┘
-        │ Supabase auth/session     │ Storage API
-        ▼                           ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│                             Supabase Cloud                                 │
-│  • Auth (magic link, OAuth GitHub)                                         │
-│  • Storage buckets: audio-uploads, text-uploads, processed-media           │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-- **Frontend**: single-page app con gestione locale di history, workspace, preferenze e sessione Supabase.【F:rec2pdf-frontend/src/App.jsx†L385-L475】
-- **Backend**: Node.js Express che coordina pipeline, persiste configurazioni locali (`~/.rec2pdf`) e delega storage/autenticazione a Supabase.【F:rec2pdf-backend/server.js†L13-L736】
-- **Toolchain**: dipendenze CLI eseguite tramite `child_process` con fallback e logging granulari (ffmpeg, whisper, gemini, ppubr, pandoc, xelatex).【F:rec2pdf-backend/server.js†L1274-L1300】【F:Scripts/publish.sh†L1-L103】
-- **Supabase**: servizio esterno per autenticazione, gestione token e storage degli artefatti generati.【F:rec2pdf-backend/server.js†L15-L105】【F:rec2pdf-backend/server.js†L710-L760】【F:rec2pdf-backend/server.js†L2352-L2513】
+## Quickstart
 
-## Prerequisiti
-Installare i seguenti componenti sulla macchina che esegue backend/pipeline:
-- Node.js ≥ 18 e npm ≥ 9.
-- `ffmpeg` per la transcodifica.
-- `whisper` CLI (modelli disponibili localmente).
-- `whisperx` CLI (per diarizzazione multi-speaker; installabile con `pip install git+https://github.com/m-bain/whisperX` e richiede un token Hugging Face).
-- `gemini` CLI (per generazione Markdown) e `ppubr/PPUBR` se si desidera la toolchain proprietaria.
-- `pandoc` e `xelatex` (es. TeX Live) per l'esportazione PDF via script.
-- Facoltativo: `fc-list` per il controllo font dal publish script.
-- Account Supabase con progetto configurato (servizio Auth attivo) e bucket `audio-uploads`, `text-uploads`, `processed-media` con policy di lettura/scrittura per il servizio backend.【F:rec2pdf-backend/server.js†L710-L760】【F:rec2pdf-backend/server.js†L2352-L2513】
-
-Verificare con la diagnostica interna (`Diagnostica` nell'UI) oppure manualmente:
-```bash
-ffmpeg -version
-whisper --help
-whisperx --help
-pandoc --version
-which gemini
-which ppubr
-```
-
-## Autenticazione & Supabase
-1. **Configura le variabili d'ambiente del backend** (`rec2pdf-backend/.env`):
-   ```bash
-   SUPABASE_URL="https://<your-project>.supabase.co"
-   SUPABASE_SERVICE_KEY="<service_role_key>"
-   HUGGING_FACE_TOKEN="<hf_token>"
-   PROJECT_ROOT="$(pwd)"
-   PUBLISH_SCRIPT="$(pwd)/Scripts/publish.sh"  # opzionale, default già corretto
-   PUBLISH_BUNDLE_ROOT="$(pwd)"                # opzionale, punta alla cartella che contiene Scripts/ e Templates/
-   WHISPER_MODEL=tiny  # es. per Cloud Run o container con memoria ridotta
-   ```
-   Il backend crea automaticamente il client Supabase, abilita l'autenticazione su tutte le rotte `/api` (eccetto `/api/health`) e mostra un warning se avviato senza credenziali o senza token Hugging Face, ricadendo in modalità sviluppo senza protezione o disattivando la diarizzazione.【rec2pdf-backend/server.js:13】【rec2pdf-backend/server.js:36】
-2. **Crea i bucket di storage** nel progetto Supabase chiamandoli `audio-uploads`, `text-uploads`, `processed-media` e abilita le policy di lettura/scrittura per il ruolo `service_role`; gli upload/download falliscono se il client non è configurato.【F:rec2pdf-backend/server.js†L710-L760】【F:rec2pdf-backend/server.js†L736-L760】
-3. **Imposta le variabili del frontend** (`rec2pdf-frontend/.env.local`):
-   ```bash
-   VITE_SUPABASE_URL="https://<your-project>.supabase.co"
-   VITE_SUPABASE_ANON_KEY="<anon_public_key>"
-   ```
-   Il client Supabase del frontend usa questi valori per login via magic link o GitHub e per allegare automaticamente il token alle richieste verso il backend.【F:rec2pdf-frontend/src/supabaseClient.js†L1-L9】【F:rec2pdf-frontend/src/App.jsx†L385-L439】【F:rec2pdf-frontend/src/components/LoginPage.jsx†L1-L82】
-4. **Configura i provider di autenticazione** in Supabase (email OTP e GitHub OAuth) e aggiorna gli URL di redirect verso l'origin del frontend (es. `http://localhost:5173`).【F:rec2pdf-frontend/src/components/LoginPage.jsx†L11-L66】
-5. **Permessi locali e file di configurazione**: il backend continua a salvare workspaces e prompt sotto `~/.rec2pdf`, ma tutti gli artefatti (audio, trascrizioni, Markdown, PDF) vengono sincronizzati su Supabase Storage una volta completata la pipeline.【F:rec2pdf-backend/server.js†L448-L676】【F:rec2pdf-backend/server.js†L1312-L1669】【F:rec2pdf-backend/server.js†L2003-L2055】
-
-## Quick start
-1. **Clona il repository**
-   ```bash
-   git clone https://github.com/krea424/Rec2pdf.git
-   cd Rec2pdf
-   ```
-2. **Backend**
-   ```bash
-   cd rec2pdf-backend
-   npm install
-   # crea un file .env con SUPABASE_URL e SUPABASE_SERVICE_KEY (vedi sezione dedicata)
-   npm run dev   # espone le API su http://localhost:7788
-   ```
-   Il server Express usa `PORT`, `PROJECT_ROOT`, `PUBLISH_SCRIPT`, `TEMPLATES_DIR` e `ASSETS_DIR` se presenti nel `.env` ed esegue il publish script `Scripts/publish.sh` quando richiesto.【F:rec2pdf-backend/package.json†L1-L17】【F:rec2pdf-backend/server.js†L13-L83】
-   > Per sfruttare la diarizzazione installa prima `whisperx` e definisci il token Hugging Face:
-   > ```bash
-   > pip install git+https://github.com/m-bain/whisperX
-   > export HUGGING_FACE_TOKEN="hf_xxx"
-   > ```
-3. **Frontend** (nuovo terminale)
-   ```bash
-   cd rec2pdf-frontend
-   npm install
-   cat <<'EOF' > .env.local
-   VITE_SUPABASE_URL=https://dvbijjzltpfjggkimqsg.supabase.co
-   VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR2YmlqanpsdHBmamdna2ltcXNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3NjIyMzEsImV4cCI6MjA3NTMzODIzMX0.WTGFXu7FwlSMFOMtz6ULkhgFlEK_Cvl1bSz_jwWJvGw
-   VITE_DEFAULT_MODE_FLAGS=MODE_BASE,MODE_ADVANCED
-   VITE_BYPASS_AUTH=true
-   EOF
-   npm run dev   # interfaccia web su http://localhost:5173 (Vite adatta automaticamente la porta se occupata)
-   ```
-   L'opzione `VITE_BYPASS_AUTH` attiva il bypass login per demo locali, mentre i flag di default rendono disponibili entrambe le modalità fin dal primo avvio. Se dimentichi di impostare `VITE_DEFAULT_MODE_FLAGS`, il frontend usa automaticamente `MODE_BASE,MODE_ADVANCED` per evitare che il toggle sparisca; per limitare l'accesso puoi specificare esplicitamente solo `MODE_BASE` e affidarti a Supabase per abilitare l'advanced agli utenti selezionati.【F:rec2pdf-frontend/src/App.jsx†L17-L195】【F:rec2pdf-frontend/src/context/ModeContext.tsx†L21-L205】
-4. Apri il browser sull'URL servito da Vite, configura se necessario l'endpoint backend (`http://localhost:7788` è il default) e lancia la diagnostica dall'onboarding banner.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L16-L53】【F:rec2pdf-frontend/src/hooks/useBackendDiagnostics.js†L1-L86】
-5. Cambia modalità direttamente dal toggle in header o dalla command palette per testare base e advanced senza ricaricare la pagina.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L56-L156】【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L59-L190】
+... (resto del file) ...
 
 ## Bootstrap Supabase
 

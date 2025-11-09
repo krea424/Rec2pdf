@@ -1,0 +1,2 @@
+Appunti da una riunione generica sul project management:
+È importante definire chiaramente le azioni e le responsabilità in ogni sprint. I KPI devono essere monitorati costantemente.

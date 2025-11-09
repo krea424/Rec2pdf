@@ -1,0 +1,75 @@
+{
+    "totals": {
+      "count": 4,
+      "Context Precision": 0.42,
+      "Context Recall": 1,
+      "Faithfulness": 1,
+      "Answer Relevance": 1
+    },
+    "rows": [
+      {
+        "id": "vanguard_summary",
+        "query": "Fai un riassunto della sprint review del Progetto Vanguard.",
+        "answer": "Durante la sprint review del Progetto Vanguard (VNG-2024) del 28/10/2025, è stato revisionato il modulo di autenticazione e si è deciso di adottare lo standard OAuth2 per la sicurezza. È stato inoltre evidenziato un trend positivo del 15% nell'adozione utente settimanale.",
+        "context_size": 1,
+        "retrieved_context": [
+          {
+            "id": "eval_chunk_0",
+            "text": "Verbale Ufficiale della Sprint Review del Progetto Vanguard (VNG-2024) - Data: 28/10/2025.\n\nDiscussione Principale:\nIl team ha revisionato lo stato di avanzamento del modulo di autenticazione. La decisione presa è stata quella di adottare lo standard OAuth2 per garantire maggiore sicurezza.\n\nMetriche e KPI:\nIl KPI principale, l'adozione utente settimanale, ha mostrato un trend positivo con una crescita del 15% rispetto alla settimana precedente.\n\nCriticità Tecniche Emerse:\nÈ stata identificata una criticità legata all'alta latenza delle query sul database degli utenti. La soluzione tecnica proposta è l'aggiunta di un indice sulla colonna 'email', compito assegnato al responsabile tecnico Marco Rossi.\n\nAzioni Assegnate e Scadenze:\n1.  Azione: Completare l'integrazione delle API di login. Responsabile: Marco Rossi. Data di scadenza: 2025-11-05.\n2.  Azione: Preparare i test di usabilità. Responsabile: Giulia Bianchi. Data di scadenza: 2025-11-10.\n\nImpatto per il Cliente:\nIl completamento di questo modulo porterà benefici tangibili al cliente, con una riduzione stimata del 50% nel tempo di accesso, migliorando drasticamente l'esperienza utente."
+          }
+        ],
+        "Context Precision": 0.5,
+        "Context Recall": 1,
+        "Faithfulness": 1,
+        "Answer Relevance": 1
+      },
+      {
+        "id": "vanguard_azioni",
+        "query": "Elenca le azioni assegnate per il progetto Vanguard con responsabile e data.",
+        "answer": "Le azioni assegnate sono:\n1. Azione: Completare l'integrazione delle API di login. Responsabile: Marco Rossi. Data di scadenza: 2025-11-05.\n2. Azione: Preparare i test di usabilità. Responsabile: Giulia Bianchi. Data di scadenza: 2025-11-10.",
+        "context_size": 1,
+        "retrieved_context": [
+          {
+            "id": "eval_chunk_0",
+            "text": "Verbale Ufficiale della Sprint Review del Progetto Vanguard (VNG-2024) - Data: 28/10/2025.\n\nDiscussione Principale:\nIl team ha revisionato lo stato di avanzamento del modulo di autenticazione. La decisione presa è stata quella di adottare lo standard OAuth2 per garantire maggiore sicurezza.\n\nMetriche e KPI:\nIl KPI principale, l'adozione utente settimanale, ha mostrato un trend positivo con una crescita del 15% rispetto alla settimana precedente.\n\nCriticità Tecniche Emerse:\nÈ stata identificata una criticità legata all'alta latenza delle query sul database degli utenti. La soluzione tecnica proposta è l'aggiunta di un indice sulla colonna 'email', compito assegnato al responsabile tecnico Marco Rossi.\n\nAzioni Assegnate e Scadenze:\n1.  Azione: Completare l'integrazione delle API di login. Responsabile: Marco Rossi. Data di scadenza: 2025-11-05.\n2.  Azione: Preparare i test di usabilità. Responsabile: Giulia Bianchi. Data di scadenza: 2025-11-10.\n\nImpatto per il Cliente:\nIl completamento di questo modulo porterà benefici tangibili al cliente, con una riduzione stimata del 50% nel tempo di accesso, migliorando drasticamente l'esperienza utente."
+          }
+        ],
+        "Context Precision": 0.3,
+        "Context Recall": 1,
+        "Faithfulness": 1,
+        "Answer Relevance": 1
+      },
+      {
+        "id": "vanguard_kpi",
+        "query": "Qual è il trend del KPI di adozione utente?",
+        "answer": "Il trend del KPI di adozione utente è positivo, con una crescita del 15% rispetto alla settimana precedente.",
+        "context_size": 1,
+        "retrieved_context": [
+          {
+            "id": "eval_chunk_0",
+            "text": "Verbale Ufficiale della Sprint Review del Progetto Vanguard (VNG-2024) - Data: 28/10/2025.\n\nDiscussione Principale:\nIl team ha revisionato lo stato di avanzamento del modulo di autenticazione. La decisione presa è stata quella di adottare lo standard OAuth2 per garantire maggiore sicurezza.\n\nMetriche e KPI:\nIl KPI principale, l'adozione utente settimanale, ha mostrato un trend positivo con una crescita del 15% rispetto alla settimana precedente.\n\nCriticità Tecniche Emerse:\nÈ stata identificata una criticità legata all'alta latenza delle query sul database degli utenti. La soluzione tecnica proposta è l'aggiunta di un indice sulla colonna 'email', compito assegnato al responsabile tecnico Marco Rossi.\n\nAzioni Assegnate e Scadenze:\n1.  Azione: Completare l'integrazione delle API di login. Responsabile: Marco Rossi. Data di scadenza: 2025-11-05.\n2.  Azione: Preparare i test di usabilità. Responsabile: Giulia Bianchi. Data di scadenza: 2025-11-10.\n\nImpatto per il Cliente:\nIl completamento di questo modulo porterà benefici tangibili al cliente, con una riduzione stimata del 50% nel tempo di accesso, migliorando drasticamente l'esperienza utente."
+          }
+        ],
+        "Context Precision": 0.4,
+        "Context Recall": 1,
+        "Faithfulness": 1,
+        "Answer Relevance": 1
+      },
+      {
+        "id": "vanguard_tecnico",
+        "query": "Qual era il problema tecnico e chi se ne occupa?",
+        "answer": "Il problema tecnico emerso era un'alta latenza delle query sul database degli utenti. La soluzione proposta è l'aggiunta di un indice sulla colonna 'email' e il compito è stato assegnato al responsabile tecnico Marco Rossi.",
+        "context_size": 1,
+        "retrieved_context": [
+          {
+            "id": "eval_chunk_0",
+            "text": "Verbale Ufficiale della Sprint Review del Progetto Vanguard (VNG-2024) - Data: 28/10/2025.\n\nDiscussione Principale:\nIl team ha revisionato lo stato di avanzamento del modulo di autenticazione. La decisione presa è stata quella di adottare lo standard OAuth2 per garantire maggiore sicurezza.\n\nMetriche e KPI:\nIl KPI principale, l'adozione utente settimanale, ha mostrato un trend positivo con una crescita del 15% rispetto alla settimana precedente.\n\nCriticità Tecniche Emerse:\nÈ stata identificata una criticità legata all'alta latenza delle query sul database degli utenti. La soluzione tecnica proposta è l'aggiunta di un indice sulla colonna 'email', compito assegnato al responsabile tecnico Marco Rossi.\n\nAzioni Assegnate e Scadenze:\n1.  Azione: Completare l'integrazione delle API di login. Responsabile: Marco Rossi. Data di scadenza: 2025-11-05.\n2.  Azione: Preparare i test di usabilità. Responsabile: Giulia Bianchi. Data di scadenza: 2025-11-10.\n\nImpatto per il Cliente:\nIl completamento di questo modulo porterà benefici tangibili al cliente, con una riduzione stimata del 50% nel tempo di accesso, migliorando drasticamente l'esperienza utente."
+          }
+        ],
+        "Context Precision": 0.48,
+        "Context Recall": 1,
+        "Faithfulness": 1,
+        "Answer Relevance": 1
+      }
+    ]
+  }
