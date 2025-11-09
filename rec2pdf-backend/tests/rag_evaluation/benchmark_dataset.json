@@ -1,0 +1,26 @@
+[
+  {
+    "id": "vanguard_summary",
+    "query": "Fai un riassunto della sprint review del Progetto Vanguard.",
+    "gold_notes": "Il riassunto deve menzionare il modulo di autenticazione, la decisione su OAuth2, il KPI di adozione utente e le azioni assegnate a Marco e Giulia.",
+    "workspace": "0724ff8c-92cd-4019-92fb-7b74e27a8c57"
+  },
+  {
+    "id": "vanguard_azioni",
+    "query": "Elenca le azioni assegnate per il progetto Vanguard con responsabile e data.",
+    "gold_notes": "Deve restituire i task di Marco Rossi (API, 05/11/2025) e Giulia Bianchi (test, 10/11/2025).",
+    "workspace": "0724ff8c-92cd-4019-92fb-7b74e27a8c57"
+  },
+  {
+    "id": "vanguard_kpi",
+    "query": "Qual è il trend del KPI di adozione utente?",
+    "gold_notes": "La risposta deve contenere 'crescita del 15%'.",
+    "workspace": "0724ff8c-92cd-4019-92fb-7b74e27a8c57"
+  },
+  {
+    "id": "vanguard_tecnico",
+    "query": "Qual era il problema tecnico e chi se ne occupa?",
+    "gold_notes": "Deve menzionare la latenza del database e Marco Rossi come responsabile della soluzione.",
+    "workspace": "0724ff8c-92cd-4019-92fb-7b74e27a8c57"
+  }
+]

@@ -1,0 +1,17 @@
+Verbale Ufficiale della Sprint Review del Progetto Vanguard (VNG-2024) - Data: 28/10/2025.
+
+Discussione Principale:
+Il team ha revisionato lo stato di avanzamento del modulo di autenticazione. La decisione presa è stata quella di adottare lo standard OAuth2 per garantire maggiore sicurezza.
+
+Metriche e KPI:
+Il KPI principale, l'adozione utente settimanale, ha mostrato un trend positivo con una crescita del 15% rispetto alla settimana precedente.
+
+Criticità Tecniche Emerse:
+È stata identificata una criticità legata all'alta latenza delle query sul database degli utenti. La soluzione tecnica proposta è l'aggiunta di un indice sulla colonna 'email', compito assegnato al responsabile tecnico Marco Rossi.
+
+Azioni Assegnate e Scadenze:
+1.  Azione: Completare l'integrazione delle API di login. Responsabile: Marco Rossi. Data di scadenza: 2025-11-05.
+2.  Azione: Preparare i test di usabilità. Responsabile: Giulia Bianchi. Data di scadenza: 2025-11-10.
+
+Impatto per il Cliente:
+Il completamento di questo modulo porterà benefici tangibili al cliente, con una riduzione stimata del 50% nel tempo di accesso, migliorando drasticamente l'esperienza utente.
