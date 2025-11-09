@@ -4157,6 +4157,8 @@ const normalizeStoragePrefix = (value) => {
   return trimmed.replace(/^\/+/, '').replace(/\/+$/, '');
 };
 
+// TROVA E SOSTITUISCI LA VECCHIA FUNZIONE listSupabaseObjects CON QUESTA
+
 const listSupabaseObjects = async (bucket, prefix = '', options = {}) => {
   if (!supabase) {
     const error = new Error('Supabase client is not configured');
@@ -4172,31 +4174,49 @@ const listSupabaseObjects = async (bucket, prefix = '', options = {}) => {
   }
 
   const normalizedPrefix = normalizeStoragePrefix(prefix);
-  const limit = Number.isFinite(options.limit) && options.limit > 0 ? Math.min(options.limit, 1000) : 1000;
-  const offset = Number.isFinite(options.offset) && options.offset > 0 ? options.offset : 0;
-  const sortBy = options.sortBy || { column: 'updated_at', order: 'desc' };
+  console.log(`[listSupabaseObjects] Eseguo ricerca in bucket: "${normalizedBucket}", prefisso: "${normalizedPrefix}"`);
+
+  const limit = 500;
+  const offset = 0;
+  const sortBy = { column: 'updated_at', order: 'desc' };
 
   const { data, error } = await supabase.storage
     .from(normalizedBucket)
-    .list(normalizedPrefix || '', { limit, offset, sortBy });
+    .list(normalizedPrefix || null, { limit, offset, sortBy });
 
   if (error) {
+    console.error(`[listSupabaseObjects] Errore da Supabase:`, error);
     const listError = new Error(error.message || 'Impossibile elencare gli oggetti Supabase');
     listError.statusCode = Number(error.statusCode) || 500;
     throw listError;
   }
 
   const entries = Array.isArray(data) ? data : [];
-  return entries
-    .filter((item) => item && item.name && item.metadata && typeof item.metadata.size === 'number')
-    .map((item) => {
-      const relativePath = normalizedPrefix ? `${normalizedPrefix}/${item.name}` : item.name;
-      return {
-        name: relativePath,
+  const filesOnly = entries.filter(item => item.id !== null);
+  console.log(`[listSupabaseObjects] Trovati ${filesOnly.length} file.`);
+
+  // ==========================================================
+  // ==                  MODIFICA CHIAVE FINALE              ==
+  // ==========================================================
+  return filesOnly.map((item) => {
+    // Il percorso completo dell'oggetto all'interno del bucket
+    const objectPath = normalizedPrefix ? `${normalizedPrefix}/${item.name}` : item.name;
+    
+    return {
+      // Campi standard di Supabase
+      id: item.id,
+      updated_at: item.updated_at,
+      created_at: item.created_at,
+      last_accessed_at: item.last_accessed_at,
+      metadata: {
+        ...item.metadata,
         size: Number(item.metadata.size) || 0,
-        updatedAt: item.updated_at || item.created_at || null,
-      };
-    });
+      },
+      // I nostri campi custom per il frontend
+      name: item.name,         // Solo il nome del file (es. "documento_123.pdf")
+      objectPath: objectPath,  // Il percorso completo (es. "processed/user-id/documento_123.pdf")
+    };
+  });
 };
 
 const parseStoragePath = (rawPath) => {
@@ -8398,51 +8418,45 @@ app.put('/api/markdown', async (req, res) => {
 
 app.get('/api/file', async (req, res) => {
   try {
-    const rawPath = String(req.query?.path || '').trim();
-    if (!rawPath) {
-      return res.status(400).json({ ok: false, message: 'Param path mancante' });
-    }
     if (!supabase) {
-      return res.status(500).json({ ok: false, message: 'Supabase non configurato' });
+      return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
     }
 
-    let bucket;
-    let objectPath;
-    try {
-      ({ bucket, objectPath } = parseStoragePath(rawPath));
-    } catch (parseError) {
-      const status = Number(parseError.statusCode) || 400;
-      return res.status(status).json({ ok: false, message: parseError.message });
-    }
+    // ==========================================================
+    // ==                  MODIFICA CHIAVE QUI                 ==
+    // ==========================================================
+    const bucket = String(req.query?.bucket || '').trim();
+    const objectPath = String(req.query?.path || '').trim(); // Rinominiamo per chiarezza
 
-    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(objectPath, 60);
-    if (error || !data?.signedUrl) {
-      const message = error?.message || 'Impossibile generare URL firmato';
-      return res.status(500).json({ ok: false, message });
+    if (!bucket || !objectPath) {
+      return res.status(400).json({ ok: false, message: 'Parametri "bucket" e "path" mancanti' });
     }
-    let targetUrl = data.signedUrl;
-    if (targetUrl && SUPABASE_URL && !/^https?:\/\//i.test(targetUrl)) {
-      try {
-        const supabaseOrigin = new URL(SUPABASE_URL);
-        const relativePath = targetUrl.startsWith('/') ? targetUrl.slice(1) : targetUrl;
-        targetUrl = new URL(relativePath, `${supabaseOrigin.origin}/`).toString();
-      } catch (urlError) {
-        console.warn('⚠️  Impossibile normalizzare URL firmato Supabase:', urlError?.message || urlError);
+    // ==========================================================
+
+    console.log(`[API /file] Richiesta URL firmato per: ${bucket}/${objectPath}`);
+
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(objectPath, 60); // 60 secondi di validità
+
+    if (error) {
+      // Se l'errore è "Object not found", restituiamo un 404
+      if (error.message.toLowerCase().includes('object not found')) {
+        return res.status(404).json({ ok: false, message: 'Oggetto non trovato in Supabase.' });
       }
+      throw error; // Per altri errori, lancia e gestisci sotto
+    }
+    
+    if (!data?.signedUrl) {
+      throw new Error('Impossibile generare URL firmato.');
     }
 
-    if (!/^https?:\/\//i.test(targetUrl)) {
-      return res.status(500).json({ ok: false, message: 'URL firmato Supabase non valido' });
-    }
-
-    const cacheBuster = Date.now().toString(36);
-    const separator = targetUrl.includes('?') ? '&' : '?';
-    targetUrl = `${targetUrl}${separator}cachebust=${cacheBuster}`;
+    // ... (logica per normalizzare l'URL, se necessaria) ...
 
     res.setHeader('Cache-Control', 'no-store');
-    return res.json({ ok: true, url: targetUrl });
+    return res.json({ ok: true, url: data.signedUrl });
+
   } catch (error) {
-    const message = error && error.message ? error.message : String(error);
+    console.error("❌ Errore in /api/file:", error);
+    const message = error.message || 'Errore durante la generazione dell\'URL.';
     return res.status(500).json({ ok: false, message });
   }
 });
