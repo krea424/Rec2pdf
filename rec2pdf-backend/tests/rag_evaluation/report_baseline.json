@@ -1,7 +1,7 @@
 {
   "totals": {
     "count": 4,
-    "Context Precision": 0.448,
+    "Context Precision": 0.412,
     "Context Recall": 1,
     "Faithfulness": 1,
     "Answer Relevance": 1
@@ -10,7 +10,7 @@
     {
       "id": "vanguard_summary",
       "query": "Fai un riassunto della sprint review del Progetto Vanguard.",
-      "answer": "La sprint review del Progetto Vanguard (VNG-2024), tenutasi il 28/10/2025, ha riguardato l'avanzamento del modulo di autenticazione, per il quale è stato deciso di adottare lo standard OAuth2. Il KPI di adozione utente settimanale è cresciuto del 15%. È stata identificata una criticità di alta latenza nelle query del database utenti, con la soluzione proposta di aggiungere un indice sulla colonna 'email', compito assegnato a Marco Rossi. Le azioni assegnate includono il completamento dell'integrazione delle API di login da parte di Marco Rossi entro il 2025-11-05 e la preparazione dei test di usabilità da parte di Giulia Bianchi entro il 2025-11-10. Il completamento del modulo porterà una riduzione del 50% nel tempo di accesso per il cliente.",
+      "answer": "La sprint review del Progetto Vanguard (VNG-2024) si è tenuta il 28/10/2025.\nIl team ha deciso di adottare lo standard OAuth2 per il modulo di autenticazione. L'adozione utente settimanale è cresciuta del 15%.\nÈ stata identificata un'alta latenza delle query sul database degli utenti, risolvibile con l'aggiunta di un indice sulla colonna 'email' (compito di Marco Rossi).\nLe azioni assegnate includono il completamento dell'integrazione delle API di login da parte di Marco Rossi entro il 2025-11-05 e la preparazione dei test di usabilità da parte di Giulia Bianchi entro il 2025-11-10.\nIl completamento del modulo ridurrà il tempo di accesso del 50% per il cliente.",
       "context_size": 2,
       "retrieved_context": [
         {
@@ -22,7 +22,7 @@
           "text": "Impatto per il Cliente:\nIl completamento di questo modulo porterà benefici tangibili al cliente, con una riduzione stimata del 50% nel tempo di accesso, migliorando drasticamente l'esperienza utente."
         }
       ],
-      "Context Precision": 0.98,
+      "Context Precision": 1,
       "Context Recall": 1,
       "Faithfulness": 1,
       "Answer Relevance": 1
@@ -42,7 +42,7 @@
           "text": "Impatto per il Cliente:\nIl completamento di questo modulo porterà benefici tangibili al cliente, con una riduzione stimata del 50% nel tempo di accesso, migliorando drasticamente l'esperienza utente."
         }
       ],
-      "Context Precision": 0.5,
+      "Context Precision": 0.25,
       "Context Recall": 1,
       "Faithfulness": 1,
       "Answer Relevance": 1
@@ -50,7 +50,7 @@
     {
       "id": "vanguard_kpi",
       "query": "Qual è il trend del KPI di adozione utente?",
-      "answer": "Il KPI di adozione utente settimanale ha mostrato un trend positivo con una crescita del 15% rispetto alla settimana precedente.",
+      "answer": "Il trend è positivo, con una crescita del 15% rispetto alla settimana precedente.",
       "context_size": 2,
       "retrieved_context": [
         {
@@ -62,7 +62,7 @@
           "text": "Impatto per il Cliente:\nIl completamento di questo modulo porterà benefici tangibili al cliente, con una riduzione stimata del 50% nel tempo di accesso, migliorando drasticamente l'esperienza utente."
         }
       ],
-      "Context Precision": 0.11,
+      "Context Precision": 0.15,
       "Context Recall": 1,
       "Faithfulness": 1,
       "Answer Relevance": 1
@@ -70,7 +70,7 @@
     {
       "id": "vanguard_tecnico",
       "query": "Qual era il problema tecnico e chi se ne occupa?",
-      "answer": "Il problema tecnico era l'alta latenza delle query sul database degli utenti. Se ne occupa Marco Rossi.",
+      "answer": "Il problema tecnico era l'alta latenza delle query sul database degli utenti, e se ne occupa Marco Rossi.",
       "context_size": 2,
       "retrieved_context": [
         {
@@ -82,7 +82,7 @@
           "text": "Impatto per il Cliente:\nIl completamento di questo modulo porterà benefici tangibili al cliente, con una riduzione stimata del 50% nel tempo di accesso, migliorando drasticamente l'esperienza utente."
         }
       ],
-      "Context Precision": 0.2,
+      "Context Precision": 0.25,
       "Context Recall": 1,
       "Faithfulness": 1,
       "Answer Relevance": 1

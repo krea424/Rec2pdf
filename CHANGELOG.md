@@ -1,6 +1,12 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [9.0.0] - 2025-11-09
+
+### Added
+- **Framework di Valutazione RAG**: Introdotto un sistema completo per valutare le performance del RAG basato su metriche standard del settore. Utilizza un LLM come "giudice" per calcolare `Context Precision`, `Context Recall`, `Faithfulness` e `Answer Relevance`. I risultati sono salvati in un report JSON per analisi comparative.
+- **Chunking Semantico Personalizzato**: Implementata una strategia di chunking ricorsiva e basata su separatori gerarchici. Questo approccio migliora la qualità della suddivisione del testo, creando chunk più coerenti e semanticamente rilevanti per il sistema RAG, superando i limiti del chunking a dimensione fissa.
+
 ## [7.0.0] - 2025-11-03
 
 ### Added
