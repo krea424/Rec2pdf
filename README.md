@@ -25,6 +25,10 @@ Rec2PDF automatizza il flusso **voce → trascrizione → documento editoriale**
 - [Struttura del repository](#struttura-del-repository)
 - [Licenza](#licenza)
 
+## Novità v9.0.0
+- **Framework di Valutazione RAG**: Introdotto un sistema completo per valutare le performance del RAG basato su metriche standard del settore. Utilizza un LLM come "giudice" per calcolare `Context Precision`, `Context Recall`, `Faithfulness` e `Answer Relevance`. I risultati sono salvati in un report JSON per analisi comparative.
+- **Chunking Semantico Personalizzato**: Implementata una strategia di chunking ricorsiva e basata su separatori gerarchichici. Questo approccio migliora la qualità della suddivisione del testo, creando chunk più coerenti e semanticamente rilevanti per il sistema RAG, superando i limiti del chunking a dimensione fissa.
+
 ## Novità v7.0.0
 - **Esperienza bimodale Create/Advanced**: la navigazione include il pulsante "Advanced A" e la Create page mostra banner contestuali per chi non possiede `MODE_ADVANCED` o `MODE_ADVANCED_V2`, guidando l'abilitazione dei flag e mantenendo la pipeline base sempre disponibile.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L10-L109】【F:rec2pdf-frontend/src/pages/Create.jsx†L1-L37】【F:rec2pdf-frontend/src/pages/Advanced.jsx†L65-L123】
 - **Control room boardroom rinnovata**: la vista Advanced offre un `InputManager` con superfici boardroom per gestire workspace, profili e loghi, mentre la `PipelineOverview` mette in risalto progressi, log dettagliati e il link "Vai alla Library" al completamento della pipeline.【F:rec2pdf-frontend/src/features/advanced/InputManager.jsx†L1-L188】【F:rec2pdf-frontend/src/features/advanced/PipelineOverview.jsx†L1-L147】
@@ -55,6 +59,8 @@ La modalità **Advanced** abilita la “control room” boardroom experience. È
 - **Roadmap guidata da placeholder**: variabili d'ambiente `VITE_ENABLE_FS_INTEGRATION_PLACEHOLDER` e `VITE_ENABLE_RAG_PLACEHOLDER` mostrano card contestuali per preview funzionalità future e raccolta feedback degli stakeholder.【F:rec2pdf-frontend/src/features/advanced/AdvancedDashboard.tsx†L18-L109】
 
 ## Caratteristiche principali
+- **Framework di Valutazione RAG**: sistema di valutazione per misurare le performance del RAG con metriche standard (`Context Precision`, `Context Recall`, `Faithfulness`, `Answer Relevance`) e un LLM come giudice.
+- **Chunking Semantico Personalizzato**: strategia di chunking ricorsiva basata su separatori gerarchici per una suddivisione del testo più coerente.
 - **Autenticazione centralizzata**: Supabase gestisce login (magic link e GitHub) e protegge tutte le rotte `/api` con bearer token automatici nel frontend.【F:rec2pdf-backend/server.js†L13-L105】【F:rec2pdf-frontend/src/App.jsx†L385-L439】【F:rec2pdf-frontend/src/components/LoginPage.jsx†L1-L82】
 - **Pipeline audio end-to-end**: upload o registrazione browser, normalizzazione, trascrizione Whisper, generazione Markdown e pubblicazione PDF con log di stato e assegnazione workspace/progetto.【F:rec2pdf-backend/server.js†L1312-L1669】【F:rec2pdf-frontend/src/App.jsx†L1660-L1807】
 - **Upload testo e Markdown**: endpoint dedicati per TXT e `.md` pre-esistenti replicano le fasi di generazione, consentendo reimpaginazioni e conversioni veloci con gli stessi metadati della pipeline audio.【F:rec2pdf-backend/server.js†L1673-L2348】【F:rec2pdf-frontend/src/App.jsx†L1810-L2075】
