@@ -4,6 +4,7 @@ const crypto = require('crypto');
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PROJECT_SCOPE_NAMESPACE = 'rec2pdf:knowledge:project:';
+const CONTEXT_SEPARATOR = '\n\n---\n\n';
 
 const formatUuidFromBytes = (bytes) => {
   const hex = Buffer.from(bytes).toString('hex');

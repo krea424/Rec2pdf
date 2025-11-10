@@ -1,4 +1,4 @@
-const { canonicalizeProjectScopeId, sanitizeProjectIdentifier } = require('./services/utils.js');
+const { canonicalizeProjectScopeId, sanitizeProjectIdentifier, CONTEXT_SEPARATOR } = require('./services/utils.js');
 const { RAGService } = require('./services/ragService');
 const { PromptService } = require('./services/promptService');
 const promptService = new PromptService();
@@ -3572,88 +3572,119 @@ const normalizeKnowledgeText = (text = '') => {
 
 // TROVA E SOSTITUISCI LA VECCHIA FUNZIONE createKnowledgeChunks CON QUESTA NUOVA VERSIONE:
 
-const createKnowledgeChunks = (text, chunkSize = 1000, chunkOverlap = 200) => {
-  // Nota: chunkSize e chunkOverlap sono ora in CARATTERI per coerenza con la logica.
-  // 1000 caratteri sono circa 200-250 parole.
-  
-  const normalizedText = typeof text === 'string' ? text.trim() : '';
+// TROVA E SOSTITUISCI LA VECCHIA FUNZIONE createKnowledgeChunks CON QUESTA VERSIONE FINALE
+
+/**
+ * Divide un testo in chunk semanticamente coerenti.
+ * Questa è un'implementazione custom ispirata al RecursiveCharacterTextSplitter di LangChain,
+ * ma senza dipendenze esterne.
+ * 
+ * @param {string} text - Il testo da dividere.
+ * @param {object} options - Opzioni di chunking.
+ * @param {number} [options.chunkSize=1500] - La dimensione massima target per ogni chunk, in caratteri.
+ * @param {number} [options.chunkOverlap=200] - Il numero di caratteri di sovrapposizione tra chunk consecutivi.
+ * @returns {string[]} Un array di chunk di testo.
+ */
+const createKnowledgeChunks = (text, { chunkSize = 1500, chunkOverlap = 200 } = {}) => {
+  const normalizedText = (text || '').trim();
   if (!normalizedText) {
     return [];
   }
 
-  // Gerarchia dei separatori, dal più grande al più piccolo.
-  const separators = ["\n\n", "\n", ". ", " ", ""];
+  // Se il testo è già più piccolo della dimensione del chunk, non c'è bisogno di dividerlo.
+  if (normalizedText.length <= chunkSize) {
+    console.log(`[Chunking] Documento breve, creato 1 chunk.`);
+    return [normalizedText];
+  }
 
-  // Funzione ricorsiva interna
-  function splitTextRecursive(textToSplit, currentSeparators) {
+  // Gerarchia dei separatori, dal più significativo (paragrafo) al meno significativo (carattere).
+  const separators = ['\n\n', '\n', '. ', '?', '!', ' ', ''];
+
+  /**
+   * Funzione ricorsiva che divide il testo.
+   * @param {string} textToSplit - Il pezzo di testo da dividere.
+   * @param {string[]} currentSeparators - La lista di separatori da provare.
+   * @returns {string[]} Un array di pezzi di testo più piccoli.
+   */
+  function splitRecursively(textToSplit, currentSeparators) {
+    const finalChunks = [];
+    
+    // Se il testo è già abbastanza piccolo, abbiamo finito.
     if (textToSplit.length <= chunkSize) {
       return [textToSplit];
     }
 
-    // Prendi il separatore più importante dalla lista
-    const currentSeparator = currentSeparators[0];
+    // Prendi il separatore più importante dalla lista.
+    const separator = currentSeparators[0];
     const nextSeparators = currentSeparators.slice(1);
 
-    // Se abbiamo esaurito i separatori, dividiamo forzatamente per dimensione
-    if (currentSeparator === "") {
-      const chunks = [];
+    // Se non ci sono più separatori, dividiamo forzatamente per dimensione.
+    if (separator === '') {
       for (let i = 0; i < textToSplit.length; i += chunkSize) {
-        chunks.push(textToSplit.slice(i, i + chunkSize));
+        finalChunks.push(textToSplit.slice(i, i + chunkSize));
       }
-      return chunks;
+      return finalChunks;
     }
 
-    // Prova a dividere con il separatore corrente
-    const splits = textToSplit.split(currentSeparator);
-    const finalChunks = [];
-    let currentChunk = "";
+    // Prova a dividere con il separatore corrente.
+    const splits = textToSplit.split(separator);
+    let currentChunk = '';
 
-    for (const split of splits) {
-      // Se un pezzo è già più grande della dimensione del chunk,
-      // lo dividiamo ulteriormente con i separatori successivi.
-      if (split.length > chunkSize) {
-        finalChunks.push(...splitTextRecursive(split, nextSeparators));
-        continue;
-      }
-
-      // Altrimenti, proviamo ad aggregare i pezzi
-      const potentialChunk = currentChunk ? `${currentChunk}${currentSeparator}${split}` : split;
-      if (potentialChunk.length > chunkSize) {
-        finalChunks.push(currentChunk);
-        currentChunk = split;
+    for (const part of splits) {
+      const partWithSeparator = `${part}${separator}`;
+      // Se l'aggiunta del nuovo pezzo supera la dimensione, salva il chunk corrente e inizia uno nuovo.
+      if (currentChunk.length + partWithSeparator.length > chunkSize) {
+        // Se il chunk corrente è valido, salvalo.
+        if (currentChunk.length > 0) {
+          finalChunks.push(currentChunk);
+        }
+        // Il nuovo pezzo diventa il chunk corrente.
+        currentChunk = partWithSeparator;
       } else {
-        currentChunk = potentialChunk;
+        // Altrimenti, aggiungi il pezzo al chunk corrente.
+        currentChunk += partWithSeparator;
       }
     }
+    // Aggiungi l'ultimo chunk rimasto.
     if (currentChunk) {
       finalChunks.push(currentChunk);
     }
-    
+
+    // Controlla se alcuni dei chunk generati sono ancora troppo grandi e, in caso,
+    // dividili ulteriormente usando i separatori meno importanti.
+    const furtherSplitChunks = finalChunks.flatMap(chunk => {
+      if (chunk.length > chunkSize) {
+        return splitRecursively(chunk, nextSeparators);
+      }
+      return chunk;
+    });
+
+    return furtherSplitChunks;
+  }
+
+  // Avvia il processo di divisione.
+  const initialChunks = splitRecursively(normalizedText, separators);
+
+  // Aggiungi la sovrapposizione.
+  if (chunkOverlap > 0 && initialChunks.length > 1) {
+    const overlappedChunks = [];
+    for (let i = 0; i < initialChunks.length; i++) {
+      const currentChunk = initialChunks[i];
+      if (i > 0) {
+        const prevChunk = initialChunks[i - 1];
+        const overlap = prevChunk.slice(-chunkOverlap);
+        overlappedChunks.push(`${overlap}\n...\n${currentChunk}`);
+      } else {
+        overlappedChunks.push(currentChunk);
+      }
+    }
+    const finalChunks = overlappedChunks.filter(c => c.trim().length > 20); // Filtra chunk troppo piccoli
+    console.log(`[Chunking] Documento diviso in ${finalChunks.length} chunk (strategia: semantica custom, size=${chunkSize}, overlap=${chunkOverlap}).`);
     return finalChunks;
   }
 
-  // Funzione per aggiungere l'overlap
-  function addOverlap(chunks) {
-    if (chunkOverlap <= 0 || chunks.length <= 1) {
-      return chunks;
-    }
-    const overlappedChunks = [chunks[0]];
-    for (let i = 1; i < chunks.length; i++) {
-      const prevChunk = chunks[i-1];
-      const currentChunk = chunks[i];
-      const overlapText = prevChunk.slice(-chunkOverlap);
-      overlappedChunks.push(`${overlapText}... ${currentChunk}`);
-    }
-    return overlappedChunks;
-  }
-  
-  const initialChunks = splitTextRecursive(normalizedText, separators);
-  // Per ora, non aggiungiamo l'overlap per mantenere la logica semplice.
-  // Possiamo aggiungerlo in un secondo momento se necessario.
-  const finalChunks = initialChunks.filter(c => c.trim().length > 10); // Filtra chunk troppo piccoli
-
-  console.log(`[Chunking] Documento diviso in ${finalChunks.length} chunk (strategia: semantica custom).`);
-  
+  const finalChunks = initialChunks.filter(c => c.trim().length > 20);
+  console.log(`[Chunking] Documento diviso in ${finalChunks.length} chunk (strategia: semantica custom, size=${chunkSize}).`);
   return finalChunks;
 };
 
@@ -8507,72 +8538,62 @@ app.post('/api/transcribe-only', uploadMiddleware.single('audio'), async (req, r
 // ==========================================================
 // POSIZIONE CORRETTA: Prima del middleware 404
 app.post('/api/rag/baseline', async (req, res) => {
-  // Questo endpoint è protetto dall'autenticazione globale su /api
   try {
-    const query = String(req.body?.query || '').trim();
-    const workspaceId = getWorkspaceIdFromRequest(req); // Ottiene workspace da header/body
+    const rawTextInput = String(req.body?.query || '').trim(); // La "query" è la nostra trascrizione grezza
+    const workspaceId = getWorkspaceIdFromRequest(req);
     const aiOverrides = extractAiProviderOverrides(req);
-    res.locals.aiProviderOverrides = aiOverrides;
 
-    if (!query) {
-      return res.status(400).json({ error: 'La query è obbligatoria nel corpo della richiesta.' });
+    if (!rawTextInput) {
+      return res.status(400).json({ error: 'Il testo di input (query) è obbligatorio.' });
     }
 
-    console.log(`[EVAL] Ricevuta richiesta per /api/rag/baseline. Query: "${query}", Workspace: "${workspaceId || 'N/A'}"`);
+    console.log(`[EVAL] Ricevuta richiesta per /api/rag/baseline. Input: "${rawTextInput.substring(0, 70)}..."`);
 
-    // 1. Recupera il contesto usando la tua logica RAG esistente.
-    const contextString = await retrieveRelevantContext(query, workspaceId, {});
+    // 1. Recupera il contesto usando il nostro RAG avanzato
+    const contextString = await retrieveRelevantContext(rawTextInput, workspaceId, {
+        textProvider: aiOverrides.text,
+        embeddingProvider: aiOverrides.embedding,
+    });
 
-    // 2. Genera una VERA risposta basata sul contesto recuperato.
-    let answer = "Nessun contesto pertinente trovato per generare una risposta.";
-    if (contextString && contextString.trim().length > 0) {
-        const generationPrompt = `
-            Sei un assistente AI che risponde a domande in modo fattuale e conciso.
-            Basati ESCLUSIVAMENTE sul "Contesto" fornito per formulare la tua risposta.
-            Non inventare informazioni e non usare conoscenza pregressa.
-            Se il contesto non contiene la risposta, rispondi "Le informazioni non sono disponibili nel contesto fornito.".
+    // 2. GENERA LA RISPOSTA USANDO LA VERA LOGICA DI REC2PDF
+    // Creiamo un file temporaneo con la trascrizione grezza, come si aspetta `generateMarkdown`
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf_eval_'));
+    const tempTxtPath = path.join(tempDir, 'transcript.txt');
+    await fsp.writeFile(tempTxtPath, rawTextInput);
 
-            Contesto:
-            ---
-            ${contextString}
-            ---
+    let finalAnswer = "Errore durante la generazione del documento Markdown.";
+    try {
+        // Usiamo un prompt di default semplice per la valutazione, come 'prompt_format_base'
+        const prompts = await listPrompts();
+        const evalPrompt = findPromptById(prompts, 'prompt_format_base');
 
-            Domanda: "${query}"
-
-            Risposta concisa:`;
-        
-        try {
-            // Risolvi il provider AI (assicurati che queste funzioni siano accessibili)
-            // Usiamo un modello veloce ed economico per la valutazione.
-            const textProvider = resolveAiProvider('text', aiOverrides.text);
-            const aiGenerator = getAIService(textProvider.id, textProvider.apiKey, textProvider.model);
-            
-            console.log(`[EVAL] Generazione risposta con il modello: ${textProvider.model || textProvider.id}`);
-            answer = await aiGenerator.generateContent(generationPrompt);
-
-        } catch (genError) {
-            console.error("❌ Errore durante la generazione della risposta per la valutazione:", genError);
-            answer = "Errore durante la fase di generazione della risposta.";
-        }
-    } else {
-        console.log("[EVAL] Contesto vuoto, la risposta sarà generica.");
+        const { content } = await generateMarkdown(
+            tempTxtPath,
+            evalPrompt, // Passiamo un payload di prompt di base
+            contextString,
+            { textProvider: aiOverrides.text }
+        );
+        finalAnswer = content;
+    } finally {
+        // Puliamo i file temporanei
+        await fsp.rm(tempDir, { recursive: true, force: true });
     }
-
-    // 3. Formatta il contesto per il report, come prima.
-    const contextChunks = contextString.split('\n\n---\n\n').map((text, i) => ({
+    
+    // 3. Formatta il contesto per il report
+    const contextChunks = contextString.split(CONTEXT_SEPARATOR).map((text, i) => ({
       id: `eval_chunk_${i}`,
       content: text
     }));
 
-    // 4. Invia la risposta reale e il contesto.
+    // 4. Invia la risposta reale e il contesto
     res.json({
-      answer: answer.trim(),
+      answer: finalAnswer.trim(), // `answer` ora contiene il documento Markdown generato
       context: contextChunks
     });
 
   } catch (error) {
     console.error("❌ Errore grave nell'endpoint /api/rag/baseline:", error);
-    res.status(500).json({ error: 'Errore interno del server durante la valutazione RAG.', details: error.message });
+    res.status(500).json({ error: 'Errore interno del server.', details: error.message });
   }
 });
 

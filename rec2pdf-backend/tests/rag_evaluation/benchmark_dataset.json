@@ -1,26 +1,21 @@
 [
   {
-    "id": "vanguard_summary",
-    "query": "Fai un riassunto della sprint review del Progetto Vanguard.",
-    "gold_notes": "Il riassunto deve menzionare il modulo di autenticazione, la decisione su OAuth2, il KPI di adozione utente e le azioni assegnate a Marco e Giulia.",
+    "id": "vanguard_azioni_specifiche",
+    "scenario": "Estrarre le azioni assegnate da una trascrizione di meeting.",
+    "raw_text_input": "Ok, allora... la riunione per Vanguard... ci sono dei task... Marco deve fare le API entro inizio novembre, e Giulia... i test.",
+    "gold_facts_to_retrieve": [
+      "Azione: Completare l'integrazione delle API di login. Responsabile: Marco Rossi. Data di scadenza: 2025-11-05.",
+      "Azione: Preparare i test di usabilità. Responsabile: Giulia Bianchi. Data di scadenza: 2025-11-10."
+    ],
     "workspace": "0724ff8c-92cd-4019-92fb-7b74e27a8c57"
   },
   {
-    "id": "vanguard_azioni",
-    "query": "Elenca le azioni assegnate per il progetto Vanguard con responsabile e data.",
-    "gold_notes": "Deve restituire i task di Marco Rossi (API, 05/11/2025) e Giulia Bianchi (test, 10/11/2025).",
-    "workspace": "0724ff8c-92cd-4019-92fb-7b74e27a8c57"
-  },
-  {
-    "id": "vanguard_kpi",
-    "query": "Qual è il trend del KPI di adozione utente?",
-    "gold_notes": "La risposta deve contenere 'crescita del 15%'.",
-    "workspace": "0724ff8c-92cd-4019-92fb-7b74e27a8c57"
-  },
-  {
-    "id": "vanguard_tecnico",
-    "query": "Qual era il problema tecnico e chi se ne occupa?",
-    "gold_notes": "Deve menzionare la latenza del database e Marco Rossi come responsabile della soluzione.",
+    "id": "vanguard_kpi_specifico",
+    "scenario": "Estrarre una metrica specifica da una trascrizione di meeting.",
+    "raw_text_input": "Parliamo un attimo dei KPI... come sta andando l'adozione utente?",
+    "gold_facts_to_retrieve": [
+      "KPI principale, l'adozione utente settimanale, ha mostrato un trend positivo con una crescita del 15%"
+    ],
     "workspace": "0724ff8c-92cd-4019-92fb-7b74e27a8c57"
   }
 ]
