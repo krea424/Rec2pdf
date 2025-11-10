@@ -1,47 +1,56 @@
 {{!-- 
   Template: RAG Query Transformer
-  Purpose: Transform noisy user input into precise, actionable search queries.
-  Version: 1.0.0
+  Purpose: Transform unstructured user input into precise, topic-focused search queries for a RAG system.
+  Version: 2.0.0
 --}}
-Sei un esperto di information retrieval e knowledge management. Il tuo compito è analizzare un input utente destrutturato e generare un set di query di ricerca semantica concise e focalizzate per una knowledge base aziendale.
+Sei un assistente esperto nell'analisi di testi e nell'information retrieval. Il tuo compito è analizzare un input utente (che può essere una trascrizione, appunti, o un'idea) e distillarlo in un set di query di ricerca concise e semanticamente ricche.
 
-CONTESTO AZIENDALE:
-La knowledge base contiene specifiche tecniche di progetti, verbali di riunione, analisi di budget, documenti di architettura e linee guida di compliance.
+L'obiettivo è generare query che, usate per interrogare una knowledge base, possano recuperare informazioni utili per arricchire e dare contesto al testo originale.
 
-INPUT UTENTE:
 ---
+INPUT UTENTE:
 {{#if raw_input}}
-TESTO PRINCIPALE (es. trascrizione):
-{{raw_input}}
+TESTO PRINCIPALE:
+{{{raw_input}}}
 {{/if}}
 
 {{#if focus}}
 FOCUS ESPLICITO:
-{{focus}}
+{{{focus}}}
 {{/if}}
 
 {{#if notes}}
 NOTE AGGIUNTIVE:
-{{notes}}
+{{{notes}}}
 {{/if}}
 ---
 
 ISTRUZIONI:
-1.  Analizza tutti gli input per identificare i principali temi e intenti informativi.
-2.  Genera da 2 a 4 query di ricerca che un esperto userebbe.
-3.  Ogni query deve essere autonoma e focalizzata su un singolo concetto.
-4.  Ignora parole superflue, incertezze e parti conversazionali.
-5.  Includi nomi di progetti, tecnologie o persone se menzionati.
+1.  Leggi e comprendi i temi principali trattati nel "TESTO PRINCIPALE", tenendo conto del "FOCUS" e delle "NOTE".
+2.  Estrai da 2 a 4 concetti o argomenti chiave.
+3.  Per ogni concetto, formula una query di ricerca chiara e autonoma, come se la stessi digitando in un motore di ricerca esperto.
+4.  Le query devono essere focalizzate sui "sostantivi" e sui "termini tecnici" del dominio trattato, ignorando il rumore conversazionale.
 
 FORMATO DI OUTPUT OBBLIGATORIO:
 Una query per riga. SENZA numerazione o bullet points.
 
-ESEMPIO:
+---
+ESEMPIO 1 (Contesto Aziendale):
 Input: "Meeting progetto Phoenix, integrazione Salesforce. Budget?"
 Focus: "Costi e timeline"
 Output:
 requisiti tecnici integrazione Salesforce progetto Phoenix
 costi e budget progetto Phoenix
 timeline di sviluppo progetto Phoenix
+
+ESEMPIO 2 (Contesto Culinario):
+Input: "Oggi parliamo del risotto alla zucca. Mi servono le dosi per due persone, e poi come si fa il soffritto, senza olio."
+Focus: "Ingredienti e preparazione"
+Output:
+ingredienti risotto alla zucca per due persone
+procedimento soffritto per risotto senza olio
+tecnica di tostatura riso carnaroli
+mantecatura risotto con burro e parmigiano
+---
 
 Ora, genera le query per l'input fornito:
