@@ -2,24 +2,24 @@
 
 Rec2pdf è una web app che trascrive registrazioni audio di meeting, le analizza con un LLM e genera verbali professionali in formato PDF.
 
-## Novità v10.0.0
+## Novità v11.0.0
 
-L'ultima versione introduce una **pipeline RAG (Retrieval-Augmented Generation) con re-ranking**, un'architettura avanzata che migliora drasticamente la qualità e la pertinenza del contesto fornito al modello LLM.
+L'ultima versione introduce una **pipeline RAG (Retrieval-Augmented Generation) multi-stadio**, un'architettura sofisticata che migliora drasticamente la qualità e la pertinenza del contesto fornito al modello LLM.
 
-- **Precisione Migliorata**: La nuova pipeline aumenta la `Context Precision` del **+20%**, garantendo che solo le informazioni più rilevanti dalla knowledge base vengano utilizzate per generare i documenti.
-- **Servizio RAG Dedicato**: Tutta la logica RAG è ora centralizzata in un `RAGService` dedicato, rendendo il codice più pulito, modulare e manutenibile.
+- **Query Transformation**: L'input dell'utente viene trasformato in query di ricerca multiple e mirate, garantendo un recupero delle informazioni più preciso.
+- **Re-ranking Avanzato**: I risultati della ricerca vengono riordinati e valutati da un LLM per selezionare solo i chunk più pertinenti, massimizzando la qualità del contesto.
+- **Download Sicuri**: Il sistema di download ora utilizza URL pre-firmati per un accesso sicuro e affidabile ai file.
 
 ## Architettura RAG Avanzata
 
-La nostra pipeline RAG è progettata per massimizzare la pertinenza del contesto. Invece di passare direttamente al modello il primo risultato di una ricerca vettoriale, adottiamo un approccio più sofisticato in tre fasi:
+La nostra pipeline RAG è progettata per massimizzare la pertinenza del contesto. Invece di passare direttamente al modello il primo risultato di una ricerca vettoriale, adottiamo un approccio più sofisticato in quattro fasi:
 
-1.  **Retrieval (Recupero Ampio)**: Inizialmente, recuperiamo una rosa allargata di **10 chunk candidati** dalla nostra knowledge base vettoriale (Supabase Vector). Questo ci assicura di non perdere informazioni potenzialmente utili.
+1.  **Query Transformation**: L'input grezzo dell'utente (es. una trascrizione) viene analizzato da un LLM per generare da 2 a 4 query di ricerca semantica, concise e focalizzate.
+2.  **Multi-Query Retrieval**: Eseguiamo ricerche vettoriali multiple in parallelo, una per ogni query generata, recuperando una rosa allargata di chunk candidati dalla nostra knowledge base (Supabase Vector).
+3.  **Re-ranking (LLM-as-a-Reranker)**: I chunk candidati vengono passati a un LLM che agisce da "giudice di pertinenza", valutando ogni chunk in relazione alla query originale e assegnandogli un punteggio.
+4.  **Selezione**: Infine, selezioniamo solo i chunk con il punteggio più alto per costruire un contesto denso e preciso, che viene poi fornito al modello di generazione per creare il documento finale.
 
-2.  **Re-ranking (LLM-as-a-Reranker)**: I 10 chunk candidati vengono poi passati a un secondo LLM, che agisce da "giudice di pertinenza". Questo modello valuta ogni chunk in relazione alla query originale e gli assegna un punteggio da 0 a 100.
-
-3.  **Selezione**: Infine, selezioniamo solo i **3 chunk con il punteggio più alto** (e superiore a una soglia minima di 50) per costruire il contesto finale.
-
-Questo processo a più fasi garantisce che il contesto fornito al modello di generazione sia estremamente focalizzato e pertinente, riducendo il "rumore" e migliorando la qualità dell'output finale.
+Questo processo a più fasi garantisce che il contesto sia estremamente focalizzato, riducendo il "rumore" e migliorando la qualità dell'output.
 
 ## Features Principali
 
