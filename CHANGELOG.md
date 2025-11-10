@@ -1,6 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [11.0.0] - 2025-11-10
+
+### Added
+- **Advanced RAG Pipeline**: Implementata una pipeline RAG (Retrieval-Augmented Generation) a più stadi per migliorare drasticamente la pertinenza del contesto. La nuova pipeline include:
+    - **Query Transformation**: L'input dell'utente viene trasformato in query di ricerca multiple e mirate tramite un LLM, utilizzando il nuovo template `rag_query_transformer.hbs`.
+    - **Multi-Query Retrieval & Re-ranking**: I risultati della ricerca vengono riordinati e valutati da un LLM per selezionare solo i chunk più pertinenti, massimizzando la qualità del contesto fornito al modello generativo.
+- **Download Sicuro dei File**: Il sistema di download è stato potenziato. Ora utilizza un endpoint backend dedicato (`/api/file`) che genera URL pre-firmati per accedere ai file su Supabase Storage, migliorando sicurezza e affidabilità.
+
+### Changed
+- **RAGService Refactoring**: Tutta la logica RAG è stata incapsulata nel nuovo `RAGService` (`rec2pdf-backend/services/ragService.js`), migliorando l'organizzazione e la manutenibilità del codice.
+- **Framework di Valutazione Aggiornato**: Il framework di test per il RAG (`evaluate.js`) è stato aggiornato per supportare l'inizializzazione asincrona dei client AI, garantendo maggiore stabilità durante le esecuzioni.
+
 ## [10.0.0] - 2025-11-09
 
 ### Added
