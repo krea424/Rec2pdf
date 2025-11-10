@@ -3,6 +3,7 @@ import { Cpu, Download, FileText, RefreshCw, Sparkles, Users } from "../../compo
 import { useAppContext } from "../../hooks/useAppContext";
 import { useAnalytics } from "../../context/AnalyticsContext";
 import { classNames } from "../../utils/classNames";
+import { supabase } from "../../supabaseClient"; // <-- Import aggiunto
 
 const statusTone = {
   idle: "text-white/60",
@@ -22,14 +23,12 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     STAGE_STATUS_LABELS,
     progressPercent,
     processViaBackend,
-    // MODIFICA CHIAVE #1: Importiamo la nuova funzione dal contesto e la rinominiamo
     handleRefineAndGenerate: startRefinementFlow,
     audioBlob,
     backendUp,
     busy,
     pipelineComplete,
     activeStageKey,
-    handleOpenHistoryPdf,
     handleOpenHistoryMd,
     resetAll,
     baseJourneyVisibility,
@@ -43,6 +42,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     clearWorkspaceProfile,
     workspaces,
     handleSelectWorkspaceForPipeline,
+    normalizedBackendUrl, // Assicuriamoci che sia estratto dal contesto
   } = context;
 
   const pipelineRevealState = baseJourneyVisibility?.pipeline ?? false;
@@ -78,9 +78,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
 
     if (!targetWorkspaceId) {
       const matchingWorkspace = (workspaces || []).find((workspace) => {
-        if (!workspace || typeof workspace !== "object") {
-          return false;
-        }
+        if (!workspace || typeof workspace !== "object") return false;
         const profiles = Array.isArray(workspace.profiles) ? workspace.profiles : [];
         return profiles.some((profile) => {
           const keys = [
@@ -91,13 +89,9 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
           return keys.includes(targetKey);
         });
       });
-      if (!matchingWorkspace) {
-        return false;
-      }
+      if (!matchingWorkspace) return false;
       targetWorkspaceId = matchingWorkspace.id || "";
-      candidateProfiles = Array.isArray(matchingWorkspace?.profiles)
-        ? matchingWorkspace.profiles
-        : [];
+      candidateProfiles = Array.isArray(matchingWorkspace?.profiles) ? matchingWorkspace.profiles : [];
       if (typeof handleSelectWorkspaceForPipeline === "function" && targetWorkspaceId) {
         handleSelectWorkspaceForPipeline(targetWorkspaceId);
       }
@@ -105,9 +99,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
 
     const candidate =
       candidateProfiles.find((profile) => {
-        if (!profile || typeof profile !== "object") {
-          return false;
-        }
+        if (!profile || typeof profile !== "object") return false;
         const keys = [
           normalize(profile.id),
           normalize(profile.slug),
@@ -116,14 +108,10 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
         return keys.includes(targetKey);
       }) || null;
 
-    if (!candidate) {
-      return false;
-    }
+    if (!candidate) return false;
 
     const currentProfileId = workspaceProfileSelection?.profileId || "";
-    if (currentProfileId === candidate.id) {
-      return true;
-    }
+    if (currentProfileId === candidate.id) return true;
 
     previousProfileRef.current = currentProfileId;
     const result = applyWorkspaceProfile(candidate.id, {
@@ -131,10 +119,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     });
 
     if (!result?.ok) {
-      console.warn(
-        "Impossibile applicare il profilo diarizzazione:",
-        result?.message || "profilo non applicato"
-      );
+      console.warn("Impossibile applicare il profilo diarizzazione:", result?.message || "profilo non applicato");
       return false;
     }
     return true;
@@ -159,10 +144,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
         workspaceId: workspaceSelection.workspaceId,
       });
       if (!result?.ok) {
-        console.warn(
-          "Impossibile ripristinare il profilo precedente:",
-          result?.message || "profilo non disponibile"
-        );
+        console.warn("Impossibile ripristinare il profilo precedente:", result?.message || "profilo non disponibile");
       }
       return;
     }
@@ -176,17 +158,13 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   }, [workspaceSelection?.workspaceId]);
 
   const toggleDiarization = useCallback(() => {
-    if (busy) {
-      return;
-    }
+    if (busy) return;
     const nextValue = !enableDiarization;
     setEnableDiarization(nextValue);
     if (!enableDiarization && nextValue) {
       if (audioBlob) {
         const applied = applyMeetingProfileIfAvailable();
-        if (!applied) {
-          previousProfileRef.current = null;
-        }
+        if (!applied) previousProfileRef.current = null;
       } else {
         previousProfileRef.current = null;
       }
@@ -226,9 +204,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   }, [pipelineRevealState]);
 
   const handlePublish = useCallback(() => {
-    if (!canPublish) {
-      return;
-    }
+    if (!canPublish) return;
     trackEvent("pipeline.publish_requested", {
       hasAudio: Boolean(audioBlob),
       backendReachable: backendUp !== false,
@@ -238,27 +214,58 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     processViaBackend();
   }, [audioBlob, backendUp, canPublish, processViaBackend, revealPipelinePanel, trackEvent]);
 
-  // MODIFICA CHIAVE #2: La vecchia funzione locale viene rimossa.
-  // La logica è ora gestita da `startRefinementFlow` importato dal contesto.
-
-  const handleDownload = useCallback(() => {
+  // ==========================================================
+  // ==        MODIFICA CHIAVE: NUOVA LOGICA DI DOWNLOAD       ==
+  // ==========================================================
+  const handleDownload = useCallback(async () => {
     if (!latestEntry?.pdfPath) {
+      alert("Errore: Percorso del PDF non disponibile.");
       return;
     }
+
     trackEvent("pipeline.export_pdf", {
       entryId: latestEntry?.id || null,
       path: latestEntry.pdfPath,
     });
-    handleOpenHistoryPdf(latestEntry);
-    setHasDownloaded(true);
-    hasUnlockedNextStepsRef.current = true;
-    setHasUnlockedNextSteps(true);
-  }, [handleOpenHistoryPdf, latestEntry, trackEvent]);
+
+    try {
+      const pathParts = latestEntry.pdfPath.split('/');
+      if (pathParts.length < 2) {
+        throw new Error(`Percorso PDF non valido: ${latestEntry.pdfPath}`);
+      }
+      const bucket = pathParts[0];
+      const objectPath = pathParts.slice(1).join('/');
+
+      const params = new URLSearchParams({ bucket, path: objectPath });
+      const targetUrl = `${normalizedBackendUrl}/api/file?${params.toString()}`;
+
+      const session = (await supabase.auth.getSession())?.data.session;
+      if (!session) throw new Error("Sessione utente non trovata. Esegui di nuovo il login.");
+
+      const response = await fetch(targetUrl, {
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Impossibile generare l'URL di download.");
+      }
+
+      window.open(data.url, '_blank', 'noopener,noreferrer');
+
+      setHasDownloaded(true);
+      hasUnlockedNextStepsRef.current = true;
+      setHasUnlockedNextSteps(true);
+
+    } catch (error) {
+      console.error("Errore durante il download del PDF:", error);
+      alert(`Errore nel download: ${error.message}`);
+    }
+  }, [latestEntry, trackEvent, normalizedBackendUrl]);
+  // ==========================================================
 
   const handleModifyPdf = useCallback(() => {
-    if (!latestEntry) {
-      return;
-    }
+    if (!latestEntry) return;
     trackEvent("pipeline.export_markdown", {
       entryId: latestEntry?.id || null,
       path: latestEntry?.mdPath || "",
@@ -304,52 +311,27 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   );
 
   const nextStageDefinition = useMemo(() => {
-    if (!activeStageKey) {
-      return null;
-    }
+    if (!activeStageKey) return null;
     const activeIndex = stages.findIndex((stage) => stage.key === activeStageKey);
-    if (activeIndex === -1) {
-      return null;
-    }
+    if (activeIndex === -1) return null;
     return stages.slice(activeIndex + 1).find((stage) => stage.status !== "done") || null;
   }, [activeStageKey, stages]);
 
   const activeStageMessage = useMemo(() => {
-    if (pipelineComplete) {
-      return "Pipeline completata. Scarica il PDF per continuare.";
-    }
-    if (!pipelineInFlight) {
-      return "Tutto pronto. Premi Ottieni PDF per avviare la pipeline automatica.";
-    }
-    if (activeStageDefinition) {
-      return (
-        stageMessages[activeStageDefinition.key] ||
-        activeStageDefinition.description ||
-        "Pipeline avviata, stiamo preparando il risultato."
-      );
-    }
-    return "Pipeline avviata, stiamo preparando il risultato.";
+    if (pipelineComplete) return "Pipeline completata. Scarica il PDF per continuare.";
+    if (!pipelineInFlight) return "Tutto pronto. Premi Ottieni PDF per avviare la pipeline automatica.";
+    if (activeStageDefinition) return stageMessages[activeStageDefinition.key] || activeStageDefinition.description || "Pipeline avviata...";
+    return "Pipeline avviata...";
   }, [activeStageDefinition, pipelineComplete, pipelineInFlight, stageMessages]);
 
   const activeStageTitle = useMemo(() => {
-    if (pipelineComplete) {
-      return "Pronto al download";
-    }
-    if (!pipelineInFlight) {
-      return "In attesa di generazione";
-    }
-    if (activeStageDefinition) {
-      return `${activeStageDefinition.label}: in corso`;
-    }
+    if (pipelineComplete) return "Pronto al download";
+    if (!pipelineInFlight) return "In attesa di generazione";
+    if (activeStageDefinition) return `${activeStageDefinition.label}: in corso`;
     return "Pipeline in corso";
   }, [activeStageDefinition, pipelineComplete, pipelineInFlight]);
 
-  const pipelineStatusAccent = pipelineComplete
-    ? "border-white/10 bg-white/5 text-white/80"
-    : pipelineInFlight
-      ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100"
-      : "border-white/10 bg-white/5 text-white/80";
-
+  const pipelineStatusAccent = pipelineComplete ? "border-white/10 bg-white/5 text-white/80" : pipelineInFlight ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100" : "border-white/10 bg-white/5 text-white/80";
   const StatusIcon = activeStageDefinition?.icon || Sparkles;
 
   const publishCtaClassName = classNames(
@@ -484,7 +466,6 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
           >
             <Cpu className="h-5 w-5" /> Ottieni PDF
           </button>
-          {/* MODIFICA CHIAVE #3: Il pulsante ora chiama `startRefinementFlow` */}
           <button
             type="button"
             onClick={startRefinementFlow}
