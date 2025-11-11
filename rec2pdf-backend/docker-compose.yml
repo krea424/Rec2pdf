@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  # Nome del nostro servizio
+  backend:
+    # Dice a Compose di usare il nostro Dockerfile di sviluppo
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    
+    # Mappa la porta 8080 del tuo computer alla porta 8080 del container
+    ports:
+      - "8080:8080"
+      
+    # Sincronizza la cartella corrente con /app nel container.
+    # Le modifiche al codice sono istantanee!
+    volumes:
+      - .:/app
+      # Aggiungiamo un volume "anonimo" per node_modules per evitare problemi
+      # di sovrascrittura tra il sistema operativo host e quello del container.
+      - /app/node_modules
+      - ../Scripts:/Scripts:ro  # <-- AGGIUNGI QUESTA RIGA
+
+    # Carica le variabili d'ambiente dal file .env
+    env_file:
+      - .env
