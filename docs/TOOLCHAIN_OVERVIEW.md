@@ -1,5 +1,5 @@
 # Rec2PDF Toolchain Overview
-v4.0.0
+v11.0.0
 
 Questo documento illustra l'orchestrazione end-to-end della toolchain `rec2pdf`, evidenziando come frontend e backend collaborano nelle fasi di pre-analisi, generazione Markdown raffinata e pubblicazione PDF.
 
@@ -39,12 +39,16 @@ Nel backend (`rec2pdf-backend/server.js`) l'endpoint `/api/rec2pdf` orchestra le
 
 1. **Upload & normalizzazione** – `multer` salva gli allegati, `ffmpeg` effettua transcode 16kHz mono, e viene preparato il manifest locale/Supabase.【F:rec2pdf-backend/server.js†L1312-L1669】
 2. **Trascrizione Whisper** – avvia il CLI configurato, opzionalmente con diarizzazione WhisperX quando è presente il token HuggingFace.【F:rec2pdf-backend/server.js†L1669-L1912】
-3. **Ingestione knowledge base** – se richiesto costruisce il contesto RAG interrogando Supabase embeddings e unendo risultati con il transcript.【F:rec2pdf-backend/server.js†L6855-L6998】
-4. **Generazione Markdown raffinata** – `generateMarkdown` unisce trascrizione, contesto, cue card e `refinedData` (summary, highlights, cueCardAnswers). Il prompt risultante viene inviato al provider AI, il corpo Markdown viene normalizzato e arricchito con front matter aggiornato (`ai.model`, `refined`).【F:rec2pdf-backend/server.js†L2195-L2305】【F:rec2pdf-backend/server.js†L6208-L6998】
-5. **Publish PDF** – `publishWithTemplateFallback` invoca `Scripts/publish.sh` con il template selezionato, gestendo fallback Pandoc/LaTeX o HTML in base al profilo workspace; gli artefatti vengono poi caricati su Supabase Storage con link firmati per il frontend.【F:rec2pdf-backend/server.js†L2003-L2295】【F:Scripts/publish.sh†L1-L103】【F:rec2pdf-backend/server.js†L6471-L7927】
+3. **Costruzione Contesto RAG Avanzato** – La logica è delegata al nuovo `RAGService`. Il processo si articola in più fasi per massimizzare la pertinenza:
+    - **Query Transformation**: L'input utente viene analizzato per generare query di ricerca multiple e mirate tramite il template `rag_query_transformer.hbs`.
+    - **Multi-Query Retrieval**: Vengono eseguite ricerche vettoriali in parallelo per ogni query.
+    - **Re-ranking**: I chunk recuperati vengono valutati e riordinati da un LLM per pertinenza.
+    - **Selezione**: Solo i chunk migliori vengono selezionati per formare il contesto finale.【F:rec2pdf-backend/services/ragService.js†L1-L150】
+4. **Generazione Markdown raffinata** – `generateMarkdown` unisce trascrizione, contesto RAG, cue card e `refinedData`. Il prompt risultante viene inviato al provider AI, e il Markdown generato viene arricchito con front matter aggiornato.【F:rec2pdf-backend/server.js†L2195-L2305】【F:rec2pdf-backend/server.js†L6208-L6998】
+5. **Publish PDF** – `publishWithTemplateFallback` invoca `Scripts/publish.sh`. Gli artefatti vengono caricati su Supabase Storage. Il frontend non riceve più link diretti, ma può richiederli tramite un endpoint dedicato che genera URL pre-firmati.【F:rec2pdf-backend/server.js†L2003-L2295】【F:Scripts/publish.sh†L1-L103】
 
 ## 5. Output e revisione
 
-Il backend restituisce percorsi Markdown/PDF, `stageEvents` e metadati del prompt utilizzato. Il frontend aggiorna la UI mostrando pulsanti di download, log riepilogativi e rende disponibile il bottone "Vai alla Library" nella dashboard advanced.【F:rec2pdf-backend/server.js†L6990-L7058】【F:rec2pdf-frontend/src/features/advanced/PipelineOverview.jsx†L21-L162】
+Il backend restituisce i percorsi degli artefatti su Supabase Storage. Il frontend aggiorna la UI e, al momento del download, contatta l'endpoint `/api/file` per ottenere un URL pre-firmato e sicuro per scaricare il PDF.【F:rec2pdf-backend/server.js†L6990-L7058】【F:rec2pdf-frontend/src/features/base/PipelinePanel.jsx†L150-L190】
 
 Le revisioni successive (editor Markdown, rimappatura speaker, republish) riutilizzano gli stessi endpoint `/api/markdown`, `/api/rec2pdf` e `/api/pre-analyze`, mantenendo consistenza dei template e dei suggerimenti generati.

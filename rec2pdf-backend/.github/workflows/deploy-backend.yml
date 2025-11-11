@@ -1,0 +1,58 @@
+name: Deploy Backend to Cloud Run
+
+# Modifica questa sezione
+on:
+  release:
+    types: [published] # Si attiva solo quando una release viene pubblicata
+
+env:
+  PROJECT_ID: rec2pdf
+  GAR_LOCATION: europe-west3
+  SERVICE: rec2pdf-backend-v2
+  REPOSITORY: rec2pdf-repo
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    # Concedi i permessi al workflow per richiedere il token OIDC
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # --- VALORE DA SOSTITUIRE ---
+          workload_identity_provider: projects/281124194901/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider
+          # ---------------------------
+          service_account: 'github-actions-deployer@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev -q
+
+      - name: Build and Push Docker Image
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -f rec2pdf-backend/Dockerfile \
+            -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/backend:latest \
+            -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/backend:sha-${{ github.sha }} \
+            --push \
+            .
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.GAR_LOCATION }}
+          image: ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/backend:sha-${{ github.sha }}
+
+      - name: Show Output
+        run: echo "Successfully deployed to ${{ steps.deploy.outputs.url }}"

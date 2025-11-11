@@ -6,7 +6,7 @@
     "main": "server.js",
     "scripts": {
         "start": "node server.js",
-        "dev": "NODE_ENV=development node server.js",
+        "dev": "NODE_ENV=development nodemon server.js", 
         "test": "jest",
         "ingest": "node scripts/ingest.js",
         "test:rag-eval": "node tests/rag_evaluation/evaluate.js"
@@ -28,6 +28,7 @@
     },
     "devDependencies": {
         "jest": "^29.7.0",
+        "nodemon": "^3.1.10",
         "supertest": "^6.3.3",
         "tmp": "^0.2.1"
     },

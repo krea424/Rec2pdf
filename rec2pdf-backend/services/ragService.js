@@ -85,7 +85,20 @@ class RAGService {
 
     } catch (error) {
       console.error("❌ [RAG] Errore durante la Query Transformation. Eseguo fallback.", error.message);
-      return [(options.focus || options.notes || rawText || '').substring(0, 100)].filter(Boolean);
+      const fallbackQueries = [
+        options.focus,
+        options.notes,
+        rawText.substring(0, 150) // Un pezzo significativo della trascrizione
+      ].filter(Boolean).map(q => q.trim()); // Pulisce e rimuove stringhe vuote
+      
+      // Se non c'è nulla, usa un fallback generico
+      if (fallbackQueries.length === 0) {
+        console.warn("[RAG] Nessun input valido per il fallback della query.");
+        return ['informazioni generali pertinenti'];
+      }
+      
+      console.log(`[RAG] Eseguo fallback con ${fallbackQueries.length} query.`);
+      return fallbackQueries;
     }
   }
 
@@ -180,11 +193,19 @@ class RAGService {
         })));
 
       } catch (rerankError) {
-        console.error("❌ [RAG] Errore nel Re-ranking. Eseguo fallback all'ordinamento per similarità.", rerankError.message);
-        const topChunks = uniqueChunks.sort((a, b) => (b.similarity || 0) - (a.similarity || 0)).slice(0, this.config.reranking.topN);
+        console.error("❌ [RAG] Errore nella fase di Re-ranking. Eseguo fallback all'ordinamento per similarità.", rerankError.message);
+        
+        // Ordina i chunk candidati in base al punteggio di similarità originale di Supabase
+        const sortedBySimilarity = [...uniqueChunks].sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
+        
+        // Prendi i migliori N chunk, come definito nella configurazione
+        const topChunks = sortedBySimilarity.slice(0, this.config.reranking.topN);
+        
+        console.log(`[RAG Fallback] Selezionati i ${topChunks.length} chunk migliori per similarità.`);
+        
+        // Restituisci il contesto di fallback e continua l'esecuzione
         return topChunks.map(chunk => chunk.content || '').filter(Boolean).join(CONTEXT_SEPARATOR);
       }
-
       // --- FASE 3: SELEZIONE ---
       const topChunkIndices = rankedScores
         .filter(item => typeof item.id === 'number' && typeof item.score === 'number' && item.score >= this.config.reranking.minScoreThreshold)
