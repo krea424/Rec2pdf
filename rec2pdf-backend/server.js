@@ -3875,37 +3875,48 @@ const processKnowledgeTask = async (task = {}) => {
         continue;
       }
 
-      for (let start = 0; start < chunks.length; start += KNOWLEDGE_EMBED_BATCH_SIZE) {
-        const batch = chunks.slice(start, start + KNOWLEDGE_EMBED_BATCH_SIZE);
-        let embeddings;
+      // Loop through each chunk individually instead of batching
+      for (const [index, chunk] of chunks.entries()) {
+        let embedding;
         try {
-          embeddings = await aiEmbedder.generateEmbedding(batch);
+          // Generate embedding for a single chunk
+          embedding = await aiEmbedder.generateEmbedding(chunk);
         } catch (error) {
-          throw new Error(error?.message || 'Errore generazione embedding');
+          console.error('Errore catturato durante la chiamata a aiEmbedder.generateEmbedding per un singolo chunk:', error);
+          throw new Error(error?.message || 'Errore generazione embedding per singolo chunk');
         }
-        if (!Array.isArray(embeddings) || embeddings.length !== batch.length) {
-          throw new Error('Risposta embedding non valida');
+
+        // The result for a single chunk should be a flat array of numbers
+        if (!Array.isArray(embedding) || (embedding.length > 0 && Array.isArray(embedding[0]))) {
+          console.error('--- DEBUG EMBEDDING (SINGLE CHUNK) ---');
+          console.error('Chunk inviato:', chunk);
+          console.error('Risposta embedding non valida ricevuta:', JSON.stringify(embedding, null, 2));
+          console.error('--- FINE DEBUG ---');
+          throw new Error('Risposta embedding non valida per il singolo chunk.');
         }
-        const payload = batch.map((content, index) => ({
+
+        const payload = {
           id: crypto.randomUUID(),
           workspace_id: workspaceId,
           project_id: normalizedProjectId || null,
-          content,
-          embedding: Array.isArray(embeddings[index]) ? embeddings[index] : [],
+          content: chunk,
+          embedding: embedding,
           metadata: buildKnowledgeMetadata(file, {
             ingestionId,
-            chunkIndex: start + index + 1,
+            chunkIndex: index + 1,
             totalChunks: chunks.length,
             projectId: normalizedProjectId || null,
             projectName: normalizedProjectName || null,
             projectOriginalId: normalizedProjectOriginalId || null,
           }),
-        }));
-        const { error } = await supabase.from('knowledge_chunks').insert(payload);
-        if (error) {
-          throw new Error(error.message || 'Inserimento Supabase fallito');
+        };
+
+        const { error: insertError } = await supabase.from('knowledge_chunks').insert(payload);
+        if (insertError) {
+          throw new Error(insertError.message || 'Inserimento Supabase fallito per il singolo chunk');
         }
       }
+
       const projectLabel = normalizedProjectId
         ? ` (progetto ${normalizedProjectName || normalizedProjectOriginalId || normalizedProjectId})`
         : '';
@@ -3923,7 +3934,6 @@ const processKnowledgeTask = async (task = {}) => {
     }
   }
 };
-
 const isSupabaseHtmlError = (error) => {
   if (!error) return false;
   const message = typeof error.message === 'string' ? error.message : '';

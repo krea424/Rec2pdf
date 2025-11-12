@@ -1,26 +1,24 @@
 version: '3.8'
 
 services:
-  # Nome del nostro servizio
   backend:
-    # Dice a Compose di usare il nostro Dockerfile di sviluppo
     build:
-      context: .
-      dockerfile: Dockerfile.dev
+      # Il 'context' ora è la cartella principale (..), così Docker vede tutto
+      context: .. 
+      # Usiamo il Dockerfile di produzione originale
+      dockerfile: rec2pdf-backend/Dockerfile 
     
-    # Mappa la porta 8080 del tuo computer alla porta 8080 del container
     ports:
       - "8080:8080"
       
-    # Sincronizza la cartella corrente con /app nel container.
-    # Le modifiche al codice sono istantanee!
+    # Manteniamo la sincronizzazione del codice per lo sviluppo!
+    # Questo monterà la tua cartella locale dentro il container
     volumes:
-      - .:/app
-      # Aggiungiamo un volume "anonimo" per node_modules per evitare problemi
-      # di sovrascrittura tra il sistema operativo host e quello del container.
-      - /app/node_modules
-      - ../Scripts:/Scripts:ro  # <-- AGGIUNGI QUESTA RIGA
+      - ../rec2pdf-backend:/app/rec2pdf-backend
 
-    # Carica le variabili d'ambiente dal file .env
     env_file:
       - .env
+      
+    # Sovrascriviamo il comando di avvio per usare nodemon
+    # L'immagine di produzione ha 'node server.js', ma noi vogliamo 'npm run dev'
+    command: npm run dev
