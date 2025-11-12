@@ -3252,7 +3252,14 @@ if (!fs.existsSync(UP_BASE)) fs.mkdirSync(UP_BASE, { recursive: true });
 const uploadMiddleware = multer({ dest: UP_BASE });
 const KNOWLEDGE_UPLOAD_BASE = path.join(os.tmpdir(), 'rec2pdf_knowledge_uploads');
 if (!fs.existsSync(KNOWLEDGE_UPLOAD_BASE)) fs.mkdirSync(KNOWLEDGE_UPLOAD_BASE, { recursive: true });
-const knowledgeUpload = multer({ dest: KNOWLEDGE_UPLOAD_BASE });
+const knowledgeUpload = multer({
+  dest: KNOWLEDGE_UPLOAD_BASE,
+  limits: {
+    files: 20,
+  },
+});
+const KNOWLEDGE_UPLOAD_FIELDS = new Set(['files', 'file', 'documents', 'document']);
+const knowledgeUploadMiddleware = knowledgeUpload.any();
 const profileUpload = uploadMiddleware.single('pdfLogo');
 const optionalProfileUpload = (req, res, next) => {
   const contentType = String(req.headers['content-type'] || '').toLowerCase();
@@ -3547,7 +3554,7 @@ const safeRemoveDir = async (dirPath) => {
   }
 };
 
-const KNOWLEDGE_TEXT_EXTENSIONS = new Set(['.txt', '.md']);
+const KNOWLEDGE_TEXT_EXTENSIONS = new Set(['.txt', '.md', '.csv']);
 const KNOWLEDGE_AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.wav', '.aac', '.flac', '.ogg']);
 const KNOWLEDGE_PDF_EXTENSIONS = new Set(['.pdf']);
 const KNOWLEDGE_CHUNK_SIZE = 250;
@@ -3715,7 +3722,16 @@ const transcribeAudioForKnowledge = async (filePath) => {
     if (ff.code !== 0) {
       throw new Error(ff.stderr || 'ffmpeg failed');
     }
-    
+    const whisperCmd = [
+      'whisperx',
+      JSON.stringify(wavPath),
+      '--language it',
+      '--model small',
+      '--device cpu',
+      '--compute_type float32',
+      '--output_format txt',
+      `--output_dir ${JSON.stringify(tempDir)}`,
+    ].join(' ');
     const w = await run('bash', ['-lc', whisperCmd]);
     if (w.code !== 0) {
       throw new Error(w.stderr || w.stdout || 'whisper failed');
@@ -3822,6 +3838,17 @@ const cleanupKnowledgeFiles = async (files = []) => {
       }
     })
   );
+};
+
+const normalizeKnowledgeFieldName = (fieldName) => {
+  if (!fieldName) {
+    return '';
+  }
+  const trimmed = String(fieldName).trim();
+  if (!trimmed) {
+    return '';
+  }
+  return trimmed.replace(/\[\]$/, '').toLowerCase();
 };
 
 const processKnowledgeTask = async (task = {}) => {
@@ -5051,9 +5078,23 @@ app.delete('/api/workspaces/:id', async (req, res) => {
 
 app.post(
   '/api/workspaces/:workspaceId/ingest',
-  knowledgeUpload.array('files', 20),
+  knowledgeUploadMiddleware,
   async (req, res) => {
-    const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+    const rawUploads = Array.isArray(req.files) ? req.files : [];
+    const uploadedFiles = [];
+    const discardedUploads = [];
+    for (const file of rawUploads) {
+      const normalizedField = normalizeKnowledgeFieldName(file?.fieldname);
+      if (normalizedField && KNOWLEDGE_UPLOAD_FIELDS.has(normalizedField)) {
+        uploadedFiles.push(file);
+      } else {
+        discardedUploads.push(file);
+      }
+    }
+
+    if (discardedUploads.length) {
+      await cleanupKnowledgeFiles(discardedUploads);
+    }
     const paramId = typeof req.params?.workspaceId === 'string' ? req.params.workspaceId.trim() : '';
     const workspaceId = paramId || getWorkspaceIdFromRequest(req);
     const rawProjectId =
