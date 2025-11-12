@@ -3252,7 +3252,14 @@ if (!fs.existsSync(UP_BASE)) fs.mkdirSync(UP_BASE, { recursive: true });
 const uploadMiddleware = multer({ dest: UP_BASE });
 const KNOWLEDGE_UPLOAD_BASE = path.join(os.tmpdir(), 'rec2pdf_knowledge_uploads');
 if (!fs.existsSync(KNOWLEDGE_UPLOAD_BASE)) fs.mkdirSync(KNOWLEDGE_UPLOAD_BASE, { recursive: true });
-const knowledgeUpload = multer({ dest: KNOWLEDGE_UPLOAD_BASE });
+const knowledgeUpload = multer({
+  dest: KNOWLEDGE_UPLOAD_BASE,
+  limits: {
+    files: 20,
+  },
+});
+const KNOWLEDGE_UPLOAD_FIELDS = new Set(['files', 'file', 'documents', 'document']);
+const knowledgeUploadMiddleware = knowledgeUpload.any();
 const profileUpload = uploadMiddleware.single('pdfLogo');
 const optionalProfileUpload = (req, res, next) => {
   const contentType = String(req.headers['content-type'] || '').toLowerCase();
@@ -3547,7 +3554,7 @@ const safeRemoveDir = async (dirPath) => {
   }
 };
 
-const KNOWLEDGE_TEXT_EXTENSIONS = new Set(['.txt', '.md']);
+const KNOWLEDGE_TEXT_EXTENSIONS = new Set(['.txt', '.md', '.csv']);
 const KNOWLEDGE_AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.wav', '.aac', '.flac', '.ogg']);
 const KNOWLEDGE_PDF_EXTENSIONS = new Set(['.pdf']);
 const KNOWLEDGE_CHUNK_SIZE = 250;
@@ -3715,7 +3722,16 @@ const transcribeAudioForKnowledge = async (filePath) => {
     if (ff.code !== 0) {
       throw new Error(ff.stderr || 'ffmpeg failed');
     }
-    
+    const whisperCmd = [
+      'whisperx',
+      JSON.stringify(wavPath),
+      '--language it',
+      '--model small',
+      '--device cpu',
+      '--compute_type float32',
+      '--output_format txt',
+      `--output_dir ${JSON.stringify(tempDir)}`,
+    ].join(' ');
     const w = await run('bash', ['-lc', whisperCmd]);
     if (w.code !== 0) {
       throw new Error(w.stderr || w.stdout || 'whisper failed');
@@ -3824,6 +3840,17 @@ const cleanupKnowledgeFiles = async (files = []) => {
   );
 };
 
+const normalizeKnowledgeFieldName = (fieldName) => {
+  if (!fieldName) {
+    return '';
+  }
+  const trimmed = String(fieldName).trim();
+  if (!trimmed) {
+    return '';
+  }
+  return trimmed.replace(/\[\]$/, '').toLowerCase();
+};
+
 const processKnowledgeTask = async (task = {}) => {
   const {
     workspaceId,
@@ -3875,37 +3902,48 @@ const processKnowledgeTask = async (task = {}) => {
         continue;
       }
 
-      for (let start = 0; start < chunks.length; start += KNOWLEDGE_EMBED_BATCH_SIZE) {
-        const batch = chunks.slice(start, start + KNOWLEDGE_EMBED_BATCH_SIZE);
-        let embeddings;
+      // Loop through each chunk individually instead of batching
+      for (const [index, chunk] of chunks.entries()) {
+        let embedding;
         try {
-          embeddings = await aiEmbedder.generateEmbedding(batch);
+          // Generate embedding for a single chunk
+          embedding = await aiEmbedder.generateEmbedding(chunk);
         } catch (error) {
-          throw new Error(error?.message || 'Errore generazione embedding');
+          console.error('Errore catturato durante la chiamata a aiEmbedder.generateEmbedding per un singolo chunk:', error);
+          throw new Error(error?.message || 'Errore generazione embedding per singolo chunk');
         }
-        if (!Array.isArray(embeddings) || embeddings.length !== batch.length) {
-          throw new Error('Risposta embedding non valida');
+
+        // The result for a single chunk should be a flat array of numbers
+        if (!Array.isArray(embedding) || (embedding.length > 0 && Array.isArray(embedding[0]))) {
+          console.error('--- DEBUG EMBEDDING (SINGLE CHUNK) ---');
+          console.error('Chunk inviato:', chunk);
+          console.error('Risposta embedding non valida ricevuta:', JSON.stringify(embedding, null, 2));
+          console.error('--- FINE DEBUG ---');
+          throw new Error('Risposta embedding non valida per il singolo chunk.');
         }
-        const payload = batch.map((content, index) => ({
+
+        const payload = {
           id: crypto.randomUUID(),
           workspace_id: workspaceId,
           project_id: normalizedProjectId || null,
-          content,
-          embedding: Array.isArray(embeddings[index]) ? embeddings[index] : [],
+          content: chunk,
+          embedding: embedding,
           metadata: buildKnowledgeMetadata(file, {
             ingestionId,
-            chunkIndex: start + index + 1,
+            chunkIndex: index + 1,
             totalChunks: chunks.length,
             projectId: normalizedProjectId || null,
             projectName: normalizedProjectName || null,
             projectOriginalId: normalizedProjectOriginalId || null,
           }),
-        }));
-        const { error } = await supabase.from('knowledge_chunks').insert(payload);
-        if (error) {
-          throw new Error(error.message || 'Inserimento Supabase fallito');
+        };
+
+        const { error: insertError } = await supabase.from('knowledge_chunks').insert(payload);
+        if (insertError) {
+          throw new Error(insertError.message || 'Inserimento Supabase fallito per il singolo chunk');
         }
       }
+
       const projectLabel = normalizedProjectId
         ? ` (progetto ${normalizedProjectName || normalizedProjectOriginalId || normalizedProjectId})`
         : '';
@@ -3923,7 +3961,6 @@ const processKnowledgeTask = async (task = {}) => {
     }
   }
 };
-
 const isSupabaseHtmlError = (error) => {
   if (!error) return false;
   const message = typeof error.message === 'string' ? error.message : '';
@@ -5041,9 +5078,23 @@ app.delete('/api/workspaces/:id', async (req, res) => {
 
 app.post(
   '/api/workspaces/:workspaceId/ingest',
-  knowledgeUpload.array('files', 20),
+  knowledgeUploadMiddleware,
   async (req, res) => {
-    const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+    const rawUploads = Array.isArray(req.files) ? req.files : [];
+    const uploadedFiles = [];
+    const discardedUploads = [];
+    for (const file of rawUploads) {
+      const normalizedField = normalizeKnowledgeFieldName(file?.fieldname);
+      if (normalizedField && KNOWLEDGE_UPLOAD_FIELDS.has(normalizedField)) {
+        uploadedFiles.push(file);
+      } else {
+        discardedUploads.push(file);
+      }
+    }
+
+    if (discardedUploads.length) {
+      await cleanupKnowledgeFiles(discardedUploads);
+    }
     const paramId = typeof req.params?.workspaceId === 'string' ? req.params.workspaceId.trim() : '';
     const workspaceId = paramId || getWorkspaceIdFromRequest(req);
     const rawProjectId =

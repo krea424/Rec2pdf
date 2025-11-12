@@ -4,7 +4,7 @@ import { classNames } from "../../utils/classNames";
 import { Button, Select } from "../ui";
 import { FileText, RefreshCw, Trash2, Upload } from "../icons";
 
-const ACCEPTED_TYPES = ".txt,.md,.pdf,.mp3,.m4a,.wav,.aac,.flac,.ogg";
+const ACCEPTED_TYPES = ".txt,.md,.csv,.pdf,.mp3,.m4a,.wav,.aac,.flac,.ogg";
 
 const formatBytes = (bytes) => {
   if (!Number.isFinite(bytes) || bytes <= 0) {

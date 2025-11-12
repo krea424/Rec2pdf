@@ -8,7 +8,7 @@
   "rows": [
     {
       "id": "vanguard_azioni_specifiche",
-      "final_answer_preview": "# Verbale della Sprint Review del Progetto Vanguard (VNG-2024)\n\n**Data:** 28 ottobre 2025\n\n## Panoramica Generale\n\nDurante la Sprint Review del Progetto Vanguard (VNG-2024), tenutasi il 28 ottobre 202...",
+      "final_answer_preview": "# Verbale della Sprint Review - Progetto Vanguard (VNG-2024)\n\n**Data:** 28 Ottobre 2025\n\n**Obiettivo:** Sintetizzare i punti chiave emersi durante la Sprint Review del Progetto Vanguard (VNG-2024), de...",
       "context_size": 1,
       "retrieved_context": [
         {
@@ -22,12 +22,12 @@
     },
     {
       "id": "vanguard_kpi_specifico",
-      "final_answer_preview": "# Revisione Sprint Progetto Vanguard (VNG-2024): Analisi KPI e Progressi Modulo Autenticazione\n\nLa presente analisi fa riferimento al Verbale Ufficiale della Sprint Review del Progetto Vanguard (VNG-2...",
+      "final_answer_preview": "# Aggiornamento sui KPI e sull'Adozione Utente - Progetto Vanguard (VNG-2024)\n\nCome da richiesta, forniamo un aggiornamento dettagliato sull'andamento dei Key Performance Indicators (KPI), con un focu...",
       "context_size": 1,
       "retrieved_context": [
         {
           "id": "eval_chunk_0",
-          "text": "Verbale Ufficiale della Sprint Review del Progetto Vanguard (VNG-2024) - Data: 28/10/2025.\n\nDiscussione Principale:\nIl team ha revisionato lo stato di avanzamento del modulo di autenticazione. La decisione presa è stata quella di adottare lo standard OAuth2 per garantire maggiore sicurezza.\n\nMetriche e KPI:\nIl KPI principale, l'adozione utente settimanale, ha mostrato un trend positivo con una crescita del 15% rispetto alla settimana precedente.\n\nCriticità Tecniche Emerse:\nÈ stata identificata una criticità legata all'alta latenza delle query sul database degli utenti. La soluzione tecnica proposta è l'aggiunta di un indice sulla colonna 'email', compito assegnato al responsabile tecnico Marco Rossi.\n\nAzioni Assegnate e Scadenze:\n1.  Azione: Completare l'integrazione delle API di login. Responsabile: Marco Rossi. Data di scadenza: 2025-11-05.\n2.  Azione: Preparare i test di usabilità. Responsabile: Giulia Bianchi. Data di scadenza: 2025-11-10.\n\nImpatto per il Cliente:\nIl completamento di questo modulo porterà benefici tangibili al cliente, con una riduzione stimata del 50% nel tempo di accesso, migliorando drasticamente l'esperienza utente.,Note sul Progetto Apollo (2023):\nQuesto progetto è stato completato l'anno scorso. Le metriche finali sono state archiviate. Il responsabile era Luca Verdi.,Appunti da una riunione generica sul project management:\nÈ importante definire chiaramente le azioni e le responsabilità in ogni sprint. I KPI devono essere monitorati costantemente."
+          "text": "Appunti da una riunione generica sul project management:\nÈ importante definire chiaramente le azioni e le responsabilità in ogni sprint. I KPI devono essere monitorati costantemente.,Verbale Ufficiale della Sprint Review del Progetto Vanguard (VNG-2024) - Data: 28/10/2025.\n\nDiscussione Principale:\nIl team ha revisionato lo stato di avanzamento del modulo di autenticazione. La decisione presa è stata quella di adottare lo standard OAuth2 per garantire maggiore sicurezza.\n\nMetriche e KPI:\nIl KPI principale, l'adozione utente settimanale, ha mostrato un trend positivo con una crescita del 15% rispetto alla settimana precedente.\n\nCriticità Tecniche Emerse:\nÈ stata identificata una criticità legata all'alta latenza delle query sul database degli utenti. La soluzione tecnica proposta è l'aggiunta di un indice sulla colonna 'email', compito assegnato al responsabile tecnico Marco Rossi.\n\nAzioni Assegnate e Scadenze:\n1.  Azione: Completare l'integrazione delle API di login. Responsabile: Marco Rossi. Data di scadenza: 2025-11-05.\n2.  Azione: Preparare i test di usabilità. Responsabile: Giulia Bianchi. Data di scadenza: 2025-11-10.\n\nImpatto per il Cliente:\nIl completamento di questo modulo porterà benefici tangibili al cliente, con una riduzione stimata del 50% nel tempo di accesso, migliorando drasticamente l'esperienza utente.,Note sul Progetto Apollo (2023):\nQuesto progetto è stato completato l'anno scorso. Le metriche finali sono state archiviate. Il responsabile era Luca Verdi."
         }
       ],
       "Context Recall": 0.5,

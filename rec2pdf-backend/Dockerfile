@@ -56,7 +56,7 @@ COPY rec2pdf-backend/package*.json ./rec2pdf-backend/
 
 # Installa dipendenze Node
 WORKDIR /app/rec2pdf-backend
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci && npm cache clean --force
 
 # Copia il resto del codice
 WORKDIR /app
