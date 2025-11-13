@@ -48,7 +48,9 @@
 │   ├── Brand_Vision_and_Creative_Brief.md
 │   ├── BusinessCase.md
 │   ├── documento_20251018T13012_brightledger_nuovo_template_verbale.pdf
+│   ├── embedding_process_description.md
 │   ├── esempio_template_verbale_meeting.html
+│   ├── http_ingestion_api_details.md
 │   ├── Manuale utente – Workspace Navigator mul.md
 │   ├── meeting_template_quickstart.md
 │   ├── operations
@@ -89,6 +91,7 @@
 │       └── verbale_kickoff_meeting_20251005.md
 ├── LICENSE
 ├── project_structure.txt
+├── README copy.txt
 ├── README.md
 ├── rec2pdf-backend
 │   ├── __tests__
@@ -106,13 +109,16 @@
 │   ├── '
 │   │   └── Users
 │   │       └── moromoro
+│   ├── docker-compose.yml
 │   ├── Dockerfile
+│   ├── Dockerfile.dev
 │   ├── package-lock.json
 │   ├── package.json
 │   ├── prompts
 │   │   └── templates
 │   │       ├── base_generation.hbs
-│   │       └── pre_analyze.hbs
+│   │       ├── pre_analyze.hbs
+│   │       └── rag_query_transformer.hbs
 │   ├── scripts
 │   │   ├── __fixtures__
 │   │   │   ├── logos
@@ -128,7 +134,10 @@
 │   ├── services
 │   │   ├── aiProviders.js
 │   │   ├── aiService.js
-│   │   └── promptService.js
+│   │   ├── promptService.js
+│   │   ├── rag.config.js
+│   │   ├── ragService.js
+│   │   └── utils.js
 │   ├── supabase
 │   │   └── migrations
 │   │       ├── 20240506_add_workspace_id_to_knowledge_chunks.sql
@@ -137,14 +146,17 @@
 │   │       ├── 20250219_update_match_knowledge_chunks_function.sql
 │   │       └── 20251026_001_initial_schema.sql
 │   └── tests
+│       ├── kb_discussione_generica.txt
 │       ├── kb_progetto_vanguard.txt
+│       ├── kb_progetto_vecchio.txt
 │       └── rag_evaluation
 │           ├── benchmark_dataset.json
 │           ├── evalLLMClient.js
 │           ├── evaluate.js
 │           ├── README.md
+│           ├── report_baseline_official.json
 │           ├── report_baseline.json
-│           └── test_knowledge.txt
+│           └── report_rag_reranking_v1.json
 ├── rec2pdf-frontend
 │   ├── index.html
 │   ├── logo-thinkdoc-sfondo_scuro.svg
@@ -291,4 +303,4 @@
     ├── verbale_meeting.html
     └── verbale_meeting.json
 
-58 directories, 234 files
+58 directories, 246 files
