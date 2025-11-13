@@ -19,6 +19,12 @@ const { z } = require('zod');
 const yaml = require('js-yaml'); // <-- Importato js-yaml
 const qs = require('qs');
 const { getAIService } = require('./services/aiService');
+// ==========================================================
+// ==               AGGIUNGI QUESTA RIGA QUI               ==
+// ==========================================================
+const aiOrchestrator = require('./services/aiOrchestrator');
+// ==========================================================
+
 const {
   listProviders: listAiProviders,
   resolveProvider: resolveAiProvider,
@@ -70,6 +76,7 @@ const ensureProfileForUser = async (req) => {
   const { error } = await client
     .from('profiles')
     .upsert(payload, { onConflict: 'id', ignoreDuplicates: false });
+  
 
   if (error) {
     throw new Error(error.message || 'Impossibile sincronizzare il profilo utente');
@@ -2160,15 +2167,51 @@ const aggregateCueCardsMarkdown = (promptCueCards = [], refinedData = null, fall
   return sections.length ? sections.join('\n') : '';
 };
 
-const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', options = {}) => {
+// In rec2pdf-backend/server.js
+
+const generateMarkdown = async (txtPath, promptPayload, options = {}) => {
   try {
     const transcript = await loadTranscriptForPrompt(txtPath);
 
-    const normalizedKnowledgeContext =
-      typeof knowledgeContext === 'string' ? knowledgeContext.trim() : '';
-    const decoratedKnowledgeContext = normalizedKnowledgeContext
-      ? ['CONTESTO AGGIUNTIVO DALLA KNOWLEDGE BASE', normalizedKnowledgeContext].join('\n')
-      : '';
+    // ==========================================================
+    // ==            INIZIO LOGICA RAG INTEGRATA               ==
+    // ==========================================================
+    let knowledgeContext = '';
+    const { workspaceId, projectId, embeddingProvider } = options;
+
+    if (workspaceId && ragService) {
+      console.log('[generateMarkdown] Avvio recupero contesto RAG...');
+      try {
+        // Costruiamo una query per il RAG basata su tutto l'input disponibile
+        const queryParts = [options.focus, options.notes, transcript].filter(Boolean);
+        const combinedQuery = queryParts.join('\n\n').slice(0, CONTEXT_QUERY_MAX_CHARS);
+
+       // In server.js -> dentro la funzione generateMarkdown
+
+       if (combinedQuery) {
+        knowledgeContext = await retrieveRelevantContext(combinedQuery, workspaceId, {
+          // Passiamo direttamente le opzioni ricevute, che contengono
+          // le preferenze dell'utente per entrambi i provider.
+          embeddingProvider: options.embeddingProvider,
+          textProvider: options.textProvider,
+          projectId: projectId, // Assicuriamoci di passare il projectId corretto
+        });
+        
+        if (knowledgeContext) {
+          console.log(`[generateMarkdown] Contesto RAG recuperato (${knowledgeContext.length} caratteri).`);
+        } else {
+          console.warn('[generateMarkdown] La pipeline RAG non ha restituito alcun contesto.');
+        }
+      }
+      } catch (ragError) {
+        console.error(`❌ Errore durante l'esecuzione della pipeline RAG: ${ragError.message}`);
+        // Non blocchiamo la generazione, procediamo senza contesto RAG.
+        knowledgeContext = '';
+      }
+    }
+    // ==========================================================
+    // ==              FINE LOGICA RAG INTEGRATA               ==
+    // ==========================================================
 
     // 1. Prepara i dati per il template
     const refinedDataForPrompt =
@@ -2178,7 +2221,7 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
       persona: promptPayload?.persona,
       description: promptPayload?.description,
       markdownRules: promptPayload?.markdownRules,
-      knowledgeContext: decoratedKnowledgeContext,
+      knowledgeContext: knowledgeContext, // Usiamo il contesto appena recuperato
       transcript: transcript,
       _meta: {
         promptId: promptPayload?.id,
@@ -2229,59 +2272,44 @@ const generateMarkdown = async (txtPath, promptPayload, knowledgeContext = '', o
       console.log('\n--- RENDERED PROMPT ---\n', fullPrompt, '\n--- END PROMPT ---\n');
     }
 
-    // 3. Chiama il servizio AI
-    let aiGenerator;
-    let textProvider;
-    try {
-      textProvider = resolveAiProvider('text', options.textProvider || options.aiTextProvider);
-      aiGenerator = getAIService(textProvider.id, textProvider.apiKey, textProvider.model);
-    } catch (error) {
-      console.error(`❌ Provider di testo non disponibile: ${error.message}`);
-      throw new Error(`Provider di testo non disponibile: ${error.message}`);
-    }
-
+    // 3. Chiama il servizio AI tramite l'Orchestratore
     let generatedContent = '';
     try {
-      generatedContent = await aiGenerator.generateContent(promptForAi);
-         } catch (error) {
-      console.error(`❌ Errore durante la generazione del contenuto AI: ${error.message}`);
+      generatedContent = await aiOrchestrator.generateContentWithFallback(promptForAi, { textProvider: options.textProvider });
+    } catch (error) {
+      console.error(`❌ Errore durante la generazione del contenuto AI (tutti i provider hanno fallito): ${error.message}`);
       throw new Error(`Errore durante la generazione del contenuto AI: ${error.message}`);
     }
 
     // 4. Esegui il parsing dell'output JSON
-    const activeModelName = textProvider?.model || aiGenerator?.modelName || '';
+    // TODO: Migliorare l'orchestratore per restituire il provider utilizzato per una migliore attribuzione
+    const activeModelName = 'unknown'; 
     const cleanedJsonString = generatedContent.replace(/^```(json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
 
     try {
       const parsed = JSON.parse(cleanedJsonString);
-
-      // --- MODIFICA CRUCIALE ---
-      // NON scriviamo più il file qui.
-      // Invece, restituiamo un oggetto che il resto del sistema rec2pdf si aspetta,
-      // contenente tutti i dati grezzi.
       return {
         title: parsed.title || '',
         summary: parsed.summary || '',
         author: parsed.author || '',
-        content: parsed.body || '', // Restituiamo il body nella chiave 'content'
+        content: parsed.body || '',
         modelName: activeModelName,
       };
     } catch (jsonError) {
-      console.warn('⚠️ L\'output AI non era un JSON valido. Trattato come solo corpo.', jsonError.message);
-      // Fallback: se non è JSON, restituiamo l'intero output come 'content'
+      console.warn(`⚠️ L'output AI non era un JSON valido. Trattato come solo corpo. ${jsonError.message}`);
       const enrichedContent = applyAiModelToFrontMatter(generatedContent, activeModelName);
       return {
         title: '',
         summary: '',
         author: '',
-        content: enrichedContent, // Restituiamo l'output grezzo come 'content'
+        content: enrichedContent,
         modelName: activeModelName,
       };
     }
 
   } catch (error) {
     console.error("❌ Errore imprevisto in generateMarkdown:", error);
-    throw error; // Propaga l'errore al chiamante
+    throw error;
   }
 };
 const generateId = (prefix) => {
@@ -6205,12 +6233,11 @@ app.post('/api/pre-analyze', async (req, res) => {
 
   let aiOutput = '';
   try {
-    aiOutput = await aiClient.generateContent(prompt);
+    // --- MODIFICA: Usa l'orchestratore ---
+    aiOutput = await aiOrchestrator.generateContentWithFallback(prompt, { textProvider: aiOverrides.text });
   } catch (error) {
-    console.error('❌ Errore AI /api/pre-analyze:', error);
-    return res
-      .status(502)
-      .json({ ok: false, message: 'Errore durante la generazione delle risposte suggerite.' });
+    console.error('❌ Errore AI /api/pre-analyze (tutti i provider hanno fallito):', error);
+    return res.status(502).json({ ok: false, message: 'Errore durante la generazione delle risposte suggerite.' });
   }
 
   const cleanedOutput = (aiOutput || '')
@@ -7014,71 +7041,39 @@ const forcePandocFallback = activeTemplateIsFallback;
         transcriptTextForQuery = transcriptBuffer.toString('utf8');
       }
 
-      if (!retrievedWorkspaceContext) {
-        const queryParts = [];
-        if (promptFocus) {
-          queryParts.push(promptFocus);
-        }
-        if (promptNotes) {
-          queryParts.push(promptNotes);
-        }
-        if (refinedDataPayload?.summary) {
-          queryParts.push(refinedDataPayload.summary);
-        }
-        if (Array.isArray(refinedDataPayload?.sections) && refinedDataPayload.sections.length) {
-          refinedDataPayload.sections.forEach((section) => {
-            if (section?.title) {
-              queryParts.push(section.title);
-            }
-            if (section?.text) {
-              queryParts.push(section.text);
-            }
-          });
-        }
-        if (Array.isArray(refinedDataPayload?.highlights) && refinedDataPayload.highlights.length) {
-          refinedDataPayload.highlights.forEach((highlight) => {
-            if (highlight?.title) {
-              queryParts.push(highlight.title);
-            }
-            if (highlight?.detail) {
-              queryParts.push(highlight.detail);
-            }
-          });
-        }
-        if (transcriptTextForQuery) {
-          queryParts.push(transcriptTextForQuery);
-        }
-        const combinedQuery = queryParts.join('\n\n').slice(0, CONTEXT_QUERY_MAX_CHARS);
-        if (combinedQuery) {
-          retrievedWorkspaceContext = await retrieveRelevantContext(combinedQuery, workspaceId, {
-            provider: aiOverrides.embedding,
-            projectId: workspaceProjectId,
-          });
-          if (retrievedWorkspaceContext) {
-            res.locals.retrievedWorkspaceContext = retrievedWorkspaceContext;
-          }
-        }
-      }
+      
       
       mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
 
-      const {
-        title: aiTitle,
-        summary: aiSummary,
-        author: aiAuthor,
-        content: markdownBody,
-        modelName: aiModel,
-      } = await generateMarkdown(
-        transcriptLocalForMarkdown,        
-        promptRulePayload,
-        retrievedWorkspaceContext || res.locals?.retrievedWorkspaceContext || '',
-        {
-          textProvider: aiOverrides.text,
-          refinedData: refinedDataPayload,
-          focus: promptFocus,
-          notes: promptNotes,
-        }
-      );
+      // ==========================================================
+// ==            SNIPPET CORRETTO E AGGIORNATO             ==
+// ==========================================================
+const {
+  title: aiTitle,
+  summary: aiSummary,
+  author: aiAuthor,
+  content: markdownBody,
+  modelName: aiModel,
+} = await generateMarkdown(
+  transcriptLocalForMarkdown,
+  promptRulePayload,
+  // Il terzo argomento (knowledgeContext) non serve più, passiamo direttamente all'oggetto opzioni.
+  {
+    // Passiamo gli ID per permettere a generateMarkdown di eseguire il RAG
+    workspaceId: workspaceId,
+    projectId: workspaceProjectId,
+
+    // Passiamo le altre opzioni come prima
+    textProvider: aiOverrides.text,
+    embeddingProvider: aiOverrides.embedding, // Aggiungiamo anche questo per completezza
+    refinedData: refinedDataPayload,
+    focus: promptFocus,
+    notes: promptNotes,
+  }
+);
+// ==========================================================
+// ==                       FINE SNIPPET                   ==
+// ==========================================================
 
       // Costruisci i metadati in un oggetto JS
       const now = new Date();

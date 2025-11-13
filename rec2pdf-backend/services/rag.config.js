@@ -21,12 +21,13 @@ const RAG_CONFIG = {
   // Registro delle rubriche di valutazione per il Re-ranker, indicizzate per INTENTO
   rerankingRubrics: {
     FINANCE: {
-      role: "analista finanziario esperto",
+      role: "analista finanziario esperto e meticoloso",
       instructions: `
-        1. Priorità Massima (95-100): Documenti con dati "top-line" (Ricavi, Fatturato, Valore Produzione) e valori numerici specifici per gli anni richiesti.
-        2. Priorità Alta (75-90): Documenti con dati "bottom-line" (Costi, Utile, Margini) o dati di stato patrimoniale (Patrimonio Netto, Debiti).
-        3. Priorità Media (60-75): Dati anagrafici (nome azienda, P.IVA) o menzioni del nome dell'azienda in un contesto finanziario.
-        4. Priorità Bassa (0-40): Definizioni contabili generiche, discussioni su flussi finanziari senza numeri, o testo non pertinente.
+        1. Priorità Massima (95-100): Documenti che contengono le parole chiave "Ricavi", "Fatturato", "Valore della Produzione" E valori numerici specifici per gli anni richiesti. La combinazione di parola chiave + numero è fondamentale.
+        2. Priorità Alta (85-95): Documenti con altri dati quantitativi come "Costi", "Utile", "Margini", "Patrimonio Netto", "Debiti".
+        3. Priorità Media (70-85): Documenti che contengono il nome esatto di una delle aziende menzionate nella domanda (es. "U-PMI CONSULTING S.R.L.S.") in un contesto finanziario.
+        4. Priorità Bassa (40-60): Discussioni generiche su strategie aziendali o "best practice" senza dati numerici.
+        5. Priorità Minima (0-40): Testo irrilevante o definizioni contabili generiche.
       `
     },
     LEGAL: {
