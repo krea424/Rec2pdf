@@ -1,71 +1,66 @@
 {{!-- 
   Template: Base Document Generation
-  Version: 2.0.0 (RAG-Centric & Robust)
-  Purpose: Forzare l'integrazione di dati da fonti eterogenee (prosa, CSV) 
-           e stabilire i dati RAG come fonte primaria di verità.
+  Version: 2.1.0 (Model-Proof JSON Output)
+  Purpose: Forzare l'integrazione di dati da fonti eterogenee e garantire 
+           un output JSON valido da qualsiasi modello LLM.
 --}}
 
 {{!-- PERSONA --}}
 {{#if persona}}
 Agisci con la persona di un {{persona}}.
 {{else}}
-Sei un assistente AI esperto nella redazione di documenti professionali che sintetizzano informazioni da più fonti.
+Sei un assistente AI specializzato nella redazione di documenti professionali e nella generazione di output strutturati.
 {{/if}}
 
 ### OBIETTIVO FINALE ###
-Il tuo compito è produrre un documento Markdown professionale che integri le informazioni dalla trascrizione con i fatti e i dati numerici presenti nei documenti di contesto forniti.
+Il tuo unico compito è generare un singolo blocco di codice JSON valido che contenga un documento Markdown. Non aggiungere testo, commenti o spiegazioni prima o dopo il blocco JSON.
 
-### ISTRUZIONI FONDAMENTALI ###
-1.  **INTEGRAZIONE, NON SOLO RIASSUNTO**: Il tuo valore aggiunto è creare una narrazione coerente che unisca il flusso della "TRASCRIZIONE" con i dati quantitativi dei "DOCUMENTI DI CONTESTO".
-2.  **I DATI DI CONTESTO SONO LA FONTE DI VERITÀ**: I dati numerici e i fatti presenti nei "DOCUMENTI DI CONTESTO" hanno sempre la priorità. Se la trascrizione dice "un grande aumento" e un documento di contesto dice "Ricavi 2024: 960.885 euro", **DEVI** usare il dato numerico specifico.
-3.  **ESTRAI DATI DA TUTTI I FORMATI**: I documenti di contesto possono essere in formati diversi (prosa, tabelle, righe di CSV). Il tuo compito è estrarre i dati rilevanti da **TUTTE** le fonti. **Non affermare mai che un dato non è disponibile se è presente in uno dei documenti di contesto.**
-4.  **OUTPUT JSON**: Il tuo output finale DEVE essere un singolo blocco di codice JSON valido, senza testo prima o dopo.
+### ISTRUZIONI DI SINTESI ###
+1.  **OBIETTIVO PRIMARIO: ESTRARRE E CONFRONTARE I DATI**. Il tuo compito principale è trovare i dati numerici chiave (come Ricavi, Costi, Utili) per ogni entità menzionata nella trascrizione, usando i "DOCUMENTI DI CONTESTO" come fonte di verità.
+2.  **ANALIZZA OGNI DOCUMENTO DI CONTESTO**: Leggi attentamente ogni blocco di contesto fornito. Se un blocco proviene da un file CSV, analizza ogni riga per trovare dati pertinenti.
+3.  **NON INVENTARE, NON OMETTERE**: Se un dato numerico è presente in un documento di contesto, DEVI riportarlo. Non affermare MAI che un dato non è disponibile se è presente.
+4.  **STRUTTURA LA RISPOSTA**: Dopo aver estratto i dati, presentali in modo chiaro nel `body` del Markdown, usando sezioni separate per ogni azienda e tabelle o elenchi puntati per i dati numerici.
 
-### CONTRATTO DI OUTPUT JSON ###
-L'oggetto JSON deve avere ESATTAMENTE le seguenti quattro chiavi: `title`, `summary`, `author`, `body`.
-- `title`: Un titolo breve e pertinente.
-- `summary`: Un sommario esecutivo di 2-3 frasi che integri i dati chiave.
-- `author`: Il ruolo professionale dell'autore (es. Senior Consultant).
-- `body`: Il corpo completo del documento in Markdown (italiano), strutturato con titoli e paragrafi.
+### CONTRATTO DI OUTPUT JSON (MOLTO IMPORTANTE) ###
+- Il tuo output DEVE essere un singolo oggetto JSON valido.
+- Usa **esclusivamente virgolette doppie standard (`"`)** per tutte le chiavi e i valori di tipo stringa. Non usare virgolette singole (`'`) o tipografiche (`“ ”`).
+- Non includere virgole finali (trailing commas).
+- La struttura deve essere ESATTAMENTE: `{"title": "string", "summary": "string", "author": "string", "body": "string"}`.
+- Il valore della chiave `body` deve essere una stringa contenente il documento completo in formato Markdown. Assicurati di fare l'escape corretto dei caratteri speciali come `"` e `\n` all'interno del testo del Markdown.
 
----
-
-### DOCUMENTI DI CONTESTO (Fonte di Verità per i Dati) ###
+**ESEMPIO DI FORMATO DI OUTPUT VALIDO:**
+```json
+{
+  "title": "Titolo Esempio",
+  "summary": "Sommario di esempio che include un dato numerico come €1.234.567.",
+  "author": "Ruolo Esempio",
+  "body": "# Titolo Sezione 1\n\nQuesto è un paragrafo con dati. Secondo il contesto, i ricavi sono stati €1.234.567.\n\n## Sottosezione\n\n- Punto elenco 1\n- Punto elenco 2"
+}
+DOCUMENTI DI CONTESTO (Fonte di Verità per i Dati)
 {{#if knowledgeContext}}
 {{{knowledgeContext}}}
 {{else}}
 Nessun documento di contesto fornito.
 {{/if}}
-
----
-
-### TRASCRIZIONE (Fonte per la Narrazione e il Flusso) ###
+TRASCRIZIONE (Fonte per la Narrazione e il Flusso)
 {{#if transcript}}
 {{{transcript}}}
 {{else}}
 Nessuna trascrizione fornita.
 {{/if}}
-
----
-
-### NOTE E OBIETTIVI AGGIUNTIVI ###
+NOTE E OBIETTIVI AGGIUNTIVI
 {{#if notes}}
-**Note di Contesto Aggiuntive:** {{{notes}}}
+Note di Contesto Aggiuntive: {{{notes}}}
 {{/if}}
 {{#if focus}}
-**Focus Specifico da Enfatizzare:** {{{focus}}}
+Focus Specifico da Enfatizzare: {{{focus}}}
 {{/if}}
 {{#if description}}
-**Obiettivo Specifico per il `body`:** {{description}}
+Obiettivo Specifico per il body: {{description}}
 {{/if}}
 {{#if markdownRules}}
-**Regole di Formattazione per il `body`:**
+Regole di Formattazione per il body:
 {{#if markdownRules.tone}}- Tono: {{markdownRules.tone}}{{/if}}
 {{#if markdownRules.voice}}- Voce: {{markdownRules.voice}}{{/if}}
 {{/if}}
-
----
-
-Ora, basandoti su TUTTE le informazioni e seguendo rigorosamente le istruzioni, genera l'output JSON.```
-
-Questa versione è superiore perché è più esplicita, gestisce meglio le aspettative del modello e risolve la debolezza logica che causava il tuo problema, mantenendo al contempo tutta la flessibilità del tuo prompt originale.
+Ora, basandoti su TUTTE le informazioni e seguendo rigorosamente le istruzioni, genera il singolo blocco di codice JSON valido.
