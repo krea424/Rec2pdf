@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [12.0.0] - 2025-11-13
+
+### Added
+- **Fallback Dinamico per Provider AI**: È stata implementata una logica di fallback automatico per la generazione di testo. Se il provider AI primario (es. Gemini), configurato tramite `AI_TEXT_PROVIDER`, fallisce, il sistema tenta automaticamente di utilizzare un provider di fallback (es. OpenAI), configurato tramite `AI_TEXT_PROVIDER_FALLBACK`.
+- **Orchestrazione Centralizzata**: La nuova logica è gestita dal `AIOrchestrator`, che costruisce una catena di provider e li esegue in sequenza fino al successo, migliorando la resilienza dell'applicazione.
+
+### Changed
+- **Gestione Errori Migliorata**: In caso di fallimento di un provider, l'errore viene registrato e il sistema procede con il tentativo successivo, lanciando un'eccezione solo dopo che tutti i provider nella catena hanno fallito.
+- **Comportamento Embedding Esplicito**: La logica di fallback non si applica alla generazione di embedding per evitare problemi di coerenza dimensionale tra modelli diversi. Il sistema si affida esclusivamente al provider definito (`AI_EMBEDDING_PROVIDER`), garantendo la stabilità della pipeline RAG.
+
 ## [11.0.0] - 2025-11-10
 
 ### Added

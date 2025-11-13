@@ -2,13 +2,13 @@
 
 Rec2pdf è una web app che trascrive registrazioni audio di meeting, le analizza con un LLM e genera verbali professionali in formato PDF.
 
-## Novità v11.0.0
+## Novità v12.0.0
 
-L'ultima versione introduce una **pipeline RAG (Retrieval-Augmented Generation) multi-stadio**, un'architettura sofisticata che migliora drasticamente la qualità e la pertinenza del contesto fornito al modello LLM.
+L'ultima versione introduce un **fallback dinamico per i provider AI**, aumentando la resilienza del sistema. Se il provider primario fallisce, il sistema passa automaticamente a un provider secondario.
 
-- **Query Transformation**: L'input dell'utente viene trasformato in query di ricerca multiple e mirate, garantendo un recupero delle informazioni più preciso.
-- **Re-ranking Avanzato**: I risultati della ricerca vengono riordinati e valutati da un LLM per selezionare solo i chunk più pertinenti, massimizzando la qualità del contesto.
-- **Download Sicuri**: Il sistema di download ora utilizza URL pre-firmati per un accesso sicuro e affidabile ai file.
+- **Fallback Automatico**: Se il provider AI primario (es. Gemini) non risponde, il sistema tenta di eseguire la stessa operazione con un provider di fallback (es. OpenAI), garantendo la continuità del servizio.
+- **Configurazione Flessibile**: La catena di provider è definita tramite variabili d'ambiente (`AI_TEXT_PROVIDER`, `AI_TEXT_PROVIDER_FALLBACK`), permettendo una facile configurazione e personalizzazione.
+- **Maggiore Affidabilità**: La logica è gestita da un orchestratore centrale che esegue i provider in sequenza fino al successo, migliorando la robustezza complessiva dell'applicazione.
 
 ## Architettura RAG Avanzata
 
@@ -25,7 +25,7 @@ Questo processo a più fasi garantisce che il contesto sia estremamente focalizz
 
 - **Trascrizione Audio**: Supporto per i più comuni formati audio e trascrizione tramite **WhisperX** per un'accuratezza elevata.
 - **Identificazione Speaker**: Riconoscimento e mappatura dei diversi speaker presenti nella registrazione (diarizzazione).
-- **Generazione Contenuti con AI**: Integrazione con **Google Gemini** per analizzare la trascrizione e generare riassunti, decisioni e azioni.
+- **Generazione Contenuti con AI**: Integrazione con i principali provider AI (es. **Google Gemini**, **OpenAI**) con una logica di **fallback dinamico** per garantire alta disponibilità.
 - **Knowledge Base (RAG)**: Ogni workspace ha una sua knowledge base vettoriale che fornisce contesto aggiuntivo al LLM per generazioni più accurate e personalizzate.
 - **Template PDF**: Supporto per template multipli (LaTeX e HTML) per personalizzare l'aspetto dei documenti finali.
 - **Accesso Multi-Utente**: Architettura sicura basata su Supabase con policy di Row Level Security (RLS).
@@ -98,7 +98,11 @@ Il backend applica un isolamento per workspace e progetto su Supabase: ogni chun
 3. Durante la pipeline voce→Markdown il backend combina prompt, note e trascrizione, interroga `match_knowledge_chunks` per workspace e progetto in uso e inietta il contesto risultante prima di chiamare Gemini per la sintesi.【F:rec2pdf-backend/server.js†L5337-L5382】【F:rec2pdf-backend/server.js†L6329-L6376】
 
 ### Requisiti di configurazione
-- Definisci le variabili d’ambiente `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `OPENAI_API_KEY` e `GOOGLE_API_KEY` nel `.env` del backend per abilitare rispettivamente l’accesso a Supabase, gli embedding e la generazione del Markdown. Puoi personalizzare i provider di default impostando `AI_TEXT_PROVIDER` e `AI_EMBEDDING_PROVIDER` (`gemini` oppure `openai`).【F:rec2pdf-backend/.env.example†L7-L31】
+- Definisci le variabili d’ambiente `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `OPENAI_API_KEY` e `GOOGLE_API_KEY` nel `.env` del backend.
+- **Provider AI**: Puoi personalizzare i provider di default e la logica di fallback tramite le seguenti variabili:
+  - `AI_TEXT_PROVIDER`: Provider primario per la generazione di testo (es. `gemini`).
+  - `AI_TEXT_PROVIDER_FALLBACK`: Provider secondario da usare in caso di fallimento (es. `openai`).
+  - `AI_EMBEDDING_PROVIDER`: Provider per la generazione di embedding (es. `gemini`).
 - Dal frontend (Impostazioni → Advanced → Motore AI) è possibile scegliere dinamicamente quale provider usare per la generazione del Markdown e per gli embedding; la selezione viene inviata a ogni pipeline e sovrascrive i default del backend quando il provider è configurato correttamente.
 - Applica gli script `20240506_add_workspace_id_to_knowledge_chunks.sql`, `20250219_add_project_id_to_knowledge_chunks.sql` e `20250219_update_match_knowledge_chunks_function.sql` per abilitare il retrieval multi-workspace/multi-progetto della funzione `match_knowledge_chunks`.【F:rec2pdf-backend/supabase/migrations/20240506_add_workspace_id_to_knowledge_chunks.sql†L1-L9】【F:rec2pdf-backend/supabase/migrations/20250219_add_project_id_to_knowledge_chunks.sql†L1-L9】【F:rec2pdf-backend/supabase/migrations/20250219_update_match_knowledge_chunks_function.sql†L1-L30】
 - Utilizza l’header `x-workspace-id` (e opzionalmente `workspaceProjectId`) o i relativi parametri quando richiami le API `/api/rec2pdf`, `/api/ppubr` e `/api/workspaces/:workspaceId/knowledge` per assicurarti che il backend risolva la knowledge base corretta durante la generazione del Markdown multi-tenant.【F:rec2pdf-backend/server.js†L34-L58】【F:rec2pdf-backend/server.js†L4014-L4180】【F:rec2pdf-backend/server.js†L5337-L5382】
