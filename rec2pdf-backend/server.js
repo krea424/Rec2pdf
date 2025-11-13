@@ -8648,7 +8648,38 @@ app.post('/api/rag/baseline', async (req, res) => {
   }
 });
 
+// ==========================================================
+// ==         ENDPOINT DI DEBUG PER LA PIPELINE RAG        ==
+// ==========================================================
+app.post('/api/rag/debug', async (req, res) => {
+  try {
+    const rawTextInput = String(req.body?.query || '').trim();
+    const workspaceId = getWorkspaceIdFromRequest(req);
+    const aiOverrides = extractAiProviderOverrides(req);
 
+    if (!rawTextInput) {
+      return res.status(400).json({ error: 'Il testo di input (query) è obbligatorio.' });
+    }
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'Il workspaceId è obbligatorio.' });
+    }
+
+    console.log(`[DEBUG] Ricevuta richiesta per /api/rag/debug. Input: "${rawTextInput.substring(0, 70)}..."`);
+
+    // Chiamiamo il nostro RAGService in modalità debug
+    const debugResult = await retrieveRelevantContext(rawTextInput, workspaceId, {
+        textProvider: aiOverrides.text,
+        embeddingProvider: aiOverrides.embedding,
+        debug: true // Attiviamo la modalità debug
+    });
+
+    res.json(debugResult);
+
+  } catch (error) {
+    console.error("❌ Errore grave nell'endpoint /api/rag/debug:", error);
+    res.status(500).json({ error: 'Errore interno del server.', details: error.message });
+  }
+});
 // ==========================================================
 // == MIDDLEWARE PER GESTIRE ENDPOINT API NON TROVATI (404) ==
 // ==========================================================

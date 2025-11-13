@@ -1,57 +1,29 @@
+// File: rec2pdf-backend/services/ragService.js
+
 'use strict';
 
 const { getAIService } = require('./aiService.js');
 const { resolveProvider: resolveAiProvider } = require('./aiProviders.js');
 const { canonicalizeProjectScopeId, CONTEXT_SEPARATOR } = require('./utils.js');
 const { PromptService } = require('./promptService.js');
+// --- MODIFICA 1: Importa la configurazione centralizzata ---
+const { RAG_CONFIG } = require('./rag.config.js');
 
-/**
- * RAGService gestisce la pipeline di Retrieval-Augmented Generation avanzata.
- * Le sue responsabilità includono:
- * 1. Trasformare l'input utente in query di ricerca ottimizzate (Query Transformation).
- * 2. Eseguire ricerche vettoriali multiple su Supabase (Multi-Query Retrieval).
- * 3. Valutare e riordinare i risultati per pertinenza (Re-ranking).
- * 4. Selezionare i migliori chunk per costruire un contesto denso e preciso.
- */
 class RAGService {
-  /**
-   * @param {object} supabaseClient - Un'istanza del client Supabase.
-   */
   constructor(supabaseClient) {
     if (!supabaseClient) {
       throw new Error("RAGService richiede un client Supabase valido.");
     }
     this.supabase = supabaseClient;
     this.promptService = new PromptService();
-
-    // Centralizziamo tutti i parametri di tuning in un unico oggetto di configurazione.
-    this.config = {
-      // Query Transformation
-      transformation: {
-        maxInputChars: 2000,
-        maxQueries: 4,
-      },
-      // Retrieval
-      retrieval: {
-        chunksPerQuery: 5,
-      },
-      // Re-ranking
-      reranking: {
-        minScoreThreshold: 40, // Soglia di pertinenza minima (0-100)
-        topN: 3, // Numero massimo di chunk da selezionare dopo il re-ranking
-      },
-    };
+    // --- MODIFICA 2: Usa la configurazione importata ---
+    this.config = RAG_CONFIG.pipeline;
 
     console.log("✅ RAGService (Advanced) initializzato con successo.");
   }
 
-  /**
-   * Trasforma un testo grezzo in un set di query di ricerca focalizzate.
-   * @param {string} rawText - La trascrizione o l'input grezzo dell'utente.
-   * @param {object} options - Contiene `focus` e `notes` per guidare la trasformazione.
-   * @returns {Promise<string[]>} Un array di query ottimizzate.
-   */
   async _transformQuery(rawText, options = {}) {
+    // ... (questo metodo rimane invariato) ...
     console.log(`[RAG] Avvio Query Transformation...`);
     try {
       const truncatedInput = (rawText || '').substring(0, this.config.transformation.maxInputChars);
@@ -88,10 +60,9 @@ class RAGService {
       const fallbackQueries = [
         options.focus,
         options.notes,
-        rawText.substring(0, 150) // Un pezzo significativo della trascrizione
-      ].filter(Boolean).map(q => q.trim()); // Pulisce e rimuove stringhe vuote
+        rawText.substring(0, 150)
+      ].filter(Boolean).map(q => q.trim());
       
-      // Se non c'è nulla, usa un fallback generico
       if (fallbackQueries.length === 0) {
         console.warn("[RAG] Nessun input valido per il fallback della query.");
         return ['informazioni generali pertinenti'];
@@ -102,29 +73,51 @@ class RAGService {
     }
   }
 
-  /**
-   * Orchestra l'intero processo di recupero del contesto.
-   * @param {string} queryText - L'input grezzo (trascrizione).
-   * @param {string} workspaceId - L'UUID del workspace per filtrare la ricerca.
-   * @param {object} options - Opzioni aggiuntive come `projectId`, `focus`, `notes`.
-   * @returns {Promise<string>} Il contesto finale, pronto per essere usato dall'LLM di generazione.
-   */
+  // --- MODIFICA 3: Nuovo metodo per l'analisi dell'intento ---
+  async _analyzeQueryIntent(queries) {
+    if (!queries || queries.length === 0) {
+      return 'GENERAL';
+    }
+
+    const analysisPrompt = RAG_CONFIG.intentAnalysisPromptTemplate.replace('{{queries}}', queries.join('\n- '));
+
+    try {
+      const textProvider = resolveAiProvider('text', 'gemini');
+      const analyzerLlm = getAIService(textProvider.id, textProvider.apiKey, textProvider.model);
+      const response = await analyzerLlm.generateContent(analysisPrompt);
+      const intent = response.trim().toUpperCase();
+
+      if (RAG_CONFIG.rerankingRubrics[intent]) {
+        console.log(`[RAG] Intento identificato: ${intent}`);
+        return intent;
+      }
+    } catch (error) {
+      console.warn(`[RAG] Analisi intento fallita, fallback su GENERAL. Errore: ${error.message}`);
+    }
+    return 'GENERAL';
+  }
+
+  // --- MODIFICA 4: Funzione principale aggiornata per il flusso dinamico ---
   async retrieveRelevantContext(queryText, workspaceId, options = {}) {
     if (!workspaceId) {
       console.warn("[RAG] Workspace ID mancante, impossibile procedere.");
-      return '';
+      return options.debug ? { error: 'Workspace ID mancante' } : '';
     }
 
-    try {
-      // --- FASE 0: QUERY TRANSFORMATION ---
-      const transformedQueries = await this._transformQuery(queryText, options);
-      if (transformedQueries.length === 0) {
-        console.log("[RAG] Nessuna query valida generata. Interrompo.");
-        return '';
-      }
+    const debugLog = {
+      timestamp: new Date().toISOString(),
+      inputs: { queryText, workspaceId, options },
+      steps: {},
+    };
 
-      // --- FASE 1: MULTI-QUERY RETRIEVAL ---
-      console.log(`[RAG] Fase 1: Avvio Multi-Query Retrieval per ${transformedQueries.length} query.`);
+    try {
+      const transformedQueries = await this._transformQuery(queryText, options);
+      debugLog.steps.queryTransformation = { queries: transformedQueries };
+      if (transformedQueries.length === 0) return options.debug ? debugLog : '';
+
+      const intent = await this._analyzeQueryIntent(transformedQueries);
+      debugLog.steps.queryAnalysis = { intent };
+
       const embeddingProvider = resolveAiProvider('embedding', options.embeddingProvider);
       const aiEmbedder = getAIService(embeddingProvider.id, embeddingProvider.apiKey, embeddingProvider.model);
       
@@ -138,75 +131,61 @@ class RAGService {
             match_count: this.config.retrieval.chunksPerQuery,
           });
           return error ? [] : (chunks || []);
-        } catch (e) {
-          console.error(`[RAG] Errore durante la ricerca per la query "${query}":`, e);
-          return [];
-        }
+        } catch (e) { return []; }
       });
 
       const results = await Promise.all(searchPromises);
       const uniqueChunks = Array.from(new Map(results.flat().map(c => [c.id, c])).values());
       
-      console.log(`[RAG] Recuperati ${uniqueChunks.length} chunk candidati unici in totale.`);
-      if (uniqueChunks.length === 0) return '';
+      debugLog.steps.retrieval = { retrievedChunks: uniqueChunks };
+      if (uniqueChunks.length === 0) return options.debug ? debugLog : '';
 
-      // Ottimizzazione: se ci sono pochi candidati, il re-ranking è superfluo.
       if (uniqueChunks.length <= this.config.reranking.topN) {
-        console.log("[RAG] Pochi candidati, re-ranking saltato. Uso i risultati del retrieval.");
-        return uniqueChunks.map(chunk => chunk.content || '').filter(Boolean).join(CONTEXT_SEPARATOR);
+        const finalContext = uniqueChunks.map(chunk => chunk.content || '').filter(Boolean).join(CONTEXT_SEPARATOR);
+        debugLog.steps.selection = { strategy: 'skip_reranking_due_to_low_candidate_count', finalChunks: uniqueChunks, finalContext };
+        return options.debug ? debugLog : finalContext;
       }
 
-      // --- FASE 2: RE-RANKING ---
-      console.log(`[RAG] Fase 2: Avvio Re-ranking di ${uniqueChunks.length} candidati.`);
+      const rubric = RAG_CONFIG.rerankingRubrics[intent] || RAG_CONFIG.rerankingRubrics.GENERAL;
       const rerankPrompt = `
-        Sei un giudice esperto di pertinenza. Il tuo compito è valutare una lista di frammenti di testo ("Documenti") e assegnare un punteggio di rilevanza da 0 a 100 rispetto a una "Domanda Principale".
-
+        Agisci come un ${rubric.role}. Il tuo compito è valutare una lista di "Documenti" e assegnare un punteggio di pertinenza da 0 a 100 rispetto a una "Domanda Principale", seguendo una rubrica specifica.
         Domanda Principale: "${transformedQueries[0]}"
-
+        Rubrica di Valutazione (${intent}):
+        ${rubric.instructions}
         Documenti da Valutare:
         ---
-        ${uniqueChunks.map((chunk, index) => `[DOCUMENTO ID=${index}]\n${(chunk.content || '').substring(0, 400)}`).join('\n\n')}
+        ${uniqueChunks.map((chunk, index) => `[DOCUMENTO ID=${index}]\n${(chunk.content || '').substring(0, 500)}`).join('\n\n')}
         ---
-
-        Istruzioni:
-        Per ogni DOCUMENTO, valuta quanto è utile e pertinente per rispondere in modo completo alla Domanda Principale.
-        Restituisci la tua valutazione come un array JSON di oggetti. Ogni oggetto deve contenere "id" (l'ID del documento) e "score" (un numero intero da 0 a 100).
-        Restituisci SOLO l'array JSON, senza testo introduttivo, spiegazioni o blocchi di codice \`\`\`.
-
+        Restituisci la tua valutazione come un array JSON di oggetti {id, score}, e nient'altro.
         Valutazione JSON:`;
       
+      debugLog.steps.rerankerPrompt = { prompt: rerankPrompt };
+
       let rankedScores = [];
+      let rerankFailed = false;
       try {
         const textProvider = resolveAiProvider('text', options.textProvider || 'gemini');
         const rerankerLLM = getAIService(textProvider.id, textProvider.apiKey, textProvider.model);
         const rerankResponse = await rerankerLLM.generateContent(rerankPrompt);
-        
         const jsonStringMatch = rerankResponse.match(/\[\s*\{[\s\S]*?\}\s*\]/);
         if (!jsonStringMatch) throw new Error("Nessun array JSON valido trovato nella risposta del reranker.");
         rankedScores = JSON.parse(jsonStringMatch[0]);
-
-        console.log("[RAG DEBUG] Punteggi di Re-ranking ricevuti:");
-        console.table(rankedScores.map(scoreItem => ({
-          id: scoreItem.id,
-          score: scoreItem.score,
-          content_preview: (uniqueChunks[scoreItem.id]?.content || "N/A").substring(0, 80) + "..."
-        })));
-
       } catch (rerankError) {
-        console.error("❌ [RAG] Errore nella fase di Re-ranking. Eseguo fallback all'ordinamento per similarità.", rerankError.message);
-        
-        // Ordina i chunk candidati in base al punteggio di similarità originale di Supabase
-        const sortedBySimilarity = [...uniqueChunks].sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
-        
-        // Prendi i migliori N chunk, come definito nella configurazione
-        const topChunks = sortedBySimilarity.slice(0, this.config.reranking.topN);
-        
-        console.log(`[RAG Fallback] Selezionati i ${topChunks.length} chunk migliori per similarità.`);
-        
-        // Restituisci il contesto di fallback e continua l'esecuzione
-        return topChunks.map(chunk => chunk.content || '').filter(Boolean).join(CONTEXT_SEPARATOR);
+        console.error("❌ [RAG] Errore nella fase di Re-ranking. Eseguo fallback.", rerankError.message);
+        rerankFailed = true;
       }
-      // --- FASE 3: SELEZIONE ---
+      
+      debugLog.steps.reranking = { rerankFailed, scores: rankedScores.map(scoreItem => ({ chunkId: uniqueChunks[scoreItem.id]?.id, score: scoreItem.score, contentPreview: (uniqueChunks[scoreItem.id]?.content || "N/A").substring(0, 150) + "..." })).sort((a,b) => b.score - a.score) };
+
+      if (rerankFailed) {
+        const sortedBySimilarity = [...uniqueChunks].sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
+        const topChunks = sortedBySimilarity.slice(0, this.config.reranking.topN);
+        const finalContext = topChunks.map(chunk => chunk.content || '').filter(Boolean).join(CONTEXT_SEPARATOR);
+        debugLog.steps.selection = { strategy: 'fallback_to_similarity_score', finalChunks: topChunks, finalContext };
+        return options.debug ? debugLog : finalContext;
+      }
+      
+      // --- FASE 3: SELEZIONE (E COSTRUZIONE CONTESTO INTELLIGENTE) ---
       const topChunkIndices = rankedScores
         .filter(item => typeof item.id === 'number' && typeof item.score === 'number' && item.score >= this.config.reranking.minScoreThreshold)
         .sort((a, b) => b.score - a.score)
@@ -214,13 +193,42 @@ class RAGService {
         .map(item => item.id);
 
       const finalContextChunks = topChunkIndices.map(index => uniqueChunks[index]).filter(Boolean);
-      console.log(`[RAG] Fase 3: Selezionati i ${finalContextChunks.length} chunk migliori.`);
+      
+      // ========================================================================
+      // ==                  INIZIO MODIFICA STRATEGICA                      ==
+      // ========================================================================
+      
+      // Invece di unire ciecamente i chunk, li strutturiamo.
+      const structuredContext = finalContextChunks.map((chunk, index) => {
+        const sourceName = chunk.metadata?.sourceFile || `Fonte Sconosciuta ${index + 1}`;
+        // Usiamo CONTEXT_SEPARATOR per coerenza, ma potremmo usare anche \n\n
+        return `--- Inizio Documento di Contesto ${index + 1} (Fonte: ${sourceName}) ---\n\n${chunk.content}\n\n--- Fine Documento di Contesto ${index + 1} ---`;
+      }).join(`\n\n${CONTEXT_SEPARATOR}\n\n`); // Separiamo i blocchi con il nostro separatore standard
 
-      return finalContextChunks.map(chunk => chunk.content || '').filter(Boolean).join(CONTEXT_SEPARATOR);
+      const finalContext = `Ecco i documenti di contesto più pertinenti che ho trovato. Usali per costruire la tua risposta:\n\n${structuredContext}`;
+      
+      // ========================================================================
+      // ==                    FINE MODIFICA STRATEGICA                      ==
+      // ========================================================================
+
+      debugLog.steps.selection = {
+          strategy: 'reranking_score',
+          finalChunks: finalContextChunks,
+          finalContext, // Ora logghiamo il contesto strutturato
+      };
+
+      console.log(`[RAG] Fase 3: Selezionati i ${finalContextChunks.length} chunk migliori e costruito contesto strutturato.`);
+
+      if (options.debug) {
+        return debugLog;
+      }
+
+      return finalContext;
 
     } catch (error) {
       console.error('❌ [RAG] Errore grave in retrieveRelevantContext:', error);
-      return '';
+      debugLog.error = error.message;
+      return options.debug ? debugLog : '';
     }
   }
 }
