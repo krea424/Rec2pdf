@@ -1,6 +1,20 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [12.0.0] - 2025-11-15
+
+### Added
+- **Fallback Dinamico a OpenAI**: Implementata una logica di fallback automatico da Gemini a OpenAI in caso di fallimento della chiamata, garantendo maggiore resilienza e affidabilità del servizio.
+- **Ambiente di Sviluppo Dockerizzato**: Configurato un ambiente di sviluppo locale basato su Docker per semplificare il setup e garantire la coerenza tra gli ambienti.
+
+### Changed
+- **Miglioramenti al RAG**: Apportate diverse migliorie alla pipeline RAG, inclusa l'aggiunta di monitoraggio per un'analisi più approfondita delle performance.
+
+### Fixed
+- **Formato di Upload .csv**: Corretto un bug che impediva il corretto upload dei file in formato .csv.
+- **Processo di Embedding**: Risolto un problema nel processo di embedding che poteva causare errori durante l'indicizzazione dei documenti.
+- **Query Transformer RAG**: Corretto un bug nel template `rag_query_transformer.hbs` per migliorare la trasformazione delle query.
+
 ## [11.0.0] - 2025-11-10
 
 ### Added
