@@ -7358,16 +7358,31 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       }
     }
 
-    const job = {
-      id: null,
+    // == REFACTORING ASYNC: Creazione job asincrono ==
+    if (!supabase) {
+      throw new Error('Supabase non configurato per la creazione del job');
+    }
+
+    const jobPayload = {
       user_id: userId,
       user_email: req.user?.email || '',
       input_file_path: audioStoragePath,
       request_payload: payload,
+      status: 'pending',
     };
 
-    const result = await runPipeline(job);
-    return res.json(result);
+    const { data: createdJob, error: jobError } = await supabase
+      .from(SUPABASE_JOBS_TABLE)
+      .insert(jobPayload)
+      .select()
+      .single();
+
+    if (jobError || !createdJob) {
+      console.error('❌ Creazione job fallita:', jobError?.message || jobError);
+      throw new Error(jobError?.message || 'Impossibile creare il job di elaborazione');
+    }
+
+    return res.status(202).json({ ok: true, jobId: createdJob.id });
   } catch (error) {
     const message = String(error && error.message ? error.message : error);
     const responsePayload = { ok: false, message };
