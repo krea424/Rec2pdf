@@ -32,6 +32,10 @@ const {
   sanitizeProviderInput: sanitizeAiProviderInput,
 } = require('./services/aiProviders');
 
+// == REFACTORING ASYNC: Costanti job/worker ==
+const SUPABASE_JOBS_TABLE = 'jobs';
+const WORKER_SECRET = process.env.WORKER_SECRET;
+
 const app = express();
 const PORT = process.env.PORT || 8080;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -6351,7 +6355,8 @@ app.get('/api/diag', async (req, res) => {
   res.json({ ok, logs });
 });
 
-app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
+// == REFACTORING ASYNC: runPipeline (estrazione logica) ==
+const runPipeline = async (job = {}) => {
   const logs = [];
   const stageEvents = [];
   let lastStageKey = null;
@@ -6364,8 +6369,8 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
   let refinedDataPayload = null;
   const tempFiles = new Set();
   const tempDirs = new Set();
-    let speakerLabels = [];
-    let diarizedTranscriptEntries = [];
+  let speakerLabels = [];
+  let diarizedTranscriptEntries = [];
   let retrievedWorkspaceContext = '';
 
   const logStageEvent = (stage, status = 'info', message = '') => {
@@ -6381,48 +6386,80 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     }
   };
 
-  const out = (s, stage, status) => {
-    logs.push(s);
+  const out = (message, stage, status) => {
+    logs.push(message);
     if (stage) {
-      logStageEvent(stage, status || 'info', s);
+      logStageEvent(stage, status || 'info', message);
     }
   };
 
-  let finalMdPath = '';
-  let finalPdfPath = '';
+  const registerTempDir = (dir) => {
+    if (dir) tempDirs.add(dir);
+    return dir;
+  };
+
+  const registerTempFile = (file) => {
+    if (file) tempFiles.add(file);
+    return file;
+  };
+
+  const payload = isPlainObject(job.request_payload) ? job.request_payload : {};
+  const userId = typeof job.user_id === 'string' && job.user_id.trim() ? job.user_id.trim() : 'anonymous';
+  const userEmail = typeof job.user_email === 'string' ? job.user_email.trim() : String(payload.userEmail || '').trim();
+  const audioStoragePath = typeof job.input_file_path === 'string' ? job.input_file_path.trim() : '';
+
+  if (!audioStoragePath) {
+    throw new Error('Percorso file audio mancante nel job');
+  }
+
+  const aiOverrides = {
+    text: sanitizeAiProviderInput(
+      payload.aiTextProvider || payload.textProvider || payload.aiOverrides?.text || payload.requestedTextProvider
+    ),
+    embedding: sanitizeAiProviderInput(
+      payload.aiEmbeddingProvider || payload.embeddingProvider || payload.aiOverrides?.embedding
+    ),
+  };
+
+  const updateJobStatus = async (statusPayload) => {
+    if (!supabase || !job.id) {
+      return;
+    }
+    try {
+      await supabase.from(SUPABASE_JOBS_TABLE).update(statusPayload).eq('id', job.id);
+    } catch (statusError) {
+      logs.push(`⚠️ Aggiornamento stato job fallito: ${statusError.message || statusError}`);
+    }
+  };
+
+  const throwWithStage = (stage, message) => {
+    logStageEvent(stage, 'failed', message);
+    throw new Error(message);
+  };
 
   try {
-    if (!req.files || !req.files.audio) {
-      logStageEvent('upload', 'failed', 'Nessun file audio');
-      return res.status(400).json({ ok: false, message: 'Nessun file audio', logs, stageEvents });
-    }
+    await updateJobStatus({ status: 'processing', processing_started_at: new Date().toISOString() });
 
-    let slugInput = String(req.body?.slug || '').trim();
-    const aiOverrides = extractAiProviderOverrides(req);
-    res.locals.aiProviderOverrides = aiOverrides;
-    const workspaceId = getWorkspaceIdFromRequest(req);
-    const workspaceProjectId = String(req.body?.workspaceProjectId || '').trim();
-    const workspaceProjectName = String(
-      req.body?.workspaceProjectName || req.body?.workspaceProject || ''
-    ).trim();
-    const workspaceStatus = String(req.body?.workspaceStatus || '').trim();
-    const workspaceProfileId = String(req.body?.workspaceProfileId || '').trim();
-    const workspaceProfileTemplate = String(req.body?.workspaceProfileTemplate || '').trim();
-    const workspaceProfileLabel = String(req.body?.workspaceProfileLabel || '').trim();
-    const workspaceProfileLogoPath = String(req.body?.workspaceProfileLogoPath || '').trim();
-    const workspaceProfileLogoLabel = String(req.body?.workspaceProfileLogoLabel || '').trim();
-    const workspaceProfileLogoDownloadUrl = String(
-      req.body?.workspaceProfileLogoDownloadUrl || ''
-    ).trim();
-    promptFocus = String(req.body?.promptFocus || '').trim();
-    promptNotes = String(req.body?.promptNotes || '').trim();
-    promptCuesCompleted = [];
-    if (req.body?.promptCuesCompleted) {
+    let slugInput = String(payload.slug || '').trim();
+    const workspaceId = String(payload.workspaceId || '').trim();
+    const workspaceProjectId = String(payload.workspaceProjectId || '').trim();
+    const workspaceProjectName = String(payload.workspaceProjectName || payload.workspaceProject || '').trim();
+    const workspaceStatus = String(payload.workspaceStatus || '').trim();
+    const workspaceProfileId = String(payload.workspaceProfileId || '').trim();
+    const workspaceProfileTemplate = String(payload.workspaceProfileTemplate || '').trim();
+    const workspaceProfileLabel = String(payload.workspaceProfileLabel || '').trim();
+    const workspaceProfileLogoPath = String(payload.workspaceProfileLogoPath || '').trim();
+    const workspaceProfileLogoLabel = String(payload.workspaceProfileLogoLabel || '').trim();
+    const workspaceProfileLogoDownloadUrl = String(payload.workspaceProfileLogoDownloadUrl || '').trim();
+    promptFocus = String(payload.promptFocus || '').trim();
+    promptNotes = String(payload.promptNotes || '').trim();
+
+    if (payload.promptCuesCompleted) {
       try {
         const parsed =
-          typeof req.body.promptCuesCompleted === 'string'
-            ? JSON.parse(req.body.promptCuesCompleted)
-            : req.body.promptCuesCompleted;
+          typeof payload.promptCuesCompleted === 'string'
+            ? JSON.parse(payload.promptCuesCompleted)
+            : payload.promptCuesCompleted;
         if (Array.isArray(parsed)) {
           promptCuesCompleted = parsed.map((item) => String(item || '').trim()).filter(Boolean);
         }
@@ -6431,7 +6468,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       }
     }
 
-    const refinedExtraction = extractRefinedDataFromBody(req.body);
+    const refinedExtraction = extractRefinedDataFromBody(payload || {});
     if (refinedExtraction.found) {
       if (refinedExtraction.error) {
         out(`⚠️ ${refinedExtraction.error}`, 'upload', 'warning');
@@ -6462,15 +6499,17 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       refinedDataPayload = mergedRefined;
     }
 
-    const diarizeRaw = typeof req.body?.diarize === 'string' ? req.body.diarize : '';
     const diarizeEnabled = (() => {
-      if (typeof req.body?.diarize === 'boolean') return req.body.diarize;
+      if (typeof payload.diarizeEnabled === 'boolean') return payload.diarizeEnabled;
+      if (typeof payload.diarize === 'boolean') return payload.diarize;
+      const diarizeRaw = typeof payload.diarize === 'string' ? payload.diarize : typeof payload.diarizeEnabled === 'string' ? payload.diarizeEnabled : '';
       if (typeof diarizeRaw === 'string' && diarizeRaw) {
         const normalized = diarizeRaw.trim().toLowerCase();
         return ['true', '1', 'yes', 'on'].includes(normalized);
       }
       return false;
     })();
+
     out(
       diarizeEnabled
         ? '🗣️ Modalità riunione con diarizzazione WhisperX attivata.'
@@ -6479,7 +6518,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       'info'
     );
 
-    let promptId = String(req.body?.promptId || '').trim();
+    let promptId = String(payload.promptId || '').trim();
     if (promptId) {
       const prompts = await listPrompts();
       selectedPrompt = findPromptById(prompts, promptId);
@@ -6504,8 +6543,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     let workspaceProfile = null;
     if (workspaceId && supabase) {
       try {
-        const ownerId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
-        const foundWorkspace = await getWorkspaceFromDb(workspaceId, ownerId ? { ownerId } : {});
+        const foundWorkspace = await getWorkspaceFromDb(workspaceId, userId ? { ownerId: userId } : {});
         if (!foundWorkspace) {
           out(`⚠️ Workspace ${workspaceId} non trovato`, 'upload', 'info');
         } else {
@@ -6626,150 +6664,48 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       promptId = String(workspaceProfile.promptId || '').trim();
     }
 
-    try {
-      const manualDestInput = req.body?.dest;
-      const projectDestCandidate =
-        (workspaceProject && workspaceProject.destDir) ||
-        sanitizeDestDirInput(req.body?.workspaceProjectDestDir || req.body?.projectDestDir || '');
-      const workspaceDestCandidate =
-        (workspaceMeta && workspaceMeta.destDir) ||
-        sanitizeDestDirInput(req.body?.workspaceDestDir || req.body?.workspaceDestination || '');
-      const destSource = manualDestInput || projectDestCandidate || workspaceDestCandidate || '';
-      const destOrigin = manualDestInput
-        ? 'manuale'
-        : projectDestCandidate
-          ? 'progetto'
-          : workspaceDestCandidate
-            ? 'workspace'
-            : 'predefinita';
-      const destConfig = await resolveDestinationDirectory(destSource);
-      destDir = destConfig.dir;
-      if (destOrigin === 'predefinita') {
-        out(`📁 Cartella destinazione predefinita: ${destDir}`, 'upload', 'info');
-      } else {
-        const originLabel =
-          destOrigin === 'manuale'
-            ? 'manuale'
-            : destOrigin === 'progetto'
-              ? 'progetto'
-              : 'workspace';
-        out(`📁 Cartella destinazione (${originLabel}): ${destDir}`, 'upload', 'info');
+    const resolveDestination = async () => {
+      try {
+        const manualDestInput = payload.dest;
+        const projectDestCandidate =
+          (workspaceProject && workspaceProject.destDir) ||
+          sanitizeDestDirInput(payload.workspaceProjectDestDir || payload.projectDestDir || '');
+        const workspaceDestCandidate =
+          (workspaceMeta && workspaceMeta.destDir) ||
+          sanitizeDestDirInput(payload.workspaceDestDir || payload.workspaceDestination || '');
+        const destSource = manualDestInput || projectDestCandidate || workspaceDestCandidate || '';
+        const destOrigin = manualDestInput
+          ? 'manuale'
+          : projectDestCandidate
+            ? 'progetto'
+            : workspaceDestCandidate
+              ? 'workspace'
+              : 'predefinita';
+        const destConfig = await resolveDestinationDirectory(destSource);
+        destDir = destConfig.dir;
+        if (destOrigin === 'predefinita') {
+          out(`📁 Cartella destinazione predefinita: ${destDir}`, 'upload', 'info');
+        } else {
+          const originLabel = destOrigin === 'manuale' ? 'manuale' : destOrigin === 'progetto' ? 'progetto' : 'workspace';
+          out(`📁 Cartella destinazione (${originLabel}): ${destDir}`, 'upload', 'info');
+        }
+      } catch (destError) {
+        const reason = destError?.reason || destError?.message || 'Cartella destinazione non scrivibile';
+        out(`❌ Cartella destinazione non utilizzabile: ${reason}`, 'upload', 'failed');
+        throwWithStage('upload', `Cartella destinazione non scrivibile: ${reason}`);
       }
-    } catch (destError) {
-      const reason = destError?.reason || destError?.message || 'Cartella destinazione non scrivibile';
-      out(`❌ Cartella destinazione non utilizzabile: ${reason}`, 'upload', 'failed');
-      logStageEvent('upload', 'failed', reason);
-      return res
-        .status(Number(destError?.statusCode) || 400)
-        .json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`, logs, stageEvents });
-    }
+    };
 
-    const userId = req.user?.id || 'anonymous';
-    const registerTempDir = (dir) => {
-      if (dir) tempDirs.add(dir);
-      return dir;
-    };
-    const registerTempFile = (file) => {
-      if (file) tempFiles.add(file);
-      return file;
-    };
+    await resolveDestination();
 
     const pipelineDir = registerTempDir(await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf_pipeline_')));
 
-    const audioFile = req.files.audio[0];
-    const originalAudioName = audioFile.originalname || 'audio';
-    const sanitizedOriginalName = sanitizeStorageFileName(originalAudioName, 'audio');
-    const audioTimestamp = Date.now();
-    const audioStoragePath = `uploads/${userId}/${audioTimestamp}_${sanitizedOriginalName}`;
-
-    out('🚀 Preparazione upload…', 'upload', 'running');
-    const audioBuffer = await fsp.readFile(audioFile.path);
-    await uploadFileToBucket(
-      SUPABASE_AUDIO_BUCKET,
-      audioStoragePath,
-      audioBuffer,
-      audioFile.mimetype || 'application/octet-stream'
-    );
-    out(`📦 Upload ricevuto: ${path.basename(originalAudioName)}`, 'upload', 'completed');
-    out('☁️ File caricato su Supabase Storage', 'upload', 'info');
+    const originalAudioName = String(payload.originalAudioName || path.basename(audioStoragePath) || 'audio').trim() || 'audio';
+    const sanitizedOriginalName = sanitizeStorageFileName(payload.sanitizedAudioName || originalAudioName, 'audio');
 
     const slug = sanitizeSlug(slugInput || 'meeting', 'meeting');
 
-    try {
-      const manualDestInput = req.body?.dest;
-      const projectDestCandidate =
-        (workspaceProject && workspaceProject.destDir) ||
-        sanitizeDestDirInput(req.body?.workspaceProjectDestDir || req.body?.projectDestDir || '');
-      const workspaceDestCandidate =
-        (workspaceMeta && workspaceMeta.destDir) ||
-        sanitizeDestDirInput(req.body?.workspaceDestDir || req.body?.workspaceDestination || '');
-      const destSource = manualDestInput || projectDestCandidate || workspaceDestCandidate || '';
-      const destOrigin = manualDestInput
-        ? 'manuale'
-        : projectDestCandidate
-          ? 'progetto'
-          : workspaceDestCandidate
-            ? 'workspace'
-            : 'predefinita';
-      const destConfig = await resolveDestinationDirectory(destSource);
-      destDir = destConfig.dir;
-      if (destOrigin === 'predefinita') {
-        out(`📁 Cartella destinazione predefinita: ${destDir}`, 'upload', 'info');
-      } else {
-        const originLabel =
-          destOrigin === 'manuale'
-            ? 'manuale'
-            : destOrigin === 'progetto'
-              ? 'progetto'
-              : 'workspace';
-        out(`📁 Cartella destinazione (${originLabel}): ${destDir}`, 'upload', 'info');
-      }
-    } catch (destError) {
-      const reason = destError?.reason || destError?.message || 'Cartella non scrivibile';
-      out(`❌ Cartella non scrivibile: ${reason}`, 'upload', 'failed');
-      logStageEvent('upload', 'failed', reason);
-      return res
-        .status(Number(destError?.statusCode) || 400)
-        .json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`, logs, stageEvents });
-    }
-
-    try {
-      const manualDestInput = req.body?.dest;
-      const projectDestCandidate =
-        (workspaceProject && workspaceProject.destDir) ||
-        sanitizeDestDirInput(req.body?.workspaceProjectDestDir || req.body?.projectDestDir || '');
-      const workspaceDestCandidate =
-        (workspaceMeta && workspaceMeta.destDir) ||
-        sanitizeDestDirInput(req.body?.workspaceDestDir || req.body?.workspaceDestination || '');
-      const destSource = manualDestInput || projectDestCandidate || workspaceDestCandidate || '';
-      const destOrigin = manualDestInput
-        ? 'manuale'
-        : projectDestCandidate
-          ? 'progetto'
-          : workspaceDestCandidate
-            ? 'workspace'
-            : 'predefinita';
-      const destConfig = await resolveDestinationDirectory(destSource);
-      destDir = destConfig.dir;
-      if (destOrigin === 'predefinita') {
-        out(`📁 Cartella destinazione predefinita: ${destDir}`, 'upload', 'info');
-      } else {
-        const originLabel =
-          destOrigin === 'manuale'
-            ? 'manuale'
-            : destOrigin === 'progetto'
-              ? 'progetto'
-              : 'workspace';
-        out(`📁 Cartella destinazione (${originLabel}): ${destDir}`, 'upload', 'info');
-      }
-    } catch (destError) {
-      const reason = destError?.reason || destError?.message || 'Cartella non scrivibile';
-      out(`❌ Cartella non scrivibile: ${reason}`, 'upload', 'failed');
-      logStageEvent('upload', 'failed', reason);
-      return res
-        .status(Number(destError?.statusCode) || 400)
-        .json({ ok: false, message: `Cartella destinazione non scrivibile: ${reason}`, logs, stageEvents });
-    }
+    await resolveDestination();
 
     const baseName = workspaceMeta
       ? await buildWorkspaceBaseName(workspaceMeta, destDir, slug)
@@ -6876,7 +6812,6 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
         }
         transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, candidates[0]));
       } else {
-        // NUOVA VERSIONE
         const whisperxCmd = [
           'whisperx',
           JSON.stringify(wavLocalForTranscribe),
@@ -6887,9 +6822,7 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
           '--output_format txt',
           `--output_dir ${JSON.stringify(transcribeOutputDir)}`
         ].join(' ');
-        
-
-const w = await run('bash', ['-lc', whisperxCmd]);
+        const w = await run('bash', ['-lc', whisperxCmd]);
         if (w.code !== 0) {
           out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
           throw new Error('Trascrizione fallita');
@@ -6921,64 +6854,53 @@ const w = await run('bash', ['-lc', whisperxCmd]);
       await safeUnlink(transcriptLocalPath);
     }
 
-        // BLOCCO CORRETTO E OTTIMIZZATO
-const manualTemplateSelection = workspaceProfileTemplate; // La selezione dal pannello Advanced
-const profileTemplateSetting = workspaceProfile?.pdfTemplate; // Il template salvato nel profilo (se esiste)
+    const manualTemplateSelection = workspaceProfileTemplate;
+    const profileTemplateSetting = workspaceProfile?.pdfTemplate;
 
-let activeTemplateDescriptor = null;
-let activeTemplateIsFallback = false;
+    let activeTemplateDescriptor = null;
+    let activeTemplateIsFallback = false;
 
-// 1. Priorità massima: la selezione manuale dell'utente dal pannello Advanced.
-if (manualTemplateSelection) {
-  if (isPandocFallbackTemplate(manualTemplateSelection)) {
-    out('📄 Template manuale selezionato: fallback Pandoc semplice', 'publish', 'info');
-    activeTemplateIsFallback = true;
-  } else {
-    try {
-      activeTemplateDescriptor = await resolveTemplateDescriptor(manualTemplateSelection);
-      out(`📄 Template manuale applicato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
-    } catch (templateError) {
-      const reason = templateError instanceof TemplateResolutionError ? templateError.userMessage : templateError?.message || templateError;
-      out(`⚠️ Template manuale non accessibile (${manualTemplateSelection}): ${reason}`, 'publish', 'warning');
+    if (manualTemplateSelection) {
+      if (isPandocFallbackTemplate(manualTemplateSelection)) {
+        out('📄 Template manuale selezionato: fallback Pandoc semplice', 'publish', 'info');
+        activeTemplateIsFallback = true;
+      } else {
+        try {
+          activeTemplateDescriptor = await resolveTemplateDescriptor(manualTemplateSelection);
+          out(`📄 Template manuale applicato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+        } catch (templateError) {
+          const reason =
+            templateError instanceof TemplateResolutionError
+              ? templateError.userMessage
+              : templateError?.message || templateError;
+          out(`⚠️ Template manuale non accessibile (${manualTemplateSelection}): ${reason}`, 'publish', 'warning');
+        }
+      }
     }
-  }
-}
 
-// 2. Se non c'è selezione manuale, usa il template del profilo (se esiste).
-if (!activeTemplateDescriptor && !activeTemplateIsFallback && profileTemplateSetting) {
-    if (isPandocFallbackTemplate(profileTemplateSetting)) {
+    if (!activeTemplateDescriptor && !activeTemplateIsFallback && profileTemplateSetting) {
+      if (isPandocFallbackTemplate(profileTemplateSetting)) {
         out('📄 Template del profilo: fallback Pandoc semplice', 'publish', 'info');
         activeTemplateIsFallback = true;
-    } else {
+      } else {
         try {
-            activeTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateSetting);
-            out(`📄 Template del profilo applicato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+          activeTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateSetting);
+          out(`📄 Template del profilo applicato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
         } catch (templateError) {
-            const reason = templateError instanceof TemplateResolutionError ? templateError.userMessage : templateError?.message || templateError;
-            out(`⚠️ Template del profilo non accessibile (${profileTemplateSetting}): ${reason}`, 'publish', 'warning');
+          const reason =
+            templateError instanceof TemplateResolutionError
+              ? templateError.userMessage
+              : templateError?.message || templateError;
+          out(`⚠️ Template del profilo non accessibile (${profileTemplateSetting}): ${reason}`, 'publish', 'warning');
         }
+      }
     }
-}
 
-// 3. Se ancora nessun template, usa quello definito nel prompt (se esiste).
-if (!activeTemplateDescriptor && !activeTemplateIsFallback && selectedPrompt) {
-  activeTemplateDescriptor = await resolvePromptTemplateDescriptor(selectedPrompt, { logger: out });
-}
+    if (!activeTemplateDescriptor && !activeTemplateIsFallback && selectedPrompt) {
+      activeTemplateDescriptor = await resolvePromptTemplateDescriptor(selectedPrompt, { logger: out });
+    }
 
-// 4. Se ancora nulla e la diarizzazione è attiva, usa il fallback per i verbali.
-if (!activeTemplateDescriptor && !activeTemplateIsFallback && diarizeEnabled) {
-  try {
-    activeTemplateDescriptor = await resolveTemplateDescriptor('verbale_meeting.html');
-    out(`📄 Template diarizzazione fallback: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
-  } catch (templateError) {
-    // ... log errore
-  }
-}
-
-// Alla fine, la variabile `forcePandocFallback` deve riflettere la scelta.
-const forcePandocFallback = activeTemplateIsFallback;
-
-    if (!activeTemplateDescriptor && diarizeEnabled && !profileSelectedFallback) {
+    if (!activeTemplateDescriptor && !activeTemplateIsFallback && diarizeEnabled) {
       try {
         activeTemplateDescriptor = await resolveTemplateDescriptor('verbale_meeting.html');
         out(`📄 Template diarizzazione fallback: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
@@ -6990,6 +6912,8 @@ const forcePandocFallback = activeTemplateIsFallback;
         out(`⚠️ Template fallback diarizzazione non accessibile: ${reason}`, 'publish', 'warning');
       }
     }
+
+    const forcePandocFallback = activeTemplateIsFallback;
 
     out('📝 Generazione Markdown…', 'markdown', 'running');
     let transcriptLocalForMarkdown = '';
@@ -7041,47 +6965,34 @@ const forcePandocFallback = activeTemplateIsFallback;
         transcriptTextForQuery = transcriptBuffer.toString('utf8');
       }
 
-      
-      
       mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
 
-      // ==========================================================
-// ==            SNIPPET CORRETTO E AGGIORNATO             ==
-// ==========================================================
-const {
-  title: aiTitle,
-  summary: aiSummary,
-  author: aiAuthor,
-  content: markdownBody,
-  modelName: aiModel,
-} = await generateMarkdown(
-  transcriptLocalForMarkdown,
-  promptRulePayload,
-  // Il terzo argomento (knowledgeContext) non serve più, passiamo direttamente all'oggetto opzioni.
-  {
-    // Passiamo gli ID per permettere a generateMarkdown di eseguire il RAG
-    workspaceId: workspaceId,
-    projectId: workspaceProjectId,
+      const {
+        title: aiTitle,
+        summary: aiSummary,
+        author: aiAuthor,
+        content: markdownBody,
+        modelName: aiModel,
+      } = await generateMarkdown(
+        transcriptLocalForMarkdown,
+        promptRulePayload,
+        {
+          workspaceId,
+          projectId: workspaceProjectId,
+          textProvider: aiOverrides.text,
+          embeddingProvider: aiOverrides.embedding,
+          refinedData: refinedDataPayload,
+          focus: promptFocus,
+          notes: promptNotes,
+        }
+      );
 
-    // Passiamo le altre opzioni come prima
-    textProvider: aiOverrides.text,
-    embeddingProvider: aiOverrides.embedding, // Aggiungiamo anche questo per completezza
-    refinedData: refinedDataPayload,
-    focus: promptFocus,
-    notes: promptNotes,
-  }
-);
-// ==========================================================
-// ==                       FINE SNIPPET                   ==
-// ==========================================================
-
-      // Costruisci i metadati in un oggetto JS
       const now = new Date();
-      const localTimestamp = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, -1);
+      const localTimestamp = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, -1);
 
       const frontMatter = {
-        title: aiTitle || String(req.body?.title || baseName).trim(),
-        author: aiAuthor || req.user?.email || 'rec2pdf',
+        title: aiTitle || String(payload.title || baseName).trim(),
+        author: aiAuthor || userEmail || 'rec2pdf',
         owner: workspaceProject?.name || workspaceMeta?.client || '',
         project_name: workspaceProject?.name || workspaceProjectName || '',
         project_code: workspaceMeta?.slug || workspaceId || '',
@@ -7089,7 +7000,7 @@ const {
         version: 'v1_0_0',
         identifier: baseName,
         location: destDir,
-        summary: aiSummary || String(req.body?.summary || '').trim(),
+        summary: aiSummary || String(payload.summary || '').trim(),
         usageterms: '',
         ssot: false,
         status: workspaceStatus || '',
@@ -7103,7 +7014,6 @@ const {
         },
       };
 
-      // Aggiungi variabili specifiche per i template LaTeX
       frontMatter.BLDTitle = frontMatter.title;
       frontMatter.BLDVersion = frontMatter.version;
       frontMatter.BLDUpdated = now.toLocaleDateString('it-IT', { year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -7155,7 +7065,6 @@ const {
         frontMatter.refined = refinedDataPayload;
       }
 
-      // Rimuovi chiavi vuote per un YAML pulito
       Object.keys(frontMatter).forEach((key) => {
         const value = frontMatter[key];
         if (value === '' || value === null || (Array.isArray(value) && value.length === 0)) {
@@ -7163,20 +7072,11 @@ const {
         }
       });
 
-      // Genera il blocco YAML in modo sicuro
       const yamlFrontMatter = yaml.dump(frontMatter);
-
-      // Pulisci il corpo del Markdown rimuovendo front matter, recinzioni spurie e sequenze letterali
       const cleanedMarkdownBody = normalizeAiMarkdownBody(markdownBody);
-
-      // Unisci front-matter e corpo e scrivi il file finale
       const finalMarkdownContent = `---\n${yamlFrontMatter}---\n\n${cleanedMarkdownBody}`;
       await fsp.writeFile(mdLocalPath, finalMarkdownContent, 'utf8');
 
-      if (!fs.existsSync(mdLocalPath)) {
-        throw new Error(`Markdown non trovato: ${mdLocalPath}`);
-      }
-      
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,
         mdStoragePath,
@@ -7190,11 +7090,24 @@ const {
     }
 
     out('📄 Pubblicazione PDF con publish.sh…', 'publish', 'running');
-    let customLogoPath = null;
-    if (req.files.pdfLogo) {
-      customLogoPath = await ensureTempFileHasExtension(req.files.pdfLogo[0]);
-      if (customLogoPath) {
-        out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
+    let customLogoPath = '';
+
+    const customLogoDescriptor = isPlainObject(payload.customLogo) ? payload.customLogo : null;
+    const customLogoBucket = customLogoDescriptor?.bucket || payload.customLogoBucket || SUPABASE_LOGO_BUCKET;
+    const customLogoObjectPath =
+      customLogoDescriptor?.path || payload.customLogoPath || payload.pdfLogoStoragePath || payload.customLogoObjectPath || '';
+
+    if (customLogoObjectPath) {
+      try {
+        const logoBuffer = await downloadFileFromBucket(customLogoBucket, customLogoObjectPath);
+        const logoExt = path.extname(customLogoObjectPath) || '.png';
+        const safeName = sanitizeStorageFileName(path.basename(customLogoObjectPath) || `logo${logoExt}`, `logo${logoExt}`);
+        customLogoPath = registerTempFile(path.join(pipelineDir, safeName));
+        await fsp.writeFile(customLogoPath, logoBuffer);
+        out('🎨 Logo personalizzato recuperato dallo storage', 'publish', 'info');
+      } catch (logoError) {
+        out(`⚠️ Recupero logo personalizzato fallito: ${logoError?.message || logoError}`, 'publish', 'warning');
+        customLogoPath = '';
       }
     }
 
@@ -7235,6 +7148,8 @@ const {
 
     let mdLocalForPublish = '';
     let pdfLocalPath = '';
+    let finalMdPath = '';
+    let finalPdfPath = '';
     try {
       const mdBufferForPublish = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, mdStoragePath);
       mdLocalForPublish = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
@@ -7300,7 +7215,8 @@ const {
       notes: promptNotes,
       completedCues: promptCuesCompleted,
     });
-    return res.json({
+
+    const result = {
       ok: true,
       pdfPath: `${SUPABASE_PROCESSED_BUCKET}/${pdfStoragePath}`,
       mdPath: `${SUPABASE_PROCESSED_BUCKET}/${mdStoragePath}`,
@@ -7313,23 +7229,43 @@ const {
       structure,
       speakers: speakerLabels,
       refinedData: refinedDataPayload,
+    };
+
+    await updateJobStatus({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      output_pdf_path: pdfStoragePath,
+      output_md_path: mdStoragePath,
+      worker_log: logs.join('\n'),
     });
-  } catch (err) {
-    const message = String(err && err.message ? err.message : err);
+
+    return result;
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error);
     const failureStage = lastStageKey || 'complete';
-    const hasFailureEvent = stageEvents.some(evt => evt.stage === failureStage && evt.status === 'failed');
+    const hasFailureEvent = stageEvents.some((evt) => evt.stage === failureStage && evt.status === 'failed');
     if (!hasFailureEvent) {
       logStageEvent(failureStage, 'failed', message);
     }
-    if (!stageEvents.some(evt => evt.stage === 'complete')) {
+    if (!stageEvents.some((evt) => evt.stage === 'complete')) {
       logStageEvent('complete', 'failed', 'Pipeline interrotta');
     }
-    out('❌ Errore durante la pipeline');
+    out('❌ Errore durante la pipeline', 'complete', 'failed');
     out(message);
-    return res.status(500).json({ ok: false, message, logs, stageEvents });
+
+    const pipelineError = error instanceof Error ? error : new Error(message);
+    pipelineError.logs = logs;
+    pipelineError.stageEvents = stageEvents;
+
+    await updateJobStatus({
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      error_message: message,
+      worker_log: logs.join('\n'),
+    });
+
+    throw pipelineError;
   } finally {
-    try { if (req.files && req.files.audio) await safeUnlink(req.files.audio[0].path); } catch { }
-    try { if (req.files && req.files.pdfLogo) await safeUnlink(req.files.pdfLogo[0].path); } catch { }
     for (const filePath of tempFiles) {
       await safeUnlink(filePath);
     }
@@ -7337,7 +7273,126 @@ const {
       await safeRemoveDir(dirPath);
     }
   }
+};
+
+
+
+app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
+  const cleanupFiles = new Set();
+
+  try {
+    if (!req.files || !req.files.audio) {
+      return res.status(400).json({ ok: false, message: 'Nessun file audio', logs: [], stageEvents: [] });
+    }
+
+    const audioFile = req.files.audio[0];
+    const userId = req.user?.id || 'anonymous';
+    const audioBuffer = await fsp.readFile(audioFile.path);
+    cleanupFiles.add(audioFile.path);
+    const sanitizedOriginalName = sanitizeStorageFileName(audioFile.originalname || 'audio', 'audio');
+    const audioStoragePath = `uploads/${userId}/${Date.now()}_${sanitizedOriginalName}`;
+
+    await uploadFileToBucket(
+      SUPABASE_AUDIO_BUCKET,
+      audioStoragePath,
+      audioBuffer,
+      audioFile.mimetype || 'application/octet-stream'
+    );
+
+    const bodyPayload = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+    const workspaceId = getWorkspaceIdFromRequest(req);
+    const aiOverrides = extractAiProviderOverrides(req);
+
+    const payload = {
+      ...bodyPayload,
+      slug: String(bodyPayload.slug || '').trim(),
+      workspaceId,
+      workspaceProjectId: String(bodyPayload.workspaceProjectId || '').trim(),
+      workspaceProjectName: String(bodyPayload.workspaceProjectName || bodyPayload.workspaceProject || '').trim(),
+      workspaceStatus: String(bodyPayload.workspaceStatus || '').trim(),
+      workspaceProfileId: String(bodyPayload.workspaceProfileId || '').trim(),
+      workspaceProfileTemplate: String(bodyPayload.workspaceProfileTemplate || '').trim(),
+      workspaceProfileLabel: String(bodyPayload.workspaceProfileLabel || '').trim(),
+      workspaceProfileLogoPath: String(bodyPayload.workspaceProfileLogoPath || '').trim(),
+      workspaceProfileLogoLabel: String(bodyPayload.workspaceProfileLogoLabel || '').trim(),
+      workspaceProfileLogoDownloadUrl: String(bodyPayload.workspaceProfileLogoDownloadUrl || '').trim(),
+      promptFocus: String(bodyPayload.promptFocus || '').trim(),
+      promptNotes: String(bodyPayload.promptNotes || '').trim(),
+      promptId: String(bodyPayload.promptId || '').trim(),
+      dest: bodyPayload.dest,
+      workspaceProjectDestDir: bodyPayload.workspaceProjectDestDir,
+      projectDestDir: bodyPayload.projectDestDir,
+      workspaceDestDir: bodyPayload.workspaceDestDir,
+      workspaceDestination: bodyPayload.workspaceDestination,
+      title: bodyPayload.title,
+      summary: bodyPayload.summary,
+      aiTextProvider: aiOverrides.text,
+      aiEmbeddingProvider: aiOverrides.embedding,
+      originalAudioName: audioFile.originalname || 'audio',
+      sanitizedAudioName: sanitizedOriginalName,
+    };
+
+    if (typeof req.user?.email === 'string') {
+      payload.userEmail = req.user.email;
+    }
+
+    if (req.files && req.files.pdfLogo && req.files.pdfLogo.length) {
+      const logoFile = req.files.pdfLogo[0];
+      const ensuredPath = await ensureTempFileHasExtension(logoFile);
+      if (ensuredPath) {
+        cleanupFiles.add(ensuredPath);
+        if (supabase) {
+          try {
+            const uploadResult = await uploadProfileLogoToSupabase(ensuredPath, {
+              workspaceId: workspaceId || 'job',
+              profileId: payload.workspaceProfileId || payload.slug || 'profile',
+              fileName: logoFile.originalname || 'logo.pdf',
+              contentType: logoFile.mimetype || guessLogoContentType(logoFile.originalname || 'logo.pdf'),
+            });
+            payload.pdfLogoStoragePath = uploadResult.storagePath;
+            payload.customLogoBucket = SUPABASE_LOGO_BUCKET;
+          } catch (logoError) {
+            console.error('⚠️ Upload logo personalizzato fallito:', logoError?.message || logoError);
+          }
+        }
+      }
+    }
+
+    const job = {
+      id: null,
+      user_id: userId,
+      user_email: req.user?.email || '',
+      input_file_path: audioStoragePath,
+      request_payload: payload,
+    };
+
+    const result = await runPipeline(job);
+    return res.json(result);
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error);
+    const responsePayload = { ok: false, message };
+    if (error && typeof error === 'object') {
+      if (Array.isArray(error.logs)) {
+        responsePayload.logs = error.logs;
+      }
+      if (Array.isArray(error.stageEvents)) {
+        responsePayload.stageEvents = error.stageEvents;
+      }
+    }
+    return res.status(500).json(responsePayload);
+  } finally {
+    try { if (req.files && req.files.audio) await safeUnlink(req.files.audio[0].path); } catch { }
+    try { if (req.files && req.files.pdfLogo) await safeUnlink(req.files.pdfLogo[0].path); } catch { }
+    for (const filePath of cleanupFiles) {
+      try {
+        await safeUnlink(filePath);
+      } catch {
+        // ignore
+      }
+    }
+  }
 });
+
 
 app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
   const logs = [];
