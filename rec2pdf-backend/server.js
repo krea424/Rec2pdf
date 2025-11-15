@@ -6403,6 +6403,10 @@ const runPipeline = async (job = {}) => {
     return file;
   };
 
+  if (!supabase) {
+    throw new Error('Supabase non configurato: impossibile elaborare il job');
+  }
+
   const payload = isPlainObject(job.request_payload) ? job.request_payload : {};
   const userId = typeof job.user_id === 'string' && job.user_id.trim() ? job.user_id.trim() : 'anonymous';
   const userEmail = typeof job.user_email === 'string' ? job.user_email.trim() : String(payload.userEmail || '').trim();
@@ -7551,139 +7555,6 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
   }
 });
 // == REFACTORING ASYNC: fine creazione job asincrono ==
-
-
-
-app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
-  const cleanupFiles = new Set();
-
-  try {
-    if (!req.files || !req.files.audio) {
-      return res.status(400).json({ ok: false, message: 'Nessun file audio', logs: [], stageEvents: [] });
-    }
-
-    const audioFile = req.files.audio[0];
-    const userId = req.user?.id || 'anonymous';
-    const audioBuffer = await fsp.readFile(audioFile.path);
-    cleanupFiles.add(audioFile.path);
-    const sanitizedOriginalName = sanitizeStorageFileName(audioFile.originalname || 'audio', 'audio');
-    const audioStoragePath = `uploads/${userId}/${Date.now()}_${sanitizedOriginalName}`;
-
-    await uploadFileToBucket(
-      SUPABASE_AUDIO_BUCKET,
-      audioStoragePath,
-      audioBuffer,
-      audioFile.mimetype || 'application/octet-stream'
-    );
-
-    const bodyPayload = req.body && typeof req.body === 'object' ? { ...req.body } : {};
-    const workspaceId = getWorkspaceIdFromRequest(req);
-    const aiOverrides = extractAiProviderOverrides(req);
-
-    const payload = {
-      ...bodyPayload,
-      slug: String(bodyPayload.slug || '').trim(),
-      workspaceId,
-      workspaceProjectId: String(bodyPayload.workspaceProjectId || '').trim(),
-      workspaceProjectName: String(bodyPayload.workspaceProjectName || bodyPayload.workspaceProject || '').trim(),
-      workspaceStatus: String(bodyPayload.workspaceStatus || '').trim(),
-      workspaceProfileId: String(bodyPayload.workspaceProfileId || '').trim(),
-      workspaceProfileTemplate: String(bodyPayload.workspaceProfileTemplate || '').trim(),
-      workspaceProfileLabel: String(bodyPayload.workspaceProfileLabel || '').trim(),
-      workspaceProfileLogoPath: String(bodyPayload.workspaceProfileLogoPath || '').trim(),
-      workspaceProfileLogoLabel: String(bodyPayload.workspaceProfileLogoLabel || '').trim(),
-      workspaceProfileLogoDownloadUrl: String(bodyPayload.workspaceProfileLogoDownloadUrl || '').trim(),
-      promptFocus: String(bodyPayload.promptFocus || '').trim(),
-      promptNotes: String(bodyPayload.promptNotes || '').trim(),
-      promptId: String(bodyPayload.promptId || '').trim(),
-      dest: bodyPayload.dest,
-      workspaceProjectDestDir: bodyPayload.workspaceProjectDestDir,
-      projectDestDir: bodyPayload.projectDestDir,
-      workspaceDestDir: bodyPayload.workspaceDestDir,
-      workspaceDestination: bodyPayload.workspaceDestination,
-      title: bodyPayload.title,
-      summary: bodyPayload.summary,
-      aiTextProvider: aiOverrides.text,
-      aiEmbeddingProvider: aiOverrides.embedding,
-      originalAudioName: audioFile.originalname || 'audio',
-      sanitizedAudioName: sanitizedOriginalName,
-    };
-
-    if (typeof req.user?.email === 'string') {
-      payload.userEmail = req.user.email;
-    }
-
-    if (req.files && req.files.pdfLogo && req.files.pdfLogo.length) {
-      const logoFile = req.files.pdfLogo[0];
-      const ensuredPath = await ensureTempFileHasExtension(logoFile);
-      if (ensuredPath) {
-        cleanupFiles.add(ensuredPath);
-        if (supabase) {
-          try {
-            const uploadResult = await uploadProfileLogoToSupabase(ensuredPath, {
-              workspaceId: workspaceId || 'job',
-              profileId: payload.workspaceProfileId || payload.slug || 'profile',
-              fileName: logoFile.originalname || 'logo.pdf',
-              contentType: logoFile.mimetype || guessLogoContentType(logoFile.originalname || 'logo.pdf'),
-            });
-            payload.pdfLogoStoragePath = uploadResult.storagePath;
-            payload.customLogoBucket = SUPABASE_LOGO_BUCKET;
-          } catch (logoError) {
-            console.error('⚠️ Upload logo personalizzato fallito:', logoError?.message || logoError);
-          }
-        }
-      }
-    }
-
-    // == REFACTORING ASYNC: Creazione job asincrono ==
-    if (!supabase) {
-      throw new Error('Supabase non configurato per la creazione del job');
-    }
-
-    const jobPayload = {
-      user_id: userId,
-      user_email: req.user?.email || '',
-      input_file_path: audioStoragePath,
-      request_payload: payload,
-      status: 'pending',
-    };
-
-    const { data: createdJob, error: jobError } = await supabase
-      .from(SUPABASE_JOBS_TABLE)
-      .insert(jobPayload)
-      .select()
-      .single();
-
-    if (jobError || !createdJob) {
-      console.error('❌ Creazione job fallita:', jobError?.message || jobError);
-      throw new Error(jobError?.message || 'Impossibile creare il job di elaborazione');
-    }
-
-    return res.status(202).json({ ok: true, jobId: createdJob.id });
-  } catch (error) {
-    const message = String(error && error.message ? error.message : error);
-    const responsePayload = { ok: false, message };
-    if (error && typeof error === 'object') {
-      if (Array.isArray(error.logs)) {
-        responsePayload.logs = error.logs;
-      }
-      if (Array.isArray(error.stageEvents)) {
-        responsePayload.stageEvents = error.stageEvents;
-      }
-    }
-    return res.status(500).json(responsePayload);
-  } finally {
-    try { if (req.files && req.files.audio) await safeUnlink(req.files.audio[0].path); } catch { }
-    try { if (req.files && req.files.pdfLogo) await safeUnlink(req.files.pdfLogo[0].path); } catch { }
-    for (const filePath of cleanupFiles) {
-      try {
-        await safeUnlink(filePath);
-      } catch {
-        // ignore
-      }
-    }
-  }
-});
 
 
 app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
