@@ -7332,6 +7332,57 @@ app.post('/api/worker/trigger', async (req, res) => {
   }
 });
 
+// == REFACTORING ASYNC: Endpoint stato job ==
+app.get('/api/jobs/:id', authenticateRequest, async (req, res) => {
+  try {
+    if (!supabase) {
+      return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
+    }
+
+    const jobId = typeof req.params?.id === 'string' ? req.params.id.trim() : '';
+    if (!jobId) {
+      return res.status(400).json({ ok: false, message: 'Identificatore job non valido' });
+    }
+
+    const userId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+    if (!userId) {
+      return res.status(401).json({ ok: false, message: 'Utente non autenticato' });
+    }
+
+    const { data: jobRecord, error } = await supabase
+      .from(SUPABASE_JOBS_TABLE)
+      .select('id, status, error_message, output_pdf_path, output_md_path, user_id')
+      .eq('id', jobId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('❌ Recupero job fallito:', error.message || error);
+      return res.status(500).json({ ok: false, message: 'Impossibile recuperare il job' });
+    }
+
+    if (!jobRecord) {
+      return res.status(404).json({ ok: false, message: 'Job non trovato' });
+    }
+
+    const response = {
+      ok: true,
+      job: {
+        id: jobRecord.id,
+        status: jobRecord.status,
+        error_message: jobRecord.error_message || null,
+        output_pdf_path: jobRecord.output_pdf_path || null,
+        output_md_path: jobRecord.output_md_path || null,
+      },
+    };
+
+    return res.status(200).json(response);
+  } catch (error) {
+    console.error('❌ Errore durante il recupero stato job:', error?.message || error);
+    return res.status(500).json({ ok: false, message: 'Errore inatteso nel recupero del job' });
+  }
+});
+
 
 app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
   const cleanupFiles = new Set();
