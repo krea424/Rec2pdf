@@ -1,34 +1,24 @@
 # Rec2pdf
 
-Rec2pdf è una web app che trascrive registrazioni audio di meeting, le analizza con un LLM e genera verbali professionali in formato PDF.
+Rec2pdf è la soluzione pensata per knowledge worker, consulenti e project manager che necessitano di trasformare rapidamente idee e brainstorming vocali in documenti professionali. Supera il divario tra il pensiero parlato e un deliverable strutturato, analizzando l'audio con un LLM per generare report, verbali e analisi di alta qualità. Grazie a una pipeline automatizzata che opera in locale, Rec2pdf garantisce massima autonomia, sicurezza dei dati e un output editoriale curato, pronto per la condivisione.
 
 ## Novità v12.0.0
 
-L'ultima versione introduce un **fallback dinamico per i provider AI**, aumentando la resilienza del sistema. Se il provider primario fallisce, il sistema passa automaticamente a un provider secondario.
+L'ultima versione introduce maggiore robustezza e flessibilità, con l'aggiunta di un fallback dinamico a OpenAI e il supporto per l'ambiente di sviluppo Docker.
 
-- **Fallback Automatico**: Se il provider AI primario (es. Gemini) non risponde, il sistema tenta di eseguire la stessa operazione con un provider di fallback (es. OpenAI), garantendo la continuità del servizio.
-- **Configurazione Flessibile**: La catena di provider è definita tramite variabili d'ambiente (`AI_TEXT_PROVIDER`, `AI_TEXT_PROVIDER_FALLBACK`), permettendo una facile configurazione e personalizzazione.
-- **Maggiore Affidabilità**: La logica è gestita da un orchestratore centrale che esegue i provider in sequenza fino al successo, migliorando la robustezza complessiva dell'applicazione.
-
-## Architettura RAG Avanzata
-
-La nostra pipeline RAG è progettata per massimizzare la pertinenza del contesto. Invece di passare direttamente al modello il primo risultato di una ricerca vettoriale, adottiamo un approccio più sofisticato in quattro fasi:
-
-1.  **Query Transformation**: L'input grezzo dell'utente (es. una trascrizione) viene analizzato da un LLM per generare da 2 a 4 query di ricerca semantica, concise e focalizzate.
-2.  **Multi-Query Retrieval**: Eseguiamo ricerche vettoriali multiple in parallelo, una per ogni query generata, recuperando una rosa allargata di chunk candidati dalla nostra knowledge base (Supabase Vector).
-3.  **Re-ranking (LLM-as-a-Reranker)**: I chunk candidati vengono passati a un LLM che agisce da "giudice di pertinenza", valutando ogni chunk in relazione alla query originale e assegnandogli un punteggio.
-4.  **Selezione**: Infine, selezioniamo solo i chunk con il punteggio più alto per costruire un contesto denso e preciso, che viene poi fornito al modello di generazione per creare il documento finale.
-
-Questo processo a più fasi garantisce che il contesto sia estremamente focalizzato, riducendo il "rumore" e migliorando la qualità dell'output.
+- **Fallback Dinamico a OpenAI**: In caso di problemi con l'API di Gemini, il sistema passa automaticamente a OpenAI per garantire la continuità del servizio.
+- **Sviluppo con Docker**: È ora possibile eseguire l'intero stack dell'applicazione in un ambiente Docker locale, semplificando il setup per i nuovi sviluppatori.
+- **Miglioramenti RAG e Correzioni**: Sono state apportate diverse migliorie alla pipeline RAG e sono stati risolti bug relativi all'upload di file .csv e al processo di embedding.
 
 ## Features Principali
 
 - **Trascrizione Audio**: Supporto per i più comuni formati audio e trascrizione tramite **WhisperX** per un'accuratezza elevata.
 - **Identificazione Speaker**: Riconoscimento e mappatura dei diversi speaker presenti nella registrazione (diarizzazione).
-- **Generazione Contenuti con AI**: Integrazione con i principali provider AI (es. **Google Gemini**, **OpenAI**) con una logica di **fallback dinamico** per garantire alta disponibilità.
+- **Generazione Contenuti con AI**: Integrazione con **Google Gemini** con fallback dinamico a **OpenAI** per analizzare la trascrizione e generare riassunti, decisioni e azioni.
 - **Knowledge Base (RAG)**: Ogni workspace ha una sua knowledge base vettoriale che fornisce contesto aggiuntivo al LLM per generazioni più accurate e personalizzate.
 - **Template PDF**: Supporto per template multipli (LaTeX e HTML) per personalizzare l'aspetto dei documenti finali.
 - **Accesso Multi-Utente**: Architettura sicura basata su Supabase con policy di Row Level Security (RLS).
+- **Ambiente di Sviluppo Dockerizzato**: Supporto completo per lo sviluppo locale tramite Docker.
 
 ## Quickstart
 
@@ -73,7 +63,7 @@ Questo processo a più fasi garantisce che il contesto sia estremamente focalizz
   - `POST /api/text-upload`: stessa pipeline partendo da file `.txt` (senza fase di trascrizione).【F:rec2pdf-backend/server.js†L2058-L2348】
   - `POST /api/ppubr` e `POST /api/ppubr-upload`: rigenera PDF da Markdown già presente (locale o Supabase) o da upload manuale, applicando eventuali mappature speaker e scegliendo automaticamente il template più adatto.【rec2pdf-backend/server.js:3601】【rec2pdf-backend/server.js:3725】
   - `GET/POST/PUT/DELETE /api/workspaces`: CRUD dei workspace con aggiornamento automatico dello storage locale.【F:rec2pdf-backend/server.js†L1072-L1146】
-  - `POST /api/workspaces/:workspaceId/ingest`: accoda fino a 20 file alla volta (testo, PDF, audio), estrae il contenuto e genera embedding in background per la knowledge base del workspace o del progetto selezionato tramite i campi `projectId`/`workspaceProjectId`. L’upload multipart ora accetta sia il campo `files` sia il più comune `file`/`files[]`, così da funzionare out‑of‑the‑box con cURL/Postman oltre che con il frontend.【rec2pdf-backend/server.js†L3951-L4061】【rec2pdf-backend/server.js†L2877-L2972】
+  - `POST /api/workspaces/:workspaceId/ingest`: accoda fino a 20 file alla volta (testo, PDF, audio), estrae il contenuto e genera embedding in background per la knowledge base del workspace o del progetto selezionato tramite i campi `projectId`/`workspaceProjectId`.【rec2pdf-backend/server.js†L3951-L4061】【rec2pdf-backend/server.js†L2877-L2972】
   - `GET /api/workspaces/:workspaceId/knowledge`: restituisce i documenti indicizzati con chunk, dimensione, `projectId` e timestamp filtrando automaticamente tra knowledge base di workspace e di progetto.【rec2pdf-backend/server.js†L4063-L4182】
   - `GET/POST/PUT/DELETE /api/prompts`: gestione dei prompt, inclusa validazione di cue card e checklist.【F:rec2pdf-backend/server.js†L1160-L1269】
   - `GET /api/markdown` & `PUT /api/markdown`: lettura e modifica dei Markdown su Supabase con backup automatico delle versioni precedenti.【F:rec2pdf-backend/server.js†L2375-L2462】

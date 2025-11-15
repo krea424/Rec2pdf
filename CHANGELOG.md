@@ -1,15 +1,19 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [12.0.0] - 2025-11-13
+## [12.0.0] - 2025-11-15
 
 ### Added
-- **Fallback Dinamico per Provider AI**: È stata implementata una logica di fallback automatico per la generazione di testo. Se il provider AI primario (es. Gemini), configurato tramite `AI_TEXT_PROVIDER`, fallisce, il sistema tenta automaticamente di utilizzare un provider di fallback (es. OpenAI), configurato tramite `AI_TEXT_PROVIDER_FALLBACK`.
-- **Orchestrazione Centralizzata**: La nuova logica è gestita dal `AIOrchestrator`, che costruisce una catena di provider e li esegue in sequenza fino al successo, migliorando la resilienza dell'applicazione.
+- **Fallback Dinamico a OpenAI**: Implementata una logica di fallback automatico da Gemini a OpenAI in caso di fallimento della chiamata, garantendo maggiore resilienza e affidabilità del servizio.
+- **Ambiente di Sviluppo Dockerizzato**: Configurato un ambiente di sviluppo locale basato su Docker per semplificare il setup e garantire la coerenza tra gli ambienti.
 
 ### Changed
-- **Gestione Errori Migliorata**: In caso di fallimento di un provider, l'errore viene registrato e il sistema procede con il tentativo successivo, lanciando un'eccezione solo dopo che tutti i provider nella catena hanno fallito.
-- **Comportamento Embedding Esplicito**: La logica di fallback non si applica alla generazione di embedding per evitare problemi di coerenza dimensionale tra modelli diversi. Il sistema si affida esclusivamente al provider definito (`AI_EMBEDDING_PROVIDER`), garantendo la stabilità della pipeline RAG.
+- **Miglioramenti al RAG**: Apportate diverse migliorie alla pipeline RAG, inclusa l'aggiunta di monitoraggio per un'analisi più approfondita delle performance.
+
+### Fixed
+- **Formato di Upload .csv**: Corretto un bug che impediva il corretto upload dei file in formato .csv.
+- **Processo di Embedding**: Risolto un problema nel processo di embedding che poteva causare errori durante l'indicizzazione dei documenti.
+- **Query Transformer RAG**: Corretto un bug nel template `rag_query_transformer.hbs` per migliorare la trasformazione delle query.
 
 ## [11.0.0] - 2025-11-10
 

@@ -37,6 +37,7 @@
 │   └── thinkDOC2.pdf
 ├── backups
 ├── CHANGELOG.md
+├── Dockerfile
 ├── docs
 │   ├── ACCESSIBILITY_CHECKLIST.md
 │   ├── ADVANCED_GUIDE.md
@@ -92,7 +93,6 @@
 ├── LICENSE
 ├── project_structure.txt
 ├── README copy.txt
-├── README.md
 ├── rec2pdf-backend
 │   ├── __tests__
 │   │   ├── aiProviders.test.js
@@ -110,8 +110,6 @@
 │   │   └── Users
 │   │       └── moromoro
 │   ├── docker-compose.yml
-│   ├── Dockerfile
-│   ├── Dockerfile.dev
 │   ├── package-lock.json
 │   ├── package.json
 │   ├── prompts
@@ -132,6 +130,7 @@
 │   │   └── migrate-workspaces.js
 │   ├── server.js
 │   ├── services
+│   │   ├── aiOrchestrator.js
 │   │   ├── aiProviders.js
 │   │   ├── aiService.js
 │   │   ├── promptService.js
@@ -292,6 +291,7 @@
 │   │       └── meetingPrompt.test.js
 │   └── vite.config.js
 ├── Scripts
+│   ├── deploy-cloudrun.sh
 │   └── publish.sh
 └── Templates
     ├── cover.tex

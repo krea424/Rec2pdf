@@ -1,24 +1,18 @@
-version: '3.8'
+version: '3.8' # Puoi anche rimuovere questa riga come suggerisce l'avviso
 
 services:
   backend:
     build:
-      # Il 'context' ora è la cartella principale (..), così Docker vede tutto
       context: .. 
-      # Usiamo il Dockerfile di produzione originale
-      dockerfile: rec2pdf-backend/Dockerfile 
+      dockerfile: Dockerfile  # <-- MODIFICA QUI
     
     ports:
       - "8080:8080"
       
-    # Manteniamo la sincronizzazione del codice per lo sviluppo!
-    # Questo monterà la tua cartella locale dentro il container
     volumes:
       - ../rec2pdf-backend:/app/rec2pdf-backend
 
     env_file:
       - .env
       
-    # Sovrascriviamo il comando di avvio per usare nodemon
-    # L'immagine di produzione ha 'node server.js', ma noi vogliamo 'npm run dev'
     command: npm run dev
