@@ -32,6 +32,10 @@ const {
   sanitizeProviderInput: sanitizeAiProviderInput,
 } = require('./services/aiProviders');
 
+// == REFACTORING ASYNC: Costanti job/worker ==
+const SUPABASE_JOBS_TABLE = 'jobs';
+const WORKER_SECRET = process.env.WORKER_SECRET;
+
 const app = express();
 const PORT = process.env.PORT || 8080;
 const SUPABASE_URL = process.env.SUPABASE_URL;
