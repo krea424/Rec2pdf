@@ -7316,19 +7316,52 @@ app.post('/api/worker/trigger', async (req, res) => {
       return res.status(401).json({ ok: false, message: 'Unauthorized worker request' });
     }
 
-    const bodyPayload = isPlainObject(req.body) ? req.body : {};
-    const jobRecord = isPlainObject(bodyPayload.record) ? bodyPayload.record : bodyPayload;
+    const parseJsonSafely = (value) => {
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          return parsed;
+        } catch (parseError) {
+          throw new Error(`Payload non JSON valido: ${parseError.message || parseError}`);
+        }
+      }
+      return isPlainObject(value) ? value : {};
+    };
+
+    let bodyPayload;
+    try {
+      const rawPayload = parseJsonSafely(req.body);
+      bodyPayload = isPlainObject(rawPayload) ? rawPayload : {};
+    } catch (payloadError) {
+      return res.status(400).json({ ok: false, message: payloadError.message || String(payloadError) });
+    }
+    const jobRecordCandidate =
+      isPlainObject(bodyPayload.record) || isPlainObject(bodyPayload.new)
+        ? bodyPayload.record || bodyPayload.new
+        : bodyPayload.job;
+    const jobRecord = isPlainObject(jobRecordCandidate) ? jobRecordCandidate : bodyPayload;
 
     if (!isPlainObject(jobRecord) || !jobRecord.id) {
       return res.status(400).json({ ok: false, message: 'Payload job non valido' });
     }
 
-    await runPipeline(jobRecord);
+    const result = await runPipeline(jobRecord);
+    const responseResult = result
+      ? {
+          pdfPath: result.pdfPath || null,
+          mdPath: result.mdPath || null,
+          stageEvents: Array.isArray(result.stageEvents) ? result.stageEvents : [],
+        }
+      : null;
 
-    return res.status(200).json({ ok: true, message: 'Job completato' });
+    return res.status(200).json({ ok: true, message: 'Job completato', jobId: jobRecord.id, result: responseResult });
   } catch (error) {
     console.error('❌ Errore worker trigger:', error);
-    return res.status(500).json({ ok: false, message: 'Elaborazione job fallita' });
+    return res.status(500).json({
+      ok: false,
+      message: 'Elaborazione job fallita',
+      error: error?.message || String(error),
+    });
   }
 });
 
