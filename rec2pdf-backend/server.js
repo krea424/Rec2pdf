@@ -7276,6 +7276,62 @@ const runPipeline = async (job = {}) => {
 };
 
 
+// == REFACTORING ASYNC: Worker trigger endpoint ==
+app.post('/api/worker/trigger', async (req, res) => {
+  try {
+    if (!WORKER_SECRET) {
+      return res.status(401).json({ ok: false, message: 'Unauthorized worker request' });
+    }
+
+    const resolveHeaderValue = (value) => {
+      if (typeof value === 'string') {
+        return value.trim();
+      }
+      if (Array.isArray(value)) {
+        for (const entry of value) {
+          if (typeof entry === 'string' && entry.trim()) {
+            return entry.trim();
+          }
+        }
+      }
+      return '';
+    };
+
+    const headerSecret = (() => {
+      const explicitSecret = resolveHeaderValue(req.headers['x-worker-secret']);
+      if (explicitSecret) {
+        return explicitSecret;
+      }
+      const authorizationHeader = resolveHeaderValue(req.headers['authorization']);
+      if (!authorizationHeader) {
+        return '';
+      }
+      if (authorizationHeader.toLowerCase().startsWith('bearer ')) {
+        return authorizationHeader.slice(7).trim();
+      }
+      return authorizationHeader;
+    })();
+
+    if (!headerSecret || headerSecret !== WORKER_SECRET) {
+      return res.status(401).json({ ok: false, message: 'Unauthorized worker request' });
+    }
+
+    const bodyPayload = isPlainObject(req.body) ? req.body : {};
+    const jobRecord = isPlainObject(bodyPayload.record) ? bodyPayload.record : bodyPayload;
+
+    if (!isPlainObject(jobRecord) || !jobRecord.id) {
+      return res.status(400).json({ ok: false, message: 'Payload job non valido' });
+    }
+
+    await runPipeline(jobRecord);
+
+    return res.status(200).json({ ok: true, message: 'Job completato' });
+  } catch (error) {
+    console.error('❌ Errore worker trigger:', error);
+    return res.status(500).json({ ok: false, message: 'Elaborazione job fallita' });
+  }
+});
+
 
 app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
   const cleanupFiles = new Set();
