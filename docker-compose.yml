@@ -1,0 +1,21 @@
+# Rimuoviamo la riga 'version' obsoleta
+services:
+  backend:
+    build:
+      # Il contesto ora è la cartella corrente '.', perché il compose file è nella root
+      context: .
+      # Il Dockerfile si trova qui
+      dockerfile: Dockerfile
+    
+    ports:
+      - "8080:8080"
+      
+    volumes:
+      # Sincronizziamo la sottocartella del backend
+      - ./rec2pdf-backend:/app/rec2pdf-backend
+
+    env_file:
+      # Leggiamo il file .env che si trova nella sottocartella del backend
+      - ./rec2pdf-backend/.env
+      
+    command: npm run dev

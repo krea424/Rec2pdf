@@ -958,9 +958,11 @@ const authenticateRequest = async (req, res, next) => {
 };
 
 app.use('/api', (req, res, next) => {
-  if (req.path === '/health') {
-    return next();
+  // Escludiamo dal controllo di autenticazione utente l'health check e il trigger del worker
+  if (req.path === '/health' || req.path === '/worker/trigger') {
+    return next(); // Lascia passare la richiesta
   }
+  // Per tutte le altre rotte /api, esegui l'autenticazione utente
   return authenticateRequest(req, res, next);
 });
 
@@ -7281,95 +7283,60 @@ const runPipeline = async (job = {}) => {
 // == REFACTORING ASYNC: fine runPipeline ==
 
 
-// == REFACTORING ASYNC: Worker trigger endpoint ==
+// ==========================================================
+// ==     REFACTORING ASYC: Worker trigger endpoint (FINALE)    ==
+// ==========================================================
 app.post('/api/worker/trigger', async (req, res) => {
   try {
     if (!WORKER_SECRET) {
+      console.error('[WORKER TRIGGER] ERRORE CRITICO: WORKER_SECRET non è definito.');
+      return res.status(500).json({ ok: false, message: 'Worker secret non configurato sul server.' });
+    }
+
+    const headerSecret = req.headers['x-worker-secret'] || '';
+
+    const isAuthorized = crypto.timingSafeEqual(
+      Buffer.from(headerSecret.trim(), 'utf8'),
+      Buffer.from(WORKER_SECRET.trim(), 'utf8')
+    );
+
+    if (!isAuthorized) {
+      console.error('[WORKER TRIGGER] Fallimento autorizzazione: i segreti non corrispondono.');
       return res.status(401).json({ ok: false, message: 'Unauthorized worker request' });
     }
 
-    const resolveHeaderValue = (value) => {
-      if (typeof value === 'string') {
-        return value.trim();
-      }
-      if (Array.isArray(value)) {
-        for (const entry of value) {
-          if (typeof entry === 'string' && entry.trim()) {
-            return entry.trim();
-          }
-        }
-      }
-      return '';
-    };
-
-    const headerSecret = (() => {
-      const explicitSecret = resolveHeaderValue(req.headers['x-worker-secret']);
-      if (explicitSecret) {
-        return explicitSecret;
-      }
-      const authorizationHeader = resolveHeaderValue(req.headers['authorization']);
-      if (!authorizationHeader) {
-        return '';
-      }
-      if (authorizationHeader.toLowerCase().startsWith('bearer ')) {
-        return authorizationHeader.slice(7).trim();
-      }
-      return authorizationHeader;
-    })();
-
-    if (!headerSecret || headerSecret !== WORKER_SECRET) {
-      return res.status(401).json({ ok: false, message: 'Unauthorized worker request' });
-    }
+    console.log('[WORKER TRIGGER] Autorizzazione webhook riuscita!');
 
     const parseJsonSafely = (value) => {
-      if (typeof value === 'string') {
-        try {
-          const parsed = JSON.parse(value);
-          return parsed;
-        } catch (parseError) {
-          throw new Error(`Payload non JSON valido: ${parseError.message || parseError}`);
-        }
+      if (typeof value === 'string' && value.trim().startsWith('{')) {
+        try { return JSON.parse(value); } catch (e) { throw new Error('Payload non JSON valido'); }
       }
       return isPlainObject(value) ? value : {};
     };
-
-    let bodyPayload;
-    try {
-      const rawPayload = parseJsonSafely(req.body);
-      bodyPayload = isPlainObject(rawPayload) ? rawPayload : {};
-    } catch (payloadError) {
-      return res.status(400).json({ ok: false, message: payloadError.message || String(payloadError) });
-    }
-    const jobRecordCandidate =
-      isPlainObject(bodyPayload.record) || isPlainObject(bodyPayload.new)
-        ? bodyPayload.record || bodyPayload.new
-        : bodyPayload.job;
-    const jobRecord = isPlainObject(jobRecordCandidate) ? jobRecordCandidate : bodyPayload;
+    
+    const bodyPayload = parseJsonSafely(req.body);
+    const jobRecord = isPlainObject(bodyPayload.record) ? bodyPayload.record : bodyPayload;
 
     if (!isPlainObject(jobRecord) || !jobRecord.id) {
-      return res.status(400).json({ ok: false, message: 'Payload job non valido' });
+      console.error('[WORKER TRIGGER] Payload del job non valido ricevuto:', JSON.stringify(req.body, null, 2));
+      return res.status(400).json({ ok: false, message: 'Payload job non valido o ID mancante' });
     }
 
-    const result = await runPipeline(jobRecord);
-    const responseResult = result
-      ? {
-          pdfPath: result.pdfPath || null,
-          mdPath: result.mdPath || null,
-          stageEvents: Array.isArray(result.stageEvents) ? result.stageEvents : [],
-        }
-      : null;
+    console.log(`[WORKER TRIGGER] Ricevuto trigger per il job: ${jobRecord.id}`);
 
-    return res.status(200).json({ ok: true, message: 'Job completato', jobId: jobRecord.id, result: responseResult });
+    runPipeline(jobRecord);
+
+    return res.status(202).json({ ok: true, message: 'Job trigger ricevuto e accodato per l\'elaborazione.' });
+
   } catch (error) {
-    console.error('❌ Errore worker trigger:', error);
+    console.error(`❌ Errore grave nel worker trigger:`, error);
     return res.status(500).json({
       ok: false,
-      message: 'Elaborazione job fallita',
+      message: 'Errore interno del worker trigger',
       error: error?.message || String(error),
     });
   }
 });
-// == REFACTORING ASYNC: fine worker trigger ==
 
 // == REFACTORING ASYNC: Endpoint stato job ==
 app.get('/api/jobs/:id', authenticateRequest, async (req, res) => {
