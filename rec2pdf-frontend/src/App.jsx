@@ -993,6 +993,10 @@ function AppContent(){
   const [pdfPath,setPdfPath]=useState("");
   const [mdPath, setMdPath] = useState("");
   const [enableDiarization, setEnableDiarization] = useState(false);
+  // ASYNC REFACTOR: Nuovi stati per la gestione dei job in background
+  const [activeJobId, setActiveJobId] = useState(null); // Memorizza solo l'ID del job in corso
+  const [jobStatus, setJobStatus] = useState(null);     // Memorizza l'intero oggetto di stato dal backend
+  const pollingIntervalRef = useRef(null);              // Riferimento per l'ID del timer del polling
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -1737,6 +1741,8 @@ function AppContent(){
     setMdPath("");
     setPermissionMessage("");
     setErrorBanner(null);
+    // ASYNC REFACTOR: resettiamo lo stato del job precedente prima di crearne uno nuovo
+    setJobStatus(null);
     resetPipelineProgress(false);
     setShowRawLogs(false);
     setLastMarkdownUpload(null);
@@ -1835,6 +1841,137 @@ function AppContent(){
     },
     [applyAuthToOptions, fetchBody, refreshSessionIfNeeded]
   );
+
+  // ASYNC REFACTOR: Hook per il polling dello stato del job
+  useEffect(() => {
+    const stopPolling = () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+
+    const handleJobCompletion = (completedJob) => {
+      stopPolling();
+      setBusy(false);
+      localStorage.removeItem('activeJobId');
+      setActiveJobId(null);
+      setJobStatus(completedJob);
+
+      setPdfPath(completedJob?.output_pdf_path || '');
+      setMdPath(completedJob?.output_md_path || '');
+      // TODO: Ricostruire l'oggetto historyEntry e salvarlo.
+
+      pushLogs(['🎉 Pipeline completata con successo!']);
+    };
+
+    const handleJobFailure = (failedJob) => {
+      stopPolling();
+      setBusy(false);
+      localStorage.removeItem('activeJobId');
+      setActiveJobId(null);
+      setJobStatus(failedJob);
+
+      const errorMessage = failedJob?.error_message || 'Il job è fallito senza un messaggio di errore.';
+      setErrorBanner({ title: 'Esecuzione Fallita', details: errorMessage });
+      pushLogs([`❌ ERRORE: ${errorMessage}`]);
+      handlePipelineEvents([
+        { stage: 'complete', status: 'failed', message: errorMessage },
+      ], { animate: false });
+    };
+
+    const poll = async () => {
+      if (!activeJobId) return;
+
+      try {
+        const { ok, data } = await fetchBodyWithAuth(`${backendUrl}/api/jobs/${activeJobId}`);
+        if (!ok) {
+          throw new Error(data?.message || 'Job non trovato o errore server');
+        }
+
+        const currentJob = data?.job;
+        if (!currentJob) {
+          throw new Error('Risposta job non valida.');
+        }
+
+        setJobStatus(currentJob);
+
+        if (currentJob.status === 'completed') {
+          handleJobCompletion(currentJob);
+        } else if (currentJob.status === 'failed') {
+          handleJobFailure(currentJob);
+        }
+      } catch (error) {
+        console.error(`Errore di rete durante il polling per job ${activeJobId}:`, error);
+        pushLogs([`⚠️ Connessione persa, nuovo tentativo di polling a breve...`]);
+      }
+    };
+
+    if (activeJobId) {
+      if (!pollingIntervalRef.current) {
+        poll();
+        pollingIntervalRef.current = setInterval(poll, 10000);
+      }
+    } else {
+      stopPolling();
+    }
+
+    return () => stopPolling();
+  }, [activeJobId, backendUrl, fetchBodyWithAuth, handlePipelineEvents, pushLogs]);
+
+  // ASYNC REFACTOR: Hook per riprendere il job al caricamento dell'app
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const savedJobId = localStorage.getItem('activeJobId');
+    if (savedJobId && !activeJobId) {
+      pushLogs([`ℹ️ Rilevato job in sospeso: ${savedJobId}. Riprendo il monitoraggio...`]);
+      setBusy(true);
+      revealPipelinePanel();
+      setActiveJobId(savedJobId);
+    }
+  }, []);
+
+  // ASYNC REFACTOR: Hook per aggiornare la UI in base allo stato del job
+  useEffect(() => {
+    if (!jobStatus) {
+      return;
+    }
+
+    const newLogs = (jobStatus.worker_log || '').split('\n').filter(Boolean);
+    if (newLogs.length > logs.length) {
+      setLogs(newLogs);
+    }
+
+    const stageEventsFromLogs = newLogs
+      .map((logLine) => {
+        if (logLine.includes('Transcodifica')) {
+          return { stage: 'transcode', status: logLine.includes('✅') ? 'done' : 'running' };
+        }
+        if (logLine.includes('Trascrizione')) {
+          return { stage: 'transcribe', status: logLine.includes('✅') ? 'done' : 'running' };
+        }
+        if (logLine.includes('Markdown')) {
+          return { stage: 'markdown', status: logLine.includes('✅') ? 'done' : 'running' };
+        }
+        if (logLine.includes('Pubblicazione') || logLine.includes('PDF creato')) {
+          return { stage: 'publish', status: logLine.includes('✅') ? 'done' : 'running' };
+        }
+        if (logLine.includes('Pipeline completata')) {
+          return { stage: 'complete', status: 'done' };
+        }
+        if (logLine.includes('upload') || logLine.includes('Richiesta accettata')) {
+          return { stage: 'upload', status: 'done' };
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    if (busy && stageEventsFromLogs.length === 0) {
+      stageEventsFromLogs.unshift({ stage: 'upload', status: 'running' });
+    }
+
+    handlePipelineEvents(stageEventsFromLogs, { animate: false });
+  }, [jobStatus, logs.length, busy, handlePipelineEvents]);
 
   const fetchWithAuth = useCallback(
     async (url, options = {}) => {
@@ -4060,8 +4197,6 @@ const handleRefineAndGenerate = useCallback(async () => {
     setPdfPath("");
     setMdPath("");
     setErrorBanner(null);
-    const runStartedAt=new Date();
-    const durationSeconds=Number.isFinite(elapsed)?elapsed:null;
     const sessionLogs=[];
     const appendLogs=(entries)=>{
       const sanitized=(entries||[]).filter(Boolean);
@@ -4153,125 +4288,34 @@ const handleRefineAndGenerate = useCallback(async () => {
       }
       const cap=Number(secondsCap||0);
       if(cap>0) fd.append('seconds',String(cap));
-      const {ok,status,data,raw}=await fetchBodyWithAuth(`${backendUrl}/api/rec2pdf`,{method:'POST',body:fd});
-      const stageEventsPayload = Array.isArray(data?.stageEvents) ? data.stageEvents : [];
-      if(!ok){
-        if (stageEventsPayload.length) {
-          handlePipelineEvents(stageEventsPayload, { animate: false });
-        } else {
-          const fallbackMessage = data?.message || (raw ? raw.slice(0, 120) : status === 0 ? 'Connessione fallita/CORS' : 'Errore backend');
-          handlePipelineEvents([
-            { stage: 'complete', status: 'failed', message: fallbackMessage },
-          ], { animate: false });
-        }
-        if(data?.logs?.length) appendLogs(data.logs);
-        if(data?.message) appendLogs([`❌ ${data.message}`]);
-        if(!data&&raw) appendLogs([`❌ Risposta server: ${raw.slice(0,400)}${raw.length>400?'…':''}`]);
-        appendLogs([`Errore backend: HTTP ${status||'0 (rete)'}`]);
-        setErrorBanner({title:`Errore backend (HTTP ${status||'0'})`,details:data?.message||(raw?raw.slice(0,400):(status===0?'Connessione fallita/CORS':'Errore sconosciuto'))});
-        return;
+      // ASYNC REFACTOR: Inizio della modifica
+      const { ok, status, data } = await fetchBodyWithAuth(`${backendUrl}/api/rec2pdf`, {
+        method: 'POST',
+        body: fd,
+      });
+
+      if (!ok) {
+        throw new Error(data?.message || `Errore nella creazione del job (HTTP ${status || '0'})`);
       }
-      const successEvents = stageEventsPayload.length
-        ? stageEventsPayload
-        : [{ stage: 'complete', status: 'done', message: 'Pipeline completata' }];
-      handlePipelineEvents(successEvents, { animate: true });
-      if(data?.logs) appendLogs(data.logs);
-      if(data?.pdfPath){
-        let refinedResult = refinedPayloadForUpload;
-        if (Object.prototype.hasOwnProperty.call(data || {}, 'refinedData')) {
-          const normalizedRefined = normalizeRefinedDataForUpload(data.refinedData);
-          refinedResult = normalizedRefined.ok ? normalizedRefined.value : null;
-        }
-        setRefinedData(refinedResult || null);
-        if (typeof setCueCardAnswers === 'function') {
-          if (refinedResult && typeof refinedResult.cueCardAnswers === 'object' && refinedResult.cueCardAnswers !== null) {
-            setCueCardAnswers(refinedResult.cueCardAnswers);
-          } else if (!refinedResult) {
-            setCueCardAnswers({});
-          }
-        }
-        setPdfPath(data.pdfPath);
-        setMdPath(data.mdPath || "");
-        const normalizedBackend = normalizeBackendUrlValue(backendUrl || '');
-        const pdfUrl = buildFileUrl(normalizedBackend, data.pdfPath);
-        const mdUrl = buildFileUrl(normalizedBackend, data?.mdPath || '');
-        const logosUsed={
-          frontend: customLogo?'custom':'default',
-          pdf: resolvePdfLogoLabel(customPdfLogo),
-        };
-        const structureMeta = data?.structure || null;
-        if (structureMeta && Number.isFinite(structureMeta.score)) {
-          appendLogs([`📊 Completezza stimata: ${structureMeta.score}%`]);
-          if (Array.isArray(structureMeta.missingSections) && structureMeta.missingSections.length) {
-            appendLogs([`🧩 Sezioni mancanti: ${structureMeta.missingSections.join(', ')}`]);
-          }
-        }
-        const fallbackPrompt = promptState.promptId
-          ? {
-              id: promptState.promptId,
-              title: activePrompt?.title || '',
-              slug: activePrompt?.slug || '',
-              description: activePrompt?.description || '',
-              persona: activePrompt?.persona || '',
-              color: activePrompt?.color || '#6366f1',
-              tags: Array.isArray(activePrompt?.tags) ? activePrompt.tags : [],
-              cueCards: Array.isArray(activePrompt?.cueCards) ? activePrompt.cueCards : [],
-              checklist: activePrompt?.checklist || null,
-              markdownRules: activePrompt?.markdownRules || null,
-              pdfRules: activePrompt?.pdfRules || null,
-              focus: promptState.focus || '',
-              notes: promptState.notes || '',
-              completedCues: promptCompletedCues,
-              builtIn: Boolean(activePrompt?.builtIn),
-            }
-          : null;
-        const promptSummary = data?.prompt || fallbackPrompt;
-        const historyEntry=hydrateHistoryEntry({
-          id:Date.now(),
-          timestamp:runStartedAt.toISOString(),
-          slug:slug||'meeting',
-          title:slug||'Sessione',
-          duration:durationSeconds,
-          pdfPath:data.pdfPath,
-          pdfUrl,
-          mdPath:data?.mdPath||'',
-          mdUrl,
-          localPdfPath: data?.localPdfPath || '',
-          localMdPath: data?.localMdPath || '',
-          backendUrl:normalizedBackend,
-          logos:logosUsed,
-          tags:[],
-          logs:sessionLogs,
-          stageEvents: successEvents,
-          source:blobSource,
-          bytes:blob.size||null,
-          workspace: data?.workspace || (workspaceSelection.workspaceId
-            ? {
-                id: workspaceSelection.workspaceId,
-                name: '',
-                client: '',
-                color: '#6366f1',
-                projectId: workspaceSelection.projectId || '',
-                projectName: workspaceSelection.projectName || '',
-                status: workspaceSelection.status || '',
-              }
-            : null),
-          structure: structureMeta,
-          prompt: promptSummary,
-          speakers: Array.isArray(data?.speakers) ? data.speakers : [],
-          speakerMap: data?.speakerMap || {},
-          refinedData: refinedResult,
-        });
-        setHistory(prev=>{
-          const next=[historyEntry,...prev];
-          return next.slice(0,HISTORY_LIMIT);
-        });
-        fetchWorkspaces({ silent: true });
-        appendLogs([`💾 Sessione salvata nella Libreria (${historyEntry.title}).`]);
-      } else {
-        appendLogs(["⚠️ Risposta senza pdfPath."]);
+
+      const { jobId } = data || {};
+      if (!jobId) {
+        throw new Error('Il backend non ha restituito un ID di job valido.');
       }
-    } finally{
+
+      appendLogs([`✔️ Richiesta accettata. Inizio monitoraggio job ID: ${jobId}`]);
+
+      localStorage.setItem('activeJobId', jobId);
+      setActiveJobId(jobId);
+      // ASYNC REFACTOR: Fine della modifica
+    } catch(err){
+      const message=String(err&&err.message?err.message:err);
+      handlePipelineEvents([
+        { stage: 'upload', status: 'failed', message },
+        { stage: 'complete', status: 'failed', message: 'Pipeline non avviata' },
+      ],{ animate:false });
+      appendLogs([`❌ ${message}`]);
+      setErrorBanner({ title: 'Avvio pipeline fallito', details: message });
       setBusy(false);
     }
   };

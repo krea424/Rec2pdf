@@ -7283,60 +7283,281 @@ const runPipeline = async (job = {}) => {
 // == REFACTORING ASYNC: fine runPipeline ==
 
 
-// ==========================================================
-// ==     REFACTORING ASYC: Worker trigger endpoint (FINALE)    ==
-// ==========================================================
+// == REFACTORING ASYNC: Worker trigger endpoint ==
 app.post('/api/worker/trigger', async (req, res) => {
   try {
     if (!WORKER_SECRET) {
-      console.error('[WORKER TRIGGER] ERRORE CRITICO: WORKER_SECRET non è definito.');
-      return res.status(500).json({ ok: false, message: 'Worker secret non configurato sul server.' });
-    }
-
-    const headerSecret = req.headers['x-worker-secret'] || '';
-
-    const isAuthorized = crypto.timingSafeEqual(
-      Buffer.from(headerSecret.trim(), 'utf8'),
-      Buffer.from(WORKER_SECRET.trim(), 'utf8')
-    );
-
-    if (!isAuthorized) {
-      console.error('[WORKER TRIGGER] Fallimento autorizzazione: i segreti non corrispondono.');
       return res.status(401).json({ ok: false, message: 'Unauthorized worker request' });
     }
 
-    console.log('[WORKER TRIGGER] Autorizzazione webhook riuscita!');
+    const resolveHeaderValue = (value) => {
+      if (typeof value === 'string') {
+        return value.trim();
+      }
+      if (Array.isArray(value)) {
+        for (const entry of value) {
+          if (typeof entry === 'string' && entry.trim()) {
+            return entry.trim();
+          }
+        }
+      }
+      return '';
+    };
+
+    const headerSecret = (() => {
+      const explicitSecret = resolveHeaderValue(req.headers['x-worker-secret']);
+      if (explicitSecret) {
+        return explicitSecret;
+      }
+      const authorizationHeader = resolveHeaderValue(req.headers['authorization']);
+      if (!authorizationHeader) {
+        return '';
+      }
+      if (authorizationHeader.toLowerCase().startsWith('bearer ')) {
+        return authorizationHeader.slice(7).trim();
+      }
+      return authorizationHeader;
+    })();
+
+    if (!headerSecret || headerSecret !== WORKER_SECRET) {
+      return res.status(401).json({ ok: false, message: 'Unauthorized worker request' });
+    }
 
     const parseJsonSafely = (value) => {
-      if (typeof value === 'string' && value.trim().startsWith('{')) {
-        try { return JSON.parse(value); } catch (e) { throw new Error('Payload non JSON valido'); }
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          return parsed;
+        } catch (parseError) {
+          throw new Error(`Payload non JSON valido: ${parseError.message || parseError}`);
+        }
       }
       return isPlainObject(value) ? value : {};
     };
-    
-    const bodyPayload = parseJsonSafely(req.body);
-    const jobRecord = isPlainObject(bodyPayload.record) ? bodyPayload.record : bodyPayload;
+
+    let bodyPayload;
+    try {
+      const rawPayload = parseJsonSafely(req.body);
+      bodyPayload = isPlainObject(rawPayload) ? rawPayload : {};
+    } catch (payloadError) {
+      return res.status(400).json({ ok: false, message: payloadError.message || String(payloadError) });
+    }
+    const jobRecordCandidate =
+      isPlainObject(bodyPayload.record) || isPlainObject(bodyPayload.new)
+        ? bodyPayload.record || bodyPayload.new
+        : bodyPayload.job;
+    const jobRecord = isPlainObject(jobRecordCandidate) ? jobRecordCandidate : bodyPayload;
 
     if (!isPlainObject(jobRecord) || !jobRecord.id) {
-      console.error('[WORKER TRIGGER] Payload del job non valido ricevuto:', JSON.stringify(req.body, null, 2));
-      return res.status(400).json({ ok: false, message: 'Payload job non valido o ID mancante' });
+      return res.status(400).json({ ok: false, message: 'Payload job non valido' });
     }
 
-    console.log(`[WORKER TRIGGER] Ricevuto trigger per il job: ${jobRecord.id}`);
+    const result = await runPipeline(jobRecord);
+    const responseResult = result
+      ? {
+          pdfPath: result.pdfPath || null,
+          mdPath: result.mdPath || null,
+          stageEvents: Array.isArray(result.stageEvents) ? result.stageEvents : [],
+        }
+      : null;
 
-    runPipeline(jobRecord);
-
-    return res.status(202).json({ ok: true, message: 'Job trigger ricevuto e accodato per l\'elaborazione.' });
-
+    return res.status(200).json({ ok: true, message: 'Job completato', jobId: jobRecord.id, result: responseResult });
   } catch (error) {
-    console.error(`❌ Errore grave nel worker trigger:`, error);
+    console.error('❌ Errore worker trigger:', error);
     return res.status(500).json({
       ok: false,
-      message: 'Errore interno del worker trigger',
+      message: 'Elaborazione job fallita',
       error: error?.message || String(error),
     });
   }
 });
+// == REFACTORING ASYNC: fine worker trigger ==
+
+// == REFACTORING ASYNC: Endpoint stato job ==
+app.get('/api/jobs/:id', authenticateRequest, async (req, res) => {
+  try {
+    if (!supabase) {
+      return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
+    }
+
+    const jobId = typeof req.params?.id === 'string' ? req.params.id.trim() : '';
+    if (!jobId) {
+      return res.status(400).json({ ok: false, message: 'Identificatore job non valido' });
+    }
+
+    const userId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+    if (!userId) {
+      return res.status(401).json({ ok: false, message: 'Utente non autenticato' });
+    }
+
+    const { data: jobRecord, error } = await supabase
+      .from(SUPABASE_JOBS_TABLE)
+      .select('id, status, error_message, output_pdf_path, output_md_path, user_id')
+      .eq('id', jobId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('❌ Recupero job fallito:', error.message || error);
+      return res.status(500).json({ ok: false, message: 'Impossibile recuperare il job' });
+    }
+
+    if (!jobRecord) {
+      return res.status(404).json({ ok: false, message: 'Job non trovato' });
+    }
+
+    const response = {
+      ok: true,
+      job: {
+        id: jobRecord.id,
+        status: jobRecord.status,
+        error_message: jobRecord.error_message || null,
+        output_pdf_path: jobRecord.output_pdf_path || null,
+        output_md_path: jobRecord.output_md_path || null,
+      },
+    };
+
+    return res.status(200).json(response);
+  } catch (error) {
+    console.error('❌ Errore durante il recupero stato job:', error?.message || error);
+    return res.status(500).json({ ok: false, message: 'Errore inatteso nel recupero del job' });
+  }
+});
+// == REFACTORING ASYNC: fine endpoint stato job ==
+
+
+app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
+  const cleanupFiles = new Set();
+
+  try {
+    if (!req.files || !req.files.audio) {
+      return res.status(400).json({ ok: false, message: 'Nessun file audio', logs: [], stageEvents: [] });
+    }
+
+    const audioFile = req.files.audio[0];
+    const userId = req.user?.id || 'anonymous';
+    const audioBuffer = await fsp.readFile(audioFile.path);
+    cleanupFiles.add(audioFile.path);
+    const sanitizedOriginalName = sanitizeStorageFileName(audioFile.originalname || 'audio', 'audio');
+    const audioStoragePath = `uploads/${userId}/${Date.now()}_${sanitizedOriginalName}`;
+
+    await uploadFileToBucket(
+      SUPABASE_AUDIO_BUCKET,
+      audioStoragePath,
+      audioBuffer,
+      audioFile.mimetype || 'application/octet-stream'
+    );
+
+    const bodyPayload = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+    const workspaceId = getWorkspaceIdFromRequest(req);
+    const aiOverrides = extractAiProviderOverrides(req);
+
+    const payload = {
+      ...bodyPayload,
+      slug: String(bodyPayload.slug || '').trim(),
+      workspaceId,
+      workspaceProjectId: String(bodyPayload.workspaceProjectId || '').trim(),
+      workspaceProjectName: String(bodyPayload.workspaceProjectName || bodyPayload.workspaceProject || '').trim(),
+      workspaceStatus: String(bodyPayload.workspaceStatus || '').trim(),
+      workspaceProfileId: String(bodyPayload.workspaceProfileId || '').trim(),
+      workspaceProfileTemplate: String(bodyPayload.workspaceProfileTemplate || '').trim(),
+      workspaceProfileLabel: String(bodyPayload.workspaceProfileLabel || '').trim(),
+      workspaceProfileLogoPath: String(bodyPayload.workspaceProfileLogoPath || '').trim(),
+      workspaceProfileLogoLabel: String(bodyPayload.workspaceProfileLogoLabel || '').trim(),
+      workspaceProfileLogoDownloadUrl: String(bodyPayload.workspaceProfileLogoDownloadUrl || '').trim(),
+      promptFocus: String(bodyPayload.promptFocus || '').trim(),
+      promptNotes: String(bodyPayload.promptNotes || '').trim(),
+      promptId: String(bodyPayload.promptId || '').trim(),
+      dest: bodyPayload.dest,
+      workspaceProjectDestDir: bodyPayload.workspaceProjectDestDir,
+      projectDestDir: bodyPayload.projectDestDir,
+      workspaceDestDir: bodyPayload.workspaceDestDir,
+      workspaceDestination: bodyPayload.workspaceDestination,
+      title: bodyPayload.title,
+      summary: bodyPayload.summary,
+      aiTextProvider: aiOverrides.text,
+      aiEmbeddingProvider: aiOverrides.embedding,
+      originalAudioName: audioFile.originalname || 'audio',
+      sanitizedAudioName: sanitizedOriginalName,
+    };
+
+    if (typeof req.user?.email === 'string') {
+      payload.userEmail = req.user.email;
+    }
+
+    if (req.files && req.files.pdfLogo && req.files.pdfLogo.length) {
+      const logoFile = req.files.pdfLogo[0];
+      const ensuredPath = await ensureTempFileHasExtension(logoFile);
+      if (ensuredPath) {
+        cleanupFiles.add(ensuredPath);
+        if (supabase) {
+          try {
+            const uploadResult = await uploadProfileLogoToSupabase(ensuredPath, {
+              workspaceId: workspaceId || 'job',
+              profileId: payload.workspaceProfileId || payload.slug || 'profile',
+              fileName: logoFile.originalname || 'logo.pdf',
+              contentType: logoFile.mimetype || guessLogoContentType(logoFile.originalname || 'logo.pdf'),
+            });
+            payload.pdfLogoStoragePath = uploadResult.storagePath;
+            payload.customLogoBucket = SUPABASE_LOGO_BUCKET;
+          } catch (logoError) {
+            console.error('⚠️ Upload logo personalizzato fallito:', logoError?.message || logoError);
+          }
+        }
+      }
+    }
+
+    // == REFACTORING ASYNC: Creazione job asincrono ==
+    if (!supabase) {
+      throw new Error('Supabase non configurato per la creazione del job');
+    }
+
+    const jobPayload = {
+      user_id: userId,
+      user_email: req.user?.email || '',
+      input_file_path: audioStoragePath,
+      request_payload: payload,
+      status: 'pending',
+    };
+
+    const { data: createdJob, error: jobError } = await supabase
+      .from(SUPABASE_JOBS_TABLE)
+      .insert(jobPayload)
+      .select()
+      .single();
+
+    if (jobError || !createdJob) {
+      console.error('❌ Creazione job fallita:', jobError?.message || jobError);
+      throw new Error(jobError?.message || 'Impossibile creare il job di elaborazione');
+    }
+
+    return res.status(202).json({ ok: true, jobId: createdJob.id });
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error);
+    const responsePayload = { ok: false, message };
+    if (error && typeof error === 'object') {
+      if (Array.isArray(error.logs)) {
+        responsePayload.logs = error.logs;
+      }
+      if (Array.isArray(error.stageEvents)) {
+        responsePayload.stageEvents = error.stageEvents;
+      }
+    }
+    return res.status(500).json(responsePayload);
+  } finally {
+    try { if (req.files && req.files.audio) await safeUnlink(req.files.audio[0].path); } catch { }
+    try { if (req.files && req.files.pdfLogo) await safeUnlink(req.files.pdfLogo[0].path); } catch { }
+    for (const filePath of cleanupFiles) {
+      try {
+        await safeUnlink(filePath);
+      } catch {
+        // ignore
+      }
+    }
+  }
+});
+// == REFACTORING ASYNC: fine creazione job asincrono ==
+
 
 // == REFACTORING ASYNC: Endpoint stato job ==
 app.get('/api/jobs/:id', authenticateRequest, async (req, res) => {
