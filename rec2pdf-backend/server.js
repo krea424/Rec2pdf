@@ -7356,11 +7356,11 @@ app.get('/api/jobs/:id', authenticateRequest, async (req, res) => {
     }
 
     const { data: jobRecord, error } = await supabase
-      .from(SUPABASE_JOBS_TABLE)
-      .select('id, status, error_message, output_pdf_path, output_md_path, user_id')
-      .eq('id', jobId)
-      .eq('user_id', userId)
-      .maybeSingle();
+  .from(SUPABASE_JOBS_TABLE)
+  .select('id, status, error_message, output_pdf_path, output_md_path, user_id, worker_log') // <-- AGGIUNGI QUI
+  .eq('id', jobId)
+  .eq('user_id', userId)
+  .maybeSingle();
 
     if (error) {
       console.error('❌ Recupero job fallito:', error.message || error);
