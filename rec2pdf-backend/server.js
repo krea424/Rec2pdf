@@ -7283,92 +7283,45 @@ const runPipeline = async (job = {}) => {
 // == REFACTORING ASYNC: fine runPipeline ==
 
 
-// == REFACTORING ASYNC: Worker trigger endpoint ==
+// In server.js
+
+// In server.js
 app.post('/api/worker/trigger', async (req, res) => {
   try {
-    if (!WORKER_SECRET) {
+    const expectedSecret = process.env.WORKER_SECRET;
+    const receivedSecret = req.headers['x-worker-secret'] || '';
+
+    if (!expectedSecret) {
+      console.error('[WORKER TRIGGER] ERRORE CRITICO: WORKER_SECRET non è definito.');
+      return res.status(500).json({ ok: false, message: 'Worker secret non configurato.' });
+    }
+    
+    const isAuthorized = crypto.timingSafeEqual(
+      Buffer.from(receivedSecret.trim()),
+      Buffer.from(expectedSecret.trim())
+    );
+
+    if (!isAuthorized) {
+      console.error('[WORKER TRIGGER] Fallimento autorizzazione.');
       return res.status(401).json({ ok: false, message: 'Unauthorized worker request' });
     }
+    
+    const bodyPayload = req.body;
+    const jobRecord = isPlainObject(bodyPayload.record) ? bodyPayload.record : null;
 
-    const resolveHeaderValue = (value) => {
-      if (typeof value === 'string') {
-        return value.trim();
-      }
-      if (Array.isArray(value)) {
-        for (const entry of value) {
-          if (typeof entry === 'string' && entry.trim()) {
-            return entry.trim();
-          }
-        }
-      }
-      return '';
-    };
-
-    const headerSecret = (() => {
-      const explicitSecret = resolveHeaderValue(req.headers['x-worker-secret']);
-      if (explicitSecret) {
-        return explicitSecret;
-      }
-      const authorizationHeader = resolveHeaderValue(req.headers['authorization']);
-      if (!authorizationHeader) {
-        return '';
-      }
-      if (authorizationHeader.toLowerCase().startsWith('bearer ')) {
-        return authorizationHeader.slice(7).trim();
-      }
-      return authorizationHeader;
-    })();
-
-    if (!headerSecret || headerSecret !== WORKER_SECRET) {
-      return res.status(401).json({ ok: false, message: 'Unauthorized worker request' });
+    if (!jobRecord || !jobRecord.id) {
+      console.error('[WORKER TRIGGER] Payload job non valido.');
+      return res.status(400).json({ ok: false, message: 'Payload job non valido.' });
     }
 
-    const parseJsonSafely = (value) => {
-      if (typeof value === 'string') {
-        try {
-          const parsed = JSON.parse(value);
-          return parsed;
-        } catch (parseError) {
-          throw new Error(`Payload non JSON valido: ${parseError.message || parseError}`);
-        }
-      }
-      return isPlainObject(value) ? value : {};
-    };
+    console.log(`[WORKER TRIGGER] Avvio elaborazione per il job: ${jobRecord.id}`);
+    runPipeline(jobRecord);
 
-    let bodyPayload;
-    try {
-      const rawPayload = parseJsonSafely(req.body);
-      bodyPayload = isPlainObject(rawPayload) ? rawPayload : {};
-    } catch (payloadError) {
-      return res.status(400).json({ ok: false, message: payloadError.message || String(payloadError) });
-    }
-    const jobRecordCandidate =
-      isPlainObject(bodyPayload.record) || isPlainObject(bodyPayload.new)
-        ? bodyPayload.record || bodyPayload.new
-        : bodyPayload.job;
-    const jobRecord = isPlainObject(jobRecordCandidate) ? jobRecordCandidate : bodyPayload;
+    return res.status(202).json({ ok: true, message: 'Job trigger ricevuto.' });
 
-    if (!isPlainObject(jobRecord) || !jobRecord.id) {
-      return res.status(400).json({ ok: false, message: 'Payload job non valido' });
-    }
-
-    const result = await runPipeline(jobRecord);
-    const responseResult = result
-      ? {
-          pdfPath: result.pdfPath || null,
-          mdPath: result.mdPath || null,
-          stageEvents: Array.isArray(result.stageEvents) ? result.stageEvents : [],
-        }
-      : null;
-
-    return res.status(200).json({ ok: true, message: 'Job completato', jobId: jobRecord.id, result: responseResult });
   } catch (error) {
-    console.error('❌ Errore worker trigger:', error);
-    return res.status(500).json({
-      ok: false,
-      message: 'Elaborazione job fallita',
-      error: error?.message || String(error),
-    });
+    console.error('❌ Errore grave nel worker trigger:', error);
+    return res.status(500).json({ ok: false, message: 'Errore interno del worker trigger' });
   }
 });
 // == REFACTORING ASYNC: fine worker trigger ==
@@ -7447,6 +7400,9 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       audioBuffer,
       audioFile.mimetype || 'application/octet-stream'
     );
+    // === DEBUG UPLOAD ===
+    console.log(`[REC2PDF ENDPOINT] File audio caricato con successo su: ${audioStoragePath}`);
+// === FINE DEBUG ===
 
     const bodyPayload = req.body && typeof req.body === 'object' ? { ...req.body } : {};
     const workspaceId = getWorkspaceIdFromRequest(req);

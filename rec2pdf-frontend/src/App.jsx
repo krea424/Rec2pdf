@@ -1851,19 +1851,56 @@ function AppContent(){
       }
     };
 
-    const handleJobCompletion = (completedJob) => {
-      stopPolling();
-      setBusy(false);
-      localStorage.removeItem('activeJobId');
-      setActiveJobId(null);
-      setJobStatus(completedJob);
+    // Dentro useEffect del polling
+const handleJobCompletion = (completedJob) => {
+  stopPolling();
+  setBusy(false);
+  localStorage.removeItem('activeJobId');
+  setActiveJobId(null);
+  setJobStatus(completedJob);
 
-      setPdfPath(completedJob?.output_pdf_path || '');
-      setMdPath(completedJob?.output_md_path || '');
-      // TODO: Ricostruire l'oggetto historyEntry e salvarlo.
+  const pdfPathValue = completedJob.output_pdf_path;
+  const mdPathValue = completedJob.output_md_path;
 
-      pushLogs(['🎉 Pipeline completata con successo!']);
-    };
+  setPdfPath(pdfPathValue);
+  setMdPath(mdPathValue);
+  
+  // ASYNC REFACTOR: Logica di salvataggio cronologia spostata qui
+  const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+  const historyEntry = hydrateHistoryEntry({
+    id: Date.now(),
+    timestamp: new Date().toISOString(),
+    slug: slug || 'sessione',
+    title: slug || 'Sessione',
+    pdfPath: pdfPathValue,
+    mdPath: mdPathValue,
+    backendUrl: normalizedBackend,
+    logs: logs, // Usiamo i log accumulati nello stato
+    stageEvents: PIPELINE_STAGES.map(s => ({ stage: s.key, status: 'done' })), // Semplificazione per ora
+    source: audioBlob?.name ? 'upload' : 'recording',
+    bytes: audioBlob?.size || null,
+    workspace: activeWorkspace ? {
+        id: activeWorkspace.id,
+        name: activeWorkspace.name,
+        client: activeWorkspace.client,
+        projectId: activeProject?.id || '',
+        projectName: activeProject?.name || workspaceSelection.projectName,
+        status: workspaceSelection.status,
+    } : null,
+    prompt: activePrompt ? {
+        id: activePrompt.id,
+        title: activePrompt.title,
+        // ... altri campi del prompt se necessario
+    } : null,
+  });
+
+  setHistory(prev => {
+    const next = [historyEntry, ...prev];
+    return next.slice(0, HISTORY_LIMIT);
+  });
+  
+  pushLogs(['🎉 Pipeline completata con successo!', '💾 Sessione salvata nella Libreria.']);
+};
 
     const handleJobFailure = (failedJob) => {
       stopPolling();
