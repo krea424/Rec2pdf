@@ -1199,10 +1199,7 @@ function AppContent(){
     }
   });
   const [refinedData, setRefinedData] = useState(null);
-  const activePrompt = useMemo(
-    () => findPromptByIdentifier(prompts, promptState.promptId) || null,
-    [prompts, promptState.promptId]
-  );
+  
 
   const setCueCardAnswers = useCallback((valueOrUpdater) => {
     setPromptState((prev) => {
@@ -1842,119 +1839,170 @@ function AppContent(){
     [applyAuthToOptions, fetchBody, refreshSessionIfNeeded]
   );
 
-  // ASYNC REFACTOR: Hook per il polling dello stato del job
-  useEffect(() => {
-    const stopPolling = () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-    };
+// ASYNC REFACTOR: Funzioni di gestione del completamento/fallimento del job, rese stabili con useCallback.
+// In App.jsx
 
-    // Dentro useEffect del polling
-const handleJobCompletion = (completedJob) => {
-  stopPolling();
-  setBusy(false);
-  localStorage.removeItem('activeJobId');
-  setActiveJobId(null);
-  setJobStatus(completedJob);
+// Incolla questo al posto della vecchia handleJobCompletion
+const handleJobCompletion = useCallback((completedJob) => {
+  console.log('%c[handleJobCompletion] ESEGUITA!', 'color: #00ff00; font-weight: bold;', completedJob);
 
-  const pdfPathValue = completedJob.output_pdf_path;
-  const mdPathValue = completedJob.output_md_path;
-
-  setPdfPath(pdfPathValue);
-  setMdPath(mdPathValue);
-  
-  // ASYNC REFACTOR: Logica di salvataggio cronologia spostata qui
-  const normalizedBackend = normalizeBackendUrlValue(backendUrl);
-  const historyEntry = hydrateHistoryEntry({
-    id: Date.now(),
-    timestamp: new Date().toISOString(),
-    slug: slug || 'sessione',
-    title: slug || 'Sessione',
-    pdfPath: pdfPathValue,
-    mdPath: mdPathValue,
-    backendUrl: normalizedBackend,
-    logs: logs, // Usiamo i log accumulati nello stato
-    stageEvents: PIPELINE_STAGES.map(s => ({ stage: s.key, status: 'done' })), // Semplificazione per ora
-    source: audioBlob?.name ? 'upload' : 'recording',
-    bytes: audioBlob?.size || null,
-    workspace: activeWorkspace ? {
-        id: activeWorkspace.id,
-        name: activeWorkspace.name,
-        client: activeWorkspace.client,
-        projectId: activeProject?.id || '',
-        projectName: activeProject?.name || workspaceSelection.projectName,
-        status: workspaceSelection.status,
-    } : null,
-    prompt: activePrompt ? {
-        id: activePrompt.id,
-        title: activePrompt.title,
-        // ... altri campi del prompt se necessario
-    } : null,
+  // 1. Imposta FORZATAMENTE lo stato finale della pipeline UI
+  setPipelineStatus(prevStatus => {
+    const finalStatus = { ...prevStatus };
+    for (const stage of PIPELINE_STAGES) {
+      finalStatus[stage.key] = 'done';
+    }
+    return finalStatus;
   });
 
-  setHistory(prev => {
-    const next = [historyEntry, ...prev];
-    return next.slice(0, HISTORY_LIMIT);
+  // 2. Imposta gli stati per mostrare i risultati
+  setBusy(false);
+  setPdfPath(completedJob.output_pdf_path);
+  setMdPath(completedJob.output_md_path);
+  
+  // 3. Logica di salvataggio cronologia
+  setHistory(currentHistory => {
+    const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+    const historyEntry = hydrateHistoryEntry({
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      slug: slug || 'sessione',
+      title: slug || 'Sessione',
+      pdfPath: completedJob.output_pdf_path,
+      mdPath: completedJob.output_md_path,
+      backendUrl: normalizedBackend,
+      logs: logs,
+      stageEvents: PIPELINE_STAGES.map(s => ({ stage: s.key, status: 'done' })),
+      source: audioBlob?.name ? 'upload' : 'recording',
+      bytes: audioBlob?.size || null,
+      workspace: activeWorkspace ? {
+          id: activeWorkspace.id,
+          name: activeWorkspace.name,
+          client: activeWorkspace.client,
+          projectId: activeProject?.id || '',
+          projectName: activeProject?.name || workspaceSelection.projectName,
+          status: workspaceSelection.status,
+      } : null,
+      prompt: activePrompt ? {
+          id: activePrompt.id,
+          title: activePrompt.title,
+      } : null,
+    });
+    const nextHistory = [historyEntry, ...currentHistory];
+    return nextHistory.slice(0, HISTORY_LIMIT);
   });
   
   pushLogs(['🎉 Pipeline completata con successo!', '💾 Sessione salvata nella Libreria.']);
-};
 
-    const handleJobFailure = (failedJob) => {
-      stopPolling();
-      setBusy(false);
-      localStorage.removeItem('activeJobId');
-      setActiveJobId(null);
-      setJobStatus(failedJob);
+  // 4. Posticipa la pulizia dello stato del job per dare a React il tempo di renderizzare
+  setTimeout(() => {
+    setActiveJobId(null);
+    setJobStatus(null);
+    localStorage.removeItem('activeJobId');
+  }, 100);
 
-      const errorMessage = failedJob?.error_message || 'Il job è fallito senza un messaggio di errore.';
-      setErrorBanner({ title: 'Esecuzione Fallita', details: errorMessage });
-      pushLogs([`❌ ERRORE: ${errorMessage}`]);
-      handlePipelineEvents([
-        { stage: 'complete', status: 'failed', message: errorMessage },
-      ], { animate: false });
-    };
+}, [
+  backendUrl, slug, logs, audioBlob, activeWorkspace, activeProject, workspaceSelection, 
+  activePrompt, setHistory, pushLogs, setBusy, setPdfPath, setMdPath, setActiveJobId, setJobStatus,
+  PIPELINE_STAGES
+]);
 
-    const poll = async () => {
-      if (!activeJobId) return;
+const handleJobFailure = useCallback((failedJob) => {
+  // La funzione stopPolling non è definita qui, quindi la rimuoviamo. Sarà gestita dall'useEffect.
+  setBusy(false);
+  localStorage.removeItem('activeJobId');
+  setActiveJobId(null);
+  setJobStatus(failedJob);
 
-      try {
-        const { ok, data } = await fetchBodyWithAuth(`${backendUrl}/api/jobs/${activeJobId}`);
-        if (!ok) {
-          throw new Error(data?.message || 'Job non trovato o errore server');
-        }
+  const errorMessage = failedJob?.error_message || 'Il job è fallito senza un messaggio di errore.';
+  setErrorBanner({ title: 'Esecuzione Fallita', details: errorMessage });
+  pushLogs([`❌ ERRORE: ${errorMessage}`]);
+  handlePipelineEvents([
+    { stage: 'complete', status: 'failed', message: errorMessage },
+  ], { animate: false });
+}, [
+  // Array di dipendenze completo per handleJobFailure:
+  setBusy, 
+  setActiveJobId, 
+  setJobStatus, 
+  setErrorBanner, 
+  pushLogs, 
+  handlePipelineEvents
+]);  
+  // In App.jsx, subito prima dell'useEffect del polling
+// === INIZIO BLOCCO SPOSTATO ===
+const activeWorkspace = useMemo(
+  () => workspaces.find((workspace) => workspace.id === workspaceSelection.workspaceId) || null,
+  [workspaces, workspaceSelection.workspaceId]
+);
+const workspaceProjects = useMemo(
+  () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []),
+  [activeWorkspace]
+);
 
-        const currentJob = data?.job;
-        if (!currentJob) {
-          throw new Error('Risposta job non valida.');
-        }
 
-        setJobStatus(currentJob);
+const activeProject = useMemo(
+  () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []).find((project) => project.id === workspaceSelection.projectId) || null,
+  [activeWorkspace, workspaceSelection.projectId]
+);
 
-        if (currentJob.status === 'completed') {
-          handleJobCompletion(currentJob);
-        } else if (currentJob.status === 'failed') {
-          handleJobFailure(currentJob);
-        }
-      } catch (error) {
-        console.error(`Errore di rete durante il polling per job ${activeJobId}:`, error);
-        pushLogs([`⚠️ Connessione persa, nuovo tentativo di polling a breve...`]);
+const activePrompt = useMemo(
+  () => findPromptByIdentifier(prompts, promptState.promptId) || null,
+  [prompts, promptState.promptId]
+);
+// === FINE BLOCCO SPOSTATO ===
+  
+  
+
+  
+
+// Sostituisci il vecchio useEffect che aggiorna la UI dai log con questo
+useEffect(() => {
+  if (!activeJobId || !busy) {
+    // Se non c'è un job attivo o non siamo in stato 'busy', non fare nulla.
+    // Lascia che sia handleJobCompletion a gestire lo stato finale.
+    return;
+  }
+
+  if (!jobStatus) {
+    return;
+  }
+
+  const newLogs = (jobStatus.worker_log || '').split('\n').filter(Boolean);
+  if (newLogs.length > logs.length) {
+    setLogs(newLogs);
+  }
+
+  const stageEventsFromLogs = newLogs
+    .map((logLine) => {
+      if (logLine.includes('Transcodifica')) {
+        return { stage: 'transcode', status: logLine.includes('✅') ? 'done' : 'running' };
       }
-    };
-
-    if (activeJobId) {
-      if (!pollingIntervalRef.current) {
-        poll();
-        pollingIntervalRef.current = setInterval(poll, 10000);
+      if (logLine.includes('Trascrizione')) {
+        return { stage: 'transcribe', status: logLine.includes('✅') ? 'done' : 'running' };
       }
-    } else {
-      stopPolling();
-    }
+      if (logLine.includes('Markdown')) {
+        return { stage: 'markdown', status: logLine.includes('✅') ? 'done' : 'running' };
+      }
+      if (logLine.includes('Pubblicazione') || logLine.includes('PDF creato')) {
+        return { stage: 'publish', status: logLine.includes('✅') ? 'done' : 'running' };
+      }
+      if (logLine.includes('Pipeline completata')) {
+        return { stage: 'complete', status: 'done' };
+      }
+      if (logLine.includes('upload') || logLine.includes('Richiesta accettata')) {
+        return { stage: 'upload', status: 'done' };
+      }
+      return null;
+    })
+    .filter(Boolean);
 
-    return () => stopPolling();
-  }, [activeJobId, backendUrl, fetchBodyWithAuth, handlePipelineEvents, pushLogs]);
+  if (busy && stageEventsFromLogs.length === 0) {
+    stageEventsFromLogs.unshift({ stage: 'upload', status: 'running' });
+  }
+
+  handlePipelineEvents(stageEventsFromLogs, { animate: false });
+}, [jobStatus, logs.length, busy, handlePipelineEvents, activeJobId]); // Aggiungi activeJobId qui
 
   // ASYNC REFACTOR: Hook per riprendere il job al caricamento dell'app
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1970,6 +2018,14 @@ const handleJobCompletion = (completedJob) => {
 
   // ASYNC REFACTOR: Hook per aggiornare la UI in base allo stato del job
   useEffect(() => {
+    // === AGGIUNGI QUESTA CONDIZIONE ===
+  if (!activeJobId || !busy) {
+    // Se non c'è un job attivo o non siamo in stato 'busy',
+    // non fare nulla. Lascia che sia handleJobCompletion a gestire lo stato finale.
+    return;
+  }
+  // ===================================
+
     if (!jobStatus) {
       return;
     }
@@ -3717,20 +3773,7 @@ const handleJobCompletion = (completedJob) => {
     setStatusDraft('');
   }, [navigatorSelection, workspaces]);
 
-  const activeWorkspace = useMemo(
-    () => workspaces.find((workspace) => workspace.id === workspaceSelection.workspaceId) || null,
-    [workspaces, workspaceSelection.workspaceId]
-  );
-
-  const workspaceProjects = useMemo(
-    () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []),
-    [activeWorkspace]
-  );
-
-  const activeProject = useMemo(
-    () => workspaceProjects.find((project) => project.id === workspaceSelection.projectId) || null,
-    [workspaceProjects, workspaceSelection.projectId]
-  );
+ 
 
   const activeWorkspaceProfiles = useMemo(
     () => (Array.isArray(activeWorkspace?.profiles) ? activeWorkspace.profiles : []),
@@ -5627,213 +5670,259 @@ const handleRefineAndGenerate = useCallback(async () => {
     return <LoginPage />;
   }
 
-  const baseContextValue = {
-    DEFAULT_BACKEND_URL,
-    DEFAULT_DEST_DIR,
-    theme,
-    themes,
-    cycleTheme,
-    customLogo,
-    setCustomLogo,
-    customPdfLogo,
-    setCustomPdfLogo,
-    backendUp,
-    backendUrl,
-    aiProviderCatalog,
-    aiProviderSelection: aiProviderSelectionState,
-    setAiProviderSelection,
-    resetAiProviderSelection,
-    aiProvidersEffective,
-    refreshAiProviderCatalog,
-    setBackendUrl,
-    diagnostics,
-    runDiagnostics,
-    openSetupAssistant,
-    openSettingsDrawer,
-    settingsOpen,
-    setSettingsOpen,
-    activeSettingsSection,
-    setActiveSettingsSection,
-    showSetupAssistant,
-    setShowSetupAssistant,
-    shouldShowOnboardingBanner,
-    toggleFullScreen,
-    session,
-    handleLogout,
-    onboardingSteps,
-    onboardingStep,
-    setOnboardingStep,
-    handleOnboardingFinish,
-    secureOK,
-    errorBanner,
-    setErrorBanner,
-    permissionMessage,
-    lastMicError,
-    fmtTime,
-    fmtBytes,
-    elapsed,
-    requestPermission,
-    permission,
-    refreshDevices,
-    devices,
-    selectedDeviceId,
-    setSelectedDeviceId,
-    recording,
-    stopRecording,
-    startRecording,
-    busy,
-    mediaSupported,
-    recorderSupported,
-    level,
-    showDestDetails,
-    setShowDestDetails,
-    destDir,
-    setDestDir,
-    destIsPlaceholder,
-    slug,
-    setSlug,
-    secondsCap,
-    setSecondsCap,
-    handleRefreshWorkspaces,
-    handleCreateWorkspace,
-    handleUpdateWorkspace,
-    handleDeleteWorkspace,
-    refreshPdfTemplates,
-    createWorkspaceProfile,
-    updateWorkspaceProfile,
-    deleteWorkspaceProfile,
-    createWorkspaceProject,
-    updateWorkspaceProject,
-    deleteWorkspaceProject,
-    pdfTemplates,
-    pdfTemplatesLoading,
-    pdfTemplatesError,
-    pdfTemplateSelection,
-    handleSelectPdfTemplate,
-    clearPdfTemplateSelection,
-    resetInputSelections,
-    workspaceLoading,
-    handleSelectWorkspaceForPipeline,
-    workspaceSelection,
-    workspaceProfileSelection,
-    workspaceProfileLocked,
-    activeWorkspaceProfiles,
-    activeWorkspaceProfile,
-    applyWorkspaceProfile,
-    clearWorkspaceProfile,
-    workspaces,
-    activeWorkspace,
-    DEFAULT_WORKSPACE_STATUSES,
-    projectCreationMode,
-    workspaceProjects,
-    handleSelectProjectForPipeline,
-    projectDraft,
-    setProjectDraft,
-    handleCreateProjectFromDraft,
-    statusCreationMode,
-    statusDraft,
-    setStatusDraft,
-    handleCreateStatusFromDraft,
-    availableStatuses,
-    handleSelectStatusForPipeline,
-    prompts,
-    promptLoading,
-    promptState,
-    refinedData,
-    setRefinedData,
-    handleSelectPromptTemplate,
-    handleClearPromptSelection,
-    promptFavorites,
-    handleTogglePromptFavorite,
-    handleRefreshPrompts,
-    activePrompt,
-    handlePromptFocusChange,
-    handlePromptNotesChange,
-    handleTogglePromptCue,
-    setCueCardAnswers,
-    setPromptFocus,
-    setPromptNotes,
-    setPromptDetailsOpen,
-    handleCreatePrompt,
-    handleDeletePrompt,
-    mime,
-    audioBlob,
-    audioUrl,
-    enableDiarization,
-    setEnableDiarization,
-    processViaBackend,
-    resetAll,
-    fileInputRef,
-    onPickFile,
-    markdownInputRef,
-    handleMarkdownFilePicked,
-    lastMarkdownUpload,
-    textInputRef,
-    handleTextFilePicked,
-    lastTextUpload,
-    showRawLogs,
-    setShowRawLogs,
-    PIPELINE_STAGES,
-    pipelineStatus,
-    stageMessages,
-    STAGE_STATUS_STYLES,
-    STAGE_STATUS_LABELS,
-    failedStage,
-    activeStageKey,
-    progressPercent,
-    completedStagesCount,
-    totalStages,
-    logs,
-    onboardingComplete,
-    HISTORY_TABS,
-    historyTab,
-    setHistoryTab,
-    history,
-    navigatorSelection,
-    setNavigatorSelection,
-    savedWorkspaceFilters,
-    handleSaveWorkspaceFilter,
-    handleDeleteWorkspaceFilter,
-    handleApplyWorkspaceFilter,
-    historyFilter,
-    setHistoryFilter,
-    fetchEntryPreview,
-    fetchEntryPreAnalysis,
-    handleOpenHistoryPdf,
-    handleOpenHistoryMd,
-    handleRepublishFromMd,
-    handleShowHistoryLogs,
-    handleAssignEntryWorkspace,
-    handleAdoptNavigatorSelection,
-    normalizedBackendUrl,
-    fetchBody,
-    handleLibraryWorkspaceSelection,
-    handleOpenLibraryFile,
-    mdEditor,
-    handleMdEditorChange,
-    handleMdEditorClose,
-    handleMdEditorSave,
-    handleRepublishFromEditor,
-    handleSpeakerMapChange,
-    handleRepublishFromEditorWithSpeakers,
-    mdEditorDirty,
-    speakerMapHasNames,
-    handleOpenMdInNewTab,
-    handleMdEditorViewPdf,
-    headerStatus,
-    promptCompletedCues,
-    baseJourneyVisibility,
-    revealPublishPanel,
-    revealPipelinePanel,
-    openRefinementPanel,
-    closeRefinementPanel,
-    resetJourneyVisibility,
-    resetCreationFlowState,
-    pipelineComplete,
-    resetDiarizationPreference,
-    handleRefineAndGenerate,
-  };
+ // Sostituisci la vecchia dichiarazione di baseContextValue con questa
+const baseContextValue = useMemo(() => ({
+  DEFAULT_BACKEND_URL,
+  DEFAULT_DEST_DIR,
+  theme,
+  themes,
+  cycleTheme,
+  customLogo,
+  setCustomLogo,
+  customPdfLogo,
+  setCustomPdfLogo,
+  backendUp,
+  backendUrl,
+  aiProviderCatalog,
+  aiProviderSelection: aiProviderSelectionState,
+  setAiProviderSelection,
+  resetAiProviderSelection,
+  aiProvidersEffective,
+  refreshAiProviderCatalog,
+  setBackendUrl,
+  diagnostics,
+  runDiagnostics,
+  openSetupAssistant,
+  openSettingsDrawer,
+  settingsOpen,
+  setSettingsOpen,
+  activeSettingsSection,
+  setActiveSettingsSection,
+  showSetupAssistant,
+  setShowSetupAssistant,
+  shouldShowOnboardingBanner,
+  toggleFullScreen,
+  session,
+  handleLogout,
+  onboardingSteps,
+  onboardingStep,
+  setOnboardingStep,
+  handleOnboardingFinish,
+  secureOK,
+  errorBanner,
+  setErrorBanner,
+  permissionMessage,
+  lastMicError,
+  fmtTime,
+  fmtBytes,
+  elapsed,
+  requestPermission,
+  permission,
+  refreshDevices,
+  devices,
+  selectedDeviceId,
+  setSelectedDeviceId,
+  recording,
+  stopRecording,
+  startRecording,
+  busy,
+  mediaSupported,
+  recorderSupported,
+  level,
+  showDestDetails,
+  setShowDestDetails,
+  destDir,
+  setDestDir,
+  destIsPlaceholder,
+  slug,
+  setSlug,
+  secondsCap,
+  setSecondsCap,
+  handleRefreshWorkspaces,
+  handleCreateWorkspace,
+  handleUpdateWorkspace,
+  handleDeleteWorkspace,
+  refreshPdfTemplates,
+  createWorkspaceProfile,
+  updateWorkspaceProfile,
+  deleteWorkspaceProfile,
+  pdfTemplates,
+  pdfTemplatesLoading,
+  pdfTemplatesError,
+  pdfTemplateSelection,
+  handleSelectPdfTemplate,
+  clearPdfTemplateSelection,
+  resetInputSelections,
+  workspaceLoading,
+  handleSelectWorkspaceForPipeline,
+  workspaceSelection,
+  workspaceProfileSelection,
+  workspaceProfileLocked,
+  activeWorkspaceProfiles,
+  activeWorkspaceProfile,
+  applyWorkspaceProfile,
+  clearWorkspaceProfile,
+  workspaces,
+  activeWorkspace,
+  DEFAULT_WORKSPACE_STATUSES,
+  projectCreationMode,
+  workspaceProjects,
+  handleSelectProjectForPipeline,
+  projectDraft,
+  setProjectDraft,
+  handleCreateProjectFromDraft,
+  statusCreationMode,
+  statusDraft,
+  setStatusDraft,
+  handleCreateStatusFromDraft,
+  availableStatuses,
+  handleSelectStatusForPipeline,
+  prompts,
+  promptLoading,
+  promptState,
+  refinedData,
+  setRefinedData,
+  handleSelectPromptTemplate,
+  handleClearPromptSelection,
+  promptFavorites,
+  handleTogglePromptFavorite,
+  handleRefreshPrompts,
+  activePrompt,
+  handlePromptFocusChange,
+  handlePromptNotesChange,
+  handleTogglePromptCue,
+  setCueCardAnswers,
+  setPromptFocus,
+  setPromptNotes,
+  setPromptDetailsOpen,
+  handleCreatePrompt,
+  handleDeletePrompt,
+  mime,
+  audioBlob,
+  audioUrl,
+  enableDiarization,
+  setEnableDiarization,
+  processViaBackend,
+  resetAll,
+  fileInputRef,
+  onPickFile,
+  markdownInputRef,
+  handleMarkdownFilePicked,
+  lastMarkdownUpload,
+  textInputRef,
+  handleTextFilePicked,
+  lastTextUpload,
+  showRawLogs,
+  setShowRawLogs,
+  PIPELINE_STAGES,
+  pipelineStatus,
+  stageMessages,
+  STAGE_STATUS_STYLES,
+  STAGE_STATUS_LABELS,
+  progressPercent,
+  completedStagesCount,
+  totalStages,
+  logs,
+  onboardingComplete,
+  HISTORY_TABS,
+  historyTab,
+  setHistoryTab,
+  history,
+  navigatorSelection,
+  setNavigatorSelection,
+  savedWorkspaceFilters,
+  handleSaveWorkspaceFilter,
+  handleDeleteWorkspaceFilter,
+  handleApplyWorkspaceFilter,
+  historyFilter,
+  setHistoryFilter,
+  fetchEntryPreview,
+  fetchEntryPreAnalysis,
+  handleOpenHistoryPdf,
+  handleOpenHistoryMd,
+  handleRepublishFromMd,
+  handleShowHistoryLogs,
+  handleAssignEntryWorkspace,
+  handleAdoptNavigatorSelection,
+  normalizedBackendUrl,
+  fetchBody,
+  handleLibraryWorkspaceSelection,
+  handleOpenLibraryFile,
+  mdEditor,
+  handleMdEditorChange,
+  handleMdEditorClose,
+  handleMdEditorSave,
+  handleRepublishFromEditor,
+  handleSpeakerMapChange,
+  handleRepublishFromEditorWithSpeakers,
+  mdEditorDirty,
+  speakerMapHasNames,
+  handleOpenMdInNewTab,
+  handleMdEditorViewPdf,
+  headerStatus,
+  promptCompletedCues,
+  baseJourneyVisibility,
+  revealPublishPanel,
+  revealPipelinePanel,
+  openRefinementPanel,
+  closeRefinementPanel,
+  resetJourneyVisibility,
+  resetCreationFlowState,
+  pipelineComplete,
+  resetDiarizationPreference,
+  handleRefineAndGenerate,
+  pdfPath,
+  mdPath,
+}), [
+  theme, customLogo, backendUp, backendUrl, aiProviderCatalog, aiProviderSelectionState,
+  diagnostics, settingsOpen, activeSettingsSection, showSetupAssistant, session,
+  errorBanner, permissionMessage, lastMicError, elapsed, permission, devices, selectedDeviceId,
+  recording, busy, mediaSupported, recorderSupported, level, showDestDetails, destDir,
+  slug, secondsCap, pdfTemplates, pdfTemplatesLoading, pdfTemplatesError, pdfTemplateSelection,
+  workspaceLoading, workspaceSelection, workspaceProfileSelection, workspaceProfileLocked,
+  activeWorkspaceProfiles, activeWorkspaceProfile, workspaces, activeWorkspace, projectCreationMode,
+  workspaceProjects, projectDraft, statusCreationMode, statusDraft, availableStatuses, prompts,
+  promptLoading, promptState, refinedData, promptFavorites, activePrompt, mime, audioBlob, audioUrl,
+  enableDiarization, lastMarkdownUpload, lastTextUpload, showRawLogs, pipelineStatus, stageMessages,
+  progressPercent, completedStagesCount, totalStages, logs, onboardingComplete, historyTab, history,
+  navigatorSelection, savedWorkspaceFilters, historyFilter, normalizedBackendUrl, fetchBody, mdEditor,
+  mdEditorDirty, speakerMapHasNames, headerStatus, promptCompletedCues, baseJourneyVisibility,
+  pipelineComplete, pdfPath, mdPath,
+  cycleTheme, setCustomLogo, setCustomPdfLogo, setAiProviderSelection, resetAiProviderSelection,
+  refreshAiProviderCatalog, setBackendUrl, runDiagnostics, openSetupAssistant, openSettingsDrawer,
+  setSettingsOpen, setActiveSettingsSection, setShowSetupAssistant, toggleFullScreen, handleLogout,
+  setOnboardingStep, handleOnboardingFinish, setErrorBanner, requestPermission, refreshDevices,
+  setSelectedDeviceId, stopRecording, startRecording, setShowDestDetails, setDestDir, setSlug,
+  setSecondsCap, handleRefreshWorkspaces, handleCreateWorkspace, handleUpdateWorkspace,
+  handleDeleteWorkspace, refreshPdfTemplates, createWorkspaceProfile, updateWorkspaceProfile,
+  deleteWorkspaceProfile, handleSelectPdfTemplate, clearPdfTemplateSelection, resetInputSelections,
+  handleSelectWorkspaceForPipeline, applyWorkspaceProfile, clearWorkspaceProfile, handleSelectProjectForPipeline,
+  handleCreateProjectFromDraft, handleCreateStatusFromDraft, handleSelectStatusForPipeline,
+  handleSelectPromptTemplate, handleClearPromptSelection, handleTogglePromptFavorite, handleRefreshPrompts,
+  handlePromptFocusChange, handlePromptNotesChange, handleTogglePromptCue, setCueCardAnswers,
+  setPromptFocus, setPromptNotes, setPromptDetailsOpen, handleCreatePrompt, handleDeletePrompt,
+  setEnableDiarization, processViaBackend, resetAll, onPickFile, handleMarkdownFilePicked,
+  handleTextFilePicked, setHistoryTab, handleSaveWorkspaceFilter, handleDeleteWorkspaceFilter,
+  handleApplyWorkspaceFilter, setHistoryFilter, fetchEntryPreview, fetchEntryPreAnalysis,
+  handleOpenHistoryPdf, handleOpenHistoryMd, handleRepublishFromMd, handleShowHistoryLogs,
+  handleAssignEntryWorkspace, handleAdoptNavigatorSelection, handleLibraryWorkspaceSelection,
+  handleOpenLibraryFile, handleMdEditorChange, handleMdEditorClose, handleMdEditorSave,
+  handleRepublishFromEditor, handleSpeakerMapChange, handleRepublishFromEditorWithSpeakers,
+  handleOpenMdInNewTab, handleMdEditorViewPdf, revealPublishPanel, revealPipelinePanel,
+  openRefinementPanel, closeRefinementPanel, resetJourneyVisibility, resetCreationFlowState,
+  resetDiarizationPreference, handleRefineAndGenerate
+  ]);
 
+  // In App.jsx, subito prima del return di AppContent
+
+console.log('%c[AppContent Render]', 'color: #888;', {
+  busy,
+  pipelineComplete,
+  pdfPath,
+  mdPath,
+  activeJobId,
+  jobStatus: jobStatus?.status
+}); // <-- LOG #2
   return (
     <ModeProvider session={session} syncWithSupabase={!BYPASS_AUTH}>
       <PromptsProvider prompts={prompts}>
