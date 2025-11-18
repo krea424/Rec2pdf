@@ -6833,13 +6833,51 @@ const runPipeline = async (job = {}) => {
           out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
           throw new Error('Trascrizione fallita');
         }
-        const candidates = (await fsp.readdir(transcribeOutputDir)).filter(
-          (file) => file.startsWith(baseName) && file.endsWith('.txt')
-        );
-        if (!candidates.length) {
-          throw new Error('Trascrizione .txt non trovata');
+        const dirEntries = await fsp.readdir(transcribeOutputDir);
+        const txtCandidates = dirEntries.filter((file) => file.endsWith('.txt'));
+        const preferredTxt =
+          txtCandidates.find((file) => file.startsWith(baseName)) || txtCandidates[0] || '';
+
+        if (preferredTxt) {
+          transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, preferredTxt));
+        } else {
+          // Fallback: alcune build di whisperx producono solo .json/.vtt/.srt/.tsv
+          const fallback = dirEntries.find(
+            (file) =>
+              file.startsWith(baseName) &&
+              (file.endsWith('.json') || file.endsWith('.vtt') || file.endsWith('.srt') || file.endsWith('.tsv'))
+          );
+          if (fallback) {
+            out(`ℹ️ Trascrizione .txt assente, uso file ${fallback}`, 'transcribe', 'warning');
+            transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, fallback));
+          } else {
+            // Secondo fallback: prova CLI whisper standard se presente
+            const whisperTxtPath = path.join(transcribeOutputDir, `${baseName}.txt`);
+            const whisperCmd = [
+              'whisper',
+              JSON.stringify(wavLocalForTranscribe),
+              '--language it',
+              '--model base',
+              '--output_format txt',
+              `--output_dir ${JSON.stringify(transcribeOutputDir)}`
+            ].join(' ');
+            const whisperRun = await run('bash', ['-lc', whisperCmd]);
+            if (whisperRun.code === 0) {
+              try {
+                await fsp.access(whisperTxtPath);
+                out('ℹ️ Fallback whisper CLI riuscito', 'transcribe', 'warning');
+                transcriptLocalPath = registerTempFile(whisperTxtPath);
+              } catch {
+                const filesFound = dirEntries.length ? dirEntries.join(', ') : 'nessun file';
+                throw new Error(`Trascrizione .txt non trovata (file presenti: ${filesFound})`);
+              }
+            } else {
+              const filesFound = dirEntries.length ? dirEntries.join(', ') : 'nessun file';
+              const stderr = whisperRun.stderr || whisperRun.stdout || 'whisper non disponibile';
+              throw new Error(`Trascrizione .txt non trovata (file presenti: ${filesFound}) - fallback whisper: ${stderr}`);
+            }
+          }
         }
-        transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, candidates[0]));
       }
       const transcriptMime = diarizeEnabled ? 'application/json' : 'text/plain';
       await uploadFileToBucket(

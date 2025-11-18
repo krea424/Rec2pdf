@@ -32,14 +32,16 @@ import {
 } from "./api/workspaces.js";
 import {
   buildPreAnalyzeRequest,
-  buildRefinementPreAnalyzePayload, // <-- Aggiungi la nuova funzione qui
+  buildRefinementPreAnalyzePayload,
   postPreAnalyze,
 } from "./api/preAnalyze.js";
+import { useJobPolling } from "./hooks/useJobPolling.js"; // <-- NUOVA IMPORTAZIONE
 
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
 const DEFAULT_DEST_DIR = '/Users/';
 const BYPASS_AUTH = import.meta.env.MODE === 'test' || import.meta.env.VITE_BYPASS_AUTH === 'true';
 
+// ... (tutte le funzioni di utility come isDestDirPlaceholder, fmtBytes, etc. rimangono invariate) ...
 const isDestDirPlaceholder = (value) => {
   const sanitized = (value ?? '').trim();
   if (!sanitized) {
@@ -165,15 +167,72 @@ const deriveMarkdownPath = (mdPath, pdfPath) => {
 };
 
 const OBJECT_URL_REVOKE_DELAY_MS = 120_000;
+const DEFAULT_PROCESSED_BUCKET = 'processed-media';
+const KNOWN_BUCKETS = new Set([DEFAULT_PROCESSED_BUCKET, 'audio-uploads', 'text-uploads']);
+
+const parseStoragePath = (filePath, options = {}) => {
+  const raw = typeof filePath === 'string' ? filePath.trim() : '';
+  if (!raw) {
+    return { directUrl: '', bucket: '', objectPath: '' };
+  }
+  if (/^https?:\/\//i.test(raw)) {
+    return { directUrl: raw, bucket: '', objectPath: '' };
+  }
+
+  const normalizedPath = raw.replace(/^\/+/, '');
+  const token = typeof options?.token === 'string' ? options.token.trim() : '';
+  const requestedBucket = typeof options?.bucket === 'string' ? options.bucket.trim() : '';
+
+  let bucket = requestedBucket;
+  let objectPath = normalizedPath;
+
+  if (!bucket) {
+    const parts = normalizedPath.split('/');
+    if (parts.length > 1) {
+      const [first, ...rest] = parts;
+      if (KNOWN_BUCKETS.has(first)) {
+        bucket = first;
+        objectPath = rest.join('/');
+      } else {
+        // Se il primo segmento è "processed" lo trattiamo come parte del path, non come bucket.
+        bucket = '';
+        objectPath = normalizedPath;
+      }
+    }
+  }
+
+  if (!bucket && objectPath.startsWith('processed/')) {
+    bucket = DEFAULT_PROCESSED_BUCKET;
+  }
+
+  return { directUrl: '', bucket, objectPath, token };
+};
+
+const normalizeStoragePathWithBucket = (filePath) => {
+  const parsed = parseStoragePath(filePath);
+  if (parsed.directUrl) return parsed.directUrl;
+  const bucket = parsed.bucket || DEFAULT_PROCESSED_BUCKET;
+  const objectPath = parsed.objectPath;
+  if (!objectPath) return '';
+  return `${bucket}/${objectPath}`;
+};
 
 const buildFileUrl = (backendUrl, filePath, options = {}) => {
   const normalized = normalizeBackendUrlValue(backendUrl);
   if (!normalized || !filePath) return '';
-  const params = new URLSearchParams({ path: filePath });
-  const token = typeof options?.token === 'string' ? options.token.trim() : '';
-  if (token) {
-    params.set('token', token);
+
+  const parsed = parseStoragePath(filePath, options);
+  if (parsed.directUrl) return parsed.directUrl;
+
+  const params = new URLSearchParams();
+  if (parsed.bucket) {
+    params.set('bucket', parsed.bucket);
   }
+  params.set('path', parsed.objectPath);
+  if (parsed.token) {
+    params.set('token', parsed.token);
+  }
+
   return `${normalized}/api/file?${params.toString()}`;
 };
 
@@ -1002,6 +1061,32 @@ function AppContent(){
   const location = useLocation();
   const { trackEvent } = useAnalytics();
 
+  const {
+    secureOK,
+    mediaSupported,
+    recorderSupported,
+    permission,
+    setPermission,
+    permissionMessage,
+    setPermissionMessage,
+    lastMicError,
+    setLastMicError,
+    devices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+    refreshDevices,
+    requestPermission,
+  } = useMicrophoneAccess();
+  const {
+    backendUp,
+    setBackendUp,
+    checkHealth,
+    checkingHealth,
+    diagnostics,
+    runDiagnostics: runBackendDiagnostics,
+    fetchBody,
+  } = useBackendDiagnostics(backendUrl, session);
+
   useEffect(() => {
     if (BYPASS_AUTH) {
       setSession({ user: { id: 'test-user' }, access_token: 'test-access-token' });
@@ -1318,33 +1403,32 @@ function AppContent(){
   const [historyTab, setHistoryTab] = useState('history');
   const [activePanel, setActivePanel] = useState('doc');
   const [mdEditor, setMdEditor] = useState(() => ({ ...EMPTY_EDITOR_STATE }));
-  const {
-    secureOK,
-    mediaSupported,
-    recorderSupported,
-    permission,
-    setPermission,
-    permissionMessage,
-    setPermissionMessage,
-    lastMicError,
-    setLastMicError,
-    devices,
-    selectedDeviceId,
-    setSelectedDeviceId,
-    refreshDevices,
-    requestPermission,
-  } = useMicrophoneAccess();
-  const {
-    backendUp,
-    setBackendUp,
-    checkHealth,
-    checkingHealth,
-    diagnostics,
-    runDiagnostics: runBackendDiagnostics,
-    fetchBody,
-  } = useBackendDiagnostics(backendUrl, session);
+  
+  
   const [onboardingComplete, setOnboardingComplete] = useState(() => localStorage.getItem('onboardingComplete') === 'true');
   const [onboardingStep, setOnboardingStep] = useState(0);
+
+  // === INIZIO BLOCCO SPOSTATO ===
+const activeWorkspace = useMemo(
+  () => workspaces.find((workspace) => workspace.id === workspaceSelection.workspaceId) || null,
+  [workspaces, workspaceSelection.workspaceId]
+);
+const workspaceProjects = useMemo(
+  () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []),
+  [activeWorkspace]
+);
+
+
+const activeProject = useMemo(
+  () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []).find((project) => project.id === workspaceSelection.projectId) || null,
+  [activeWorkspace, workspaceSelection.projectId]
+);
+
+const activePrompt = useMemo(
+  () => findPromptByIdentifier(prompts, promptState.promptId) || null,
+  [prompts, promptState.promptId]
+);
+// === FINE BLOCCO SPOSTATO ===
 
   const mediaRecorderRef=useRef(null);
   const chunksRef=useRef([]);
@@ -1857,8 +1941,8 @@ const handleJobCompletion = useCallback((completedJob) => {
 
   // 2. Imposta gli stati per mostrare i risultati
   setBusy(false);
-  setPdfPath(completedJob.output_pdf_path);
-  setMdPath(completedJob.output_md_path);
+  setPdfPath(normalizeStoragePathWithBucket(completedJob.output_pdf_path));
+  setMdPath(normalizeStoragePathWithBucket(completedJob.output_md_path));
   
   // 3. Logica di salvataggio cronologia
   setHistory(currentHistory => {
@@ -1868,8 +1952,8 @@ const handleJobCompletion = useCallback((completedJob) => {
       timestamp: new Date().toISOString(),
       slug: slug || 'sessione',
       title: slug || 'Sessione',
-      pdfPath: completedJob.output_pdf_path,
-      mdPath: completedJob.output_md_path,
+      pdfPath: normalizeStoragePathWithBucket(completedJob.output_pdf_path),
+      mdPath: normalizeStoragePathWithBucket(completedJob.output_md_path),
       backendUrl: normalizedBackend,
       logs: logs,
       stageEvents: PIPELINE_STAGES.map(s => ({ stage: s.key, status: 'done' })),
@@ -1930,31 +2014,56 @@ const handleJobFailure = useCallback((failedJob) => {
   handlePipelineEvents
 ]);  
   // In App.jsx, subito prima dell'useEffect del polling
-// === INIZIO BLOCCO SPOSTATO ===
-const activeWorkspace = useMemo(
-  () => workspaces.find((workspace) => workspace.id === workspaceSelection.workspaceId) || null,
-  [workspaces, workspaceSelection.workspaceId]
-);
-const workspaceProjects = useMemo(
-  () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []),
-  [activeWorkspace]
-);
 
+  // Polling dello stato del job asincrono: interroga il backend e chiude la pipeline quando completata/fallita.
+  useEffect(() => {
+    if (!activeJobId || !busy) {
+      return;
+    }
 
-const activeProject = useMemo(
-  () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []).find((project) => project.id === workspaceSelection.projectId) || null,
-  [activeWorkspace, workspaceSelection.projectId]
-);
+    const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+    if (!normalizedBackend) {
+      pushLogs(['❌ Backend non configurato: impossibile monitorare il job.']);
+      setBusy(false);
+      return;
+    }
 
-const activePrompt = useMemo(
-  () => findPromptByIdentifier(prompts, promptState.promptId) || null,
-  [prompts, promptState.promptId]
-);
-// === FINE BLOCCO SPOSTATO ===
-  
-  
+    let cancelled = false;
 
-  
+    const pollJob = async () => {
+      try {
+        const result = await fetchBodyWithAuth(`${normalizedBackend}/api/jobs/${activeJobId}`, {
+          method: 'GET',
+        });
+        if (!result.ok) {
+          return;
+        }
+        const job = result.data?.job;
+        if (!job || cancelled) {
+          return;
+        }
+        setJobStatus(job);
+        const normalizedStatus = String(job.status || '').toLowerCase();
+        if (normalizedStatus === 'completed') {
+          handleJobCompletion(job);
+        } else if (normalizedStatus === 'failed' || normalizedStatus === 'error') {
+          handleJobFailure(job);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          pushLogs([`⚠️ Polling job fallito: ${error?.message || String(error)}`]);
+        }
+      }
+    };
+
+    pollJob();
+    const intervalId = setInterval(pollJob, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [activeJobId, backendUrl, busy, fetchBodyWithAuth, handleJobCompletion, handleJobFailure, pushLogs, setBusy]);
+
 
 // Sostituisci il vecchio useEffect che aggiorna la UI dai log con questo
 useEffect(() => {
@@ -2206,13 +2315,23 @@ useEffect(() => {
       if (!normalizedBackend) {
         throw new Error('Backend non configurato.');
       }
-      const trimmedPath = typeof filePath === 'string' ? filePath.trim() : '';
-      if (!trimmedPath) {
+      const parsed = parseStoragePath(filePath, { token: (await getSessionToken()) || '' });
+      console.debug('[requestSignedFileUrl]', {
+        backend: normalizedBackend,
+        filePath,
+        parsed,
+      });
+      if (!parsed.directUrl && !parsed.objectPath) {
         throw new Error('Percorso file non disponibile.');
       }
 
-      const token = (await getSessionToken()) || '';
-      const target = buildFileUrl(normalizedBackend, trimmedPath, token ? { token } : undefined);
+      if (parsed.directUrl) {
+        return parsed.directUrl;
+      }
+
+      // Usa il path originale per evitare di duplicare il bucket in querystring;
+      // buildFileUrl rileva il bucket dal path se presente.
+      const target = buildFileUrl(normalizedBackend, filePath, { token: parsed.token });
       const response = await fetchWithAuth(target, {
         method: 'GET',
         headers: { Accept: 'application/json' },
@@ -4543,9 +4662,11 @@ const handleRefineAndGenerate = useCallback(async () => {
       handlePipelineEvents(successEvents,{animate:true});
       if(data?.logs?.length) appendLogs(data.logs);
       if(data?.pdfPath){
-        setPdfPath(data.pdfPath);
-        setMdPath(data?.mdPath||"");
-        appendLogs([`✅ PDF generato: ${data.pdfPath}`]);
+        const pdfNormalized = normalizeStoragePathWithBucket(data.pdfPath);
+        const mdNormalized = normalizeStoragePathWithBucket(data?.mdPath||"");
+        setPdfPath(pdfNormalized);
+        setMdPath(mdNormalized);
+        appendLogs([`✅ PDF generato: ${pdfNormalized}`]);
         const normalizedBackend=normalizeBackendUrlValue(backendUrl||'');
         const pdfUrl=buildFileUrl(normalizedBackend,data.pdfPath);
         const mdUrl=buildFileUrl(normalizedBackend,data?.mdPath||'');
@@ -5287,14 +5408,14 @@ const handleRefineAndGenerate = useCallback(async () => {
       const normalizedResponseSpeakerMap = buildSpeakerMap(speakers, responseSpeakerMapRaw);
       const responseHasSpeakerNames = hasNamedSpeakers(normalizedResponseSpeakerMap);
 
-      setPdfPath(payload.pdfPath);
-      setMdPath(mdPathResolved);
+      setPdfPath(normalizeStoragePathWithBucket(payload.pdfPath));
+      setMdPath(normalizeStoragePathWithBucket(mdPathResolved));
       const pdfLogoLabel = resolvePdfLogoLabel(customPdfLogo);
       setHistory(prev => prev.map(item => item.id === entry.id ? hydrateHistoryEntry({
         ...item,
-        pdfPath: payload.pdfPath,
+        pdfPath: normalizeStoragePathWithBucket(payload.pdfPath),
         pdfUrl,
-        mdPath: mdPathResolved,
+        mdPath: normalizeStoragePathWithBucket(mdPathResolved),
         mdUrl,
         localPdfPath: payload?.localPdfPath || item.localPdfPath || '',
         localMdPath: payload?.localMdPath || item.localMdPath || '',
@@ -5555,9 +5676,9 @@ const handleRefineAndGenerate = useCallback(async () => {
       return baseLogs.concat(extras);
     });
     if (entry.pdfPath) {
-      setPdfPath(entry.pdfPath);
+      setPdfPath(normalizeStoragePathWithBucket(entry.pdfPath));
     }
-    setMdPath(deriveMarkdownPath(entry.mdPath, entry.pdfPath));
+    setMdPath(normalizeStoragePathWithBucket(deriveMarkdownPath(entry.mdPath, entry.pdfPath)));
     setActivePanel('doc');
     setErrorBanner(null);
     setShowRawLogs(true);
@@ -5656,142 +5777,128 @@ const handleRefineAndGenerate = useCallback(async () => {
     };
   }, [failedStage, pipelineComplete, activeStageDefinition, busy]);
 
-  if (!sessionChecked) {
-    return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-6 py-4 text-sm text-zinc-300">
-          Verifica sessione in corso…
-        </div>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return <LoginPage />;
-  }
-
- // Sostituisci la vecchia dichiarazione di baseContextValue con questa
-const baseContextValue = useMemo(() => ({
-  DEFAULT_BACKEND_URL,
-  DEFAULT_DEST_DIR,
-  theme,
-  themes,
-  cycleTheme,
-  customLogo,
-  setCustomLogo,
-  customPdfLogo,
-  setCustomPdfLogo,
-  backendUp,
-  backendUrl,
-  aiProviderCatalog,
-  aiProviderSelection: aiProviderSelectionState,
-  setAiProviderSelection,
-  resetAiProviderSelection,
-  aiProvidersEffective,
-  refreshAiProviderCatalog,
-  setBackendUrl,
-  diagnostics,
-  runDiagnostics,
-  openSetupAssistant,
-  openSettingsDrawer,
-  settingsOpen,
-  setSettingsOpen,
-  activeSettingsSection,
-  setActiveSettingsSection,
-  showSetupAssistant,
-  setShowSetupAssistant,
-  shouldShowOnboardingBanner,
-  toggleFullScreen,
-  session,
-  handleLogout,
-  onboardingSteps,
-  onboardingStep,
-  setOnboardingStep,
-  handleOnboardingFinish,
-  secureOK,
-  errorBanner,
-  setErrorBanner,
-  permissionMessage,
-  lastMicError,
-  fmtTime,
-  fmtBytes,
-  elapsed,
-  requestPermission,
-  permission,
-  refreshDevices,
-  devices,
-  selectedDeviceId,
-  setSelectedDeviceId,
-  recording,
-  stopRecording,
-  startRecording,
-  busy,
-  mediaSupported,
-  recorderSupported,
-  level,
-  showDestDetails,
-  setShowDestDetails,
-  destDir,
-  setDestDir,
-  destIsPlaceholder,
-  slug,
-  setSlug,
-  secondsCap,
-  setSecondsCap,
-  handleRefreshWorkspaces,
-  handleCreateWorkspace,
-  handleUpdateWorkspace,
-  handleDeleteWorkspace,
-  refreshPdfTemplates,
-  createWorkspaceProfile,
-  updateWorkspaceProfile,
-  deleteWorkspaceProfile,
-  pdfTemplates,
-  pdfTemplatesLoading,
-  pdfTemplatesError,
-  pdfTemplateSelection,
-  handleSelectPdfTemplate,
-  clearPdfTemplateSelection,
-  resetInputSelections,
-  workspaceLoading,
-  handleSelectWorkspaceForPipeline,
-  workspaceSelection,
-  workspaceProfileSelection,
-  workspaceProfileLocked,
-  activeWorkspaceProfiles,
-  activeWorkspaceProfile,
-  applyWorkspaceProfile,
-  clearWorkspaceProfile,
-  workspaces,
-  activeWorkspace,
-  DEFAULT_WORKSPACE_STATUSES,
-  projectCreationMode,
-  workspaceProjects,
-  handleSelectProjectForPipeline,
-  projectDraft,
-  setProjectDraft,
-  handleCreateProjectFromDraft,
-  statusCreationMode,
-  statusDraft,
-  setStatusDraft,
-  handleCreateStatusFromDraft,
-  availableStatuses,
-  handleSelectStatusForPipeline,
-  prompts,
-  promptLoading,
-  promptState,
-  refinedData,
-  setRefinedData,
-  handleSelectPromptTemplate,
-  handleClearPromptSelection,
-  promptFavorites,
-  handleTogglePromptFavorite,
-  handleRefreshPrompts,
-  activePrompt,
-  handlePromptFocusChange,
-  handlePromptNotesChange,
-  handleTogglePromptCue,
-  setCueCardAnswers,
+  // Sostituisci la vecchia dichiarazione di baseContextValue con questa
+  const baseContextValue = useMemo(() => ({
+    DEFAULT_BACKEND_URL,
+    DEFAULT_DEST_DIR,
+    theme,
+    themes,
+    cycleTheme,
+    customLogo,
+    setCustomLogo,
+    customPdfLogo,
+    setCustomPdfLogo,
+    backendUp,
+    backendUrl,
+    aiProviderCatalog,
+    aiProviderSelection: aiProviderSelectionState,
+    setAiProviderSelection,
+    resetAiProviderSelection,
+    aiProvidersEffective,
+    refreshAiProviderCatalog,
+    setBackendUrl,
+    diagnostics,
+    runDiagnostics,
+    openSetupAssistant,
+    openSettingsDrawer,
+    settingsOpen,
+    setSettingsOpen,
+    activeSettingsSection,
+    setActiveSettingsSection,
+    showSetupAssistant,
+    setShowSetupAssistant,
+    shouldShowOnboardingBanner,
+    toggleFullScreen,
+    session,
+    handleLogout,
+    onboardingSteps,
+    onboardingStep,
+    setOnboardingStep,
+    handleOnboardingFinish,
+    secureOK,
+    errorBanner,
+    setErrorBanner,
+    permissionMessage,
+    lastMicError,
+    fmtTime,
+    fmtBytes,
+    elapsed,
+    requestPermission,
+    permission,
+    refreshDevices,
+    devices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+    recording,
+    stopRecording,
+    startRecording,
+    busy,
+    mediaSupported,
+    recorderSupported,
+    level,
+    showDestDetails,
+    setShowDestDetails,
+    destDir,
+    setDestDir,
+    destIsPlaceholder,
+    slug,
+    setSlug,
+    secondsCap,
+    setSecondsCap,
+    handleRefreshWorkspaces,
+    handleCreateWorkspace,
+    handleUpdateWorkspace,
+    handleDeleteWorkspace,
+    refreshPdfTemplates,
+    createWorkspaceProfile,
+    updateWorkspaceProfile,
+    deleteWorkspaceProfile,
+    pdfTemplates,
+    pdfTemplatesLoading,
+    pdfTemplatesError,
+    pdfTemplateSelection,
+    handleSelectPdfTemplate,
+    clearPdfTemplateSelection,
+    resetInputSelections,
+    workspaceLoading,
+    handleSelectWorkspaceForPipeline,
+    workspaceSelection,
+    workspaceProfileSelection,
+    workspaceProfileLocked,
+    activeWorkspaceProfiles,
+    activeWorkspaceProfile,
+    applyWorkspaceProfile,
+    clearWorkspaceProfile,
+    workspaces,
+    activeWorkspace,
+    DEFAULT_WORKSPACE_STATUSES,
+    projectCreationMode,
+    workspaceProjects,
+    handleSelectProjectForPipeline,
+    projectDraft,
+    setProjectDraft,
+    handleCreateProjectFromDraft,
+    statusCreationMode,
+    statusDraft,
+    setStatusDraft,
+    handleCreateStatusFromDraft,
+    availableStatuses,
+    handleSelectStatusForPipeline,
+    prompts,
+    promptLoading,
+    promptState,
+    refinedData,
+    setRefinedData,
+    handleSelectPromptTemplate,
+    handleClearPromptSelection,
+    promptFavorites,
+    handleTogglePromptFavorite,
+    handleRefreshPrompts,
+    activePrompt,
+    handlePromptFocusChange,
+    handlePromptNotesChange,
+    handleTogglePromptCue,
+    setCueCardAnswers,
   setPromptFocus,
   setPromptNotes,
   setPromptDetailsOpen,
@@ -5913,16 +6020,30 @@ const baseContextValue = useMemo(() => ({
   resetDiarizationPreference, handleRefineAndGenerate
   ]);
 
+  if (!sessionChecked) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-6 py-4 text-sm text-zinc-300">
+          Verifica sessione in corso…
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginPage />;
+  }
+
   // In App.jsx, subito prima del return di AppContent
 
-console.log('%c[AppContent Render]', 'color: #888;', {
-  busy,
-  pipelineComplete,
-  pdfPath,
-  mdPath,
-  activeJobId,
-  jobStatus: jobStatus?.status
-}); // <-- LOG #2
+  console.log('%c[AppContent Render]', 'color: #888;', {
+    busy,
+    pipelineComplete,
+    pdfPath,
+    mdPath,
+    activeJobId,
+    jobStatus: jobStatus?.status,
+  }); // <-- LOG #2
   return (
     <ModeProvider session={session} syncWithSupabase={!BYPASS_AUTH}>
       <PromptsProvider prompts={prompts}>
