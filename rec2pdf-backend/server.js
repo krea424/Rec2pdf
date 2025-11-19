@@ -7342,21 +7342,25 @@ const runPipeline = async (job = {}) => {
 // In server.js
 app.post('/api/worker/trigger', async (req, res) => {
   try {
-    const expectedSecret = process.env.WORKER_SECRET;
-    const receivedSecret = req.headers['x-worker-secret'] || '';
+    const expectedSecretRaw = process.env.WORKER_SECRET;
+    const receivedSecretRaw = req.headers['x-worker-secret'];
+    const expectedSecret = typeof expectedSecretRaw === 'string' ? expectedSecretRaw.trim() : '';
+    const receivedSecret = typeof receivedSecretRaw === 'string' ? receivedSecretRaw.trim() : '';
 
     if (!expectedSecret) {
       console.error('[WORKER TRIGGER] ERRORE CRITICO: WORKER_SECRET non è definito.');
       return res.status(500).json({ ok: false, message: 'Worker secret non configurato.' });
     }
-    
-    const isAuthorized = crypto.timingSafeEqual(
-      Buffer.from(receivedSecret.trim()),
-      Buffer.from(expectedSecret.trim())
-    );
+
+    const expectedBuffer = Buffer.from(expectedSecret);
+    const receivedBuffer = Buffer.from(receivedSecret);
+    let isAuthorized = false;
+    if (expectedBuffer.length === receivedBuffer.length && expectedBuffer.length > 0) {
+      isAuthorized = crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
+    }
 
     if (!isAuthorized) {
-      console.error('[WORKER TRIGGER] Fallimento autorizzazione.');
+      console.error('[WORKER TRIGGER] Fallimento autorizzazione (segreto mancante o non valido).');
       return res.status(401).json({ ok: false, message: 'Unauthorized worker request' });
     }
     
