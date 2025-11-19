@@ -1,72 +1,111 @@
-// in rec2pdf-frontend/src/hooks/useJobPolling.js
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 
+/**
+ * Hook per il polling resiliente (Mobile-First).
+ * Gestisce sospensioni del browser, errori di rete temporanei e ripresa immediata alla visibilità.
+ */
 export const useJobPolling = (jobId, onUpdate, onComplete, onFailure, fetcher) => {
   const pollingIntervalRef = useRef(null);
+  
+  // Ref per tracciare se il componente è montato (evita memory leaks)
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    if (!jobId || !fetcher) {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
+  // La funzione che esegue il controllo effettivo
+  const poll = useCallback(async () => {
+    if (!jobId || !fetcher) return;
+
+    try {
+      // Eseguiamo la chiamata. Se la rete è giù (telefono in standby), fetcher potrebbe fallire o tornare !ok
+      const result = await fetcher();
+      
+      // Se l'utente ha cambiato pagina mentre aspettavamo, fermiamoci
+      if (!isMountedRef.current) return;
+
+      // GESTIONE RESILIENZA:
+      // Se la richiesta fallisce (es. timeout, rete persa), NON fermiamo il polling.
+      // Logghiamo solo un warning e lasciamo che il prossimo intervallo ci riprovi.
+      if (!result || !result.ok) {
+        console.warn(`[ResilientPolling] Errore temporaneo (rete/server) per job ${jobId}. Riprovo al prossimo ciclo.`);
+        return; 
+      }
+      
+      const currentJob = result.data?.job;
+      if (!currentJob) return;
+
+      // Notifica aggiornamento stato (es. per aggiornare i log in tempo reale)
+      if (typeof onUpdate === 'function') {
+        onUpdate(currentJob);
+      }
+      
+      // Logica di completamento
+      if (currentJob.status === 'completed') {
+        stopPolling();
+        if (typeof onComplete === 'function') onComplete(currentJob);
+      } else if (currentJob.status === 'failed') {
+        stopPolling();
+        if (typeof onFailure === 'function') onFailure(currentJob);
+      }
+      // Se è 'pending' o 'processing', non facciamo nulla: il prossimo intervallo controllerà di nuovo.
+
+    } catch (err) {
+      // GESTIONE RESILIENZA ESTREMA:
+      // Anche se fetch lancia un'eccezione critica (es. "NetworkError when attempting to fetch resource"),
+      // noi la catturiamo e NON chiamiamo onFailure.
+      // Il telefono potrebbe essere solo in ascensore o in tasca.
+      console.warn(`[ResilientPolling] Eccezione critica catturata: ${err.message}. Il polling continuerà.`);
+    }
+  }, [jobId, fetcher, onUpdate, onComplete, onFailure, stopPolling]);
+
+  // EFFETTO 1: Gestione del Ciclo di Vita del Polling (Timer)
+  useEffect(() => {
+    if (!jobId) {
+      stopPolling();
       return;
     }
 
-    let isMounted = true;
+    console.log(`[ResilientPolling] Avvio monitoraggio per job: ${jobId}`);
+    
+    // 1. Controllo immediato
+    poll();
+    
+    // 2. Impostazione intervallo (5 secondi è un buon compromesso per mobile)
+    pollingIntervalRef.current = setInterval(poll, 5000);
 
-    const stopPolling = () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
+    return () => stopPolling();
+  }, [jobId, poll, stopPolling]);
+
+  // EFFETTO 2: Gestione "Wake Up" (Visibility API)
+  // Questo è il trucco magico per il mobile.
+  useEffect(() => {
+    if (!jobId) return;
+
+    const handleVisibilityChange = () => {
+      // Se la pagina torna visibile (utente sblocca il telefono o torna sul tab)
+      if (document.visibilityState === 'visible') {
+        console.log('[ResilientPolling] 📱 App ritornata visibile (Wake Up). Forzo controllo immediato.');
+        // Non aspettiamo i 5 secondi del timer, controlliamo SUBITO.
+        poll();
       }
     };
 
-    const poll = async () => {
-      try {
-        const { ok, data } = await fetcher();
-        if (!isMounted) return;
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
-        if (!ok) {
-          throw new Error(data?.message || 'Job non trovato o errore server');
-        }
-        
-        const currentJob = data.job;
-        if (!currentJob) {
-          throw new Error('Risposta del server non valida: oggetto job mancante.');
-        }
-
-        if (typeof onUpdate === 'function') {
-          onUpdate(currentJob);
-        }
-        
-        if (currentJob.status === 'completed') {
-          stopPolling();
-          if (typeof onComplete === 'function') {
-            onComplete(currentJob);
-          }
-        } else if (currentJob.status === 'failed') {
-          stopPolling();
-          if (typeof onFailure === 'function') {
-            onFailure(currentJob);
-          }
-        }
-      } catch (err) {
-        if (isMounted) {
-          console.error(`Errore durante il polling per job ${jobId}:`, err);
-          stopPolling();
-          if (typeof onFailure === 'function') {
-            onFailure({ error_message: err.message || 'Errore di connessione durante il polling.' });
-          }
-        }
-      }
-    };
-
-    // Avvia il polling
-    poll(); // Esegui subito
-    pollingIntervalRef.current = setInterval(poll, 7000);
-
-    // Funzione di pulizia
     return () => {
-      isMounted = false;
-      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-
-  }, [jobId, onUpdate, onComplete, onFailure, fetcher]);
+  }, [jobId, poll]);
 };

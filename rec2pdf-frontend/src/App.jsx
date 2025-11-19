@@ -2013,56 +2013,25 @@ const handleJobFailure = useCallback((failedJob) => {
   pushLogs, 
   handlePipelineEvents
 ]);  
-  // In App.jsx, subito prima dell'useEffect del polling
+// --- INIZIO BLOCCO MANCANTE ---
 
-  // Polling dello stato del job asincrono: interroga il backend e chiude la pipeline quando completata/fallita.
-  useEffect(() => {
-    if (!activeJobId || !busy) {
-      return;
-    }
+const onJobUpdate = useCallback((updatedJob) => {
+  setJobStatus(updatedJob);
+}, []);
 
-    const normalizedBackend = normalizeBackendUrlValue(backendUrl);
-    if (!normalizedBackend) {
-      pushLogs(['❌ Backend non configurato: impossibile monitorare il job.']);
-      setBusy(false);
-      return;
-    }
+const fetcher = useCallback(() => {
+  if (!activeJobId) return Promise.resolve({ ok: false });
+  return fetchBodyWithAuth(`${backendUrl}/api/jobs/${activeJobId}`);
+}, [activeJobId, backendUrl, fetchBodyWithAuth]);
 
-    let cancelled = false;
+useJobPolling(
+  activeJobId,
+  onJobUpdate,
+  handleJobCompletion,
+  handleJobFailure,
+  fetcher
+);
 
-    const pollJob = async () => {
-      try {
-        const result = await fetchBodyWithAuth(`${normalizedBackend}/api/jobs/${activeJobId}`, {
-          method: 'GET',
-        });
-        if (!result.ok) {
-          return;
-        }
-        const job = result.data?.job;
-        if (!job || cancelled) {
-          return;
-        }
-        setJobStatus(job);
-        const normalizedStatus = String(job.status || '').toLowerCase();
-        if (normalizedStatus === 'completed') {
-          handleJobCompletion(job);
-        } else if (normalizedStatus === 'failed' || normalizedStatus === 'error') {
-          handleJobFailure(job);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          pushLogs([`⚠️ Polling job fallito: ${error?.message || String(error)}`]);
-        }
-      }
-    };
-
-    pollJob();
-    const intervalId = setInterval(pollJob, 3000);
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-    };
-  }, [activeJobId, backendUrl, busy, fetchBodyWithAuth, handleJobCompletion, handleJobFailure, pushLogs, setBusy]);
 
 
 // Sostituisci il vecchio useEffect che aggiorna la UI dai log con questo
