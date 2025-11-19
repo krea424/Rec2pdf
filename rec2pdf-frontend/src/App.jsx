@@ -1046,11 +1046,11 @@ function AppContent(){
   });
   const [slug,setSlug]=useState("meeting");
   const [secondsCap,setSecondsCap]=useState(0);
-  const [backendUrl,setBackendUrl]=useState(DEFAULT_BACKEND_URL);
-  const [busy,setBusy]=useState(false);
+  const [backendUrl, setBackendUrl] = useState(DEFAULT_BACKEND_URL);
   const [logs,setLogs]=useState([]);
   const [pdfPath,setPdfPath]=useState("");
   const [mdPath, setMdPath] = useState("");
+  const [busy, setBusy] = useState(false);
   const [enableDiarization, setEnableDiarization] = useState(false);
   // ASYNC REFACTOR: Nuovi stati per la gestione dei job in background
   const [activeJobId, setActiveJobId] = useState(null); // Memorizza solo l'ID del job in corso
@@ -1928,7 +1928,7 @@ const activePrompt = useMemo(
 
 // Incolla questo al posto della vecchia handleJobCompletion
 const handleJobCompletion = useCallback((completedJob) => {
-  console.log('%c[handleJobCompletion] ESEGUITA!', 'color: #00ff00; font-weight: bold;', completedJob);
+  
 
   // 1. Imposta FORZATAMENTE lo stato finale della pipeline UI
   setPipelineStatus(prevStatus => {
@@ -6036,14 +6036,7 @@ const handleRefineAndGenerate = useCallback(async () => {
 
   // In App.jsx, subito prima del return di AppContent
 
-  console.log('%c[AppContent Render]', 'color: #888;', {
-    busy,
-    pipelineComplete,
-    pdfPath,
-    mdPath,
-    activeJobId,
-    jobStatus: jobStatus?.status,
-  }); // <-- LOG #2
+  
   return (
     <ModeProvider session={session} syncWithSupabase={!BYPASS_AUTH}>
       <PromptsProvider prompts={prompts}>

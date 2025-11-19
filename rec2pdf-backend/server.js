@@ -6786,7 +6786,7 @@ const runPipeline = async (job = {}) => {
     );
     const wavLocalForTranscribe = registerTempFile(path.join(pipelineDir, `${baseName}.wav`));
     let transcriptLocalPath = '';
-    try {
+    const performTranscription = async () => {
       const wavBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, wavStoragePath);
       await fsp.writeFile(wavLocalForTranscribe, wavBuffer);
       const transcribeOutputDir = pipelineDir;
@@ -6853,6 +6853,15 @@ const runPipeline = async (job = {}) => {
           } else {
             // Secondo fallback: prova CLI whisper standard se presente
             const whisperTxtPath = path.join(transcribeOutputDir, `${baseName}.txt`);
+            const whisperAvailable = await run('bash', ['-lc', 'command -v whisper >/dev/null']);
+            if (whisperAvailable.code !== 0) {
+              const filesFound = dirEntries.length ? dirEntries.join(', ') : 'nessun file';
+              throwWithStage(
+                'transcribe',
+                `Trascrizione .txt non trovata (file presenti: ${filesFound}); CLI whisper non installata per il fallback`
+              );
+            }
+
             const whisperCmd = [
               'whisper',
               JSON.stringify(wavLocalForTranscribe),
@@ -6869,30 +6878,37 @@ const runPipeline = async (job = {}) => {
                 transcriptLocalPath = registerTempFile(whisperTxtPath);
               } catch {
                 const filesFound = dirEntries.length ? dirEntries.join(', ') : 'nessun file';
-                throw new Error(`Trascrizione .txt non trovata (file presenti: ${filesFound})`);
+                throwWithStage('transcribe', `Trascrizione .txt non trovata (file presenti: ${filesFound})`);
               }
             } else {
               const filesFound = dirEntries.length ? dirEntries.join(', ') : 'nessun file';
               const stderr = whisperRun.stderr || whisperRun.stdout || 'whisper non disponibile';
-              throw new Error(`Trascrizione .txt non trovata (file presenti: ${filesFound}) - fallback whisper: ${stderr}`);
+              throwWithStage(
+                'transcribe',
+                `Trascrizione .txt non trovata (file presenti: ${filesFound}) - fallback whisper: ${stderr}`
+              );
             }
           }
         }
+        const transcriptMime = diarizeEnabled ? 'application/json' : 'text/plain';
+        await uploadFileToBucket(
+          SUPABASE_PROCESSED_BUCKET,
+          transcriptStoragePath,
+          await fsp.readFile(transcriptLocalPath),
+          transcriptMime
+        );
+        out(
+          diarizeEnabled
+            ? `✅ Trascrizione diarizzata completata: ${path.basename(transcriptLocalPath)}`
+            : `✅ Trascrizione completata: ${path.basename(transcriptLocalPath)}`,
+          'transcribe',
+          'completed'
+        );
       }
-      const transcriptMime = diarizeEnabled ? 'application/json' : 'text/plain';
-      await uploadFileToBucket(
-        SUPABASE_PROCESSED_BUCKET,
-        transcriptStoragePath,
-        await fsp.readFile(transcriptLocalPath),
-        transcriptMime
-      );
-      out(
-        diarizeEnabled
-          ? `✅ Trascrizione diarizzata completata: ${path.basename(transcriptLocalPath)}`
-          : `✅ Trascrizione completata: ${path.basename(transcriptLocalPath)}`,
-        'transcribe',
-        'completed'
-      );
+    };
+
+    try {
+      await performTranscription();
     } finally {
       await safeUnlink(wavLocalForTranscribe);
       await safeUnlink(transcriptLocalPath);
@@ -7308,7 +7324,7 @@ const runPipeline = async (job = {}) => {
       worker_log: logs.join('\n'),
     });
 
-    throw pipelineError;
+    return { ok: false, error: message, logs, stageEvents };
   } finally {
     for (const filePath of tempFiles) {
       await safeUnlink(filePath);
@@ -7353,7 +7369,21 @@ app.post('/api/worker/trigger', async (req, res) => {
     }
 
     console.log(`[WORKER TRIGGER] Avvio elaborazione per il job: ${jobRecord.id}`);
-    runPipeline(jobRecord);
+    runPipeline(jobRecord)
+      .then((result) => {
+        if (result && result.ok === false) {
+          console.error(
+            `[WORKER TRIGGER] Elaborazione job ${jobRecord.id} fallita:`,
+            result.error || 'Errore sconosciuto'
+          );
+        }
+      })
+      .catch((pipelineError) => {
+        console.error(
+          `[WORKER TRIGGER] Elaborazione job ${jobRecord.id} fallita:`,
+          pipelineError?.stack || pipelineError
+        );
+      });
 
     return res.status(202).json({ ok: true, message: 'Job trigger ricevuto.' });
 

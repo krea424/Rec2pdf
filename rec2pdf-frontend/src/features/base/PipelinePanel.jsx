@@ -653,11 +653,7 @@ const PipelinePanel = ({ journeyStage = "record" }) => {
 
                     const showDownloadActions = pipelineComplete && pdfPath;
 
-console.log('%c[PipelinePanel Render]', 'color: #00aaff;', {
-  pipelineComplete,
-  pdfPath,
-  showDownloadActions
-}); // <-- LOG #3
+
                 return (
                   <li
                     key={stage.key}
