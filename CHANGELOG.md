@@ -1,6 +1,24 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [13.0.0] - 2025-11-19
+
+### Added
+- **Architettura Asincrona:** Implementato sistema a code basato su tabella `jobs` in Supabase.
+- **Supporto Mobile:** Il frontend ora supporta la ripresa della sessione e il polling in background, permettendo l'uso su smartphone anche con blocco schermo.
+- **Docker Optimization:** "Preriscaldamento" dei modelli WhisperX e Wav2Vec2 durante la build dell'immagine per eliminare i timeout al primo avvio.
+- **Webhook Trigger:** Endpoint `/api/worker/trigger` protetto da secret per l'avvio automatico dei worker.
+
+### Changed
+- **Pipeline:** La pipeline non tiene più aperta la connessione HTTP. Risponde immediatamente con `202 Accepted` e `jobId`.
+- **Frontend:** Sostituita la logica di attesa sincrona con un custom hook `useJobPolling` per il monitoraggio dello stato.
+- **Database:** Aggiunta tabella `jobs` per tracciare lo stato delle elaborazioni.
+
+### Fixed
+- Risolto problema di timeout su file audio di grandi dimensioni.
+- Risolto bug di visualizzazione dei pulsanti di download al termine della pipeline.
+- Risolti conflitti di inizializzazione React (`ReferenceError`) in `App.jsx`.
+
 ## [12.0.0] - 2025-11-15
 
 ### Added
