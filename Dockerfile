@@ -16,11 +16,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Python
 RUN pip3 install --no-cache-dir --break-system-packages --upgrade pip && \
     pip3 install --no-cache-dir --break-system-packages --timeout 600 \
-    torch --index-url https://download.pytorch.org/whl/cpu && \
+    torch torchaudio --index-url https://download.pytorch.org/whl/cpu && \
     pip3 install --no-cache-dir --break-system-packages \
-    git+https://github.com/m-bain/whisperX.git && \
-    python3 -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')" && \
-    rm -rf /root/.cache/pip
+    git+https://github.com/m-bain/whisperX.git
+
+# "Preriscalda" whisperx forzando il download di TUTTI i modelli necessari durante la build.
+# Questo comando scaricherà il modello 'small' di Whisper e il modello di allineamento per l'italiano.
+RUN whisperx dummy.wav --model small --language it --device cpu --compute_type float32 --align_model WAV2VEC2_ASR_BASE_10K_VOXPOPULI_ASR_ITALIAN_V2 || true
+
+# Pulisci la cache di pip alla fine
+RUN rm -rf /root/.cache/pip
 
 # Copia tutto e poi installa
 WORKDIR /app

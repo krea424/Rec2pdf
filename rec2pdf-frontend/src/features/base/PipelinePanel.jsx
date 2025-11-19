@@ -3,7 +3,7 @@ import { Cpu, Download, FileText, RefreshCw, Sparkles, Users } from "../../compo
 import { useAppContext } from "../../hooks/useAppContext";
 import { useAnalytics } from "../../context/AnalyticsContext";
 import { classNames } from "../../utils/classNames";
-import { supabase } from "../../supabaseClient"; // <-- Import aggiunto
+import { supabase } from "../../supabaseClient";
 
 const statusTone = {
   idle: "text-white/60",
@@ -13,7 +13,7 @@ const statusTone = {
   failed: "text-rose-200",
 };
 
-const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
+const PipelinePanel = ({ journeyStage = "record" }) => {
   const context = useAppContext();
   const { trackEvent } = useAnalytics();
   const {
@@ -28,6 +28,8 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     backendUp,
     busy,
     pipelineComplete,
+    pdfPath, // <-- Stato diretto dal context
+    mdPath,   // <-- Stato diretto dal context
     activeStageKey,
     handleOpenHistoryMd,
     resetAll,
@@ -42,7 +44,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     clearWorkspaceProfile,
     workspaces,
     handleSelectWorkspaceForPipeline,
-    normalizedBackendUrl, // Assicuriamoci che sia estratto dal contesto
+    normalizedBackendUrl,
   } = context;
 
   const pipelineRevealState = baseJourneyVisibility?.pipeline ?? false;
@@ -55,8 +57,10 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
   const [hasDownloaded, setHasDownloaded] = useState(false);
   const [hasUnlockedNextSteps, setHasUnlockedNextSteps] = useState(false);
   const hasUnlockedNextStepsRef = useRef(false);
+  
+  // La logica per il focus sul download ora usa lo stato diretto 'pdfPath'
   const focusDownload =
-    journeyStage === "download" && pipelineComplete && latestEntry?.pdfPath && !hasDownloaded;
+    journeyStage === "download" && pipelineComplete && pdfPath && !hasDownloaded;
 
   const shouldDimContent = focusPublish || focusDownload;
 
@@ -181,19 +185,16 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     setEnableDiarization,
   ]);
 
-  const entryId = latestEntry?.id ?? null;
-  const entryPdfPath = latestEntry?.pdfPath ?? null;
-
   useEffect(() => {
     setHasDownloaded(false);
     setHasUnlockedNextSteps(hasUnlockedNextStepsRef.current);
-  }, [entryId]);
+  }, [pdfPath]); // Resetta lo stato del download se cambia il PDF
 
   useEffect(() => {
-    if (!pipelineComplete || !entryPdfPath) {
+    if (!pipelineComplete || !pdfPath) {
       setHasDownloaded(false);
     }
-  }, [entryPdfPath, pipelineComplete]);
+  }, [pdfPath, pipelineComplete]);
 
   useEffect(() => {
     if (pipelineRevealState) {
@@ -214,24 +215,18 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     processViaBackend();
   }, [audioBlob, backendUp, canPublish, processViaBackend, revealPipelinePanel, trackEvent]);
 
-  // ==========================================================
-  // ==        MODIFICA CHIAVE: NUOVA LOGICA DI DOWNLOAD       ==
-  // ==========================================================
   const handleDownload = useCallback(async () => {
-    if (!latestEntry?.pdfPath) {
+    if (!pdfPath) {
       alert("Errore: Percorso del PDF non disponibile.");
       return;
     }
 
-    trackEvent("pipeline.export_pdf", {
-      entryId: latestEntry?.id || null,
-      path: latestEntry.pdfPath,
-    });
+    trackEvent("pipeline.export_pdf", { path: pdfPath });
 
     try {
-      const pathParts = latestEntry.pdfPath.split('/');
+      const pathParts = pdfPath.split('/');
       if (pathParts.length < 2) {
-        throw new Error(`Percorso PDF non valido: ${latestEntry.pdfPath}`);
+        throw new Error(`Percorso PDF non valido: ${pdfPath}`);
       }
       const bucket = pathParts[0];
       const objectPath = pathParts.slice(1).join('/');
@@ -261,20 +256,25 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
       console.error("Errore durante il download del PDF:", error);
       alert(`Errore nel download: ${error.message}`);
     }
-  }, [latestEntry, trackEvent, normalizedBackendUrl]);
-  // ==========================================================
+  }, [pdfPath, trackEvent, normalizedBackendUrl]);
 
   const handleModifyPdf = useCallback(() => {
-    if (!latestEntry) return;
-    trackEvent("pipeline.export_markdown", {
-      entryId: latestEntry?.id || null,
-      path: latestEntry?.mdPath || "",
-    });
-    handleOpenHistoryMd(latestEntry);
+    if (!mdPath) return;
+
+    // Creiamo un "entry" fittizio al momento, perché handleOpenHistoryMd lo richiede
+    const temporaryEntry = {
+      id: Date.now(),
+      pdfPath: pdfPath,
+      mdPath: mdPath,
+      backendUrl: normalizedBackendUrl,
+    };
+
+    trackEvent("pipeline.export_markdown", { path: mdPath });
+    handleOpenHistoryMd(temporaryEntry);
     setHasDownloaded(true);
     hasUnlockedNextStepsRef.current = true;
     setHasUnlockedNextSteps(true);
-  }, [handleOpenHistoryMd, latestEntry, trackEvent]);
+  }, [handleOpenHistoryMd, mdPath, pdfPath, normalizedBackendUrl, trackEvent]);
 
   const handleResetSession = useCallback(() => {
     trackEvent("pipeline.reset_session", {
@@ -391,7 +391,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
     busy ? "cursor-not-allowed opacity-60" : null
   );
 
-  const showDownloadActions = pipelineComplete && latestEntry?.pdfPath;
+  const showDownloadActions = pipelineComplete && pdfPath;
   const showNextSteps = showDownloadActions && hasUnlockedNextSteps;
   const showPipelineDetails =
     hasLaunchedPipeline || pipelineInFlight || pipelineComplete || showDownloadActions;
@@ -494,7 +494,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
               >
                 <Download className="h-4 w-4" /> Scarica PDF
               </button>
-              {latestEntry?.mdPath && !showNextSteps ? (
+              {mdPath && !showNextSteps ? (
                 <button
                   type="button"
                   onClick={handleModifyPdf}
@@ -511,7 +511,7 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
                   Puoi rifinire il documento nel markdown editor e mantenere a portata di mano il reset della sessione.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {latestEntry?.mdPath ? (
+                  {mdPath ? (
                     <button
                       type="button"
                       onClick={handleModifyPdf}
@@ -650,6 +650,10 @@ const PipelinePanel = ({ latestEntry, journeyStage = "record" }) => {
                   : isActive
                     ? "text-white/80"
                     : "text-white/70";
+
+                    const showDownloadActions = pipelineComplete && pdfPath;
+
+
                 return (
                   <li
                     key={stage.key}

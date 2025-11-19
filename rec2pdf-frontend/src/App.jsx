@@ -32,14 +32,16 @@ import {
 } from "./api/workspaces.js";
 import {
   buildPreAnalyzeRequest,
-  buildRefinementPreAnalyzePayload, // <-- Aggiungi la nuova funzione qui
+  buildRefinementPreAnalyzePayload,
   postPreAnalyze,
 } from "./api/preAnalyze.js";
+import { useJobPolling } from "./hooks/useJobPolling.js"; // <-- NUOVA IMPORTAZIONE
 
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7788';
 const DEFAULT_DEST_DIR = '/Users/';
 const BYPASS_AUTH = import.meta.env.MODE === 'test' || import.meta.env.VITE_BYPASS_AUTH === 'true';
 
+// ... (tutte le funzioni di utility come isDestDirPlaceholder, fmtBytes, etc. rimangono invariate) ...
 const isDestDirPlaceholder = (value) => {
   const sanitized = (value ?? '').trim();
   if (!sanitized) {
@@ -165,15 +167,72 @@ const deriveMarkdownPath = (mdPath, pdfPath) => {
 };
 
 const OBJECT_URL_REVOKE_DELAY_MS = 120_000;
+const DEFAULT_PROCESSED_BUCKET = 'processed-media';
+const KNOWN_BUCKETS = new Set([DEFAULT_PROCESSED_BUCKET, 'audio-uploads', 'text-uploads']);
+
+const parseStoragePath = (filePath, options = {}) => {
+  const raw = typeof filePath === 'string' ? filePath.trim() : '';
+  if (!raw) {
+    return { directUrl: '', bucket: '', objectPath: '' };
+  }
+  if (/^https?:\/\//i.test(raw)) {
+    return { directUrl: raw, bucket: '', objectPath: '' };
+  }
+
+  const normalizedPath = raw.replace(/^\/+/, '');
+  const token = typeof options?.token === 'string' ? options.token.trim() : '';
+  const requestedBucket = typeof options?.bucket === 'string' ? options.bucket.trim() : '';
+
+  let bucket = requestedBucket;
+  let objectPath = normalizedPath;
+
+  if (!bucket) {
+    const parts = normalizedPath.split('/');
+    if (parts.length > 1) {
+      const [first, ...rest] = parts;
+      if (KNOWN_BUCKETS.has(first)) {
+        bucket = first;
+        objectPath = rest.join('/');
+      } else {
+        // Se il primo segmento è "processed" lo trattiamo come parte del path, non come bucket.
+        bucket = '';
+        objectPath = normalizedPath;
+      }
+    }
+  }
+
+  if (!bucket && objectPath.startsWith('processed/')) {
+    bucket = DEFAULT_PROCESSED_BUCKET;
+  }
+
+  return { directUrl: '', bucket, objectPath, token };
+};
+
+const normalizeStoragePathWithBucket = (filePath) => {
+  const parsed = parseStoragePath(filePath);
+  if (parsed.directUrl) return parsed.directUrl;
+  const bucket = parsed.bucket || DEFAULT_PROCESSED_BUCKET;
+  const objectPath = parsed.objectPath;
+  if (!objectPath) return '';
+  return `${bucket}/${objectPath}`;
+};
 
 const buildFileUrl = (backendUrl, filePath, options = {}) => {
   const normalized = normalizeBackendUrlValue(backendUrl);
   if (!normalized || !filePath) return '';
-  const params = new URLSearchParams({ path: filePath });
-  const token = typeof options?.token === 'string' ? options.token.trim() : '';
-  if (token) {
-    params.set('token', token);
+
+  const parsed = parseStoragePath(filePath, options);
+  if (parsed.directUrl) return parsed.directUrl;
+
+  const params = new URLSearchParams();
+  if (parsed.bucket) {
+    params.set('bucket', parsed.bucket);
   }
+  params.set('path', parsed.objectPath);
+  if (parsed.token) {
+    params.set('token', parsed.token);
+  }
+
   return `${normalized}/api/file?${params.toString()}`;
 };
 
@@ -987,16 +1046,46 @@ function AppContent(){
   });
   const [slug,setSlug]=useState("meeting");
   const [secondsCap,setSecondsCap]=useState(0);
-  const [backendUrl,setBackendUrl]=useState(DEFAULT_BACKEND_URL);
-  const [busy,setBusy]=useState(false);
+  const [backendUrl, setBackendUrl] = useState(DEFAULT_BACKEND_URL);
   const [logs,setLogs]=useState([]);
   const [pdfPath,setPdfPath]=useState("");
   const [mdPath, setMdPath] = useState("");
+  const [busy, setBusy] = useState(false);
   const [enableDiarization, setEnableDiarization] = useState(false);
+  // ASYNC REFACTOR: Nuovi stati per la gestione dei job in background
+  const [activeJobId, setActiveJobId] = useState(null); // Memorizza solo l'ID del job in corso
+  const [jobStatus, setJobStatus] = useState(null);     // Memorizza l'intero oggetto di stato dal backend
+  const pollingIntervalRef = useRef(null);              // Riferimento per l'ID del timer del polling
 
   const navigate = useNavigate();
   const location = useLocation();
   const { trackEvent } = useAnalytics();
+
+  const {
+    secureOK,
+    mediaSupported,
+    recorderSupported,
+    permission,
+    setPermission,
+    permissionMessage,
+    setPermissionMessage,
+    lastMicError,
+    setLastMicError,
+    devices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+    refreshDevices,
+    requestPermission,
+  } = useMicrophoneAccess();
+  const {
+    backendUp,
+    setBackendUp,
+    checkHealth,
+    checkingHealth,
+    diagnostics,
+    runDiagnostics: runBackendDiagnostics,
+    fetchBody,
+  } = useBackendDiagnostics(backendUrl, session);
 
   useEffect(() => {
     if (BYPASS_AUTH) {
@@ -1195,10 +1284,7 @@ function AppContent(){
     }
   });
   const [refinedData, setRefinedData] = useState(null);
-  const activePrompt = useMemo(
-    () => findPromptByIdentifier(prompts, promptState.promptId) || null,
-    [prompts, promptState.promptId]
-  );
+  
 
   const setCueCardAnswers = useCallback((valueOrUpdater) => {
     setPromptState((prev) => {
@@ -1317,33 +1403,32 @@ function AppContent(){
   const [historyTab, setHistoryTab] = useState('history');
   const [activePanel, setActivePanel] = useState('doc');
   const [mdEditor, setMdEditor] = useState(() => ({ ...EMPTY_EDITOR_STATE }));
-  const {
-    secureOK,
-    mediaSupported,
-    recorderSupported,
-    permission,
-    setPermission,
-    permissionMessage,
-    setPermissionMessage,
-    lastMicError,
-    setLastMicError,
-    devices,
-    selectedDeviceId,
-    setSelectedDeviceId,
-    refreshDevices,
-    requestPermission,
-  } = useMicrophoneAccess();
-  const {
-    backendUp,
-    setBackendUp,
-    checkHealth,
-    checkingHealth,
-    diagnostics,
-    runDiagnostics: runBackendDiagnostics,
-    fetchBody,
-  } = useBackendDiagnostics(backendUrl, session);
+  
+  
   const [onboardingComplete, setOnboardingComplete] = useState(() => localStorage.getItem('onboardingComplete') === 'true');
   const [onboardingStep, setOnboardingStep] = useState(0);
+
+  // === INIZIO BLOCCO SPOSTATO ===
+const activeWorkspace = useMemo(
+  () => workspaces.find((workspace) => workspace.id === workspaceSelection.workspaceId) || null,
+  [workspaces, workspaceSelection.workspaceId]
+);
+const workspaceProjects = useMemo(
+  () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []),
+  [activeWorkspace]
+);
+
+
+const activeProject = useMemo(
+  () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []).find((project) => project.id === workspaceSelection.projectId) || null,
+  [activeWorkspace, workspaceSelection.projectId]
+);
+
+const activePrompt = useMemo(
+  () => findPromptByIdentifier(prompts, promptState.promptId) || null,
+  [prompts, promptState.promptId]
+);
+// === FINE BLOCCO SPOSTATO ===
 
   const mediaRecorderRef=useRef(null);
   const chunksRef=useRef([]);
@@ -1737,6 +1822,8 @@ function AppContent(){
     setMdPath("");
     setPermissionMessage("");
     setErrorBanner(null);
+    // ASYNC REFACTOR: resettiamo lo stato del job precedente prima di crearne uno nuovo
+    setJobStatus(null);
     resetPipelineProgress(false);
     setShowRawLogs(false);
     setLastMarkdownUpload(null);
@@ -1835,6 +1922,258 @@ function AppContent(){
     },
     [applyAuthToOptions, fetchBody, refreshSessionIfNeeded]
   );
+
+// ASYNC REFACTOR: Funzioni di gestione del completamento/fallimento del job, rese stabili con useCallback.
+// In App.jsx
+
+// Incolla questo al posto della vecchia handleJobCompletion
+const handleJobCompletion = useCallback((completedJob) => {
+  
+
+  // 1. Imposta FORZATAMENTE lo stato finale della pipeline UI
+  setPipelineStatus(prevStatus => {
+    const finalStatus = { ...prevStatus };
+    for (const stage of PIPELINE_STAGES) {
+      finalStatus[stage.key] = 'done';
+    }
+    return finalStatus;
+  });
+
+  // 2. Imposta gli stati per mostrare i risultati
+  setBusy(false);
+  setPdfPath(normalizeStoragePathWithBucket(completedJob.output_pdf_path));
+  setMdPath(normalizeStoragePathWithBucket(completedJob.output_md_path));
+  
+  // 3. Logica di salvataggio cronologia
+  setHistory(currentHistory => {
+    const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+    const historyEntry = hydrateHistoryEntry({
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      slug: slug || 'sessione',
+      title: slug || 'Sessione',
+      pdfPath: normalizeStoragePathWithBucket(completedJob.output_pdf_path),
+      mdPath: normalizeStoragePathWithBucket(completedJob.output_md_path),
+      backendUrl: normalizedBackend,
+      logs: logs,
+      stageEvents: PIPELINE_STAGES.map(s => ({ stage: s.key, status: 'done' })),
+      source: audioBlob?.name ? 'upload' : 'recording',
+      bytes: audioBlob?.size || null,
+      workspace: activeWorkspace ? {
+          id: activeWorkspace.id,
+          name: activeWorkspace.name,
+          client: activeWorkspace.client,
+          projectId: activeProject?.id || '',
+          projectName: activeProject?.name || workspaceSelection.projectName,
+          status: workspaceSelection.status,
+      } : null,
+      prompt: activePrompt ? {
+          id: activePrompt.id,
+          title: activePrompt.title,
+      } : null,
+    });
+    const nextHistory = [historyEntry, ...currentHistory];
+    return nextHistory.slice(0, HISTORY_LIMIT);
+  });
+  
+  pushLogs(['🎉 Pipeline completata con successo!', '💾 Sessione salvata nella Libreria.']);
+
+  // 4. Posticipa la pulizia dello stato del job per dare a React il tempo di renderizzare
+  setTimeout(() => {
+    setActiveJobId(null);
+    setJobStatus(null);
+    localStorage.removeItem('activeJobId');
+  }, 100);
+
+}, [
+  backendUrl, slug, logs, audioBlob, activeWorkspace, activeProject, workspaceSelection, 
+  activePrompt, setHistory, pushLogs, setBusy, setPdfPath, setMdPath, setActiveJobId, setJobStatus,
+  PIPELINE_STAGES
+]);
+
+const handleJobFailure = useCallback((failedJob) => {
+  // La funzione stopPolling non è definita qui, quindi la rimuoviamo. Sarà gestita dall'useEffect.
+  setBusy(false);
+  localStorage.removeItem('activeJobId');
+  setActiveJobId(null);
+  setJobStatus(failedJob);
+
+  const errorMessage = failedJob?.error_message || 'Il job è fallito senza un messaggio di errore.';
+  setErrorBanner({ title: 'Esecuzione Fallita', details: errorMessage });
+  pushLogs([`❌ ERRORE: ${errorMessage}`]);
+  handlePipelineEvents([
+    { stage: 'complete', status: 'failed', message: errorMessage },
+  ], { animate: false });
+}, [
+  // Array di dipendenze completo per handleJobFailure:
+  setBusy, 
+  setActiveJobId, 
+  setJobStatus, 
+  setErrorBanner, 
+  pushLogs, 
+  handlePipelineEvents
+]);  
+  // In App.jsx, subito prima dell'useEffect del polling
+
+  // Polling dello stato del job asincrono: interroga il backend e chiude la pipeline quando completata/fallita.
+  useEffect(() => {
+    if (!activeJobId || !busy) {
+      return;
+    }
+
+    const normalizedBackend = normalizeBackendUrlValue(backendUrl);
+    if (!normalizedBackend) {
+      pushLogs(['❌ Backend non configurato: impossibile monitorare il job.']);
+      setBusy(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const pollJob = async () => {
+      try {
+        const result = await fetchBodyWithAuth(`${normalizedBackend}/api/jobs/${activeJobId}`, {
+          method: 'GET',
+        });
+        if (!result.ok) {
+          return;
+        }
+        const job = result.data?.job;
+        if (!job || cancelled) {
+          return;
+        }
+        setJobStatus(job);
+        const normalizedStatus = String(job.status || '').toLowerCase();
+        if (normalizedStatus === 'completed') {
+          handleJobCompletion(job);
+        } else if (normalizedStatus === 'failed' || normalizedStatus === 'error') {
+          handleJobFailure(job);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          pushLogs([`⚠️ Polling job fallito: ${error?.message || String(error)}`]);
+        }
+      }
+    };
+
+    pollJob();
+    const intervalId = setInterval(pollJob, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [activeJobId, backendUrl, busy, fetchBodyWithAuth, handleJobCompletion, handleJobFailure, pushLogs, setBusy]);
+
+
+// Sostituisci il vecchio useEffect che aggiorna la UI dai log con questo
+useEffect(() => {
+  if (!activeJobId || !busy) {
+    // Se non c'è un job attivo o non siamo in stato 'busy', non fare nulla.
+    // Lascia che sia handleJobCompletion a gestire lo stato finale.
+    return;
+  }
+
+  if (!jobStatus) {
+    return;
+  }
+
+  const newLogs = (jobStatus.worker_log || '').split('\n').filter(Boolean);
+  if (newLogs.length > logs.length) {
+    setLogs(newLogs);
+  }
+
+  const stageEventsFromLogs = newLogs
+    .map((logLine) => {
+      if (logLine.includes('Transcodifica')) {
+        return { stage: 'transcode', status: logLine.includes('✅') ? 'done' : 'running' };
+      }
+      if (logLine.includes('Trascrizione')) {
+        return { stage: 'transcribe', status: logLine.includes('✅') ? 'done' : 'running' };
+      }
+      if (logLine.includes('Markdown')) {
+        return { stage: 'markdown', status: logLine.includes('✅') ? 'done' : 'running' };
+      }
+      if (logLine.includes('Pubblicazione') || logLine.includes('PDF creato')) {
+        return { stage: 'publish', status: logLine.includes('✅') ? 'done' : 'running' };
+      }
+      if (logLine.includes('Pipeline completata')) {
+        return { stage: 'complete', status: 'done' };
+      }
+      if (logLine.includes('upload') || logLine.includes('Richiesta accettata')) {
+        return { stage: 'upload', status: 'done' };
+      }
+      return null;
+    })
+    .filter(Boolean);
+
+  if (busy && stageEventsFromLogs.length === 0) {
+    stageEventsFromLogs.unshift({ stage: 'upload', status: 'running' });
+  }
+
+  handlePipelineEvents(stageEventsFromLogs, { animate: false });
+}, [jobStatus, logs.length, busy, handlePipelineEvents, activeJobId]); // Aggiungi activeJobId qui
+
+  // ASYNC REFACTOR: Hook per riprendere il job al caricamento dell'app
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const savedJobId = localStorage.getItem('activeJobId');
+    if (savedJobId && !activeJobId) {
+      pushLogs([`ℹ️ Rilevato job in sospeso: ${savedJobId}. Riprendo il monitoraggio...`]);
+      setBusy(true);
+      revealPipelinePanel();
+      setActiveJobId(savedJobId);
+    }
+  }, []);
+
+  // ASYNC REFACTOR: Hook per aggiornare la UI in base allo stato del job
+  useEffect(() => {
+    // === AGGIUNGI QUESTA CONDIZIONE ===
+  if (!activeJobId || !busy) {
+    // Se non c'è un job attivo o non siamo in stato 'busy',
+    // non fare nulla. Lascia che sia handleJobCompletion a gestire lo stato finale.
+    return;
+  }
+  // ===================================
+
+    if (!jobStatus) {
+      return;
+    }
+
+    const newLogs = (jobStatus.worker_log || '').split('\n').filter(Boolean);
+    if (newLogs.length > logs.length) {
+      setLogs(newLogs);
+    }
+
+    const stageEventsFromLogs = newLogs
+      .map((logLine) => {
+        if (logLine.includes('Transcodifica')) {
+          return { stage: 'transcode', status: logLine.includes('✅') ? 'done' : 'running' };
+        }
+        if (logLine.includes('Trascrizione')) {
+          return { stage: 'transcribe', status: logLine.includes('✅') ? 'done' : 'running' };
+        }
+        if (logLine.includes('Markdown')) {
+          return { stage: 'markdown', status: logLine.includes('✅') ? 'done' : 'running' };
+        }
+        if (logLine.includes('Pubblicazione') || logLine.includes('PDF creato')) {
+          return { stage: 'publish', status: logLine.includes('✅') ? 'done' : 'running' };
+        }
+        if (logLine.includes('Pipeline completata')) {
+          return { stage: 'complete', status: 'done' };
+        }
+        if (logLine.includes('upload') || logLine.includes('Richiesta accettata')) {
+          return { stage: 'upload', status: 'done' };
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    if (busy && stageEventsFromLogs.length === 0) {
+      stageEventsFromLogs.unshift({ stage: 'upload', status: 'running' });
+    }
+
+    handlePipelineEvents(stageEventsFromLogs, { animate: false });
+  }, [jobStatus, logs.length, busy, handlePipelineEvents]);
 
   const fetchWithAuth = useCallback(
     async (url, options = {}) => {
@@ -1976,13 +2315,23 @@ function AppContent(){
       if (!normalizedBackend) {
         throw new Error('Backend non configurato.');
       }
-      const trimmedPath = typeof filePath === 'string' ? filePath.trim() : '';
-      if (!trimmedPath) {
+      const parsed = parseStoragePath(filePath, { token: (await getSessionToken()) || '' });
+      console.debug('[requestSignedFileUrl]', {
+        backend: normalizedBackend,
+        filePath,
+        parsed,
+      });
+      if (!parsed.directUrl && !parsed.objectPath) {
         throw new Error('Percorso file non disponibile.');
       }
 
-      const token = (await getSessionToken()) || '';
-      const target = buildFileUrl(normalizedBackend, trimmedPath, token ? { token } : undefined);
+      if (parsed.directUrl) {
+        return parsed.directUrl;
+      }
+
+      // Usa il path originale per evitare di duplicare il bucket in querystring;
+      // buildFileUrl rileva il bucket dal path se presente.
+      const target = buildFileUrl(normalizedBackend, filePath, { token: parsed.token });
       const response = await fetchWithAuth(target, {
         method: 'GET',
         headers: { Accept: 'application/json' },
@@ -3543,20 +3892,7 @@ function AppContent(){
     setStatusDraft('');
   }, [navigatorSelection, workspaces]);
 
-  const activeWorkspace = useMemo(
-    () => workspaces.find((workspace) => workspace.id === workspaceSelection.workspaceId) || null,
-    [workspaces, workspaceSelection.workspaceId]
-  );
-
-  const workspaceProjects = useMemo(
-    () => (Array.isArray(activeWorkspace?.projects) ? activeWorkspace.projects : []),
-    [activeWorkspace]
-  );
-
-  const activeProject = useMemo(
-    () => workspaceProjects.find((project) => project.id === workspaceSelection.projectId) || null,
-    [workspaceProjects, workspaceSelection.projectId]
-  );
+ 
 
   const activeWorkspaceProfiles = useMemo(
     () => (Array.isArray(activeWorkspace?.profiles) ? activeWorkspace.profiles : []),
@@ -4060,8 +4396,6 @@ const handleRefineAndGenerate = useCallback(async () => {
     setPdfPath("");
     setMdPath("");
     setErrorBanner(null);
-    const runStartedAt=new Date();
-    const durationSeconds=Number.isFinite(elapsed)?elapsed:null;
     const sessionLogs=[];
     const appendLogs=(entries)=>{
       const sanitized=(entries||[]).filter(Boolean);
@@ -4153,125 +4487,34 @@ const handleRefineAndGenerate = useCallback(async () => {
       }
       const cap=Number(secondsCap||0);
       if(cap>0) fd.append('seconds',String(cap));
-      const {ok,status,data,raw}=await fetchBodyWithAuth(`${backendUrl}/api/rec2pdf`,{method:'POST',body:fd});
-      const stageEventsPayload = Array.isArray(data?.stageEvents) ? data.stageEvents : [];
-      if(!ok){
-        if (stageEventsPayload.length) {
-          handlePipelineEvents(stageEventsPayload, { animate: false });
-        } else {
-          const fallbackMessage = data?.message || (raw ? raw.slice(0, 120) : status === 0 ? 'Connessione fallita/CORS' : 'Errore backend');
-          handlePipelineEvents([
-            { stage: 'complete', status: 'failed', message: fallbackMessage },
-          ], { animate: false });
-        }
-        if(data?.logs?.length) appendLogs(data.logs);
-        if(data?.message) appendLogs([`❌ ${data.message}`]);
-        if(!data&&raw) appendLogs([`❌ Risposta server: ${raw.slice(0,400)}${raw.length>400?'…':''}`]);
-        appendLogs([`Errore backend: HTTP ${status||'0 (rete)'}`]);
-        setErrorBanner({title:`Errore backend (HTTP ${status||'0'})`,details:data?.message||(raw?raw.slice(0,400):(status===0?'Connessione fallita/CORS':'Errore sconosciuto'))});
-        return;
+      // ASYNC REFACTOR: Inizio della modifica
+      const { ok, status, data } = await fetchBodyWithAuth(`${backendUrl}/api/rec2pdf`, {
+        method: 'POST',
+        body: fd,
+      });
+
+      if (!ok) {
+        throw new Error(data?.message || `Errore nella creazione del job (HTTP ${status || '0'})`);
       }
-      const successEvents = stageEventsPayload.length
-        ? stageEventsPayload
-        : [{ stage: 'complete', status: 'done', message: 'Pipeline completata' }];
-      handlePipelineEvents(successEvents, { animate: true });
-      if(data?.logs) appendLogs(data.logs);
-      if(data?.pdfPath){
-        let refinedResult = refinedPayloadForUpload;
-        if (Object.prototype.hasOwnProperty.call(data || {}, 'refinedData')) {
-          const normalizedRefined = normalizeRefinedDataForUpload(data.refinedData);
-          refinedResult = normalizedRefined.ok ? normalizedRefined.value : null;
-        }
-        setRefinedData(refinedResult || null);
-        if (typeof setCueCardAnswers === 'function') {
-          if (refinedResult && typeof refinedResult.cueCardAnswers === 'object' && refinedResult.cueCardAnswers !== null) {
-            setCueCardAnswers(refinedResult.cueCardAnswers);
-          } else if (!refinedResult) {
-            setCueCardAnswers({});
-          }
-        }
-        setPdfPath(data.pdfPath);
-        setMdPath(data.mdPath || "");
-        const normalizedBackend = normalizeBackendUrlValue(backendUrl || '');
-        const pdfUrl = buildFileUrl(normalizedBackend, data.pdfPath);
-        const mdUrl = buildFileUrl(normalizedBackend, data?.mdPath || '');
-        const logosUsed={
-          frontend: customLogo?'custom':'default',
-          pdf: resolvePdfLogoLabel(customPdfLogo),
-        };
-        const structureMeta = data?.structure || null;
-        if (structureMeta && Number.isFinite(structureMeta.score)) {
-          appendLogs([`📊 Completezza stimata: ${structureMeta.score}%`]);
-          if (Array.isArray(structureMeta.missingSections) && structureMeta.missingSections.length) {
-            appendLogs([`🧩 Sezioni mancanti: ${structureMeta.missingSections.join(', ')}`]);
-          }
-        }
-        const fallbackPrompt = promptState.promptId
-          ? {
-              id: promptState.promptId,
-              title: activePrompt?.title || '',
-              slug: activePrompt?.slug || '',
-              description: activePrompt?.description || '',
-              persona: activePrompt?.persona || '',
-              color: activePrompt?.color || '#6366f1',
-              tags: Array.isArray(activePrompt?.tags) ? activePrompt.tags : [],
-              cueCards: Array.isArray(activePrompt?.cueCards) ? activePrompt.cueCards : [],
-              checklist: activePrompt?.checklist || null,
-              markdownRules: activePrompt?.markdownRules || null,
-              pdfRules: activePrompt?.pdfRules || null,
-              focus: promptState.focus || '',
-              notes: promptState.notes || '',
-              completedCues: promptCompletedCues,
-              builtIn: Boolean(activePrompt?.builtIn),
-            }
-          : null;
-        const promptSummary = data?.prompt || fallbackPrompt;
-        const historyEntry=hydrateHistoryEntry({
-          id:Date.now(),
-          timestamp:runStartedAt.toISOString(),
-          slug:slug||'meeting',
-          title:slug||'Sessione',
-          duration:durationSeconds,
-          pdfPath:data.pdfPath,
-          pdfUrl,
-          mdPath:data?.mdPath||'',
-          mdUrl,
-          localPdfPath: data?.localPdfPath || '',
-          localMdPath: data?.localMdPath || '',
-          backendUrl:normalizedBackend,
-          logos:logosUsed,
-          tags:[],
-          logs:sessionLogs,
-          stageEvents: successEvents,
-          source:blobSource,
-          bytes:blob.size||null,
-          workspace: data?.workspace || (workspaceSelection.workspaceId
-            ? {
-                id: workspaceSelection.workspaceId,
-                name: '',
-                client: '',
-                color: '#6366f1',
-                projectId: workspaceSelection.projectId || '',
-                projectName: workspaceSelection.projectName || '',
-                status: workspaceSelection.status || '',
-              }
-            : null),
-          structure: structureMeta,
-          prompt: promptSummary,
-          speakers: Array.isArray(data?.speakers) ? data.speakers : [],
-          speakerMap: data?.speakerMap || {},
-          refinedData: refinedResult,
-        });
-        setHistory(prev=>{
-          const next=[historyEntry,...prev];
-          return next.slice(0,HISTORY_LIMIT);
-        });
-        fetchWorkspaces({ silent: true });
-        appendLogs([`💾 Sessione salvata nella Libreria (${historyEntry.title}).`]);
-      } else {
-        appendLogs(["⚠️ Risposta senza pdfPath."]);
+
+      const { jobId } = data || {};
+      if (!jobId) {
+        throw new Error('Il backend non ha restituito un ID di job valido.');
       }
-    } finally{
+
+      appendLogs([`✔️ Richiesta accettata. Inizio monitoraggio job ID: ${jobId}`]);
+
+      localStorage.setItem('activeJobId', jobId);
+      setActiveJobId(jobId);
+      // ASYNC REFACTOR: Fine della modifica
+    } catch(err){
+      const message=String(err&&err.message?err.message:err);
+      handlePipelineEvents([
+        { stage: 'upload', status: 'failed', message },
+        { stage: 'complete', status: 'failed', message: 'Pipeline non avviata' },
+      ],{ animate:false });
+      appendLogs([`❌ ${message}`]);
+      setErrorBanner({ title: 'Avvio pipeline fallito', details: message });
       setBusy(false);
     }
   };
@@ -4419,9 +4662,11 @@ const handleRefineAndGenerate = useCallback(async () => {
       handlePipelineEvents(successEvents,{animate:true});
       if(data?.logs?.length) appendLogs(data.logs);
       if(data?.pdfPath){
-        setPdfPath(data.pdfPath);
-        setMdPath(data?.mdPath||"");
-        appendLogs([`✅ PDF generato: ${data.pdfPath}`]);
+        const pdfNormalized = normalizeStoragePathWithBucket(data.pdfPath);
+        const mdNormalized = normalizeStoragePathWithBucket(data?.mdPath||"");
+        setPdfPath(pdfNormalized);
+        setMdPath(mdNormalized);
+        appendLogs([`✅ PDF generato: ${pdfNormalized}`]);
         const normalizedBackend=normalizeBackendUrlValue(backendUrl||'');
         const pdfUrl=buildFileUrl(normalizedBackend,data.pdfPath);
         const mdUrl=buildFileUrl(normalizedBackend,data?.mdPath||'');
@@ -5163,14 +5408,14 @@ const handleRefineAndGenerate = useCallback(async () => {
       const normalizedResponseSpeakerMap = buildSpeakerMap(speakers, responseSpeakerMapRaw);
       const responseHasSpeakerNames = hasNamedSpeakers(normalizedResponseSpeakerMap);
 
-      setPdfPath(payload.pdfPath);
-      setMdPath(mdPathResolved);
+      setPdfPath(normalizeStoragePathWithBucket(payload.pdfPath));
+      setMdPath(normalizeStoragePathWithBucket(mdPathResolved));
       const pdfLogoLabel = resolvePdfLogoLabel(customPdfLogo);
       setHistory(prev => prev.map(item => item.id === entry.id ? hydrateHistoryEntry({
         ...item,
-        pdfPath: payload.pdfPath,
+        pdfPath: normalizeStoragePathWithBucket(payload.pdfPath),
         pdfUrl,
-        mdPath: mdPathResolved,
+        mdPath: normalizeStoragePathWithBucket(mdPathResolved),
         mdUrl,
         localPdfPath: payload?.localPdfPath || item.localPdfPath || '',
         localMdPath: payload?.localMdPath || item.localMdPath || '',
@@ -5431,9 +5676,9 @@ const handleRefineAndGenerate = useCallback(async () => {
       return baseLogs.concat(extras);
     });
     if (entry.pdfPath) {
-      setPdfPath(entry.pdfPath);
+      setPdfPath(normalizeStoragePathWithBucket(entry.pdfPath));
     }
-    setMdPath(deriveMarkdownPath(entry.mdPath, entry.pdfPath));
+    setMdPath(normalizeStoragePathWithBucket(deriveMarkdownPath(entry.mdPath, entry.pdfPath)));
     setActivePanel('doc');
     setErrorBanner(null);
     setShowRawLogs(true);
@@ -5532,21 +5777,8 @@ const handleRefineAndGenerate = useCallback(async () => {
     };
   }, [failedStage, pipelineComplete, activeStageDefinition, busy]);
 
-  if (!sessionChecked) {
-    return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-6 py-4 text-sm text-zinc-300">
-          Verifica sessione in corso…
-        </div>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return <LoginPage />;
-  }
-
-  const baseContextValue = {
+  // Sostituisci la vecchia dichiarazione di baseContextValue con questa
+  const baseContextValue = useMemo(() => ({
     DEFAULT_BACKEND_URL,
     DEFAULT_DEST_DIR,
     theme,
@@ -5621,9 +5853,6 @@ const handleRefineAndGenerate = useCallback(async () => {
     createWorkspaceProfile,
     updateWorkspaceProfile,
     deleteWorkspaceProfile,
-    createWorkspaceProject,
-    updateWorkspaceProject,
-    deleteWorkspaceProject,
     pdfTemplates,
     pdfTemplatesLoading,
     pdfTemplatesError,
@@ -5670,89 +5899,144 @@ const handleRefineAndGenerate = useCallback(async () => {
     handlePromptNotesChange,
     handleTogglePromptCue,
     setCueCardAnswers,
-    setPromptFocus,
-    setPromptNotes,
-    setPromptDetailsOpen,
-    handleCreatePrompt,
-    handleDeletePrompt,
-    mime,
-    audioBlob,
-    audioUrl,
-    enableDiarization,
-    setEnableDiarization,
-    processViaBackend,
-    resetAll,
-    fileInputRef,
-    onPickFile,
-    markdownInputRef,
-    handleMarkdownFilePicked,
-    lastMarkdownUpload,
-    textInputRef,
-    handleTextFilePicked,
-    lastTextUpload,
-    showRawLogs,
-    setShowRawLogs,
-    PIPELINE_STAGES,
-    pipelineStatus,
-    stageMessages,
-    STAGE_STATUS_STYLES,
-    STAGE_STATUS_LABELS,
-    failedStage,
-    activeStageKey,
-    progressPercent,
-    completedStagesCount,
-    totalStages,
-    logs,
-    onboardingComplete,
-    HISTORY_TABS,
-    historyTab,
-    setHistoryTab,
-    history,
-    navigatorSelection,
-    setNavigatorSelection,
-    savedWorkspaceFilters,
-    handleSaveWorkspaceFilter,
-    handleDeleteWorkspaceFilter,
-    handleApplyWorkspaceFilter,
-    historyFilter,
-    setHistoryFilter,
-    fetchEntryPreview,
-    fetchEntryPreAnalysis,
-    handleOpenHistoryPdf,
-    handleOpenHistoryMd,
-    handleRepublishFromMd,
-    handleShowHistoryLogs,
-    handleAssignEntryWorkspace,
-    handleAdoptNavigatorSelection,
-    normalizedBackendUrl,
-    fetchBody,
-    handleLibraryWorkspaceSelection,
-    handleOpenLibraryFile,
-    mdEditor,
-    handleMdEditorChange,
-    handleMdEditorClose,
-    handleMdEditorSave,
-    handleRepublishFromEditor,
-    handleSpeakerMapChange,
-    handleRepublishFromEditorWithSpeakers,
-    mdEditorDirty,
-    speakerMapHasNames,
-    handleOpenMdInNewTab,
-    handleMdEditorViewPdf,
-    headerStatus,
-    promptCompletedCues,
-    baseJourneyVisibility,
-    revealPublishPanel,
-    revealPipelinePanel,
-    openRefinementPanel,
-    closeRefinementPanel,
-    resetJourneyVisibility,
-    resetCreationFlowState,
-    pipelineComplete,
-    resetDiarizationPreference,
-    handleRefineAndGenerate,
-  };
+  setPromptFocus,
+  setPromptNotes,
+  setPromptDetailsOpen,
+  handleCreatePrompt,
+  handleDeletePrompt,
+  mime,
+  audioBlob,
+  audioUrl,
+  enableDiarization,
+  setEnableDiarization,
+  processViaBackend,
+  resetAll,
+  fileInputRef,
+  onPickFile,
+  markdownInputRef,
+  handleMarkdownFilePicked,
+  lastMarkdownUpload,
+  textInputRef,
+  handleTextFilePicked,
+  lastTextUpload,
+  showRawLogs,
+  setShowRawLogs,
+  PIPELINE_STAGES,
+  pipelineStatus,
+  stageMessages,
+  STAGE_STATUS_STYLES,
+  STAGE_STATUS_LABELS,
+  progressPercent,
+  completedStagesCount,
+  totalStages,
+  logs,
+  onboardingComplete,
+  HISTORY_TABS,
+  historyTab,
+  setHistoryTab,
+  history,
+  navigatorSelection,
+  setNavigatorSelection,
+  savedWorkspaceFilters,
+  handleSaveWorkspaceFilter,
+  handleDeleteWorkspaceFilter,
+  handleApplyWorkspaceFilter,
+  historyFilter,
+  setHistoryFilter,
+  fetchEntryPreview,
+  fetchEntryPreAnalysis,
+  handleOpenHistoryPdf,
+  handleOpenHistoryMd,
+  handleRepublishFromMd,
+  handleShowHistoryLogs,
+  handleAssignEntryWorkspace,
+  handleAdoptNavigatorSelection,
+  normalizedBackendUrl,
+  fetchBody,
+  handleLibraryWorkspaceSelection,
+  handleOpenLibraryFile,
+  mdEditor,
+  handleMdEditorChange,
+  handleMdEditorClose,
+  handleMdEditorSave,
+  handleRepublishFromEditor,
+  handleSpeakerMapChange,
+  handleRepublishFromEditorWithSpeakers,
+  mdEditorDirty,
+  speakerMapHasNames,
+  handleOpenMdInNewTab,
+  handleMdEditorViewPdf,
+  headerStatus,
+  promptCompletedCues,
+  baseJourneyVisibility,
+  revealPublishPanel,
+  revealPipelinePanel,
+  openRefinementPanel,
+  closeRefinementPanel,
+  resetJourneyVisibility,
+  resetCreationFlowState,
+  pipelineComplete,
+  resetDiarizationPreference,
+  handleRefineAndGenerate,
+  pdfPath,
+  mdPath,
+}), [
+  theme, customLogo, backendUp, backendUrl, aiProviderCatalog, aiProviderSelectionState,
+  diagnostics, settingsOpen, activeSettingsSection, showSetupAssistant, session,
+  errorBanner, permissionMessage, lastMicError, elapsed, permission, devices, selectedDeviceId,
+  recording, busy, mediaSupported, recorderSupported, level, showDestDetails, destDir,
+  slug, secondsCap, pdfTemplates, pdfTemplatesLoading, pdfTemplatesError, pdfTemplateSelection,
+  workspaceLoading, workspaceSelection, workspaceProfileSelection, workspaceProfileLocked,
+  activeWorkspaceProfiles, activeWorkspaceProfile, workspaces, activeWorkspace, projectCreationMode,
+  workspaceProjects, projectDraft, statusCreationMode, statusDraft, availableStatuses, prompts,
+  promptLoading, promptState, refinedData, promptFavorites, activePrompt, mime, audioBlob, audioUrl,
+  enableDiarization, lastMarkdownUpload, lastTextUpload, showRawLogs, pipelineStatus, stageMessages,
+  progressPercent, completedStagesCount, totalStages, logs, onboardingComplete, historyTab, history,
+  navigatorSelection, savedWorkspaceFilters, historyFilter, normalizedBackendUrl, fetchBody, mdEditor,
+  mdEditorDirty, speakerMapHasNames, headerStatus, promptCompletedCues, baseJourneyVisibility,
+  pipelineComplete, pdfPath, mdPath,
+  cycleTheme, setCustomLogo, setCustomPdfLogo, setAiProviderSelection, resetAiProviderSelection,
+  refreshAiProviderCatalog, setBackendUrl, runDiagnostics, openSetupAssistant, openSettingsDrawer,
+  setSettingsOpen, setActiveSettingsSection, setShowSetupAssistant, toggleFullScreen, handleLogout,
+  setOnboardingStep, handleOnboardingFinish, setErrorBanner, requestPermission, refreshDevices,
+  setSelectedDeviceId, stopRecording, startRecording, setShowDestDetails, setDestDir, setSlug,
+  setSecondsCap, handleRefreshWorkspaces, handleCreateWorkspace, handleUpdateWorkspace,
+  handleDeleteWorkspace, refreshPdfTemplates, createWorkspaceProfile, updateWorkspaceProfile,
+  deleteWorkspaceProfile, handleSelectPdfTemplate, clearPdfTemplateSelection, resetInputSelections,
+  handleSelectWorkspaceForPipeline, applyWorkspaceProfile, clearWorkspaceProfile, handleSelectProjectForPipeline,
+  handleCreateProjectFromDraft, handleCreateStatusFromDraft, handleSelectStatusForPipeline,
+  handleSelectPromptTemplate, handleClearPromptSelection, handleTogglePromptFavorite, handleRefreshPrompts,
+  handlePromptFocusChange, handlePromptNotesChange, handleTogglePromptCue, setCueCardAnswers,
+  setPromptFocus, setPromptNotes, setPromptDetailsOpen, handleCreatePrompt, handleDeletePrompt,
+  setEnableDiarization, processViaBackend, resetAll, onPickFile, handleMarkdownFilePicked,
+  handleTextFilePicked, setHistoryTab, handleSaveWorkspaceFilter, handleDeleteWorkspaceFilter,
+  handleApplyWorkspaceFilter, setHistoryFilter, fetchEntryPreview, fetchEntryPreAnalysis,
+  handleOpenHistoryPdf, handleOpenHistoryMd, handleRepublishFromMd, handleShowHistoryLogs,
+  handleAssignEntryWorkspace, handleAdoptNavigatorSelection, handleLibraryWorkspaceSelection,
+  handleOpenLibraryFile, handleMdEditorChange, handleMdEditorClose, handleMdEditorSave,
+  handleRepublishFromEditor, handleSpeakerMapChange, handleRepublishFromEditorWithSpeakers,
+  handleOpenMdInNewTab, handleMdEditorViewPdf, revealPublishPanel, revealPipelinePanel,
+  openRefinementPanel, closeRefinementPanel, resetJourneyVisibility, resetCreationFlowState,
+  resetDiarizationPreference, handleRefineAndGenerate
+  ]);
 
+  if (!sessionChecked) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-6 py-4 text-sm text-zinc-300">
+          Verifica sessione in corso…
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginPage />;
+  }
+
+  // In App.jsx, subito prima del return di AppContent
+
+  
   return (
     <ModeProvider session={session} syncWithSupabase={!BYPASS_AUTH}>
       <PromptsProvider prompts={prompts}>

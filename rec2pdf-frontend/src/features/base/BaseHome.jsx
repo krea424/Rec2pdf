@@ -56,10 +56,11 @@ const ConnectionGuard = () => {
 const BaseHome = () => {
   const context = useAppContext();
   const { pipelineComplete, history, audioBlob, busy, baseJourneyVisibility } = context;
-  const latestEntry = history?.[0] || null;
   const publishPanelVisible = baseJourneyVisibility?.publish ?? false;
 
   const completionHint = useMemo(() => {
+    // Calcoliamo l'entry più recente qui dentro per evitare dipendenze obsolete
+    const latestEntry = history?.[0] || null;
     if (!pipelineComplete || !latestEntry?.pdfPath) {
       return null;
     }
@@ -70,9 +71,11 @@ const BaseHome = () => {
       : "appena generato";
 
     return `PDF pronto da ${workspaceName} · ${timestamp}`;
-  }, [latestEntry, pipelineComplete]);
+  }, [history, pipelineComplete]); // Dipende da history e pipelineComplete
 
   const journeyStage = useMemo(() => {
+    // Calcoliamo l'entry più recente anche qui
+    const latestEntry = history?.[0] || null;
     if (pipelineComplete && latestEntry?.pdfPath) {
       return "download";
     }
@@ -80,7 +83,7 @@ const BaseHome = () => {
       return "publish";
     }
     return "record";
-  }, [audioBlob, busy, latestEntry, pipelineComplete]);
+  }, [audioBlob, busy, history, pipelineComplete]); // Dipende da history e pipelineComplete
 
   const shouldShowPublishPanel = useMemo(() => {
     if (pipelineComplete || busy) {
@@ -117,7 +120,8 @@ const BaseHome = () => {
       >
         <UploadCard journeyStage={journeyStage} />
         {shouldShowPublishPanel ? (
-          <PipelinePanel latestEntry={latestEntry} journeyStage={journeyStage} />
+          // Rimuoviamo il prop 'latestEntry'
+          <PipelinePanel journeyStage={journeyStage} />
         ) : null}
       </section>
 

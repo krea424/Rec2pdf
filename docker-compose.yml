@@ -1,0 +1,16 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./rec2pdf-backend:/app/rec2pdf-backend
+      
+    env_file:
+      - ./rec2pdf-backend/.env
+    
+    
+      
+    command: npm run dev
