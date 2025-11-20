@@ -1132,30 +1132,7 @@ function AppContent(){
     };
   }, []);
   const [errorBanner,setErrorBanner]=useState(null);
-  const handleLogout = useCallback(async () => {
-    // 1. PULIZIA LOCALE IMMEDIATA
-    // Rimuoviamo il "Zombie Job" dalla memoria del browser
-    localStorage.removeItem('activeJobId');
-    
-    // Resettiamo tutti gli stati dell'interfaccia (busy, logs, percorsi)
-    resetAll(); 
-    
-    // (Opzionale) Se vuoi pulire anche altre preferenze, fallo qui
-    // localStorage.removeItem('rec2pdfWorkspaceSelection'); 
   
-    // 2. LOGOUT SUPABASE
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.warn("Errore durante il sign out Supabase:", error);
-        // Non blocchiamo l'utente se il logout server-side fallisce, 
-        // localmente abbiamo già pulito.
-      }
-    }
-    catch (error) {
-    console.error("Eccezione durante il logout:", error);
-    }
-    }, [setErrorBanner, resetAll]); // Assicurati che resetAll sia nelle dipendenze
   const [theme, setTheme] = useState(() => {
     if (typeof window === 'undefined') {
       return 'boardroom';
@@ -1852,6 +1829,31 @@ const activePrompt = useMemo(
     setEnableDiarization(false);
     resetCreationFlowState();
   };
+  const handleLogout = useCallback(async () => {
+    // 1. PULIZIA LOCALE IMMEDIATA
+    // Rimuoviamo il "Zombie Job" dalla memoria del browser
+    localStorage.removeItem('activeJobId');
+    
+    // Resettiamo tutti gli stati dell'interfaccia (busy, logs, percorsi)
+    resetAll(); 
+    
+    // (Opzionale) Se vuoi pulire anche altre preferenze, fallo qui
+    // localStorage.removeItem('rec2pdfWorkspaceSelection'); 
+  
+    // 2. LOGOUT SUPABASE
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.warn("Errore durante il sign out Supabase:", error);
+        // Non blocchiamo l'utente se il logout server-side fallisce, 
+        // localmente abbiamo già pulito.
+      }
+    }
+    catch (error) {
+    console.error("Eccezione durante il logout:", error);
+    }
+    }, [setErrorBanner, resetAll]); // Assicurati che resetAll sia nelle dipendenze
+
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
   const canCallAuthenticatedApis = useMemo(
