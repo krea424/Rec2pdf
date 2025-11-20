@@ -1,5 +1,6 @@
+// AGGIUNGI XCircle alla lista
+import { Cpu, Download, FileText, RefreshCw, Sparkles, Users, XCircle } from "../../components/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Cpu, Download, FileText, RefreshCw, Sparkles, Users } from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
 import { useAnalytics } from "../../context/AnalyticsContext";
 import { classNames } from "../../utils/classNames";
@@ -476,6 +477,20 @@ const PipelinePanel = ({ journeyStage = "record" }) => {
             <Sparkles className="h-5 w-5" /> Raffina e Genera
           </button>
         </div>
+        {/* --- INCOLLA QUESTO BLOCCO QUI SOTTO --- */}
+        {!busy && audioBlob && !hasLaunchedPipeline && (
+          <div className="mt-3 flex justify-center">
+            <button
+              type="button"
+              onClick={resetAll}
+              className="group flex w-full items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/5 px-4 py-3 text-sm font-medium text-white/60 transition-all hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-300 active:scale-95"
+            >
+              <XCircle className="h-4 w-4 opacity-60 transition-opacity group-hover:opacity-100" />
+              Annulla registrazione e ricomincia
+            </button>
+          </div>
+        )}
+        {/* --------------------------------------- */}
         {pipelineInFlight ? (
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200">
             Attendere
