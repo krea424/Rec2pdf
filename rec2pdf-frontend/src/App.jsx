@@ -1928,9 +1928,7 @@ const activePrompt = useMemo(
 
 // Incolla questo al posto della vecchia handleJobCompletion
 const handleJobCompletion = useCallback((completedJob) => {
-  
-
-  // 1. Imposta FORZATAMENTE lo stato finale della pipeline UI
+  // 1. Aggiorna lo stato della UI per mostrare il successo
   setPipelineStatus(prevStatus => {
     const finalStatus = { ...prevStatus };
     for (const stage of PIPELINE_STAGES) {
@@ -1939,12 +1937,14 @@ const handleJobCompletion = useCallback((completedJob) => {
     return finalStatus;
   });
 
-  // 2. Imposta gli stati per mostrare i risultati
-  setBusy(false);
-  setPdfPath(normalizeStoragePathWithBucket(completedJob.output_pdf_path));
-  setMdPath(normalizeStoragePathWithBucket(completedJob.output_md_path));
+  // 2. Imposta i percorsi dei file generati (questo abilita i tasti "Modifica/Apri")
+  const finalPdfPath = normalizeStoragePathWithBucket(completedJob.output_pdf_path);
+  const finalMdPath = normalizeStoragePathWithBucket(completedJob.output_md_path);
   
-  // 3. Logica di salvataggio cronologia
+  setPdfPath(finalPdfPath);
+  setMdPath(finalMdPath);
+  
+  // 3. Aggiorna la cronologia
   setHistory(currentHistory => {
     const normalizedBackend = normalizeBackendUrlValue(backendUrl);
     const historyEntry = hydrateHistoryEntry({
@@ -1952,8 +1952,8 @@ const handleJobCompletion = useCallback((completedJob) => {
       timestamp: new Date().toISOString(),
       slug: slug || 'sessione',
       title: slug || 'Sessione',
-      pdfPath: normalizeStoragePathWithBucket(completedJob.output_pdf_path),
-      mdPath: normalizeStoragePathWithBucket(completedJob.output_md_path),
+      pdfPath: finalPdfPath,
+      mdPath: finalMdPath,
       backendUrl: normalizedBackend,
       logs: logs,
       stageEvents: PIPELINE_STAGES.map(s => ({ stage: s.key, status: 'done' })),
@@ -1978,19 +1978,25 @@ const handleJobCompletion = useCallback((completedJob) => {
   
   pushLogs(['🎉 Pipeline completata con successo!', '💾 Sessione salvata nella Libreria.']);
 
-  // 4. Posticipa la pulizia dello stato del job per dare a React il tempo di renderizzare
-  setTimeout(() => {
-    setActiveJobId(null);
-    setJobStatus(null);
-    localStorage.removeItem('activeJobId');
-  }, 100);
+  // 4. PULIZIA CRITICA (Senza setTimeout)
+  // Rimuoviamo immediatamente l'ID dal localStorage per evitare che al refresh riparta
+  localStorage.removeItem('activeJobId');
+  
+  // Resettiamo gli stati interni
+  setActiveJobId(null);
+  setJobStatus(null);
+  
+  // Importante: Spegniamo il flag "busy" per sbloccare la UI
+  setBusy(false);
+
+  // Opzionale: Forziamo la visualizzazione del pannello di pubblicazione (dove ci sono i tasti)
+  revealPublishPanel();
 
 }, [
   backendUrl, slug, logs, audioBlob, activeWorkspace, activeProject, workspaceSelection, 
   activePrompt, setHistory, pushLogs, setBusy, setPdfPath, setMdPath, setActiveJobId, setJobStatus,
-  PIPELINE_STAGES
+  PIPELINE_STAGES, revealPublishPanel
 ]);
-
 const handleJobFailure = useCallback((failedJob) => {
   // La funzione stopPolling non è definita qui, quindi la rimuoviamo. Sarà gestita dall'useEffect.
   setBusy(false);
