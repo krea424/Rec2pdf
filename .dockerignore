@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Dipendenze (saranno reinstallate pulite dentro Docker)
+**/node_modules
+**/npm-debug.log
+
+# Frontend (Il backend non deve averlo)
+rec2pdf-frontend/
+rec2pdf-frontend-v2/
+
+# File Temporanei e di Sistema
+.DS_Store
+Thumbs.db
+tmp/
+temp/
+*.log
+
+# Cartelle dati locali (Non vogliamo i dati di test in produzione!)
+knowledge_sources/
+uploads/
+processed-media/
+backups/
+rec2pdf-backend/tests/rag_evaluation/
+
+# Documentazione e Asset grafici pesanti (se non usati nel PDF)
+docs/
+file_system.png
+*.pdf
+*.mp3
+*.wav
+*.webm
+
+# Environment locale
+.env
+.env.local
+.env.development
