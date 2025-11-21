@@ -1,5 +1,7 @@
-import { useCallback, useId, useMemo } from "react";
-import { Sparkles, FileText, ClipboardList, XCircle } from "../../components/icons";
+// Aggiungi useRef e useEffect
+import { useCallback, useId, useMemo, useRef, useEffect } from "react";
+// Aggiungi RefreshCw per lo spinner (o usa Sparkles animate-spin)
+import { Sparkles, FileText, ClipboardList, XCircle, RefreshCw } from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
 
@@ -181,7 +183,17 @@ const RefinementPanel = () => {
     audioBlob,
     backendUp,
   } = useAppContext();
+// --- UX FIX 1: Auto-scroll (Interno) ---
+const panelRef = useRef(null);
 
+useEffect(() => {
+  // Appena questo componente viene montato, scorri verso di lui
+  if (panelRef.current) {
+    setTimeout(() => {
+      panelRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+  }
+}, []);
   const idPrefix = useId();
   const sanitizedPrefix = useMemo(() => idPrefix.replace(/[^a-zA-Z0-9_-]/g, ""), [idPrefix]);
 
@@ -268,6 +280,19 @@ const RefinementPanel = () => {
       return;
     }
     processViaBackend();
+    // 2. UX FIX: Scroll verso l'alto per mostrare il progresso
+    // Usiamo un piccolo timeout per dare tempo a React di renderizzare lo stato "busy"
+    setTimeout(() => {
+      const statusArea = document.getElementById("pipeline-status-area");
+      if (statusArea) {
+        // Opzione A: Scroll fluido verso il pannello di progresso
+        statusArea.scrollIntoView({ behavior: "smooth", block: "center" });
+      } else {
+        // Opzione B (Fallback): Se l'elemento non c'è ancora, scrolla a inizio pagina
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }, 100);
+
   }, [canSubmit, processViaBackend]);
 
   const handleClose = useCallback(() => {
@@ -288,9 +313,29 @@ const RefinementPanel = () => {
     }
     return "";
   }, [audioBlob, backendUp, busy]);
-
+  if (busy && !refinedData) {
+    return (
+      <section 
+        ref={panelRef} 
+        className="flex min-h-[300px] flex-col items-center justify-center gap-4 rounded-3xl border border-white/10 bg-white/5 p-8 text-center text-white shadow-subtle animate-pulse"
+      >
+        <Sparkles className="h-10 w-10 animate-spin text-indigo-400" />
+        <div>
+          <h3 className="text-lg font-semibold uppercase tracking-widest text-white/80">
+            Analisi Audio in Corso
+          </h3>
+          <p className="mt-2 text-sm text-white/50 max-w-md mx-auto">
+            L'AI sta riascoltando la registrazione per estrarre i punti chiave e preparare le Cue Cards. Richiede pochi secondi...
+          </p>
+        </div>
+      </section>
+    );
+  }
+  // ----------------------------------------------------
   return (
-    <section className="rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-subtle">
+    <section 
+    ref={panelRef}
+    className="rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-subtle">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-2">
           <p className="flex items-center gap-2 text-lg font-semibold uppercase tracking-[0.32em] text-white/70">
@@ -385,6 +430,7 @@ const RefinementPanel = () => {
                     refinedCueCardAnswers[cue.key] ??
                     (cue.value || "");
                   const placeholder = cue.hint || `Aggiungi dettagli per ${cue.title.toLowerCase()}`;
+
                   return (
                     <label
                       key={cue.key || cue.title}
@@ -414,10 +460,10 @@ const RefinementPanel = () => {
           )}
 
           <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.06] p-4">
-            <button
+          <button
               type="button"
               onClick={handleSubmit}
-              disabled={!canSubmit}
+              disabled={!canSubmit} // Nota: busy rende canSubmit false, quindi si disabilita da solo
               className={classNames(
                 "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold uppercase tracking-[0.28em] transition",
                 canSubmit
@@ -425,7 +471,17 @@ const RefinementPanel = () => {
                   : "cursor-not-allowed border border-white/15 bg-white/10 text-white/55"
               )}
             >
-              <Sparkles className="h-4 w-4" /> Genera PDF
+              {busy ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Generazione in corso...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Genera PDF
+                </>
+              )}
             </button>
             {helperMessage ? (
               <p className="text-xs text-white/55">{helperMessage}</p>

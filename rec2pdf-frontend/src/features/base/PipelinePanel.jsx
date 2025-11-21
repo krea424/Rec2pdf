@@ -29,6 +29,7 @@ const PipelinePanel = ({ journeyStage = "record" }) => {
     backendUp,
     busy,
     pipelineComplete,
+    refinedData, // <--- AGGIUNGI QUESTO (se manca)
     pdfPath, // <-- Stato diretto dal context
     mdPath,   // <-- Stato diretto dal context
     activeStageKey,
@@ -358,7 +359,7 @@ const PipelinePanel = ({ journeyStage = "record" }) => {
   const refineCtaClassName = classNames(
     "flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-base font-semibold",
     "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-    refinementPanelOpen
+    refinementPanelOpen && !pipelineComplete
       ? "border border-indigo-300/60 bg-indigo-500/30 text-indigo-100 shadow-[0_20px_60px_-35px_rgba(99,102,241,0.8)]"
       : canPublish
         ? "border border-white/15 bg-white/5 text-white/75 hover:border-white/25 hover:bg-white/10"
@@ -459,22 +460,53 @@ const PipelinePanel = ({ journeyStage = "record" }) => {
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <button
+        <button
             type="button"
             onClick={handlePublish}
             disabled={!canPublish}
-            className={classNames(publishCtaClassName, "sm:flex-1")}
+            // Aggiungiamo 'py-2' per dare spazio alle due righe se necessario
+            className={classNames(publishCtaClassName, "sm:flex-1 py-2")}
           >
-            <Cpu className="h-5 w-5" /> Ottieni PDF
+            <Cpu className="h-6 w-6 flex-shrink-0" /> {/* Icona leggermente più grande */}
+            
+            {/* Wrapper per il testo impilato */}
+            <div className="flex flex-col items-start text-left leading-none ml-1">
+              <span className="font-bold text-sm uppercase tracking-wider">
+                Ottieni PDF
+              </span>
+              <span className="mt-1 text-[10px] font-normal normal-case opacity-70">
+                Diretto, senza revisione
+              </span>
+            </div>
           </button>
           <button
             type="button"
             onClick={startRefinementFlow}
             disabled={!canPublish}
             aria-pressed={refinementPanelOpen}
-            className={classNames(refineCtaClassName, "sm:flex-1")}
+            className={classNames(refineCtaClassName, "sm:flex-1 py-2")}
           >
-            <Sparkles className="h-5 w-5" /> Raffina e Genera
+
+            
+            {busy && !pipelineComplete && refinementPanelOpen && !refinedData ? (
+              <>
+                <RefreshCw className="h-6 w-6 animate-spin flex-shrink-0" />
+                <div className="flex flex-col items-start text-left leading-none ml-1">
+                  <span className="font-bold text-sm uppercase tracking-wider">Analisi in corso...</span>
+                  <span className="mt-1 text-[10px] font-normal normal-case opacity-70">Attendi l'AI</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-6 w-6 flex-shrink-0" />
+                <div className="flex flex-col items-start text-left leading-none ml-1">
+                  <span className="font-bold text-sm uppercase tracking-wider">Revisione Guidata</span>
+                  <span className="mt-1 text-[10px] font-normal normal-case opacity-70">
+                    Con AI e modifiche
+                  </span>
+                </div>
+              </>
+            )}
           </button>
         </div>
         {/* --- INCOLLA QUESTO BLOCCO QUI SOTTO --- */}
@@ -573,6 +605,9 @@ const PipelinePanel = ({ journeyStage = "record" }) => {
       {showPipelineDetails ? (
         <>
           <div
+          // --- MODIFICA QUI: Aggiungi l'ID ---
+          id="pipeline-status-area" 
+          // -----------------------------------
             className={classNames(
               "rounded-2xl border px-4 py-4 text-sm transition-all",
               pipelineStatusAccent
