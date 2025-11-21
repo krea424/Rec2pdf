@@ -42,7 +42,23 @@ const InputManager = ({
       event.target.value = "";
     }
   };
+// --- NUOVO BLOCCO: Preparazione Opzioni Template ---
+const templateOptions = useMemo(() => {
+  const baseOptions = [
+    { value: "", label: "Nessun template predefinito" }
+  ];
+  
+  const templates = Array.isArray(context.pdfTemplates) ? context.pdfTemplates : [];
+  const loadedOptions = templates.map((t) => ({
+    value: t.fileName,
+    // Creiamo un'etichetta leggibile con il tipo (HTML/TEX)
+    label: `${t.name || t.fileName}${t.type ? ` (${t.type.toUpperCase()})` : ""}`,
+    // Salviamo l'oggetto originale per recuperarlo al change
+    original: t 
+  }));
 
+  return [...baseOptions, ...loadedOptions];
+}, [context.pdfTemplates]);
   const pdfLogoLabel = useMemo(() => {
     const { customPdfLogo } = context;
     if (!customPdfLogo) return null;
@@ -130,13 +146,32 @@ const InputManager = ({
     templateSelectValue,
   ]);
 
+  // --- VERSIONE AGGIORNATA ---
   const handleTemplateSelect = (event) => {
-    const value = event.target.value;
-    if (!value) {
+    const selectedValue = event.target.value;
+    
+    if (!selectedValue) {
       context.clearPdfTemplateSelection?.();
       return;
     }
-    context.handleSelectPdfTemplate?.(value);
+
+    // Cerchiamo l'oggetto template completo dalla lista originale
+    // (Nota: templateOptions contiene già tutto, ma per sicurezza cerchiamo nell'array sorgente)
+    const fullTemplate = (context.pdfTemplates || []).find(t => t.fileName === selectedValue);
+    
+    if (fullTemplate) {
+      // Passiamo l'oggetto completo ad App.jsx!
+      // App.jsx deve essere in grado di ricevere { fileName, type, css }
+      // Se la funzione handleSelectPdfTemplate supporta l'oggetto (come abbiamo visto in App.jsx), questo risolve il bug.
+      context.handleSelectPdfTemplate?.({
+        fileName: fullTemplate.fileName,
+        type: fullTemplate.type,
+        css: fullTemplate.cssFileName
+      });
+    } else {
+      // Fallback legacy (solo stringa)
+      context.handleSelectPdfTemplate?.(selectedValue);
+    }
   };
 
   const hasWorkspaceProfiles = activeWorkspaceProfiles.length > 0;
@@ -586,11 +621,10 @@ const InputManager = ({
                 aria-label="Seleziona template PDF"
                 disabled={context.pdfTemplatesLoading}
               >
-                <option value="">Nessun template predefinito</option>
-                {(context.pdfTemplates || []).map((template) => (
-                  <option key={template.fileName} value={template.fileName}>
-                    {template.name || template.fileName}
-                    {template.type ? ` (${template.type.toUpperCase()})` : ""}
+                {/* Mappiamo le opzioni preparate con useMemo */}
+                {templateOptions.map((opt) => (
+                  <option key={opt.value || "empty"} value={opt.value}>
+                    {opt.label}
                   </option>
                 ))}
               </select>
