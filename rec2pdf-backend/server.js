@@ -6460,7 +6460,12 @@ const runPipeline = async (job = {}) => {
     const workspaceProjectName = String(payload.workspaceProjectName || payload.workspaceProject || '').trim();
     const workspaceStatus = String(payload.workspaceStatus || '').trim();
     const workspaceProfileId = String(payload.workspaceProfileId || '').trim();
-    const workspaceProfileTemplate = String(payload.workspaceProfileTemplate || '').trim();
+    // ✅ CODICE CORRETTO (Sostituisci con questo)
+const workspaceProfileTemplate = String(
+  payload.workspaceProfileTemplate || // Usa 'payload', non 'bodyPayload'
+  payload.pdfTemplate || 
+  ''
+).trim();
     const workspaceProfileLabel = String(payload.workspaceProfileLabel || '').trim();
     const workspaceProfileLogoPath = String(payload.workspaceProfileLogoPath || '').trim();
     const workspaceProfileLogoLabel = String(payload.workspaceProfileLogoLabel || '').trim();
@@ -7927,8 +7932,18 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
       cleanupFiles.add(mdLocalPath);
       cleanupFiles.add(pdfLocalPath);
 
-      const mdBuffer = await downloadFileFromBucket(bucket, objectPath);
+      // --- FIX: Priorità al contenuto inviato dal client (Direct Injection) ---
+      let mdBuffer;
+      if (req.body.markdownContent) {
+        console.log(`[PPUBR] Uso contenuto Markdown fornito direttamente dal client (${req.body.markdownContent.length} bytes)`);
+        mdBuffer = Buffer.from(req.body.markdownContent, 'utf8');
+      } else {
+        console.log(`[PPUBR] Scarico Markdown da Supabase: ${bucket}/${objectPath}`);
+        mdBuffer = await downloadFileFromBucket(bucket, objectPath);
+      }
+      
       await fsp.writeFile(mdLocalPath, mdBuffer);
+      // -----------------------------------------------------------------------
 
       let activeTemplateDescriptor = null;
       const layoutCandidate = extractLayoutFromMarkdown(mdBuffer.toString('utf8'));

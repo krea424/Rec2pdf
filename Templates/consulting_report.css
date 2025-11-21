@@ -1,0 +1,128 @@
+/* --- Consulting Pro v2 (Bulletproof) --- */
+
+/* NIENTE @import da Google Fonts. Usiamo stack di sistema solidi. */
+
+body {
+    /* Helvetica/Arial per il corpo (leggibilità massima) */
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 11pt; /* Leggermente più piccolo, più professionale */
+    line-height: 1.5;
+    color: #1f2937;
+    margin: 0;
+    padding: 0;
+}
+
+/* Tipografia "Authority" */
+h1, h2, h3, h4 {
+    /* Georgia o Times per i titoli (autorità classica) */
+    font-family: Georgia, "Times New Roman", Times, serif;
+    color: #0f172a;
+    margin-top: 1.5em;
+    margin-bottom: 0.8em;
+    font-weight: normal; /* L'eleganza è spesso non-bold nei serif */
+}
+
+h1 {
+    font-size: 26pt;
+    color: #1e3a8a; /* McKinsey Blue */
+    border-bottom: 1px solid #1e3a8a;
+    padding-bottom: 15px;
+    margin-bottom: 30px;
+}
+
+h2 {
+    font-size: 16pt;
+    color: #1e3a8a;
+    border-bottom: 1px solid #cbd5e1; /* Linea sottile grigia */
+    padding-bottom: 5px;
+    margin-top: 2em;
+}
+
+h3 {
+    font-size: 13pt;
+    color: #334155;
+    font-weight: bold;
+}
+
+/* --- TABELLE (Il fix critico) --- */
+table {
+    width: 100%;
+    border-collapse: collapse; /* Fondamentale per unire i bordi */
+    margin: 25px 0;
+    font-size: 10pt;
+    page-break-inside: avoid; /* Cerca di non spezzare le tabelle tra le pagine */
+}
+
+th, td {
+    border: 1px solid #cbd5e1;
+    padding: 12px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background-color: #f1f5f9;
+    color: #1e3a8a;
+    font-weight: bold;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+tr:nth-child(even) {
+    background-color: #fafafa;
+}
+
+/* Cover Page */
+.cover-page {
+    height: 90vh; /* Un po' meno di 100 per sicurezza margini */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    /* Rimuoviamo il gradiente complesso che a volte crea artefatti, usiamo colore solido o semplice */
+    background-color: #1e3a8a;
+    color: white;
+    padding: 50px;
+    page-break-after: always;
+}
+
+.cover-title {
+    font-family: Georgia, serif;
+    font-size: 36pt;
+    color: white;
+    border: none;
+    margin-bottom: 20px;
+}
+
+.cover-subtitle {
+    font-size: 16pt;
+    opacity: 0.9;
+    margin-bottom: 50px;
+    font-weight: 300;
+}
+
+.cover-meta p {
+    margin: 5px 0;
+    font-size: 11pt;
+    opacity: 0.8;
+}
+
+/* Executive Summary Box Simulato (se usi blockquote per ora) */
+blockquote {
+    background-color: #f8fafc;
+    border-left: 4px solid #1e3a8a;
+    margin: 20px 0;
+    padding: 15px 20px;
+    font-style: normal; /* Rimuovi italico forzato */
+    color: #334155;
+}
+
+/* Gestione Pagine */
+@page {
+    margin: 20mm;
+    size: A4;
+    @bottom-right {
+        content: counter(page);
+        font-family: Arial, sans-serif;
+        font-size: 9pt;
+        color: #64748b;
+    }
+}

@@ -5328,6 +5328,13 @@ const handleRefineAndGenerate = useCallback(async () => {
 
     try {
       const fd = new FormData();
+      // --- FIX: Direct Injection (Contenuto Diretto) ---
+      if (options?.contentOverride) {
+        // Se abbiamo il testo aggiornato dall'editor, lo mandiamo direttamente
+        // evitando che il backend debba scaricarlo (e rischi di prendere quello vecchio)
+        fd.append('markdownContent', options.contentOverride);
+      }
+      // ------------------------------------------------
       fd.append('mdPath', mdPathResolved);
       if (entry?.localPdfPath) {
         fd.append('localPdfPath', entry.localPdfPath);
@@ -5658,7 +5665,12 @@ const handleRefineAndGenerate = useCallback(async () => {
 
   const handleRepublishFromEditor = useCallback(() => {
     if (!mdEditor?.entry) return;
-    handleRepublishFromMd(mdEditor.entry, mdEditor.path);
+    
+    // Passiamo esplicitamente il contenuto attuale dell'editor
+    handleRepublishFromMd(mdEditor.entry, mdEditor.path, { 
+      speakerMap: mdEditor.speakerMap,
+      contentOverride: mdEditor.content // <--- ECCO IL FIX
+    });
   }, [mdEditor, handleRepublishFromMd]);
 
   const handleRepublishFromEditorWithSpeakers = useCallback(() => {
