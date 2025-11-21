@@ -2281,7 +2281,13 @@ const generateMarkdown = async (txtPath, promptPayload, options = {}) => {
     // 3. Chiama il servizio AI tramite l'Orchestratore
     let generatedContent = '';
     try {
-      generatedContent = await aiOrchestrator.generateContentWithFallback(promptForAi, { textProvider: options.textProvider });
+      console.log('[generateMarkdown] Richiedo generazione con complessità HIGH (Modello Pro)...');
+      
+      generatedContent = await aiOrchestrator.generateContentWithFallback(promptForAi, { 
+        textProvider: options.textProvider,
+        // QUESTA è la riga fondamentale che forza il modello Pro
+        taskComplexity: 'high' 
+      });
     } catch (error) {
       console.error(`❌ Errore durante la generazione del contenuto AI (tutti i provider hanno fallito): ${error.message}`);
       throw new Error(`Errore durante la generazione del contenuto AI: ${error.message}`);
@@ -6239,8 +6245,10 @@ app.post('/api/pre-analyze', async (req, res) => {
 
   let aiOutput = '';
   try {
-    // --- MODIFICA: Usa l'orchestratore ---
-    aiOutput = await aiOrchestrator.generateContentWithFallback(prompt, { textProvider: aiOverrides.text });
+    aiOutput = await aiOrchestrator.generateContentWithFallback(prompt, { 
+      textProvider: aiOverrides.text,
+      taskComplexity: 'low' // <--- FORZA MODELLO FLASH/MINI (Default, ma esplicito è meglio)
+    });
   } catch (error) {
     console.error('❌ Errore AI /api/pre-analyze (tutti i provider hanno fallito):', error);
     return res.status(502).json({ ok: false, message: 'Errore durante la generazione delle risposte suggerite.' });
@@ -7535,24 +7543,38 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       }
     }
 
-    // == REFACTORING ASYNC: Creazione job asincrono ==
-    if (!supabase) {
-      throw new Error('Supabase non configurato per la creazione del job');
-    }
+   // == REFACTORING ASYNC: Creazione job asincrono ==
+   if (!supabase) {
+    throw new Error('Supabase non configurato per la creazione del job');
+  }
 
-    const jobPayload = {
-      user_id: userId,
-      user_email: req.user?.email || '',
-      input_file_path: audioStoragePath,
-      request_payload: payload,
-      status: 'pending',
-    };
+  // ============================================================
+  // == INIZIO MODIFICA: Lettura Environment (Routing) ==
+  // ============================================================
+  // Leggiamo cosa ci ha mandato il frontend. Se manca, assumiamo 'production' per sicurezza.
+  const rawEnv = req.body.environment; 
+  // Validazione stretta: accettiamo solo 'development' o 'production'
+  const jobEnvironment = rawEnv === 'development' ? 'development' : 'production';
+  
+  console.log(`[Backend] Creazione job per ambiente: ${jobEnvironment}`);
+  // ============================================================
 
-    const { data: createdJob, error: jobError } = await supabase
-      .from(SUPABASE_JOBS_TABLE)
-      .insert(jobPayload)
-      .select()
-      .single();
+  const jobPayload = {
+    user_id: userId,
+    user_email: req.user?.email || '',
+    input_file_path: audioStoragePath,
+    request_payload: payload,
+    status: 'pending',
+    environment: jobEnvironment, // <--- CAMPO AGGIUNTO QUI
+  };
+
+  const { data: createdJob, error: jobError } = await supabase
+    .from(SUPABASE_JOBS_TABLE)
+    .insert(jobPayload)
+    .select()
+    .single();
+
+    
 
     if (jobError || !createdJob) {
       console.error('❌ Creazione job fallita:', jobError?.message || jobError);

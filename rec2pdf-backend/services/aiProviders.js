@@ -1,34 +1,36 @@
 'use strict';
 
+// Costanti aggiornate alla timeline corrente (Nov 2025)
+const MODELS = {
+  GEMINI_FLASH: 'gemini-2.5-flash', // Tier 1: Veloce ed economico
+  GEMINI_PRO: 'gemini-2.5-pro',     // Tier 2: Massima qualità (Thinking Mode)
+  OPENAI_MINI: 'gpt-4o-mini',       // Fallback veloce
+  OPENAI_FULL: 'gpt-4o',            // Fallback qualità
+  EMBEDDING_GEMINI: 'text-embedding-004',
+  EMBEDDING_OPENAI: 'text-embedding-3-small'
+};
+
 const PROVIDERS = [
   {
     id: 'gemini',
-    label: 'Google Gemini Flash',
+    label: 'Google Gemini',
     envKey: 'GOOGLE_API_KEY',
-    description: 'Veloce ed economico (1.500/giorno FREE)',
+    description: 'Provider Google con routing automatico',
     models: {
-      text: 'gemini-2.5-flash',
-      embedding: 'text-embedding-004',
-    },
-  },
-  {
-    id: 'gemini-pro',
-    label: 'Google Gemini Pro',
-    envKey: 'GOOGLE_API_KEY',
-    description: 'Massima qualità con thinking mode (50/giorno FREE)',
-    models: {
-      text: 'gemini-2.5-pro',
-      embedding: 'text-embedding-004',
+      'text-low': 'gemini-2.5-flash', // Usato se taskComplexity è 'low' o mancante
+      'text-high': 'gemini-2.5-pro',  // Usato se taskComplexity è 'high'
+      'embedding': 'text-embedding-004',
     },
   },
   {
     id: 'openai',
     label: 'OpenAI',
     envKey: 'OPENAI_API_KEY',
-    description: 'Modelli GPT e embedding di OpenAI',
+    description: 'Fallback automatico: GPT-4o Mini / GPT-4o',
     models: {
-      text: 'gpt-4o',
-      embedding: 'text-embedding-3-small',
+      'text-low': MODELS.OPENAI_MINI,
+      'text-high': MODELS.OPENAI_FULL,
+      'embedding': MODELS.EMBEDDING_OPENAI,
     },
   },
 ];
@@ -36,44 +38,18 @@ const PROVIDERS = [
 const PROVIDER_MAP = new Map(PROVIDERS.map((provider) => [provider.id, provider]));
 
 const sanitizeProviderInput = (value) => {
-  if (typeof value !== 'string') {
-    return '';
-  }
-  const trimmed = value.trim().toLowerCase();
-  if (!trimmed) {
-    return '';
-  }
-  return trimmed;
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase();
 };
 
 const getDefaultProviderId = (type) => {
   const envVar = type === 'embedding' ? process.env.AI_EMBEDDING_PROVIDER : process.env.AI_TEXT_PROVIDER;
   const normalizedEnv = sanitizeProviderInput(envVar);
+  
   if (normalizedEnv && PROVIDER_MAP.has(normalizedEnv)) {
-    const candidate = PROVIDER_MAP.get(normalizedEnv);
-    if (!type || !candidate.models || candidate.models[type]) {
-      return candidate.id;
-    }
+    return normalizedEnv;
   }
-
-  const fallback = type === 'embedding' ? 'openai' : 'gemini';
-  if (PROVIDER_MAP.has(fallback)) {
-    const candidate = PROVIDER_MAP.get(fallback);
-    if (!type || !candidate.models || candidate.models[type]) {
-      return candidate.id;
-    }
-  }
-
-  for (const provider of PROVIDERS) {
-    if (!type) {
-      return provider.id;
-    }
-    if (!provider.models || provider.models[type]) {
-      return provider.id;
-    }
-  }
-
-  return '';
+  return 'gemini'; // Default solido su Gemini
 };
 
 const listProviders = () =>
@@ -83,7 +59,7 @@ const listProviders = () =>
     description: provider.description,
     envKey: provider.envKey,
     configured: Boolean(process.env[provider.envKey]),
-    capabilities: Object.keys(provider.models || {}),
+    capabilities: ['text', 'embedding'],
     models: { ...provider.models },
   }));
 
@@ -92,28 +68,31 @@ const getDefaultProviderMap = () => ({
   embedding: getDefaultProviderId('embedding'),
 });
 
-const resolveProvider = (type, override) => {
+const resolveProvider = (type, override, taskComplexity = 'low') => {
   const normalizedOverride = sanitizeProviderInput(override);
   const providerId = normalizedOverride || getDefaultProviderId(type);
-  if (!providerId) {
-    throw new Error('Nessun provider AI configurato');
-  }
+
+  if (!providerId) throw new Error('Nessun provider AI configurato');
 
   const provider = PROVIDER_MAP.get(providerId);
-  if (!provider) {
-    throw new Error(`Provider AI non supportato: ${override || providerId}`);
-  }
-
-  if (type && provider.models && !provider.models[type]) {
-    throw new Error(`Il provider ${provider.label} non supporta ${type === 'embedding' ? 'gli embedding' : 'la generazione testo'}`);
-  }
+  if (!provider) throw new Error(`Provider AI non supportato: ${override || providerId}`);
 
   const apiKey = process.env[provider.envKey];
-  if (!apiKey) {
-    throw new Error(`Chiave API non configurata per ${provider.label} (${provider.envKey})`);
+  if (!apiKey) throw new Error(`Chiave API non configurata per ${provider.label}`);
+
+  // Logica di routing del modello
+  let modelKey = type;
+  if (type === 'text') {
+    modelKey = taskComplexity === 'high' ? 'text-high' : 'text-low';
   }
 
-  const model = provider.models ? provider.models[type] || '' : '';
+  const model = provider.models ? provider.models[modelKey] || '' : '';
+
+  if (!model) {
+     // Fallback di sicurezza
+     if (type === 'text') return provider.models['text-low'] || '';
+     throw new Error(`Modello non trovato per ${provider.label} (tipo: ${type})`);
+  }
 
   return {
     id: provider.id,

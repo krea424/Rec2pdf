@@ -26,6 +26,11 @@ This handbook captures the current state of the repo for autonomous contributors
 - Creates Supabase client when `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` exist; falls back to a local-dev mode without auth.
 - Initializes service layer: `RAGService` (knowledge search via `match_knowledge_chunks`), `PromptService`, AI orchestrator (`services/aiOrchestrator.js`) that negotiates text + embedding providers defined in `services/aiProviders.js`, and defensive utils (`services/utils.js`).
 - Constants expose Supabase buckets (`audio-uploads`, `text-uploads`, `processed-media`, `logos`), job table name (`jobs`), and local filesystem roots.
+- Environment Routing: The pipeline supports Dev/Prod isolation.
+Frontend: Injects environment ('development' | 'production') into the request.
+Database: jobs table has an environment column.
+Routing: Supabase SQL Triggers (pg_net) route the job to Ngrok (Dev) or Cloud Run (Prod) based on this column.
+
 
 ### Security & Middleware
 - Applies strict CORS allowlist (localhost ports + production origins), JSON + urlencoded parsers, and multipart upload handling via `multer`.

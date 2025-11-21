@@ -1,94 +1,68 @@
-// File: rec2pdf-backend/services/aiOrchestrator.js
-
 'use strict';
 
 const { getAIService } = require('./aiService');
 const { resolveProvider } = require('./aiProviders');
 
 class AIOrchestrator {
-  /**
-   * Genera contenuto testuale con fallback dinamico basato su .env.
-   * @param {string} prompt - Il prompt da inviare.
-   * @param {object} options - Opzioni, che possono contenere un `textProvider` per sovrascrivere tutto.
-   * @returns {Promise<string>} Il contenuto generato.
-   */
   async generateContentWithFallback(prompt, options = {}) {
+    const { textProvider: overrideProvider, taskComplexity = 'low' } = options;
     const providerChain = [];
 
-    if (options.textProvider) {
-      try {
-        providerChain.push(resolveProvider('text', options.textProvider));
-      } catch (e) {
-        console.warn(`[Orchestrator] Provider sovrascritto "${options.textProvider}" non valido o non configurato. Lo ignoro.`);
-      }
+    // 1. Primario
+    let primaryId = overrideProvider || process.env.AI_TEXT_PROVIDER || 'gemini';
+    try {
+      providerChain.push(resolveProvider('text', primaryId, taskComplexity));
+    } catch (e) {
+      console.warn(`[Orchestrator] Provider primario "${primaryId}" non valido.`, e.message);
     }
 
-    const primaryProviderId = process.env.AI_TEXT_PROVIDER;
-    if (primaryProviderId && !providerChain.some(p => p.id === primaryProviderId)) {
-      try {
-        providerChain.push(resolveProvider('text', primaryProviderId));
-      } catch (e) {
-        console.warn(`[Orchestrator] Provider primario "${primaryProviderId}" non valido o non configurato. Lo ignoro.`);
-      }
+    // 2. Fallback (Se primario è Gemini -> OpenAI, e viceversa)
+    let fallbackId = process.env.AI_TEXT_PROVIDER_FALLBACK;
+    if (!fallbackId) {
+        fallbackId = primaryId === 'gemini' ? 'openai' : 'gemini';
     }
 
-    const fallbackProviderId = process.env.AI_TEXT_PROVIDER_FALLBACK;
-    if (fallbackProviderId && !providerChain.some(p => p.id === fallbackProviderId)) {
+    if (fallbackId && fallbackId !== primaryId) {
       try {
-        providerChain.push(resolveProvider('text', fallbackProviderId));
+        providerChain.push(resolveProvider('text', fallbackId, taskComplexity));
       } catch (e) {
-        console.warn(`[Orchestrator] Provider di fallback "${fallbackProviderId}" non valido o non configurato. Lo ignoro.`);
+        console.warn(`[Orchestrator] Provider fallback "${fallbackId}" non valido.`, e.message);
       }
     }
     
-    if (providerChain.length === 0) {
-      throw new Error('Nessun provider AI valido è stato configurato per la generazione di testo.');
-    }
+    if (providerChain.length === 0) throw new Error('Nessun provider AI valido configurato.');
 
-    console.log(`[Orchestrator] Catena di provider da tentare: ${providerChain.map(p => p.id).join(' -> ')}`);
+    console.log(`[Orchestrator] Task: ${taskComplexity.toUpperCase()} | Chain: ${providerChain.map(p => `${p.id}(${p.model})`).join(' -> ')}`);
 
     let lastError = null;
 
     for (const provider of providerChain) {
       try {
-        console.log(`[Orchestrator] Tento la generazione con il provider: ${provider.id} (Modello: ${provider.model})`);
+        console.log(`[Orchestrator] Esecuzione con: ${provider.id} (${provider.model})...`);
         const aiClient = getAIService(provider.id, provider.apiKey, provider.model);
         const result = await aiClient.generateContent(prompt);
-        console.log(`[Orchestrator] Successo con il provider: ${provider.id}`);
+        console.log(`[Orchestrator] Successo: ${provider.id}`);
         return result;
       } catch (error) {
-        console.error(`[Orchestrator] Provider ${provider.id} fallito definitivamente: ${error.message}`);
+        console.error(`[Orchestrator] Errore ${provider.id}: ${error.message}`);
         lastError = error;
       }
     }
-
-    console.error('[Orchestrator] Tutti i provider nella catena hanno fallito.');
     throw lastError;
   }
 
-  /**
-   * Genera un embedding con fallback dinamico.
-   * @param {string|string[]} text - Il testo o l'array di testi da cui generare l'embedding.
-   * @param {object} options - Opzioni, che possono contenere un `embeddingProvider`.
-   * @returns {Promise<number[]|number[][]>} L'embedding generato.
-   */
   async generateEmbeddingWithFallback(text, options = {}) {
-    // La logica di fallback per gli embedding è rimossa per evitare mismatch di dimensioni.
-    // Usiamo sempre il provider definito in .env o sovrascritto dall'utente.
     const providerId = options.embeddingProvider || process.env.AI_EMBEDDING_PROVIDER || 'gemini';
-    
     try {
       const provider = resolveProvider('embedding', providerId);
-      console.log(`[Orchestrator-Embedding] Tento con il provider: ${provider.id} (Modello: ${provider.model})`);
+      console.log(`[Orchestrator-Embedding] Uso: ${provider.id} (${provider.model})`);
       const aiClient = getAIService(provider.id, provider.apiKey, provider.model);
-      const result = await aiClient.generateEmbedding(text);
-      console.log(`[Orchestrator-Embedding] Successo con il provider: ${provider.id}`);
-      return result;
+      return await aiClient.generateEmbedding(text);
     } catch (error) {
-      console.error(`[Orchestrator-Embedding] Provider ${providerId} fallito: ${error.message}`);
-      // Lanciamo l'errore per fermare la pipeline RAG, che non può funzionare senza embedding.
+      console.error(`[Orchestrator-Embedding] Errore ${providerId}: ${error.message}`);
       throw error;
     }
   }
 }
+
 module.exports = new AIOrchestrator();
