@@ -4410,6 +4410,19 @@ const handleRefineAndGenerate = useCallback(async () => {
     refinedPayloadForUpload = mergePromptStateIntoRefinedPayload(refinedValidation.value, promptState);
     try{
       const fd=new FormData();
+      // ============================================================
+      // == INIZIO MODIFICA: Environment Injection (Passo B) ==
+      // ============================================================
+      // Vite imposta import.meta.env.DEV a true se sei in locale (npm run dev)
+      // e false se sei in build/produzione.
+      const currentEnv = import.meta.env.DEV ? 'development' : 'production';
+      fd.append('environment', currentEnv);
+      
+      // Log di verifica nella console del browser (F12)
+      console.log(`[Frontend] Invio job per ambiente: ${currentEnv}`);
+      // ============================================================
+      // == FINE MODIFICA ==
+      // ============================================================
       const m=(mime||blob.type||"").toLowerCase();
       const ext=m.includes('webm')?'webm':m.includes('ogg')?'ogg':m.includes('wav')?'wav':'m4a';
       fd.append('audio',blob,`${blobSource}.${ext}`);

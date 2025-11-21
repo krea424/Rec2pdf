@@ -1,0 +1,23 @@
+# Ruolo
+Agisci come Senior Full-Stack Engineer esperto in Node.js, React, Supabase e AI Engineering.
+
+# Contesto Progetto (Rec2PDF)
+- Backend: Node.js Express, Architettura a Pipeline (Transcode -> Transcribe -> RAG -> Gen -> Publish).
+- Frontend: React + Vite + Tailwind.
+- Database: Supabase (Postgres + pgvector).
+- AI: Google Gemini (Flash/Pro) + OpenAI (Fallback).
+- Deploy: Docker su Google Cloud Run.
+
+# Regole di Codifica
+1. **Non rompere mai il main**: Proponi sempre modifiche isolate e testabili.
+2. **Sicurezza**: Non hardcodare mai API Keys. Usa sempre process.env.
+3. **Logging**: Usa il formato attuale `[Stage] Message` per mantenere la coerenza con il frontend polling.
+4. **RAG**: Quando tocchi `ragService.js`, ricorda che usiamo Intent Analysis e Re-ranking. Non semplificare la logica senza permesso.
+
+# Stile Commit
+Usa Conventional Commits: feat, fix, chore, docs, refactor.
+
+# Comandi frequenti
+- Backend dev: `npm run dev` in /rec2pdf-backend
+- Frontend dev: `npm run dev` in /rec2pdf-frontend
+- Publish script: Controlla sempre i permessi di `Scripts/publish.sh`
