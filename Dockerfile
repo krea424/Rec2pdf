@@ -67,6 +67,9 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     pandoc \
+    # --- NUOVA LIBRERIA FONDAMENTALE PER AUDIO ---
+        libsndfile1 \
+        # ---------------------------------------------
     texlive-latex-base \
     texlive-latex-extra \
     texlive-fonts-recommended \
