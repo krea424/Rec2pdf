@@ -136,26 +136,43 @@ if [[ "$TEMPLATE_KIND" == "html" ]]; then
   unset _RESOURCE_PATH_CANDIDATES _candidate
 
   resolve_html_engine() {
-    local preferred="${PREFERRED_HTML_ENGINE:-}"
-    local resolved=""
-    if [[ -n "$preferred" ]]; then
-      if command -v "$preferred" >/dev/null 2>&1; then
-        resolved="$preferred"
-      else
-        echo "⚠️  Motore HTML preferito non trovato: $preferred"
-      fi
-    fi
-    if [[ -z "$resolved" ]]; then
-      if command -v wkhtmltopdf >/dev/null 2>&1; then
+  # 1. Leggiamo cosa chiede il template (dal JSON) o le preferenze
+  local requested="${WORKSPACE_PROFILE_TEMPLATE_ENGINE:-${PREFERRED_HTML_ENGINE:-}}"
+  local resolved=""
+
+  # 2. Se c'è una richiesta specifica...
+  if [[ -n "$requested" ]]; then
+    if command -v "$requested" >/dev/null 2>&1; then
+      # ...e il motore è installato, usalo!
+      resolved="$requested"
+    else
+      # ...ma il motore NON è installato, avvisa e cerca un'alternativa (Fallback)
+      echo "⚠️  Il motore richiesto '$requested' non è installato su questa macchina." >&2
+      
+      if [[ "$requested" == "weasyprint" ]] && command -v wkhtmltopdf >/dev/null 2>&1; then
+        echo "🔄  Fallback automatico su: wkhtmltopdf" >&2
         resolved="wkhtmltopdf"
-      elif command -v weasyprint >/dev/null 2>&1; then
+      elif [[ "$requested" == "wkhtmltopdf" ]] && command -v weasyprint >/dev/null 2>&1; then
+        echo "🔄  Fallback automatico su: weasyprint" >&2
         resolved="weasyprint"
-      else
-        die "Nessun motore HTML disponibile (wkhtmltopdf/weasyprint)."
       fi
     fi
-    HTML_ENGINE="$resolved"
-  }
+  fi
+
+  # 3. Se non abbiamo ancora risolto (o non c'era richiesta), prendi il primo disponibile
+  if [[ -z "$resolved" ]]; then
+    if command -v weasyprint >/dev/null 2>&1; then
+      resolved="weasyprint" # Preferiamo WeasyPrint se c'è (più moderno)
+    elif command -v wkhtmltopdf >/dev/null 2>&1; then
+      resolved="wkhtmltopdf"
+    else
+      die "Nessun motore HTML disponibile (installa 'weasyprint' o 'wkhtmltopdf')."
+    fi
+  fi
+
+  HTML_ENGINE="$resolved"
+  echo "🛠️  Motore HTML attivo: $HTML_ENGINE"
+}
   resolve_html_engine
   unset -f resolve_html_engine
 

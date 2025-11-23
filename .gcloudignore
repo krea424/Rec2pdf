@@ -1,0 +1,10 @@
+.git
+.gitignore
+node_modules/
+rec2pdf-frontend/
+# Includiamo esplicitamente il backend
+!rec2pdf-backend/
+!Scripts/
+!Templates/
+!assets/
+!Dockerfile

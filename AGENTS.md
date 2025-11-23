@@ -101,6 +101,7 @@ Routing: Supabase SQL Triggers (pg_net) route the job to Ngrok (Dev) or Cloud Ru
 - Supabase storage bucket names (`audio-uploads`, `text-uploads`, `processed-media`, `logos`) are hard-coded; adjust both backend constants and storage policies before renaming.
 - Rotate any leaked secrets immediately; never commit live credentials. `.env.local` + Supabase keys stay out of version control.
 - Local dev for async queue requires ngrok (expose backend on HTTPS), Supabase webhook configured for `jobs` INSERT events, and `WORKER_SECRET` shared between Supabase and backend.
+- Deployment Note: The Dockerfile utilizes a Multi-stage build optimized for CPU environments (Cloud Run). It explicitly forces torch CPU versions and excludes NVIDIA CUDA dependencies to reduce image size (~3.5GB) and prevent build timeouts.
 
 ## 8. Quality & Regression Guardrails
 - Always run backend Jest suite and frontend unit tests before submitting patches. For pipeline changes, also trigger `npm run test:rag-eval` if retrieval logic is touched.

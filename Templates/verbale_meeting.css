@@ -1,200 +1,183 @@
-/* --- Verbale Meeting v2 (Bulletproof) --- */
+/* --- Verbale Meeting v3 (Luxury / McKinsey Style) --- */
 
 * {
     box-sizing: border-box;
 }
 
 body {
-    /* Font di sistema sicuri */
-    font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: white; /* Rimuoviamo sfondo grigio per risparmio inchiostro/pulizia */
-    color: #2d3748;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 10pt;
+    line-height: 1.6;
+    color: #334155; /* Slate 700 - Grigio scuro professionale */
     margin: 0;
     padding: 0;
-    font-size: 11pt;
-    line-height: 1.6;
+    text-align: justify;
 }
 
-/* Intestazione */
+/* --- HEADER --- */
 .pdf-header {
-    border-bottom: 2px solid #e2e8f0;
-    padding-bottom: 20px;
-    margin-bottom: 30px;
-    display: table; /* Table layout è più sicuro di flex per wkhtmltopdf headers */
-    width: 100%;
-}
-
-.logo-container {
-    display: table-cell;
-    vertical-align: middle;
-    width: 50%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #e2e8f0; /* Linea sottile */
+    padding-bottom: 15px;
+    margin-bottom: 40px;
 }
 
 .logo {
-    font-size: 18pt;
-    font-weight: 700;
-    color: #1a365d;
+    font-size: 16pt;
+    font-weight: 800;
+    color: #0f172a; /* Slate 900 */
     text-transform: uppercase;
     letter-spacing: -0.5px;
 }
 
 .logo span {
-    color: #f97316; /* Arancione vivace */
+    color: #f97316; /* Arancione Brand */
 }
 
-.meta-container {
-    display: table-cell;
-    vertical-align: middle;
-    text-align: right;
-    width: 50%;
-    font-size: 9pt;
-    color: #718096;
+.header-meta {
+    font-size: 8pt;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
-/* Titoli */
-h1 {
-    font-size: 24pt;
-    color: #1a365d;
+/* --- TITLE BOX (Il tocco "Luxury") --- */
+.title-container {
+    background-color: #f8fafc; /* Grigio chiarissimo */
+    border-radius: 6px;
+    padding: 30px;
+    margin-bottom: 40px;
+    border: 1px solid #f1f5f9;
+}
+
+.doc-label {
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #64748b;
     margin-bottom: 10px;
-    line-height: 1.2;
+    letter-spacing: 1px;
 }
 
+h1 {
+    font-size: 18pt;
+    color: #1e3a8a; /* Deep Blue */
+    margin: 0 0 20px 0;
+    line-height: 1.2;
+    font-weight: 700;
+}
+
+.doc-author {
+    font-size: 10pt;
+    color: #475569;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 15px;
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+}
+
+.doc-author strong {
+    color: #94a3b8;
+    text-transform: uppercase;
+    font-size: 8pt;
+    letter-spacing: 0.5px;
+}
+
+/* --- TITOLI DI SEZIONE (L'accento arancione) --- */
 h2 {
-    font-size: 16pt;
-    color: #2d3748;
-    border-left: 4px solid #f97316;
+    font-size: 14pt;
+    color: #0f172a;
+    /* Barra verticale arancione spessa */
+    border-left: 5px solid #f97316; 
     padding-left: 15px;
-    margin-top: 30px;
+    margin-top: 35px;
     margin-bottom: 15px;
-    background: #fff7ed; /* Sfondo leggerissimo arancio */
-    padding-top: 5px;
-    padding-bottom: 5px;
+    font-weight: 700;
+    /* Sfondo leggerissimo opzionale per estendere la barra */
+    background: linear-gradient(to right, #fff7ed 0%, #ffffff 100%);
+    padding-top: 8px;
+    padding-bottom: 8px;
 }
 
 h3 {
-    font-size: 13pt;
-    color: #4a5568;
+    font-size: 11pt;
+    color: #334155;
+    font-weight: 700;
     margin-top: 20px;
-    border-bottom: 1px solid #edf2f7;
-    padding-bottom: 5px;
+    margin-bottom: 10px;
 }
 
-/* Metadati Meeting (Griglia Dati) */
-.meeting-info {
-    background-color: #f7fafc;
-    border-radius: 8px;
-    padding: 20px;
-    margin-bottom: 30px;
-    border: 1px solid #edf2f7;
-}
-
-.info-row {
-    margin-bottom: 8px;
-}
-
-.info-label {
-    font-weight: bold;
-    color: #718096;
+/* --- TABELLE (Stile Benchmark) --- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 25px 0;
     font-size: 9pt;
-    text-transform: uppercase;
-    margin-right: 10px;
+    page-break-inside: avoid;
+    border-radius: 4px 4px 0 0;
+    overflow: hidden; /* Per i bordi arrotondati header */
 }
 
-/* Stili per il Corpo ($body$) */
+th {
+    background-color: #1e3a8a; /* Intestazione scura (quasi nera/blu) */
+    color: white;
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 8pt;
+    letter-spacing: 0.5px;
+}
+
+td {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 12px 15px;
+    vertical-align: top;
+    color: #334155;
+}
+
+/* Righe alterne molto sottili */
+tr:nth-child(even) {
+    background-color: #f8fafc;
+}
+
+/* --- LISTE E TESTO --- */
 p {
     margin-bottom: 12px;
-    text-align: justify;
 }
 
-/* Action Items e Liste */
 ul, ol {
     margin-bottom: 20px;
     padding-left: 20px;
 }
 
 li {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     padding-left: 5px;
 }
 
-/* Checkbox simulati per Action Items */
-li.task-item {
-    list-style: none;
-    position: relative;
-}
-
-li.task-item::before {
-    content: "☐";
-    font-size: 14pt;
-    position: absolute;
-    left: -25px;
-    top: -2px;
-    color: #f97316;
-}
-
-/* Speaker Dialoghi */
-.speaker-block {
-    margin-bottom: 15px;
-    page-break-inside: avoid;
-}
-
-.speaker-name {
-    font-weight: bold;
-    color: #1a365d;
-    font-size: 10pt;
-    margin-bottom: 2px;
-}
-
-.speaker-content {
-    margin-left: 0;
-    padding-left: 10px;
-    border-left: 2px solid #e2e8f0;
-    color: #4a5568;
-}
-
-/* Tabelle */
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 20px 0;
-    font-size: 10pt;
-    page-break-inside: avoid;
-}
-
-th {
-    background-color: #1a365d;
-    color: white;
-    padding: 10px;
-    text-align: left;
-}
-
-td {
-    border: 1px solid #e2e8f0;
-    padding: 10px;
-    vertical-align: top;
-}
-
-tr:nth-child(even) {
-    background-color: #f8fafc;
-}
-
-/* Footer */
-.footer {
-    border-top: 1px solid #e2e8f0;
-    margin-top: 50px;
-    padding-top: 10px;
-    font-size: 8pt;
-    text-align: center;
-    color: #a0aec0;
-}
-
+/* --- FOOTER --- */
 @page {
-    margin: 20mm;
+    margin-top: 25mm;
+    margin-bottom: 25mm;
+    margin-left: 25mm;
+    margin-right: 25mm;
     size: A4;
-    @bottom-center {
-        content: "Pagina " counter(page);
-        font-family: Arial, sans-serif;
+
+    @bottom-right {
+        content: counter(page);
+        font-family: Helvetica, Arial, sans-serif;
         font-size: 9pt;
         color: #cbd5e1;
+    }
+    
+    @bottom-left {
+        content: "Documento Riservato";
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 8pt;
+        color: #e2e8f0;
     }
 }

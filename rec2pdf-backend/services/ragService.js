@@ -223,8 +223,24 @@ async retrieveRelevantContext(queryText, workspaceId, options = {}) {
         if (!jsonStringMatch) throw new Error("La risposta del Re-ranker non contiene un JSON valido.");
         
         const rankedScores = JSON.parse(jsonStringMatch[0]);
-        console.log(`[DEBUG RAG] Punteggi Re-ranking parsati: ${JSON.stringify(rankedScores)}`);
+        // --- VERSIONE CORRETTA (Safe Logging) ---
+        console.log(`[DEBUG RAG] Analisi Re-ranking:`);
+        rankedScores.forEach(item => {
+            const chunk = uniqueChunks[item.id];
+            if (!chunk) return; // Protezione se l'ID non esiste
 
+            // Calcola lo status QUI, dentro il loop
+            const isKept = item.score >= this.config.reranking.minScoreThreshold;
+            const statusIcon = isKept ? '✅ TENUTO' : '❌ SCARTATO';
+            
+            const preview = chunk.content ? chunk.content.substring(0, 60).replace(/\n/g, ' ') + '...' : 'N/A';
+            const source = chunk.metadata?.sourceFile || 'Unknown';
+            const dbId = chunk.id || 'N/A'; // ID reale del DB
+
+            console.log(`   ${statusIcon} [Score: ${item.score}] (DB_ID: ${dbId}) Source: ${source} | "${preview}"`);
+        });
+        // ----------------------------------------
+        // --- MIGLIORAMENTO LOGGING (Fine) ---
         const topChunkIndices = rankedScores
           .filter(item => typeof item.id === 'number' && typeof item.score === 'number' && item.score >= this.config.reranking.minScoreThreshold)
           .sort((a, b) => b.score - a.score)
@@ -246,7 +262,20 @@ async retrieveRelevantContext(queryText, workspaceId, options = {}) {
         console.log(`[DEBUG RAG] Chunk selezionati dopo Fallback: ${finalContextChunks.length}`);
       }
     }
-
+// ============================================================
+    // == DEBUG: Stampa i Chunk Finali (The Chosen Ones) ==
+    // ============================================================
+    if (finalContextChunks.length > 0) {
+      console.log(`\n[DEBUG RAG] 🏆 I 5 VINCITORI (Contesto Finale):`);
+      finalContextChunks.forEach((chunk, index) => {
+          const source = chunk.metadata?.sourceFile || 'Unknown Source';
+          const preview = chunk.content ? chunk.content.substring(0, 100).replace(/\n/g, ' ') + '...' : 'Empty';
+          // Stampa pulita per lettura rapida
+          console.log(`   ${index + 1}. [${source}] (ID: ${chunk.id}) -> "${preview}"`);
+      });
+      console.log(`   (Totale caratteri: ${finalContextChunks.reduce((acc, c) => acc + c.content.length, 0)})\n`);
+  }
+  // ============================================================
     const structuredContext = finalContextChunks.map((chunk, index) => {
       const sourceName = chunk.metadata?.sourceFile || `Fonte Sconosciuta ${index + 1}`;
       return `--- Inizio Documento di Contesto ${index + 1} (Fonte: ${sourceName}) ---\n\n${chunk.content}\n\n--- Fine Documento di Contesto ${index + 1} ---`;
