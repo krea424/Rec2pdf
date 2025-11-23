@@ -8,6 +8,7 @@ import {
   XCircle,
   ChevronLeft,
   CheckCircle2,
+  Users
 } from "./icons";
 import { Button, IconButton } from "./ui/Button";
 import { TextArea } from "./ui/Input";
@@ -49,285 +50,218 @@ export default function MarkdownEditorModal({
       const confirmed = window.confirm(
         "Ci sono modifiche non salvate. Vuoi davvero chiudere l'editor?"
       );
-      if (!confirmed) {
-        return;
-      }
+      if (!confirmed) return;
     }
     onClose?.();
   };
 
-  const stepContainerClasses = {
-    pending: "border-surface-800/80 bg-surface-900/60",
-    "in-progress": "border-sky-500/40 bg-sky-500/10",
-    done: "border-emerald-500/40 bg-emerald-500/10",
-  };
-
-  const stepTitleClasses = {
-    pending: "text-surface-200",
-    "in-progress": "text-sky-50",
-    done: "text-emerald-50",
-  };
-
-  const stepDescriptionClasses = {
-    pending: "text-surface-400",
-    "in-progress": "text-sky-200",
-    done: "text-emerald-200",
-  };
-
-  const stepBadgeClasses = {
-    pending: "bg-surface-800 text-surface-200",
-    "in-progress": "bg-sky-500/20 text-sky-100",
-    done: "bg-emerald-500/20 text-emerald-100",
-  };
-
-  const stepStatusLabels = {
-    pending: "Da completare",
-    "in-progress": "In corso",
-    done: "Completato",
-  };
-
   const normalizedLastAction = lastAction || "idle";
-  const stepOneStatus = hasUnsavedChanges || normalizedLastAction === "editing"
-    ? "in-progress"
-    : ["saved", "republished"].includes(normalizedLastAction)
-      ? "done"
-      : "pending";
-  const stepTwoStatus = saving
-    ? "in-progress"
-    : hasUnsavedChanges
-      ? "pending"
-    : ["saved", "republished"].includes(normalizedLastAction)
-      ? "done"
-      : "pending";
-  const isRepublishing = busy || normalizedLastAction === "republishing";
-  const stepThreeStatus = isRepublishing
-    ? "in-progress"
-    : normalizedLastAction === "republished"
-      ? "done"
-      : "pending";
-  const showSpeakerMapper = Array.isArray(speakers) && speakers.length > 0;
+  const showSpeakerMapper = true; // Mostriamo sempre la sezione, anche se vuota, per chiarezza
+  const hasSpeakers = Array.isArray(speakers) && speakers.length > 0;
+  
   const previewContent = typeof renderedValue === "string" ? renderedValue : value;
 
-  const stepOneDescription = hasUnsavedChanges
-    ? "Apporta le correzioni direttamente nel testo del documento. Hai modifiche non ancora salvate."
-    : "Apporta le correzioni direttamente nel testo del documento prima di procedere.";
-
-  const stepTwoDescription = hasUnsavedChanges
-    ? "Salva per rendere disponibili le modifiche alla rigenerazione."
-    : ["saved", "republished"].includes(normalizedLastAction)
-      ? "Modifiche salvate correttamente: puoi passare alla rigenerazione."
-      : "Quando hai terminato, salva le modifiche.";
-
-  const stepThreeDescription = normalizedLastAction === "republished"
-    ? "Il PDF aggiornato è pronto. Usa il pulsante \"Apri PDF aggiornato\" per visualizzarlo subito."
-    : "Dopo il salvataggio, rigenera il PDF e poi aprilo dalla libreria per verificarlo.";
-
-  const renderStep = (index, title, description, status) => (
-    <li
-      key={index}
-      className={classNames(
-        "flex items-start gap-3 rounded-2xl border px-4 py-3",
-        stepContainerClasses[status]
-      )}
-    >
-      <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-sm font-semibold text-white/80">
-        {index}
-      </span>
-      <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className={classNames("flex items-center gap-2 text-sm font-semibold", stepTitleClasses[status])}>
-            <span>{title}</span>
-            {status === "done" ? (
-              <CheckCircle2 className="h-4 w-4" />
-            ) : status === "in-progress" ? (
-              <RefreshCw className="h-4 w-4 animate-spin" />
-            ) : null}
-          </div>
-          <p className={classNames("mt-1 text-xs leading-relaxed", stepDescriptionClasses[status])}>{description}</p>
-        </div>
-        <span
-          className={classNames(
-            "inline-flex min-w-[120px] justify-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide",
-            stepBadgeClasses[status]
-          )}
-        >
-          {stepStatusLabels[status]}
-        </span>
-      </div>
-    </li>
-  );
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur">
+    // 1. Ripristino p-4 per dare "aria" attorno al modale
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 transition-opacity duration-300">
       <div
         className={classNames(
-          "mx-4 flex w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-surface-800 bg-surface-950/95 shadow-raised",
+          // 2. FIX PROPORZIONI:
+          // - h-[95vh]: Occupa quasi tutta l'altezza verticale.
+          // - w-full max-w-[1600px]: Si allarga ma si ferma a 1600px per restare leggibile.
+          "flex h-[95vh] w-full max-w-[1600px] overflow-hidden rounded-2xl border border-white/10 bg-[#09090b] shadow-2xl ring-1 ring-white/5",
           themeStyles?.card
         )}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-surface-800 px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold text-surface-25">Modifica il PDF</h2>
-            <p className="mt-1 flex items-center gap-2 text-xs text-surface-300">
-              <FileCode className="h-4 w-4" />
-              <span className="break-all font-mono text-[11px] text-surface-200">{path}</span>
-            </p>
-            {title && (
-              <p className="mt-1 text-xs text-surface-400">Sessione: {title}</p>
-            )}
-          </div>
-          <IconButton
-            variant="ghost"
-            onClick={handleClose}
-            aria-label="Chiudi editor"
-          >
-            <XCircle className="h-4 w-4" />
-          </IconButton>
-        </div>
-        <div className="flex-1 overflow-y-auto px-6 py-4 max-h-[70vh]">
-          {loading ? (
-            <Skeleton className="h-[420px] w-full rounded-2xl bg-surface-800/70" />
-          ) : (
-            <TextArea
-              value={value}
-              onChange={(event) => onChange?.(event.target.value)}
-              spellCheck={false}
-              disabled={saving}
-              containerClassName="w-full"
-              className={classNames(
-                "h-[420px] resize-none font-mono leading-relaxed",
-                themeStyles?.input
-              )}
-            />
-          )}
-          {showSpeakerMapper ? (
-            <div className="mt-6 space-y-4 rounded-3xl border border-surface-800/80 bg-surface-950/40 p-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-surface-50">Identifica speaker</p>
-                  <p className="mt-1 text-xs text-surface-400">
-                    Assegna un nome reale alle etichette generiche. Le modifiche sono applicate in anteprima in tempo reale; i campi lasciati vuoti manterranno l&apos;etichetta originale.
-                  </p>
+        {/* ================= COLONNA SINISTRA: EDITOR (70%) ================= */}
+        <div className="flex flex-1 flex-col border-r border-white/10 bg-[#09090b]">
+            {/* Header Editor */}
+            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 bg-[#09090b]">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/5 border border-white/10">
+                        <FileCode className="h-5 w-5 text-white/70" />
+                    </div>
+                    <div>
+                        <h2 className="text-base font-semibold text-white tracking-tight">Editor Contenuto</h2>
+                        <p className="text-[11px] text-white/40 font-mono max-w-md truncate" title={path}>
+                            {path || "Nuovo documento"}
+                        </p>
+                    </div>
                 </div>
-              </div>
-              <SpeakerMapper
-                speakers={speakers}
-                value={speakerMap}
-                onMapChange={onSpeakerMapChange}
-              />
-              <div className="rounded-2xl border border-surface-800 bg-surface-900/40 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-surface-400">
-                  Anteprima con nomi
-                </p>
-                <div className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap rounded-2xl bg-surface-950/70 p-3 text-xs font-mono text-surface-100 shadow-inset">
-                  {previewContent}
+                <div className="flex items-center gap-3">
+                     {hasUnsavedChanges ? (
+                        <span className="text-xs text-amber-400 font-medium px-2 py-1 rounded bg-amber-400/10 border border-amber-400/20">
+                            Modifiche non salvate
+                        </span>
+                     ) : (
+                        <span className="text-xs text-emerald-400 font-medium px-2 py-1 rounded bg-emerald-400/10 border border-emerald-400/20">
+                            Salvato
+                        </span>
+                     )}
+                     <Button
+                        onClick={() => onSave?.(value)}
+                        disabled={loading || saving || !hasUnsavedChanges}
+                        variant="primary"
+                        size="sm"
+                        leadingIcon={Save}
+                        isLoading={saving}
+                        className="min-w-[100px]"
+                    >
+                        Salva
+                    </Button>
                 </div>
-              </div>
             </div>
-          ) : null}
-          <div className="mt-3 flex flex-wrap gap-2 text-xs">
-            {error ? (
-              <Toast tone="danger" description={error} className="text-xs" />
-            ) : null}
-            {success && !error ? (
-              <Toast tone="success" description={success} className="text-xs" />
-            ) : null}
-            {hasUnsavedChanges && !loading && !saving ? (
-              <Toast tone="warning" description="Modifiche non salvate" className="text-xs" />
-            ) : null}
-          </div>
-          <div className="mt-6 rounded-3xl border border-surface-800/80 bg-surface-950/40 p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-surface-400">
-              Percorso guidato
-            </p>
-            <ol className="mt-3 space-y-3 text-sm">
-              {renderStep(1, "Modifica il PDF", stepOneDescription, stepOneStatus)}
-              {renderStep(2, "Salva le modifiche", stepTwoDescription, stepTwoStatus)}
-              {renderStep(3, "Rigenera e verifica il PDF", stepThreeDescription, stepThreeStatus)}
-            </ol>
-            {isRepublishing ? (
-              <p className="mt-3 rounded-2xl border border-sky-500/40 bg-sky-500/10 p-3 text-xs text-sky-100">
-                Rigenerazione in corso. Puoi seguire l'avanzamento dal pannello principale.
-              </p>
-            ) : normalizedLastAction === "republished" ? (
-              <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-emerald-100">
-                <p>
-                  PDF rigenerato con successo. Apri subito la nuova versione oppure chiudi l'editor per tornare alla libreria.
-                </p>
-                {typeof onViewPdf === "function" && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="primary"
-                    leadingIcon={ExternalLink}
-                    onClick={() => onViewPdf?.()}
-                    disabled={busy || !canViewPdf}
-                  >
-                    Apri PDF aggiornato
-                  </Button>
+            
+            {/* Area Testo */}
+            <div className="flex-1 p-0 relative bg-[#09090b]">
+                {loading ? (
+                    <Skeleton className="absolute inset-6 rounded-xl bg-white/5" />
+                ) : (
+                    <TextArea
+                        value={value}
+                        onChange={(e) => onChange?.(e.target.value)}
+                        spellCheck={false}
+                        disabled={saving}
+                        className="h-full w-full resize-none border-none bg-transparent p-6 font-mono text-sm leading-7 text-white/80 focus:ring-0 selection:bg-indigo-500/30"
+                        placeholder="Il contenuto del documento apparirà qui..."
+                    />
                 )}
-              </div>
-            ) : null}
-          </div>
+            </div>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-surface-800 bg-surface-900/60 px-6 py-4 text-xs">
-          <div className="flex flex-wrap items-center gap-2 text-surface-300">
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={handleClose}
-              leadingIcon={ChevronLeft}
-              disabled={busy}
-            >
-              Chiudi editor
-            </Button>
-            {typeof onOpenInNewTab === "function" && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => onOpenInNewTab?.()}
-                leadingIcon={ExternalLink}
-              >
-                Apri documento in nuova scheda
-              </Button>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              onClick={() => onRepublish?.()}
-              disabled={busy || hasUnsavedChanges || !onRepublish}
-              variant="secondary"
-              size="sm"
-              leadingIcon={RefreshCw}
-              isLoading={busy}
-            >
-              {busy ? "Rigenerazione…" : hasUnsavedChanges ? "Salva per rigenerare" : "Rigenera PDF"}
-            </Button>
-            {showSpeakerMapper && typeof onRepublishWithSpeakers === "function" ? (
-              <Button
-                onClick={() => onRepublishWithSpeakers?.()}
-                disabled={busy || hasUnsavedChanges || !speakerMapHasNames}
-                variant="primary"
-                size="sm"
-                leadingIcon={RefreshCw}
-                isLoading={busy}
-              >
-                {busy ? "Rigenerazione…" : "Rigenera PDF con nomi"}
-              </Button>
-            ) : null}
-            <Button
-              onClick={() => onSave?.(value)}
-              disabled={loading || saving || !hasUnsavedChanges}
-              variant="primary"
-              size="sm"
-              leadingIcon={Save}
-              isLoading={saving}
-            >
-              {saving ? "Salvataggio…" : "Salva modifiche"}
-            </Button>
-          </div>
+
+        {/* ================= COLONNA DESTRA: TOOLBAR (30%) ================= */}
+        <div className="flex w-[400px] xl:w-[450px] flex-col bg-[#121214] border-l border-white/5">
+            {/* Header Toolbar */}
+            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 bg-[#121214]">
+                <h3 className="text-sm font-semibold text-white/90">Revisione & Pubblicazione</h3>
+                <IconButton variant="ghost" onClick={handleClose} className="hover:bg-white/10">
+                    <XCircle className="h-5 w-5 text-white/60" />
+                </IconButton>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+                
+                {/* SEZIONE 1: Speaker Mapper */}
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white/50">
+                            <Users className="h-4 w-4" /> Identificazione Speaker
+                        </h4>
+                        {speakerMapHasNames && <span className="text-[10px] text-emerald-400 font-medium bg-emerald-400/10 px-2 py-0.5 rounded">Attiva</span>}
+                    </div>
+                    
+                    {hasSpeakers ? (
+                        <>
+                            <p className="text-xs text-white/40 leading-relaxed">
+                                Sostituisci le etichette generiche (es. SPEAKER_01) con i nomi reali.
+                            </p>
+                            <div className="bg-[#09090b] rounded-xl border border-white/10 p-1 max-h-[300px] overflow-y-auto">
+                                <SpeakerMapper
+                                    speakers={speakers}
+                                    value={speakerMap}
+                                    onMapChange={onSpeakerMapChange}
+                                />
+                            </div>
+                        </>
+                    ) : (
+                        <div className="rounded-xl border border-dashed border-white/10 bg-white/5 p-6 text-center">
+                            <p className="text-xs text-white/30">
+                                Nessuno speaker identificato o modalità diarizzazione non attiva per questo documento.
+                            </p>
+                        </div>
+                    )}
+                </div>
+
+                <div className="h-px bg-white/10 w-full" />
+
+                {/* SEZIONE 2: Azioni Pubblicazione */}
+                <div className="space-y-4">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-white/50">Rigenerazione PDF</h4>
+                    
+                    <div className="grid gap-3">
+                        {/* Pulsante Rigenera con Nomi */}
+                        <Button
+                            onClick={() => onRepublishWithSpeakers?.()}
+                            disabled={busy || hasUnsavedChanges || !hasSpeakers || !speakerMapHasNames}
+                            variant={hasSpeakers && speakerMapHasNames ? "primary" : "ghost"}
+                            className={classNames(
+                                "w-full justify-start h-12 text-sm",
+                                hasSpeakers && speakerMapHasNames 
+                                    ? "bg-indigo-600 hover:bg-indigo-500 border-transparent text-white" 
+                                    : "bg-white/5 border-white/10 text-white/40"
+                            )}
+                            leadingIcon={CheckCircle2}
+                            isLoading={busy && speakerMapHasNames}
+                        >
+                            <div className="flex flex-col items-start text-left">
+                                <span className="font-semibold">Applica Nomi & Rigenera</span>
+                                <span className="text-[10px] opacity-70 font-normal">Usa la mappatura speaker sopra</span>
+                            </div>
+                        </Button>
+
+                        {/* Pulsante Rigenera Standard */}
+                        <Button
+                            onClick={() => onRepublish?.()}
+                            disabled={busy || hasUnsavedChanges}
+                            variant="secondary"
+                            className="w-full justify-start h-12 bg-white/5 border-white/10 hover:bg-white/10 text-white/80"
+                            leadingIcon={RefreshCw}
+                            isLoading={busy && !speakerMapHasNames}
+                        >
+                            <div className="flex flex-col items-start text-left">
+                                <span className="font-semibold">Rigenera Standard</span>
+                                <span className="text-[10px] opacity-50 font-normal">Usa solo il testo modificato</span>
+                            </div>
+                        </Button>
+                    </div>
+                </div>
+
+                {/* SEZIONE 3: Stato & Output */}
+                <div className="space-y-3">
+                     {error && <Toast tone="danger" description={error} />}
+                     {success && <Toast tone="success" description={success} />}
+                     
+                     {normalizedLastAction === "republished" && (
+                        <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 animate-in fade-in slide-in-from-bottom-2">
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                                    <CheckCircle2 className="h-5 w-5" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold text-white">PDF Aggiornato</p>
+                                    <p className="text-[11px] text-emerald-200/70">Il documento è pronto per il download.</p>
+                                </div>
+                            </div>
+                            {typeof onViewPdf === "function" && (
+                                <Button 
+                                    size="sm" 
+                                    className="w-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20" 
+                                    onClick={onViewPdf} 
+                                    leadingIcon={ExternalLink}
+                                >
+                                    Apri PDF Aggiornato
+                                </Button>
+                            )}
+                        </div>
+                     )}
+                </div>
+            </div>
+            
+            {/* Footer Toolbar */}
+            <div className="border-t border-white/10 p-4 bg-[#121214]">
+                {typeof onOpenInNewTab === "function" && (
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onOpenInNewTab?.()}
+                        leadingIcon={ExternalLink}
+                        className="w-full text-white/40 hover:text-white/80 justify-center"
+                    >
+                        Apri in nuova scheda
+                    </Button>
+                )}
+            </div>
         </div>
       </div>
     </div>

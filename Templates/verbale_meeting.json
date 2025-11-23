@@ -2,7 +2,7 @@
   "name": "3_Verbale_Meeting",
   "description": "Layout ottimizzato per riunioni con Action Items, Decisioni e Speaker. Supporta sia Frontmatter che Markdown standard.",
   "type": "html",
-  "engine": "wkhtmltopdf",
+  "engine": "weasyprint",
   "resources": [
     {
       "path": "Templates/verbale_meeting.css"

@@ -1,9 +1,15 @@
 .
+├── AGENTS copy.txt
 ├── AGENTS.md
 ├── assets
 │   ├── BiteTheHand2.png
 │   ├── BLD_LOGO_Primary_Horizontal_RGB copy.png
 │   ├── BLD_LOGO_Primary_Horizontal_RGB.pdf
+│   ├── DocuMind_logo
+│   │   ├── Generated Image November 19, 2025 - 9_01AM.png
+│   │   ├── Generated Image November 19, 2025 - 9_03AM (1).png
+│   │   ├── Generated Image November 19, 2025 - 9_03AM (2).png
+│   │   └── Generated Image November 19, 2025 - 9_03AM.png
 │   ├── HelloKitty.png
 │   ├── logo_colorato.pdf
 │   ├── logo_colorato.png
@@ -37,11 +43,11 @@
 │   └── thinkDOC2.pdf
 ├── backups
 ├── CHANGELOG.md
+├── docker-compose.yml
 ├── Dockerfile
 ├── docs
 │   ├── ACCESSIBILITY_CHECKLIST.md
 │   ├── ADVANCED_GUIDE.md
-│   ├── advanced_mode_discovery.md
 │   ├── analisi_mercato_rec2pdf.pdf
 │   ├── architecture
 │   │   └── supabase_rls_access_matrix.md
@@ -52,6 +58,8 @@
 │   ├── embedding_process_description.md
 │   ├── esempio_template_verbale_meeting.html
 │   ├── http_ingestion_api_details.md
+│   ├── infografica_22_11_25.png
+│   ├── infografica_NBLM.png
 │   ├── Manuale utente – Workspace Navigator mul.md
 │   ├── meeting_template_quickstart.md
 │   ├── operations
@@ -70,8 +78,8 @@
 │   ├── UI_AUDIT.md
 │   ├── UI.md
 │   └── USER_JOURNEYS.md
+├── downloaded-logs-20251118-115648.json
 ├── file_system.png
-├── gemini-conversation-1761465588732.json
 ├── knowledge_sources
 │   ├── ws_7017ecef-b494-4cfe-ae76-547a5deeb34f
 │   │   ├── analisi_tecnica_erp_bianchi copy.txt
@@ -93,6 +101,7 @@
 ├── LICENSE
 ├── project_structure.txt
 ├── README copy.txt
+├── README.md
 ├── rec2pdf-backend
 │   ├── __tests__
 │   │   ├── aiProviders.test.js
@@ -109,7 +118,6 @@
 │   ├── '
 │   │   └── Users
 │   │       └── moromoro
-│   ├── docker-compose.yml
 │   ├── package-lock.json
 │   ├── package.json
 │   ├── prompts
@@ -143,7 +151,8 @@
 │   │       ├── 20240703_create_match_knowledge_chunks_function.sql
 │   │       ├── 20250219_add_project_id_to_knowledge_chunks.sql
 │   │       ├── 20250219_update_match_knowledge_chunks_function.sql
-│   │       └── 20251026_001_initial_schema.sql
+│   │       ├── 20251026_001_initial_schema.sql
+│   │       └── 20251121_webhook_routing.sql
 │   └── tests
 │       ├── kb_discussione_generica.txt
 │       ├── kb_progetto_vanguard.txt
@@ -262,6 +271,7 @@
 │   │   ├── hooks
 │   │   │   ├── useAppContext.jsx
 │   │   │   ├── useBackendDiagnostics.js
+│   │   │   ├── useJobPolling.js
 │   │   │   └── useMicrophoneAccess.js
 │   │   ├── index.css
 │   │   ├── main.jsx
@@ -290,10 +300,14 @@
 │   │   └── unit
 │   │       └── meetingPrompt.test.js
 │   └── vite.config.js
+├── Screenshot 2025-11-23 at 10.06.38.png
 ├── Scripts
 │   ├── deploy-cloudrun.sh
 │   └── publish.sh
 └── Templates
+    ├── consulting_report.css
+    ├── consulting_report.html
+    ├── consulting_report.json
     ├── cover.tex
     ├── default.tex
     ├── header_footer.tex
@@ -303,4 +317,4 @@
     ├── verbale_meeting.html
     └── verbale_meeting.json
 
-58 directories, 246 files
+59 directories, 259 files

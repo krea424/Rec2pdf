@@ -12,105 +12,59 @@
 </head>
 <body>
 
-    <!-- HEADER AZIENDALE -->
+    <!-- HEADER -->
     <div class="pdf-header">
-        <div class="logo-container">
-            <div class="logo">
-                Think<span>DOC</span>
-            </div>
-        </div>
-        <div class="meta-container">
-            Generato automaticamente<br>
-            $date$
-        </div>
+        <div class="logo">Think<span>DOC</span></div>
+        <div class="header-meta">Generato automaticamente</div>
     </div>
 
-    <!-- TITOLO E METADATI MEETING -->
-    <h1 class="doc-title">$title$</h1>
-    
-    <div class="meeting-info">
+    <!-- TITLE BOX -->
+    <div class="title-container">
+        $if(artifact_type)$<div class="doc-label">$artifact_type$</div>$endif$
+        <h1>$title$</h1>
         $if(author)$
-        <div class="info-row">
-            <span class="info-label">Autore:</span> $author$
-        </div>
+        <div class="doc-author"><strong>Autore:</strong> <span>$author$</span></div>
         $endif$
-        
-        $if(date)$
-        <div class="info-row">
-            <span class="info-label">Data:</span> $date$
-        </div>
+    </div>
+
+    <!-- CORPO -->
+    <div class="content">
+        $if(metadata.summary)$
+        <h2>Sintesi Esecutiva</h2>
+        <p>$metadata.summary$</p>
         $endif$
 
-        $if(project_name)$
-        <div class="info-row">
-            <span class="info-label">Progetto:</span> $project_name$
-        </div>
-        $endif$
+        $body$
+<!-- ========================================== -->
+        <!-- SEZIONE TRASCRIZIONE (FIX AMBITO VARIABILI) -->
+        <!-- ========================================== -->
+        $if(meeting_transcript)$
+        <div class="transcript-section" style="margin-top: 50px; border-top: 4px solid #f1f5f9; padding-top: 30px;">
+            <h2 style="color: #1e3a8a; border-left: 5px solid #f97316; padding-left: 15px; margin-bottom: 25px;">
+                Trascrizione Integrale
+            </h2>
+            
+            $for(meeting_transcript)$
+            <div class="speaker-block" style="margin-bottom: 15px; page-break-inside: avoid;">
+                <div class="speaker-header" style="margin-bottom: 4px;">
+                    <!-- SPEAKER (Uso it.speaker) -->
+                    <span style="font-weight: 700; color: #1e3a8a; font-size: 10pt; text-transform: uppercase;">
+                        $it.speaker$
+                    </span>
+                    
+                    <!-- TIMESTAMP (Uso it.timestamp) -->
+                    $if(it.timestamp)$
+                    <span style="font-weight:normal; color:#94a3b8; font-size:8pt; margin-left:8px;">
+                        $it.timestamp$
+                    </span>
+                    $endif$
+                </div>
 
-        <!-- Gestione Speaker da Metadati -->
-        $if(metadata.meeting.participants.list)$
-        <div class="info-row">
-            <span class="info-label">Partecipanti:</span>
-            $for(metadata.meeting.participants.list)$
-                $metadata.meeting.participants.list$$sep$, 
+                <!-- MESSAGGIO (Uso it.message) -->
+                <div class="speaker-content" style="margin-left: 0; padding-left: 12px; border-left: 2px solid #e2e8f0; color: #334155; font-size: 10pt; line-height: 1.5;">
+                    $it.message$
+                </div>
+            </div>
             $endfor$
         </div>
         $endif$
-    </div>
-
-    <!-- SEZIONE RIASSUNTO (Se presente nei metadati strutturati) -->
-    $if(metadata.summary)$
-    <div class="summary-section">
-        <h2>Sintesi Esecutiva</h2>
-        <p>$metadata.summary$</p>
-    </div>
-    $endif$
-
-    <!-- ACTION ITEMS STRUTTURATI (Se presenti) -->
-    $if(metadata.action_items)$
-    <h2>Action Items</h2>
-    <ul>
-    $for(metadata.action_items)$
-        <li class="task-item">
-            <strong>$metadata.action_items.assignee.name$:</strong> 
-            $metadata.action_items.description$ 
-            $if(metadata.action_items.due_date)$(Entro: $metadata.action_items.due_date$)$endif$
-        </li>
-    $endfor$
-    </ul>
-    $endif$
-
-    <!-- CORPO PRINCIPALE DEL DOCUMENTO (Markdown standard) -->
-    <!-- Qui finisce tutto ciò che l'AI scrive come testo libero -->
-    <div class="content-body">
-        $body$
-    </div>
-
-    <!-- TRASCRIZIONE (Se presente come oggetto strutturato) -->
-    $if(metadata.transcript)$
-    <h2 style="page-break-before: always;">Trascrizione Dettagliata</h2>
-    $for(metadata.transcript)$
-    <div class="speaker-block">
-        <div class="speaker-name">
-            $if(metadata.transcript.speaker)$$metadata.transcript.speaker$$else$Speaker Sconosciuto$endif$
-            $if(metadata.transcript.timestamp)$<span style="font-weight:normal; color:#aaa; font-size:8pt; margin-left:5px;">($metadata.transcript.timestamp$)</span>$endif$
-        </div>
-        <div class="speaker-content">
-            $if(metadata.transcript.text)$
-                $metadata.transcript.text$
-            $else$
-                $for(metadata.transcript.paragraphs)$
-                <p>$metadata.transcript.paragraphs$</p>
-                $endfor$
-            $endif$
-        </div>
-    </div>
-    $endfor$
-    $endif$
-
-    <div class="footer">
-        Documento riservato generato da Rec2PDF.
-    </div>
-
-</body>
-</html>

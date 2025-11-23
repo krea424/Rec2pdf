@@ -6518,17 +6518,20 @@ const workspaceProfileTemplate = String(
       refinedDataPayload = mergedRefined;
     }
 
-    const diarizeEnabled = (() => {
-      if (typeof payload.diarizeEnabled === 'boolean') return payload.diarizeEnabled;
-      if (typeof payload.diarize === 'boolean') return payload.diarize;
-      const diarizeRaw = typeof payload.diarize === 'string' ? payload.diarize : typeof payload.diarizeEnabled === 'string' ? payload.diarizeEnabled : '';
-      if (typeof diarizeRaw === 'string' && diarizeRaw) {
-        const normalized = diarizeRaw.trim().toLowerCase();
-        return ['true', '1', 'yes', 'on'].includes(normalized);
-      }
-      return false;
-    })();
-
+    // --- FIX: Lettura robusta del flag diarizzazione ---
+    // Controlliamo tutte le possibili chiavi che il frontend potrebbe inviare
+    const rawDiarize = payload.diarize || payload.diarizeEnabled || payload.identifySpeakers;
+    
+    // Normalizziamo il valore per accettare booleani o stringhe ('true', 'on', '1')
+    const diarizeEnabled = 
+      rawDiarize === true || 
+      String(rawDiarize).trim().toLowerCase() === 'true' || 
+      String(rawDiarize).trim().toLowerCase() === 'on' || 
+      String(rawDiarize).trim() === '1';
+    // ---------------------------------------------------
+    // --- DEBUG 1: Verifica il flag ---
+    console.log(`[DEBUG PIPELINE] Flag Diarizzazione: ${diarizeEnabled} (Raw: ${rawDiarize})`);
+    // --------------------------------
     out(
       diarizeEnabled
         ? '🗣️ Modalità riunione con diarizzazione WhisperX attivata.'
@@ -6734,6 +6737,10 @@ const workspaceProfileTemplate = String(
     const wavStoragePath = `${processedBasePath}/${baseName}.wav`;
     const transcriptExt = diarizeEnabled ? '.json' : '.txt';
     const transcriptStoragePath = `${processedBasePath}/${baseName}${transcriptExt}`;
+    // --- DEBUG 2: Verifica i percorsi ---
+    console.log(`[DEBUG PIPELINE] Path Trascrizione: ${transcriptStoragePath}`);
+    console.log(`[DEBUG PIPELINE] Estensione: ${transcriptExt}`);
+    // -----------------------------------
     const mdStoragePath = `${processedBasePath}/documento_${baseName}.md`;
     const pdfStoragePath = `${processedBasePath}/documento_${baseName}.pdf`;
 
@@ -6800,6 +6807,9 @@ const workspaceProfileTemplate = String(
     const wavLocalForTranscribe = registerTempFile(path.join(pipelineDir, `${baseName}.wav`));
     let transcriptLocalPath = '';
     const performTranscription = async () => {
+      // --- DEBUG 3: Verifica dentro la funzione ---
+      console.log(`[DEBUG WORKER] Avvio trascrizione. Diarize attivo? ${diarizeEnabled}`);
+      // --------------------------------------------
       const wavBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, wavStoragePath);
       await fsp.writeFile(wavLocalForTranscribe, wavBuffer);
       const transcribeOutputDir = pipelineDir;
@@ -6903,21 +6913,21 @@ const workspaceProfileTemplate = String(
             }
           }
         }
-        const transcriptMime = diarizeEnabled ? 'application/json' : 'text/plain';
-        await uploadFileToBucket(
-          SUPABASE_PROCESSED_BUCKET,
-          transcriptStoragePath,
-          await fsp.readFile(transcriptLocalPath),
-          transcriptMime
-        );
-        out(
-          diarizeEnabled
-            ? `✅ Trascrizione diarizzata completata: ${path.basename(transcriptLocalPath)}`
-            : `✅ Trascrizione completata: ${path.basename(transcriptLocalPath)}`,
-          'transcribe',
-          'completed'
-        );
       }
+      const transcriptMime = diarizeEnabled ? 'application/json' : 'text/plain';
+      await uploadFileToBucket(
+        SUPABASE_PROCESSED_BUCKET,
+        transcriptStoragePath,
+        await fsp.readFile(transcriptLocalPath),
+        transcriptMime
+      );
+      out(
+        diarizeEnabled
+          ? `✅ Trascrizione diarizzata completata: ${path.basename(transcriptLocalPath)}`
+          : `✅ Trascrizione completata: ${path.basename(transcriptLocalPath)}`,
+        'transcribe',
+        'completed'
+      );
     };
 
     try {
@@ -6999,7 +7009,25 @@ const workspaceProfileTemplate = String(
       if (diarizeEnabled) {
         try {
           const parsedTranscript = JSON.parse(transcriptBuffer.toString('utf8'));
+          console.log(`[DEBUG DIARIZE] Segmenti trovati nel JSON: ${parsedTranscript?.segments?.length}`);
           const normalizedSegments = normalizeDiarizedSegments(parsedTranscript?.segments || []);
+          // --- FIX: Popolamento esplicito ---
+         // --- FIX: Pulizia caratteri e uso 'message' ---
+         diarizedTranscriptEntries = normalizedSegments.map(seg => ({
+          speaker: String(seg.speakerLabel || 'Speaker Sconosciuto').trim(),
+          timestamp: String(seg.timestamp || '').trim(),
+          // Rimuoviamo caratteri di controllo strani che potrebbero rompere il PDF
+          message: String(seg.text || '').replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, "").trim()
+        }));
+        // ----------------------------------------------
+  
+
+// Opzioni per il dump YAML per renderlo più digeribile a Pandoc
+const yamlFrontMatter = yaml.dump(frontMatter, {
+  lineWidth: -1,      // Evita di spezzare le righe lunghe (causa spesso problemi)
+  noRefs: true,       // Evita alias YAML (&ref) che Pandoc odia
+  quotingType: '"'    // Forza virgolette doppie per evitare problemi con apostrofi
+});
           if (normalizedSegments.length) {
             const speakerSet = new Set();
             const transcriptTexts = [];
@@ -7062,93 +7090,108 @@ const workspaceProfileTemplate = String(
 
       const now = new Date();
       const localTimestamp = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, -1);
+// ==================================================================================
+    // === [FIX DEFINITIVO $200] COSTRUZIONE E INIEZIONE SICURA DEL FRONTMATTER ===
+    // ==================================================================================
+    
+    // 1. Creazione oggetto base
+    const frontMatter = {
+      title: aiTitle || String(payload.title || baseName).trim(),
+      author: aiAuthor || userEmail || 'rec2pdf',
+      owner: workspaceProject?.name || workspaceMeta?.client || '',
+      project_name: workspaceProject?.name || workspaceProjectName || '',
+      project_code: workspaceMeta?.slug || workspaceId || '',
+      artifact_type: 'Report',
+      version: 'v1_0_0',
+      identifier: baseName,
+      location: destDir,
+      summary: aiSummary || String(payload.summary || '').trim(),
+      ssot: false,
+      status: workspaceStatus || '',
+      created: localTimestamp,
+      updated: localTimestamp,
+      tags: selectedPrompt?.tags || [],
+      ai: {
+        generated: true,
+        model: aiModel || '',
+        prompt_id: selectedPrompt?.id || '',
+      },
+      // Campi legacy per compatibilità
+      BLDTitle: aiTitle || String(payload.title || baseName).trim(),
+      BLDVersion: 'v1_0_0',
+      BLDUpdated: new Date().toLocaleDateString('it-IT'),
+      BLDAuthor: aiAuthor || userEmail || 'rec2pdf',
+      // Regole PDF
+      pdfRules: selectedPrompt?.pdfRules || { layout: 'verbale_meeting', template: 'verbale_meeting.html' }
+  };
 
-      const frontMatter = {
-        title: aiTitle || String(payload.title || baseName).trim(),
-        author: aiAuthor || userEmail || 'rec2pdf',
-        owner: workspaceProject?.name || workspaceMeta?.client || '',
-        project_name: workspaceProject?.name || workspaceProjectName || '',
-        project_code: workspaceMeta?.slug || workspaceId || '',
-        artifact_type: 'Report',
-        version: 'v1_0_0',
-        identifier: baseName,
-        location: destDir,
-        summary: aiSummary || String(payload.summary || '').trim(),
-        usageterms: '',
-        ssot: false,
-        status: workspaceStatus || '',
-        created: localTimestamp,
-        updated: localTimestamp,
-        tags: selectedPrompt?.tags || [],
-        ai: {
-          generated: true,
-          model: aiModel || '',
-          prompt_id: selectedPrompt?.id || '',
-        },
-      };
+  // 2. Logica FAIL-SAFE per la trascrizione
+  // Se la variabile in memoria è vuota, proviamo a ricaricare il JSON dal disco per sicurezza
+  let finalTranscriptData = diarizedTranscriptEntries;
 
-      frontMatter.BLDTitle = frontMatter.title;
-      frontMatter.BLDVersion = frontMatter.version;
-      frontMatter.BLDUpdated = now.toLocaleDateString('it-IT', { year: 'numeric', month: '2-digit', day: '2-digit' });
-      frontMatter.BLDAuthor = frontMatter.author;
-      frontMatter.BLDProject = frontMatter.project_name;
-
-      if (selectedPrompt?.pdfRules && typeof selectedPrompt.pdfRules === 'object') {
-        frontMatter.pdfRules = { ...selectedPrompt.pdfRules };
+  if ((!finalTranscriptData || finalTranscriptData.length === 0) && diarizeEnabled) {
+      console.warn("⚠️ [FIX SICUREZZA] Variabile in memoria vuota. Tento ricaricamento d'emergenza dal JSON...");
+      try {
+          const jsonRaw = await fsp.readFile(transcriptLocalForMarkdown, 'utf8');
+          const jsonParsed = JSON.parse(jsonRaw);
+          if (jsonParsed.segments) {
+               finalTranscriptData = jsonParsed.segments.map(seg => ({
+                  speaker: String(seg.speakerLabel || seg.speaker || "Speaker").trim(),
+                  timestamp: String(seg.timestamp || "").trim(),
+                  message: String(seg.text || "").trim()
+              }));
+              console.log(`✅ [FIX SICUREZZA] Recuperati ${finalTranscriptData.length} segmenti dal disco.`);
+          }
+      } catch (err) {
+          console.error("❌ [FIX SICUREZZA] Ricaricamento fallito:", err.message);
       }
+  }
 
-      if (diarizeEnabled && diarizedTranscriptEntries.length) {
-        if (!frontMatter.pdfRules || typeof frontMatter.pdfRules !== 'object') {
-          frontMatter.pdfRules = {};
-        }
-        if (!frontMatter.pdfRules.layout) {
-          frontMatter.pdfRules.layout = 'verbale_meeting';
-        }
-        const transcriptBlocks = diarizedTranscriptEntries.map((entry) => {
-          const block = {
-            speaker: entry.speaker,
-            timestamp: entry.timestamp,
-          };
-          if (typeof entry.role === 'string' && entry.role.trim()) {
-            block.role = entry.role.trim();
-          }
-          const paragraphs = Array.isArray(entry.paragraphs)
-            ? entry.paragraphs.filter((p) => typeof p === 'string' && p.trim()).map((p) => p.trim())
-            : [];
-          if (!paragraphs.length && typeof entry.text === 'string' && entry.text.trim()) {
-            paragraphs.push(entry.text.trim());
-          }
-          if (paragraphs.length) {
-            block.paragraphs = paragraphs;
-          }
-          const rawLabel = entry.raw_label || entry.rawLabel;
-          if (typeof rawLabel === 'string' && rawLabel.trim()) {
-            block.raw_label = rawLabel.trim();
-          }
-          return block;
-        });
-        frontMatter.transcript = transcriptBlocks;
-        const nestedMetadata =
-          frontMatter.metadata && typeof frontMatter.metadata === 'object' ? { ...frontMatter.metadata } : {};
-        nestedMetadata.transcript = transcriptBlocks;
-        frontMatter.metadata = nestedMetadata;
-      }
+  // 3. Iniezione Finale
+  if (finalTranscriptData && finalTranscriptData.length > 0) {
+      console.log(`🚀 [INIEZIONE AVVENUTA] Scrivo ${finalTranscriptData.length} segmenti nel meeting_transcript.`);
+      
+      // Iniezione pulita
+      frontMatter.meeting_transcript = finalTranscriptData.map(entry => ({
+          speaker: entry.speaker,
+          timestamp: entry.timestamp,
+          message: entry.message
+      }));
+      
+      // Doppio check per template vecchi
+      frontMatter.transcript = frontMatter.meeting_transcript;
+      if (!frontMatter.metadata) frontMatter.metadata = {};
+      frontMatter.metadata.transcript = frontMatter.meeting_transcript;
+  } else {
+      console.warn("⚠️ [ATTENZIONE] Il meeting_transcript sarà VUOTO nel PDF.");
+  }
 
-      if (refinedDataPayload) {
-        frontMatter.refined = refinedDataPayload;
-      }
-
-      Object.keys(frontMatter).forEach((key) => {
-        const value = frontMatter[key];
-        if (value === '' || value === null || (Array.isArray(value) && value.length === 0)) {
+  // 4. Pulizia chiavi vuote (senza toccare array pieni)
+  Object.keys(frontMatter).forEach((key) => {
+      const value = frontMatter[key];
+      if (value === '' || value === null || (Array.isArray(value) && value.length === 0)) {
           delete frontMatter[key];
-        }
-      });
+      }
+  });
 
-      const yamlFrontMatter = yaml.dump(frontMatter);
+  // 5. Dump YAML Sicuro
+  const yamlFrontMatter = yaml.dump(frontMatter, {
+      lineWidth: -1,
+      noRefs: true,
+      quotingType: '"'
+  });
+  
+  // ==================================================================================
       const cleanedMarkdownBody = normalizeAiMarkdownBody(markdownBody);
       const finalMarkdownContent = `---\n${yamlFrontMatter}---\n\n${cleanedMarkdownBody}`;
       await fsp.writeFile(mdLocalPath, finalMarkdownContent, 'utf8');
+      // --- DEBUG TEMPORANEO ---
+console.log('⚠️  [DEBUG MAC M1] Ispezione Frontmatter YAML:');
+// Estraiamo solo la parte YAML (tra i primi due ---)
+const debugYaml = finalMarkdownContent.split('---')[1]; 
+console.log(debugYaml); 
+console.log('⚠️  [DEBUG MAC M1] Fine Ispezione');
+// ------------------------
 
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,
@@ -8711,12 +8754,18 @@ app.post(
             delete metadata[key];
           }
         });
-
+       
         const yamlFrontMatter = yaml.dump(metadata);
 
         const cleanedMarkdownBody = normalizeAiMarkdownBody(markdownBody);
 
         const finalMarkdownContent = `---\n${yamlFrontMatter}---\n\n${cleanedMarkdownBody}`;
+         // --- DEBUG: STAMPA IL FRONTMATTER ---
+      console.log('--- DEBUG YAML START ---');
+      // Stampiamo solo i primi 2000 caratteri per vedere l'intestazione e l'inizio della trascrizione
+      console.log(finalMarkdownContent.substring(0, 2000));
+      console.log('--- DEBUG YAML END ---');
+      // ------------------------------------
         await fsp.writeFile(mdLocalPath, finalMarkdownContent, 'utf8');
 
         await uploadFileToBucket(
