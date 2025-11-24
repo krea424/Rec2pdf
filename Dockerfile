@@ -110,5 +110,14 @@ COPY assets /app/assets
 WORKDIR /app/rec2pdf-backend
 RUN chmod +x ../Scripts/publish.sh
 
+# === FIX CRITICO PERCORSI ===
+# Definiamo i percorsi ASSOLUTI così non ci sono dubbi
+ENV PROJECT_ROOT=/app
+ENV TEMPLATES_DIR=/app/Templates
+ENV ASSETS_DIR=/app/assets
+ENV PUBLISH_SCRIPT=/app/Scripts/publish.sh
+# ============================
+
+
 EXPOSE 8080
 CMD ["node", "server.js"]

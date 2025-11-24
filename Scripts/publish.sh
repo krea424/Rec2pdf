@@ -21,7 +21,7 @@ cleanup_tmp_files() {
 trap cleanup_tmp_files EXIT
 
 # ============================================ 
-# BrightLedger – MD_First_PDF_Publish v0.3.1
+# BrightLedger – MD_First_PDF_Publish v0.4.0 (Path Fix)
 # ============================================ 
 
 die() { echo "❌ $*" >&2; exit 1; }
@@ -56,7 +56,7 @@ COVER_TEX="$TEMPLATE_DIR/cover.tex"
 [[ -f "$HEADER_FOOTER_TEX" ]] || die "Template header_footer.tex non trovato: $HEADER_FOOTER_TEX"
 [[ -f "$COVER_TEX" ]] || die "Template cover.tex non trovato: $COVER_TEX"
 
-# ----- Selezione template profilo -----
+# ----- Selezione template profilo (FIXED LOGIC) -----
 SELECTED_TEMPLATE="$DEFAULT_TEX"
 SELECTED_CSS=""
 TEMPLATE_KIND="tex"
@@ -65,9 +65,40 @@ HTML_RESOURCE_PATH=""
 HTML_INLINE_METADATA_FILE=""
 
 if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
-  PROFILE_TEMPLATE_CANDIDATE="$WORKSPACE_PROFILE_TEMPLATE"
+  # 1. Acquisizione input
+  CANDIDATE="$WORKSPACE_PROFILE_TEMPLATE"
+  
+  # 2. Debug Log per Cloud Run
+  echo "🔍 [DEBUG SCRIPT] Input Template: '$CANDIDATE'"
+  echo "🔍 [DEBUG SCRIPT] Template Dir: '$TEMPLATE_DIR'"
+
+  # 3. FIX PATH: Se il file non esiste come path relativo, proviamo a risolverlo come assoluto
+  if [[ ! -f "$CANDIDATE" ]]; then
+    # Rimuoviamo eventuale prefisso 'Templates/' duplicato
+    CLEAN_NAME="${CANDIDATE#Templates/}"
+    # Costruiamo il path assoluto basato sulla directory nota dei template
+    ABS_CANDIDATE="$TEMPLATE_DIR/$CLEAN_NAME"
+    
+    if [[ -f "$ABS_CANDIDATE" ]]; then
+       echo "✅ [DEBUG SCRIPT] Path relativo corretto in assoluto: $ABS_CANDIDATE"
+       CANDIDATE="$ABS_CANDIDATE"
+    else
+       echo "⚠️ [DEBUG SCRIPT] Tentativo path assoluto fallito: $ABS_CANDIDATE"
+       # Fallback estremo: controlliamo se esiste nella TOOL_ROOT (es. /app/Templates/...)
+       if [[ -f "$TOOL_ROOT/$CANDIDATE" ]]; then
+          echo "✅ [DEBUG SCRIPT] Trovato relativo a TOOL_ROOT: $TOOL_ROOT/$CANDIDATE"
+          CANDIDATE="$TOOL_ROOT/$CANDIDATE"
+       fi
+    fi
+  fi
+
+  PROFILE_TEMPLATE_CANDIDATE="$CANDIDATE"
+
   if [[ ! -f "$PROFILE_TEMPLATE_CANDIDATE" ]]; then
     echo "⚠️  Template profilo non trovato: $PROFILE_TEMPLATE_CANDIDATE (uso default)"
+    # Debug listing per capire cosa vede lo script
+    echo "📂 Contenuto di $TEMPLATE_DIR:"
+    ls -la "$TEMPLATE_DIR" || true
   else
     case "$PROFILE_TEMPLATE_CANDIDATE" in
       *.tex|*.TEX)
@@ -78,12 +109,23 @@ if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
         SELECTED_TEMPLATE="$PROFILE_TEMPLATE_CANDIDATE"
         TEMPLATE_KIND="html"
         if [[ -n "${WORKSPACE_PROFILE_TEMPLATE_CSS:-}" ]]; then
-          if [[ -f "${WORKSPACE_PROFILE_TEMPLATE_CSS}" ]]; then
-            SELECTED_CSS="$WORKSPACE_PROFILE_TEMPLATE_CSS"
+          # Logica CSS simile: cerchiamo di risolvere path relativi
+          CSS_CANDIDATE="${WORKSPACE_PROFILE_TEMPLATE_CSS}"
+          if [[ ! -f "$CSS_CANDIDATE" ]]; then
+             CLEAN_CSS="${CSS_CANDIDATE#Templates/}"
+             if [[ -f "$TEMPLATE_DIR/$CLEAN_CSS" ]]; then
+                CSS_CANDIDATE="$TEMPLATE_DIR/$CLEAN_CSS"
+             fi
+          fi
+          
+          if [[ -f "$CSS_CANDIDATE" ]]; then
+            SELECTED_CSS="$CSS_CANDIDATE"
           else
             echo "⚠️  CSS template indicato ma non trovato: ${WORKSPACE_PROFILE_TEMPLATE_CSS}"
           fi
         fi
+        
+        # Auto-detection CSS se non specificato
         if [[ -z "$SELECTED_CSS" ]]; then
           CSS_CANDIDATE="${PROFILE_TEMPLATE_CANDIDATE%.*}.css"
           if [[ -f "$CSS_CANDIDATE" ]]; then
@@ -210,6 +252,11 @@ if [[ -n "$CUSTOM_LOGO_PATH" && -f "$CUSTOM_LOGO_PATH" ]]; then
   echo "📌 Logo (Custom)   : $LOGO"
 else
   LOGO="$SCRIPT_DIR/../assets/thinkDOC.pdf"
+# === DEBUG LOGO ===
+echo "🔍 [DEBUG SCRIPT] Controllo Logo:"
+echo "   - Path calcolato: $LOGO"
+ls -l "$LOGO" || echo "❌ ERRORE CRITICO: Il file del logo NON ESISTE a questo percorso!"
+# ==================  
   echo "📌 Logo (Default)  : $LOGO"
 fi
 [[ -f "$LOGO" ]] || die "Logo PDF non trovato: $LOGO"
@@ -302,7 +349,7 @@ else
     --template
     "$SELECTED_TEMPLATE"
     --highlight-style=kate
-    --embed-resources
+    --self-contained
   )
   if [[ -n "$SELECTED_CSS" ]]; then
     pandoc_args+=(--css "$SELECTED_CSS")
