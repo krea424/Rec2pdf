@@ -1333,15 +1333,7 @@ const listTemplatesMetadata = async () => {
       descriptors.delete('default.tex');
     }
 
-    ordered.push({
-      name: PANDOC_FALLBACK_TEMPLATE_LABEL,
-      fileName: PANDOC_FALLBACK_TEMPLATE_ID,
-      type: 'pandoc',
-      hasCss: false,
-      cssFileName: '',
-      description: PANDOC_FALLBACK_TEMPLATE_DESCRIPTION,
-      engine: '',
-    });
+   
 
     const verbaleDescriptor = descriptors.get('verbale_meeting.html');
     if (verbaleDescriptor) {
@@ -6991,39 +6983,45 @@ const workspaceProfileTemplate = String(
 
     let activeTemplateDescriptor = null;
     let activeTemplateIsFallback = false;
+    let isSimpleMode = false; // <--- AGGIUNGI QUESTO
 
     if (manualTemplateSelection) {
       if (isPandocFallbackTemplate(manualTemplateSelection)) {
-        out('📄 Template manuale selezionato: fallback Pandoc semplice', 'publish', 'info');
-        activeTemplateIsFallback = true;
+        out('📄 Template manuale: Semplice (Mappato su default.tex)', 'publish', 'info');
+        try {
+          activeTemplateDescriptor = await resolveTemplateDescriptor('default.tex');
+          activeTemplateIsFallback = false;
+          isSimpleMode = true; // <--- ATTIVIAMO LA MODALITÀ SEMPLICE
+        } catch (err) {
+          out(`⚠️ Impossibile caricare default.tex per il fallback: ${err.message}`, 'publish', 'warning');
+          activeTemplateIsFallback = true; // Solo se fallisce il caricamento usiamo il vecchio metodo
+        }
       } else {
         try {
           activeTemplateDescriptor = await resolveTemplateDescriptor(manualTemplateSelection);
           out(`📄 Template manuale applicato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
         } catch (templateError) {
-          const reason =
-            templateError instanceof TemplateResolutionError
-              ? templateError.userMessage
-              : templateError?.message || templateError;
-          out(`⚠️ Template manuale non accessibile (${manualTemplateSelection}): ${reason}`, 'publish', 'warning');
+           // ... gestione errore esistente ...
         }
       }
     }
 
     if (!activeTemplateDescriptor && !activeTemplateIsFallback && profileTemplateSetting) {
       if (isPandocFallbackTemplate(profileTemplateSetting)) {
-        out('📄 Template del profilo: fallback Pandoc semplice', 'publish', 'info');
-        activeTemplateIsFallback = true;
-      } else {
+        out('📄 Template del profilo: Semplice (Mappato su default.tex)', 'publish', 'info');
         try {
+            activeTemplateDescriptor = await resolveTemplateDescriptor('default.tex');
+            activeTemplateIsFallback = false;
+        } catch (err) {
+            activeTemplateIsFallback = true;
+        }
+      } else {
+         // ... resto del codice esistente ...
+         try {
           activeTemplateDescriptor = await resolveTemplateDescriptor(profileTemplateSetting);
           out(`📄 Template del profilo applicato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
         } catch (templateError) {
-          const reason =
-            templateError instanceof TemplateResolutionError
-              ? templateError.userMessage
-              : templateError?.message || templateError;
-          out(`⚠️ Template del profilo non accessibile (${profileTemplateSetting}): ${reason}`, 'publish', 'warning');
+           // ...
         }
       }
     }
@@ -7308,7 +7306,9 @@ console.log('⚠️  [DEBUG MAC M1] Fine Ispezione');
     const publishEnv = buildEnvOptions(
       promptEnv,
       customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null,
-      activeTemplateDescriptor ? buildTemplateEnv(activeTemplateDescriptor) : null
+      activeTemplateDescriptor ? buildTemplateEnv(activeTemplateDescriptor) : null,
+      // AGGIUNGI QUESTA RIGA:
+      isSimpleMode ? { PDF_SIMPLE_MODE: 'true' } : null
     );
 
     let mdLocalForPublish = '';

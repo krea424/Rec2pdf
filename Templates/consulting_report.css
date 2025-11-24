@@ -81,7 +81,7 @@ tr:nth-child(even) {
 
 /* Cover Page */
 .cover-page {
-    height: 90vh; /* Un po' meno di 100 per sicurezza margini */
+    height: 70vh; /* Un po' meno di 100 per sicurezza margini */
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -94,7 +94,7 @@ tr:nth-child(even) {
 
 .cover-title {
     font-family: Georgia, serif;
-    font-size: 36pt;
+    font-size: 26pt;
     color: white;
     border: none;
     margin-bottom: 20px;
