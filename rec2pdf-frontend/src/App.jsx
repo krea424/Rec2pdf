@@ -5811,6 +5811,7 @@ const handleRefineAndGenerate = useCallback(async () => {
     pdfTemplatesLoading,
     pdfTemplatesError,
     pdfTemplateSelection,
+    setPdfTemplateSelection, // <--- AGGIUNGI ANCHE QUESTA (Mancava!)
     handleSelectPdfTemplate,
     clearPdfTemplateSelection,
     resetInputSelections,
@@ -5841,6 +5842,7 @@ const handleRefineAndGenerate = useCallback(async () => {
     prompts,
     promptLoading,
     promptState,
+    setPromptState, // <--- AGGIUNGI QUESTA RIGA (Mancava!)
     refinedData,
     setRefinedData,
     handleSelectPromptTemplate,

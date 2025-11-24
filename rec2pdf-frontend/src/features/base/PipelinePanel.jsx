@@ -47,6 +47,11 @@ const PipelinePanel = ({ journeyStage = "record" }) => {
     workspaces,
     handleSelectWorkspaceForPipeline,
     normalizedBackendUrl,
+    // --- INCOLLA QUI ---
+    prompts,
+    setPromptState,
+    setPdfTemplateSelection,
+    // -------------------
   } = context;
 
   const pipelineRevealState = baseJourneyVisibility?.pipeline ?? false;
@@ -165,27 +170,38 @@ const PipelinePanel = ({ journeyStage = "record" }) => {
 
   const toggleDiarization = useCallback(() => {
     if (busy) return;
-    const nextValue = !enableDiarization;
-    setEnableDiarization(nextValue);
-    if (!enableDiarization && nextValue) {
-      if (audioBlob) {
-        const applied = applyMeetingProfileIfAvailable();
-        if (!applied) previousProfileRef.current = null;
-      } else {
-        previousProfileRef.current = null;
+
+    setEnableDiarization((prev) => {
+      const nextValue = !prev;
+
+      // === AUTOMAZIONE SMART: SETUP RIUNIONE ===
+      if (nextValue === true) {
+        // 1. Cerca e Imposta il Prompt "Verbale riunione executive"
+        // Cerchiamo tra i prompt disponibili quello specifico per i meeting
+        const meetingPrompt = prompts.find(p => 
+            p.id === 'prompt_meeting_minutes' || 
+            p.slug === 'verbale_meeting'
+        );
+
+        if (meetingPrompt) {
+            // Aggiorniamo lo stato del prompt impostando l'ID trovato
+            setPromptState(prevState => ({ ...prevState, promptId: meetingPrompt.id }));
+            console.log("[Auto-Setup] Prompt impostato:", meetingPrompt.title);
+        }
+
+        // 2. Imposta forzatamente il Template "verbale_meeting.html"
+        setPdfTemplateSelection({
+            fileName: 'verbale_meeting.html',
+            type: 'html',
+            css: 'verbale_meeting.css'
+        });
+        console.log("[Auto-Setup] Template impostato: verbale_meeting.html");
       }
-    }
-    if (enableDiarization && !nextValue) {
-      restorePreviousProfile();
-    }
-  }, [
-    applyMeetingProfileIfAvailable,
-    audioBlob,
-    busy,
-    enableDiarization,
-    restorePreviousProfile,
-    setEnableDiarization,
-  ]);
+      // =========================================
+
+      return nextValue;
+    });
+  }, [busy, prompts, setPromptState, setPdfTemplateSelection, setEnableDiarization]);
 
   useEffect(() => {
     setHasDownloaded(false);
