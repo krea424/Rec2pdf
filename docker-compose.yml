@@ -3,14 +3,38 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: rec2pdf-backend-local
+    # Mappa la porta 8080 del container alla 8080 del Mac
     ports:
       - "8080:8080"
-    volumes:
-      - ./rec2pdf-backend:/app/rec2pdf-backend
-      
+    
+    # LE VARIABILI D'AMBIENTE (Simuliamo la Prod)
     env_file:
       - ./rec2pdf-backend/.env
-    
-    
-      
-    command: npm run dev
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      # Questi devono coincidere con quelli nel Dockerfile
+      - PROJECT_ROOT=/app
+      - TEMPLATES_DIR=/app/Templates
+      - ASSETS_DIR=/app/assets
+      - PUBLISH_SCRIPT=/app/Scripts/publish.sh
+      # Importante per vedere i log subito
+      - DEBUG=rec2pdf:* 
+
+    # I VOLUMI (La Magia): Mappiamo le cartelle del Mac dentro il Container
+    volumes:
+      # 1. Il codice backend (così se modifichi server.js, si aggiorna)
+      - ./rec2pdf-backend:/app/rec2pdf-backend
+      # 2. I Template (così se modifichi l'HTML, il container lo vede)
+      - ./Templates:/app/Templates
+      # 3. Gli Script (così se modifichi publish.sh, si aggiorna)
+      - ./Scripts:/app/Scripts
+      # 4. Gli Asset (Loghi)
+      - ./assets:/app/assets
+      # 5. Escludiamo node_modules per usare quelli di Linux del container
+      - /app/rec2pdf-backend/node_modules
+
+    # Comando di avvio con Hot Reload (richiede nodemon nel package.json)
+    # Se non hai nodemon, usa: "node server.js" (ma dovrai riavviare docker a mano per modifiche js)
+    command: sh -c "npm install -g nodemon && npm run dev"

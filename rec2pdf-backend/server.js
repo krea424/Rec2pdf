@@ -1379,10 +1379,17 @@ const buildTemplateEnv = (descriptor) => {
   if (!descriptor || typeof descriptor !== 'object') {
     return null;
   }
+
+  // === DEBUG: Verifica Path Assoluto ===
+  // Questo log apparirà nella console di Google Cloud Run
+  console.log(`[DEBUG ENV] Costruisco ENV per template. Path assoluto: ${descriptor.path}`);
+
   const env = {
+    // Forziamo l'uso del path assoluto che abbiamo risolto in resolveTemplateDescriptor
     WORKSPACE_PROFILE_TEMPLATE: descriptor.path,
     WORKSPACE_PROFILE_TEMPLATE_TYPE: descriptor.type,
   };
+
   if (descriptor.cssPath) {
     env.WORKSPACE_PROFILE_TEMPLATE_CSS = descriptor.cssPath;
   }
@@ -1392,6 +1399,8 @@ const buildTemplateEnv = (descriptor) => {
   if (descriptor.resourcePath) {
     env.WORKSPACE_PROFILE_TEMPLATE_RESOURCE_PATH = descriptor.resourcePath;
   }
+  
+  // Gestione Margini (manteniamo la logica esistente)
   if (descriptor.size && typeof descriptor.size === 'object') {
     const { marginTop, marginRight, marginBottom, marginLeft } = {
       marginTop: descriptor.size.margin_top || descriptor.size.marginTop,
@@ -1404,6 +1413,7 @@ const buildTemplateEnv = (descriptor) => {
     if (marginBottom) env.WORKSPACE_PROFILE_MARGIN_BOTTOM = marginBottom;
     if (marginLeft) env.WORKSPACE_PROFILE_MARGIN_LEFT = marginLeft;
   }
+  
   return env;
 };
 
@@ -1519,6 +1529,21 @@ const publishWithTemplateFallback = async ({
   } else {
     try {
       result = await callPublishFn(mdLocalPath, publishEnv);
+  // === DEBUG AGGRESSIVO ===
+  console.log(`[PUBLISH DEBUG] Exit Code: ${result.code}`);
+      
+  // Stampiamo SEMPRE stdout/stderr per capire cosa succede
+  if (result.stdout) console.log(`[PUBLISH STDOUT]:\n${result.stdout}`);
+  if (result.stderr) console.error(`[PUBLISH STDERR]:\n${result.stderr}`);
+  
+  if (result.code !== 0) {
+      console.error(`❌ [PUBLISH CRITICAL ERROR]`);
+      // Se stderr è vuoto, spesso l'errore è in stdout per tool come pandoc
+      if (!result.stderr && result.stdout) {
+          console.error(`L'errore potrebbe essere qui sopra in STDOUT.`);
+      }
+  }
+  // ========================    
       log(`callPublishFn (publish.sh) result: code=${result.code}, stdout=${result.stdout}, stderr=${result.stderr}`);
     } catch (e) {
       log(`ERROR in callPublishFn (publish.sh): ${e.message}`, 'publish', 'failed');
@@ -6368,6 +6393,30 @@ app.get('/api/diag', async (req, res) => {
 // == REFACTORING ASYNC: runPipeline (estrazione logica) ==
 const runPipeline = async (job = {}) => {
   const logs = [];
+  // === INCOLLA QUI LO SNIPPET DI DEBUG ===
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    // Verifica percorso assoluto previsto in Docker
+    const checkPath = path.resolve(__dirname, '..', 'Templates', 'verbale_meeting.html'); 
+    console.log(`[DEBUG DEPLOY] __dirname: ${__dirname}`);
+    console.log(`[DEBUG DEPLOY] Cerco template in: ${checkPath}`);
+    
+    if (fs.existsSync(checkPath)) {
+        console.log('✅ [DEBUG DEPLOY] Il file esiste su disco!');
+    } else {
+        console.log('❌ [DEBUG DEPLOY] FILE NON TROVATO.');
+        // Listiamo cosa c'è nella cartella padre per capire dove siamo
+        const parentDir = path.resolve(__dirname, '..');
+        console.log(`Contenuto di ${parentDir}:`, fs.readdirSync(parentDir));
+        // Se esiste la cartella Templates, vediamo cosa c'è dentro
+        const tplDir = path.join(parentDir, 'Templates');
+        if (fs.existsSync(tplDir)) {
+           console.log(`Contenuto di Templates:`, fs.readdirSync(tplDir));
+        }
+    }
+} catch (e) { console.log('[DEBUG ERROR]', e.message); }
+// =======================================
   const stageEvents = [];
   let lastStageKey = null;
   let selectedPrompt = null;
