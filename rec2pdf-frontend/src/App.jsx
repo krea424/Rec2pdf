@@ -5279,30 +5279,22 @@ const handleRefineAndGenerate = useCallback(async () => {
   const handleRepublishFromMd = useCallback(async (entry, overrideMdPath, options = {}) => {
     const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
     if (!mdPathResolved) {
-      pushLogs(['❌ Percorso del testo non disponibile per la rigenerazione.']);
+      pushLogs(['❌ Percorso del testo non disponibile.']);
       return;
     }
     if (busy) {
-      pushLogs(['⚠️ Attendere il termine della pipeline corrente prima di rigenerare il PDF.']);
+      pushLogs(['⚠️ Pipeline in corso, attendere.']);
       return;
     }
 
     const backendTarget = entry?.backendUrl || normalizedBackendUrl;
     if (!backendTarget) {
-      const message = 'Configura un backend valido per rigenerare il PDF dal testo modificato.';
-      pushLogs([`❌ ${message}`]);
-      setErrorBanner({ title: 'Backend non configurato', details: message });
+      setErrorBanner({ title: 'Backend non configurato', details: 'URL mancante.' });
       return;
     }
-
     const backendUsed = normalizeBackendUrlValue(backendTarget);
-    if (!backendUsed) {
-      const message = "Impossibile normalizzare l'URL del backend per PPUBR.";
-      pushLogs([`❌ ${message}`]);
-      setErrorBanner({ title: 'Backend non configurato', details: message });
-      return;
-    }
 
+    // Speaker Map
     const overrideSpeakerMap = options && typeof options.speakerMap === 'object' ? options.speakerMap : null;
     const speakers = normalizeSpeakers(entry?.speakers);
     const sanitizedSpeakerMap = overrideSpeakerMap
@@ -5310,70 +5302,101 @@ const handleRefineAndGenerate = useCallback(async () => {
       : {};
     const hasSpeakerMapPayload = Object.keys(sanitizedSpeakerMap).length > 0;
 
+    // === 1. ANALISI DEL CONTENUTO (SOURCE OF TRUTH) ===
+    let detectedTemplate = null;
+    let detectedType = '';
+
+    if (options?.contentOverride) {
+        const content = options.contentOverride;
+        
+        // Regex che cerca "layout: nome" ovunque, ignorando spazi e case
+        // Cattura: layout: consulting, layout: "consulting", layout: verbale_meeting
+        const consultingMatch = /layout:\s*["']?consulting["']?/i.test(content);
+        const meetingMatch = /layout:\s*["']?(verbale|meeting|verbale_meeting)["']?/i.test(content);
+        
+        // Regex per template esplicito: template: "nomefile.html"
+        const templateMatch = content.match(/template:\s*["']?([^"'\n\r]+)["']?/i);
+
+        if (consultingMatch) {
+            detectedTemplate = 'consulting_report.html';
+            detectedType = 'html';
+        } else if (meetingMatch) {
+            detectedTemplate = 'verbale_meeting.html';
+            detectedType = 'html';
+        } else if (templateMatch) {
+            detectedTemplate = templateMatch[1].trim();
+            detectedType = detectedTemplate.endsWith('.html') ? 'html' : 'tex';
+        }
+
+        if (detectedTemplate) {
+            console.log(`[Frontend] 🎯 Template forzato dal testo: ${detectedTemplate}`);
+        }
+    }
+    // ====================================================
+
     revealPipelinePanel();
     setBusy(true);
     setErrorBanner(null);
+    
     setMdEditor((prev) => {
-      if (!prev.open || prev.path !== mdPathResolved) {
-        return prev;
-      }
-      return {
-        ...prev,
-        lastAction: 'republishing',
-        success: '',
-        error: '',
-      };
+      if (!prev.open || prev.path !== mdPathResolved) return prev;
+      return { ...prev, lastAction: 'republishing', success: '', error: '' };
     });
-    pushLogs([`♻️ Rigenerazione PDF dal testo (${entry.title || entry.slug || mdPathResolved})`]);
+
+    pushLogs([`♻️ Rigenerazione PDF...`]);
 
     try {
       const fd = new FormData();
-      // --- FIX: Direct Injection (Contenuto Diretto) ---
+      
+      // Invio contenuto diretto
       if (options?.contentOverride) {
-        // Se abbiamo il testo aggiornato dall'editor, lo mandiamo direttamente
-        // evitando che il backend debba scaricarlo (e rischi di prendere quello vecchio)
         fd.append('markdownContent', options.contentOverride);
       }
-      // ------------------------------------------------
+      
       fd.append('mdPath', mdPathResolved);
-      if (entry?.localPdfPath) {
-        fd.append('localPdfPath', entry.localPdfPath);
-      }
-      if (entry?.localMdPath) {
-        fd.append('localMdPath', entry.localMdPath);
-      }
+      if (entry?.localPdfPath) fd.append('localPdfPath', entry.localPdfPath);
+      if (entry?.localMdPath) fd.append('localMdPath', entry.localMdPath);
+
+      // Logo
       if (isFileLike(customPdfLogo)) {
-        const fallbackName = 'custom-logo';
-        const fileName =
-          typeof customPdfLogo.name === 'string' && customPdfLogo.name.trim()
-            ? customPdfLogo.name
-            : fallbackName;
-        fd.append('pdfLogo', customPdfLogo, fileName);
+        fd.append('pdfLogo', customPdfLogo, customPdfLogo.name || 'logo');
       } else if (isWorkspaceProfileLogoDescriptor(customPdfLogo)) {
-        if (customPdfLogo.profileId && !fd.has('workspaceProfileId')) {
-          fd.append('workspaceProfileId', customPdfLogo.profileId);
-        }
-        if (customPdfLogo.label && !fd.has('workspaceProfileLabel')) {
-          fd.append('workspaceProfileLabel', customPdfLogo.label);
-        }
-        if (customPdfLogo.path && !fd.has('workspaceProfileLogoPath')) {
-          fd.append('workspaceProfileLogoPath', customPdfLogo.path);
-        }
+        if (customPdfLogo.profileId) fd.append('workspaceProfileId', customPdfLogo.profileId);
+        if (customPdfLogo.path) fd.append('workspaceProfileLogoPath', customPdfLogo.path);
       }
+
       appendWorkspaceProfileDetails(fd, {
         selection: workspaceProfileSelection,
         profile: activeWorkspaceProfile,
         logoDescriptor: customPdfLogo,
         backendUrl: normalizeBackendUrlValue(backendUrl),
       });
-      if (!workspaceProfileLocked) {
-        appendPdfTemplateSelection(fd, pdfTemplateSelection);
+
+      // === 2. APPLICAZIONE TEMPLATE (GERARCHIA CORRETTA) ===
+      // Priorità 1: Il testo contiene un layout esplicito? (Vince su tutto)
+      if (detectedTemplate) {
+          fd.append('pdfTemplate', detectedTemplate);
+          if (detectedType) fd.append('pdfTemplateType', detectedType);
+          pushLogs([`📄 Stile applicato dal testo: ${detectedTemplate}`]);
       }
+      // Priorità 2: L'utente ha selezionato un template nel menu ora?
+      else if (pdfTemplateSelection && pdfTemplateSelection.fileName) {
+          appendPdfTemplateSelection(fd, pdfTemplateSelection);
+      }
+      // Priorità 3: Fallback storico (solo se non c'è lock profilo o se il lock non ha template)
+      else if (!workspaceProfileLocked) {
+          if (entry?.prompt?.pdfRules?.template) {
+               fd.append('pdfTemplate', entry.prompt.pdfRules.template);
+          } else if (entry?.prompt?.pdfRules?.layout) {
+              const layout = entry.prompt.pdfRules.layout.toLowerCase();
+              if (layout === 'consulting') fd.append('pdfTemplate', 'consulting_report.html');
+              else if (layout === 'verbale_meeting') fd.append('pdfTemplate', 'verbale_meeting.html');
+          }
+      }
+      // =====================================================
+
       if (hasSpeakerMapPayload) {
         fd.append('speakerMap', JSON.stringify(sanitizedSpeakerMap));
-        pushLogs([
-          `🗣️ Applicazione mappa speaker (${Object.keys(sanitizedSpeakerMap).length} etichette) durante la rigenerazione`,
-        ]);
       }
 
       const response = await fetchWithAuth(`${backendUsed}/api/ppubr`, {
@@ -5382,141 +5405,55 @@ const handleRefineAndGenerate = useCallback(async () => {
       });
 
       let payload = {};
-      try {
-        payload = await response.json();
-      } catch {
-        payload = {};
-      }
+      try { payload = await response.json(); } catch { payload = {}; }
 
       if (Array.isArray(payload.logs) && payload.logs.length) {
         pushLogs(payload.logs);
       }
 
       if (!response.ok || !payload?.pdfPath) {
-        const message = payload?.message || `Rigenerazione fallita (HTTP ${response.status || 0})`;
-        pushLogs([`❌ ${message}`]);
-        setErrorBanner({ title: 'Rigenerazione PDF fallita', details: message });
-        setMdEditor((prev) => {
-          if (!prev.open || prev.path !== mdPathResolved) {
-            return prev;
-          }
-          return {
-            ...prev,
-            error: message,
-            success: '',
-            lastAction: 'error',
-          };
-        });
-        return;
+        throw new Error(payload?.message || `Errore HTTP ${response.status}`);
       }
 
       const pdfUrl = buildFileUrl(backendUsed, payload.pdfPath) || entry.pdfUrl;
-      const mdUrl = buildFileUrl(backendUsed, mdPathResolved) || entry.mdUrl;
-      const responseSpeakerMapRaw =
-        payload?.speakerMap && typeof payload.speakerMap === 'object'
-          ? payload.speakerMap
-          : sanitizedSpeakerMap;
-      const normalizedResponseSpeakerMap = buildSpeakerMap(speakers, responseSpeakerMapRaw);
-      const responseHasSpeakerNames = hasNamedSpeakers(normalizedResponseSpeakerMap);
-
-      setPdfPath(normalizeStoragePathWithBucket(payload.pdfPath));
-      setMdPath(normalizeStoragePathWithBucket(mdPathResolved));
-      const pdfLogoLabel = resolvePdfLogoLabel(customPdfLogo);
+      
       setHistory(prev => prev.map(item => item.id === entry.id ? hydrateHistoryEntry({
         ...item,
         pdfPath: normalizeStoragePathWithBucket(payload.pdfPath),
         pdfUrl,
-        mdPath: normalizeStoragePathWithBucket(mdPathResolved),
-        mdUrl,
-        localPdfPath: payload?.localPdfPath || item.localPdfPath || '',
-        localMdPath: payload?.localMdPath || item.localMdPath || '',
-        backendUrl: backendUsed || item.backendUrl,
-        logs: Array.isArray(item.logs) ? item.logs.concat(payload.logs || []) : (payload.logs || []),
-        logos: {
-          ...(item.logos || {}),
-          pdf: pdfLogoLabel,
-        },
-        speakerMap: responseHasSpeakerNames
-          ? responseSpeakerMapRaw
-          : hasSpeakerMapPayload
-            ? sanitizedSpeakerMap
-            : item.speakerMap || {},
-        speakers: speakers.length ? speakers : item.speakers,
+        speakerMap: hasSpeakerMapPayload ? { ...item.speakerMap, ...sanitizedSpeakerMap } : item.speakerMap
       }) : item));
 
       setMdEditor((prev) => {
-        if (!prev.open || prev.path !== mdPathResolved) {
-          return prev;
-        }
-        const fallbackSpeakerMapState = hasSpeakerMapPayload
-          ? buildSpeakerMap(prev.speakers, { ...prev.speakerMap, ...sanitizedSpeakerMap })
-          : prev.speakerMap;
-        const nextSpeakerMapState = responseHasSpeakerNames
-          ? normalizedResponseSpeakerMap
-          : fallbackSpeakerMapState;
+        if (!prev.open || prev.path !== mdPathResolved) return prev;
         return {
           ...prev,
-          success: 'PDF rigenerato con successo. Usa "Apri PDF aggiornato" per visualizzarlo subito.',
+          success: 'PDF rigenerato con successo.',
           error: '',
           lastAction: 'republished',
-          speakerMap: nextSpeakerMapState,
-          renderedContent: applySpeakerMappingToContent(prev.content, nextSpeakerMapState),
-          entry: {
-            ...(prev.entry || {}),
-            pdfPath: payload.pdfPath,
-            pdfUrl,
-            mdPath: mdPathResolved,
-            mdUrl,
-            backendUrl: backendUsed || prev.entry?.backendUrl || normalizedBackendUrl,
-            localPdfPath: payload?.localPdfPath || prev.entry?.localPdfPath || '',
-            localMdPath: payload?.localMdPath || prev.entry?.localMdPath || '',
-            speakerMap: responseHasSpeakerNames
-              ? responseSpeakerMapRaw
-              : hasSpeakerMapPayload
-                ? sanitizedSpeakerMap
-                : prev.entry?.speakerMap || prev.speakerMap,
-            speakers: prev.entry?.speakers || prev.speakers,
-          },
+          entry: { ...prev.entry, pdfPath: payload.pdfPath, pdfUrl }
         };
       });
+      
       pushLogs([`✅ PDF rigenerato: ${payload.pdfPath}`]);
       setActivePanel('doc');
+
     } catch (err) {
       const message = err?.message || String(err);
       pushLogs([`❌ ${message}`]);
-      setErrorBanner({ title: 'Rigenerazione PDF fallita', details: message });
+      setErrorBanner({ title: 'Errore Rigenerazione', details: message });
       setMdEditor((prev) => {
-        if (!prev.open || prev.path !== mdPathResolved) {
-          return prev;
-        }
-        return {
-          ...prev,
-          error: message,
-          success: '',
-          lastAction: 'error',
-        };
+        if (!prev.open || prev.path !== mdPathResolved) return prev;
+        return { ...prev, error: message, success: '', lastAction: 'error' };
       });
     } finally {
       setBusy(false);
     }
   }, [
-    activeWorkspaceProfile,
-    backendUrl,
-    busy,
-    customPdfLogo,
-    fetchWithAuth,
-    normalizedBackendUrl,
-    pdfTemplateSelection,
-    pushLogs,
-    setActivePanel,
-    setBusy,
-    setErrorBanner,
-    setHistory,
-    setMdEditor,
-    setMdPath,
-    setPdfPath,
-    workspaceProfileLocked,
-    workspaceProfileSelection,
+    activeWorkspaceProfile, backendUrl, busy, customPdfLogo, fetchWithAuth, 
+    normalizedBackendUrl, pdfTemplateSelection, pushLogs, setActivePanel, 
+    setBusy, setErrorBanner, setHistory, setMdEditor, setMdPath, setPdfPath, 
+    workspaceProfileLocked, workspaceProfileSelection
   ]);
 
   const handleMdEditorChange = useCallback((nextValue) => {
@@ -5664,12 +5601,13 @@ const handleRefineAndGenerate = useCallback(async () => {
   }, [fetchWithAuth, mdEditor, pushLogs, setHistory]);
 
   const handleRepublishFromEditor = useCallback(() => {
-    if (!mdEditor?.entry) return;
+    if (!mdEditor.entry) return;
     
-    // Passiamo esplicitamente il contenuto attuale dell'editor
-    handleRepublishFromMd(mdEditor.entry, mdEditor.path, { 
-      speakerMap: mdEditor.speakerMap,
-      contentOverride: mdEditor.content // <--- ECCO IL FIX
+    // Passiamo esplicitamente il contenuto attuale dell'editor (mdEditor.content)
+    // così la funzione di rigenerazione può analizzare il Frontmatter modificato
+    handleRepublishFromMd(mdEditor.entry, mdEditor.path, {
+      contentOverride: mdEditor.content, 
+      speakerMap: mdEditor.speakerMap 
     });
   }, [mdEditor, handleRepublishFromMd]);
 

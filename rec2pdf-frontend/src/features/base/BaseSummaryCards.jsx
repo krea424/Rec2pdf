@@ -1,114 +1,183 @@
-import { useMemo } from "react";
-import { Folder, Target, Sparkles, Users } from "../../components/icons.jsx";
+import React from "react";
+import { useNavigate } from "react-router-dom"; // <--- CRUCIALE
+import { 
+  Folder, 
+  Target, 
+  Sparkles, 
+  Users, 
+  FileText, 
+  ChevronRight 
+} from "../../components/icons.jsx";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
 
-const SummaryCard = ({ title, icon: Icon, accent = "bg-white/10 text-white", headline, action = null }) => {
+// Sottocomponente Card Interattiva
+const SummaryCard = ({ 
+  icon: Icon, 
+  label, 
+  value, 
+  isActive, 
+  onClick, 
+  colorClass = "text-white",
+  bgClass = "bg-white/5",
+  borderClass = "border-white/5"
+}) => {
   return (
-    <article className="flex items-center justify-between rounded-3xl border border-white/10 bg-white/5 p-4 text-white shadow-subtle">
-      <div className="flex items-center gap-2.5">
-        <span
-          className={classNames(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-base font-semibold",
-            accent,
-          )}
-          aria-hidden="true"
-        >
+    <button
+      type="button" // Esplicito per evitare submit accidentali
+      onClick={(e) => {
+        e.preventDefault(); // Previene comportamenti strani
+        onClick();
+      }}
+      className={classNames(
+        "group relative flex flex-col items-start justify-between rounded-2xl border p-5 text-left transition-all duration-200 ease-out w-full h-full",
+        // Stile Base
+        "bg-[#121214] hover:bg-[#18181b] cursor-pointer", // cursor-pointer forzato
+        // Bordo: Attivo vs Inattivo
+        isActive 
+          ? "border-white/10 hover:border-white/20" 
+          : "border-white/5 hover:border-white/10 opacity-70 hover:opacity-100",
+        // Focus ring per accessibilità
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+      )}
+    >
+      <div className="flex w-full items-start justify-between pointer-events-none"> {/* pointer-events-none per evitare che i figli rubino il click */}
+        {/* Icona con sfondo colorato tenue */}
+        <div className={classNames(
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors",
+          isActive ? `${bgClass} ${borderClass}` : "bg-white/5 border-white/5",
+          isActive ? colorClass : "text-white/40"
+        )}>
           <Icon className="h-5 w-5" />
-        </span>
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-white/60">{title}</p>
-          <p className="mt-0.5 text-base font-semibold leading-tight text-white">{headline}</p>
         </div>
+        
+        {/* Freccina che appare all'hover */}
+        <ChevronRight className="h-4 w-4 text-white/20 opacity-0 transition-all transform group-hover:translate-x-1 group-hover:opacity-100" />
       </div>
-      {action ? <div className="shrink-0">{action}</div> : null}
-    </article>
+
+      <div className="mt-4 w-full pointer-events-none">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 transition-colors group-hover:text-white/60">
+          {label}
+        </p>
+        <p className={classNames(
+          "mt-1 truncate text-sm font-semibold",
+          isActive ? "text-white" : "text-white/50 italic"
+        )}>
+          {value}
+        </p>
+      </div>
+    </button>
   );
 };
 
 const BaseSummaryCards = () => {
-  const context = useAppContext();
-  const {
-    workspaceLoading,
-    workspaceSelection,
+  const navigate = useNavigate(); // Hook per la navigazione
+  const { 
+    workspaceSelection, 
     activeWorkspace,
-    workspaceProjects,
-    promptLoading,
-    promptState,
-    activePrompt,
+    activePrompt, 
     activeWorkspaceProfile,
-    workspaceProfileSelection,
-  } = context;
+    pdfTemplateSelection
+  } = useAppContext();
 
-  const projectList = useMemo(() => {
-    if (!Array.isArray(workspaceProjects)) {
-      return [];
-    }
-    return workspaceProjects.map((project) => ({
-      id: project?.id || "",
-      name: project?.name || project?.key || "",
-    }));
-  }, [workspaceProjects]);
+  // Funzione helper per navigare ad Advanced con un "focus" (opzionale per il futuro)
+  const goToAdvanced = (section) => {
+    console.log("Navigazione verso Advanced -> Sezione:", section); // Debug log
+    navigate("/advanced", { state: { scrollTo: section } });
+  };
 
-  const selectedProject = useMemo(() => {
-    if (workspaceSelection?.projectId) {
-      return (
-        projectList.find((project) => project.id === workspaceSelection.projectId) || {
-          id: workspaceSelection.projectId,
-          name: workspaceSelection.projectId,
-        }
-      );
-    }
-    const draftName = typeof workspaceSelection?.projectName === "string" ? workspaceSelection.projectName.trim() : "";
-    if (draftName) {
-      return { id: "", name: draftName };
-    }
-    return null;
-  }, [projectList, workspaceSelection?.projectId, workspaceSelection?.projectName]);
+  // 1. Logica Workspace
+  const workspaceLabel = activeWorkspace?.name || workspaceSelection?.name || "Nessun workspace";
+  const isWorkspaceActive = !!workspaceSelection?.workspaceId;
 
-  const profileHeadline = useMemo(() => {
-    if (activeWorkspaceProfile) {
-      return activeWorkspaceProfile.label || activeWorkspaceProfile.id || "Profilo attivo";
-    }
-    if (workspaceProfileSelection?.profileId) {
-      return "Profilo non disponibile";
-    }
-    return "Nessun profilo attivo";
-  }, [activeWorkspaceProfile, workspaceProfileSelection?.profileId]);
+  // 2. Logica Progetto
+  const projectLabel = workspaceSelection?.projectName || "Nessun progetto";
+  const isProjectActive = !!workspaceSelection?.projectId || !!workspaceSelection?.projectName;
+
+  // 3. Logica Prompt
+  const promptLabel = activePrompt?.title || "Format Base";
+  const isPromptActive = !!activePrompt?.id; 
+
+  // 4. Logica Profilo
+  const profileLabel = activeWorkspaceProfile?.label || "Nessun profilo attivo";
+  const isProfileActive = !!activeWorkspaceProfile?.id;
+
+  // 5. Logica Template
+  const getTemplateLabel = () => {
+    if (pdfTemplateSelection?.fileName) return pdfTemplateSelection.fileName;
+    if (activeWorkspaceProfile?.pdfTemplate) return activeWorkspaceProfile.pdfTemplate;
+    if (activePrompt?.pdfRules?.template) return activePrompt.pdfRules.template;
+    return "Default (Standard)";
+  };
+
+  const rawTemplate = getTemplateLabel();
+  const templateLabel = rawTemplate
+    .replace(/\.(html|tex)$/i, '')
+    .replace(/_/g, ' ')
+    .replace(/-/g, ' ');
+    
+  const isTemplateActive = rawTemplate !== "Default (Standard)";
 
   return (
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="Stato workspace e sessione">
-      <SummaryCard
-        title="Workspace"
-        icon={Folder}
-        accent="bg-emerald-500/15 text-emerald-200"
-        headline={workspaceLoading ? "Caricamento…" : activeWorkspace?.name || "Nessun workspace"}
-      />
+    <section aria-label="Riepilogo Sessione">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        
+        <SummaryCard
+          icon={Folder}
+          label="Workspace"
+          value={workspaceLabel}
+          isActive={isWorkspaceActive}
+          colorClass="text-emerald-400"
+          bgClass="bg-emerald-400/10"
+          borderClass="border-emerald-400/20"
+          onClick={() => goToAdvanced("workspace")}
+        />
 
-      <SummaryCard
-        title="Progetto"
-        icon={Target}
-        accent="bg-sky-500/15 text-sky-200"
-        headline={selectedProject?.name || "Nessun progetto"}
-      />
+        <SummaryCard
+          icon={Target}
+          label="Progetto"
+          value={projectLabel}
+          isActive={isProjectActive}
+          colorClass="text-blue-400"
+          bgClass="bg-blue-400/10"
+          borderClass="border-blue-400/20"
+          onClick={() => goToAdvanced("workspace")} // Progetti e Workspace sono vicini
+        />
 
-      <SummaryCard
-        title="Prompt guida"
-        icon={Sparkles}
-        accent="bg-violet-500/20 text-violet-100"
-        headline={
-          promptLoading
-            ? "Caricamento…"
-            : activePrompt?.title || activePrompt?.id || promptState?.promptId || "Nessun prompt attivo"
-        }
-      />
+        <SummaryCard
+          icon={Sparkles}
+          label="Prompt Guida"
+          value={promptLabel}
+          isActive={isPromptActive}
+          colorClass="text-purple-400"
+          bgClass="bg-purple-400/10"
+          borderClass="border-purple-400/20"
+          onClick={() => goToAdvanced("prompt")}
+        />
 
-      <SummaryCard
-        title="Profilo"
-        icon={Users}
-        accent="bg-rose-500/15 text-rose-200"
-        headline={profileHeadline}
-      />
+        <SummaryCard
+          icon={Users}
+          label="Profilo"
+          value={profileLabel}
+          isActive={isProfileActive}
+          colorClass="text-rose-400"
+          bgClass="bg-rose-400/10"
+          borderClass="border-rose-400/20"
+          onClick={() => goToAdvanced("profile")}
+        />
+
+        <SummaryCard
+          icon={FileText}
+          label="Template PDF"
+          value={templateLabel}
+          isActive={isTemplateActive}
+          colorClass="text-amber-400"
+          bgClass="bg-amber-400/10"
+          borderClass="border-amber-400/20"
+          onClick={() => goToAdvanced("template")}
+        />
+
+      </div>
     </section>
   );
 };

@@ -21,7 +21,7 @@ cleanup_tmp_files() {
 trap cleanup_tmp_files EXIT
 
 # ============================================ 
-# BrightLedger – MD_First_PDF_Publish v0.4.0 (Path Fix)
+# BrightLedger – MD_First_PDF_Publish v0.4.1
 # ============================================ 
 
 die() { echo "❌ $*" >&2; exit 1; }
@@ -65,18 +65,14 @@ HTML_RESOURCE_PATH=""
 HTML_INLINE_METADATA_FILE=""
 
 if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
-  # 1. Acquisizione input
   CANDIDATE="$WORKSPACE_PROFILE_TEMPLATE"
   
-  # 2. Debug Log per Cloud Run
   echo "🔍 [DEBUG SCRIPT] Input Template: '$CANDIDATE'"
   echo "🔍 [DEBUG SCRIPT] Template Dir: '$TEMPLATE_DIR'"
 
-  # 3. FIX PATH: Se il file non esiste come path relativo, proviamo a risolverlo come assoluto
+  # FIX PATH: Risoluzione path assoluto
   if [[ ! -f "$CANDIDATE" ]]; then
-    # Rimuoviamo eventuale prefisso 'Templates/' duplicato
     CLEAN_NAME="${CANDIDATE#Templates/}"
-    # Costruiamo il path assoluto basato sulla directory nota dei template
     ABS_CANDIDATE="$TEMPLATE_DIR/$CLEAN_NAME"
     
     if [[ -f "$ABS_CANDIDATE" ]]; then
@@ -84,7 +80,6 @@ if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
        CANDIDATE="$ABS_CANDIDATE"
     else
        echo "⚠️ [DEBUG SCRIPT] Tentativo path assoluto fallito: $ABS_CANDIDATE"
-       # Fallback estremo: controlliamo se esiste nella TOOL_ROOT (es. /app/Templates/...)
        if [[ -f "$TOOL_ROOT/$CANDIDATE" ]]; then
           echo "✅ [DEBUG SCRIPT] Trovato relativo a TOOL_ROOT: $TOOL_ROOT/$CANDIDATE"
           CANDIDATE="$TOOL_ROOT/$CANDIDATE"
@@ -96,9 +91,6 @@ if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
 
   if [[ ! -f "$PROFILE_TEMPLATE_CANDIDATE" ]]; then
     echo "⚠️  Template profilo non trovato: $PROFILE_TEMPLATE_CANDIDATE (uso default)"
-    # Debug listing per capire cosa vede lo script
-    echo "📂 Contenuto di $TEMPLATE_DIR:"
-    ls -la "$TEMPLATE_DIR" || true
   else
     case "$PROFILE_TEMPLATE_CANDIDATE" in
       *.tex|*.TEX)
@@ -109,7 +101,6 @@ if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
         SELECTED_TEMPLATE="$PROFILE_TEMPLATE_CANDIDATE"
         TEMPLATE_KIND="html"
         if [[ -n "${WORKSPACE_PROFILE_TEMPLATE_CSS:-}" ]]; then
-          # Logica CSS simile: cerchiamo di risolvere path relativi
           CSS_CANDIDATE="${WORKSPACE_PROFILE_TEMPLATE_CSS}"
           if [[ ! -f "$CSS_CANDIDATE" ]]; then
              CLEAN_CSS="${CSS_CANDIDATE#Templates/}"
@@ -125,7 +116,6 @@ if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
           fi
         fi
         
-        # Auto-detection CSS se non specificato
         if [[ -z "$SELECTED_CSS" ]]; then
           CSS_CANDIDATE="${PROFILE_TEMPLATE_CANDIDATE%.*}.css"
           if [[ -f "$CSS_CANDIDATE" ]]; then
@@ -140,7 +130,7 @@ if [[ -n "${WORKSPACE_PROFILE_TEMPLATE:-}" ]]; then
   fi
 fi
 
-# Risolvi eventuale motore HTML prima del dry-run
+# Risolvi eventuale motore HTML
 if [[ "$TEMPLATE_KIND" == "html" ]]; then
   HTML_RESOURCE_PATH_RAW="${WORKSPACE_PROFILE_TEMPLATE_RESOURCE_PATH:-}"
   if [[ -n "$HTML_RESOURCE_PATH_RAW" ]]; then
@@ -178,19 +168,14 @@ if [[ "$TEMPLATE_KIND" == "html" ]]; then
   unset _RESOURCE_PATH_CANDIDATES _candidate
 
   resolve_html_engine() {
-  # 1. Leggiamo cosa chiede il template (dal JSON) o le preferenze
   local requested="${WORKSPACE_PROFILE_TEMPLATE_ENGINE:-${PREFERRED_HTML_ENGINE:-}}"
   local resolved=""
 
-  # 2. Se c'è una richiesta specifica...
   if [[ -n "$requested" ]]; then
     if command -v "$requested" >/dev/null 2>&1; then
-      # ...e il motore è installato, usalo!
       resolved="$requested"
     else
-      # ...ma il motore NON è installato, avvisa e cerca un'alternativa (Fallback)
       echo "⚠️  Il motore richiesto '$requested' non è installato su questa macchina." >&2
-      
       if [[ "$requested" == "weasyprint" ]] && command -v wkhtmltopdf >/dev/null 2>&1; then
         echo "🔄  Fallback automatico su: wkhtmltopdf" >&2
         resolved="wkhtmltopdf"
@@ -201,10 +186,9 @@ if [[ "$TEMPLATE_KIND" == "html" ]]; then
     fi
   fi
 
-  # 3. Se non abbiamo ancora risolto (o non c'era richiesta), prendi il primo disponibile
   if [[ -z "$resolved" ]]; then
     if command -v weasyprint >/dev/null 2>&1; then
-      resolved="weasyprint" # Preferiamo WeasyPrint se c'è (più moderno)
+      resolved="weasyprint"
     elif command -v wkhtmltopdf >/dev/null 2>&1; then
       resolved="wkhtmltopdf"
     else
@@ -245,21 +229,20 @@ if [[ "$TEMPLATE_KIND" == "tex" ]]; then
   echo "📌 Include cover : $COVER_TEX"
 fi
 
-# Seleziona il logo: custom se disponibile, altrimenti default
+# Seleziona il logo
 CUSTOM_LOGO_PATH="${CUSTOM_PDF_LOGO:-}"
 if [[ -n "$CUSTOM_LOGO_PATH" && -f "$CUSTOM_LOGO_PATH" ]]; then
   LOGO="$CUSTOM_LOGO_PATH"
   echo "📌 Logo (Custom)   : $LOGO"
 else
   LOGO="$SCRIPT_DIR/../assets/thinkDOC.pdf"
-# === DEBUG LOGO ===
+  echo "📌 Logo (Default)  : $LOGO"
+fi
+
+# DEBUG LOGO
 echo "🔍 [DEBUG SCRIPT] Controllo Logo:"
 echo "   - Path calcolato: $LOGO"
 ls -l "$LOGO" || echo "❌ ERRORE CRITICO: Il file del logo NON ESISTE a questo percorso!"
-# ==================  
-  echo "📌 Logo (Default)  : $LOGO"
-fi
-[[ -f "$LOGO" ]] || die "Logo PDF non trovato: $LOGO"
 
 # ----- DRY RUN -----
 if [[ "${2:-}" == "--dry-run" ]]; then
@@ -320,32 +303,42 @@ else
   echo "🛠️  Motore HTML selezionato: $HTML_ENGINE"
 fi
 
-# ----- Comando Pandoc -----
+# ----- Comando Pandoc (FIXED) -----
 if [[ "$TEMPLATE_KIND" == "tex" ]]; then
-  pandoc_args=(
-    "$INPUT_MD"
-    --from
-    markdown
-    --pdf-engine=xelatex
-    --highlight-style=kate
-    --template
-    "$SELECTED_TEMPLATE"
-    --include-in-header
-    "$HEADER_FOOTER_TEX"
-    --include-before-body
-    "$COVER_TEX"
-    --variable
-    "logo=$LOGO"
-    -o
-    "$OUTPUT_PDF"
-  )
+
+  # === BIVIO: MODALITÀ SEMPLICE vs STANDARD ===
+  if [[ "${PDF_SIMPLE_MODE:-}" == "true" ]]; then
+      echo "⚡ Modalità Semplice (Raw): Uso template nativo di Pandoc"
+      pandoc_args=(
+        "$INPUT_MD"
+        --from markdown
+        --pdf-engine=xelatex
+        --variable "geometry:margin=2.5cm"
+        --variable "fontsize=11pt"
+        -o "$OUTPUT_PDF"
+      )
+  else
+      echo "✨ Modalità Standard: Uso template custom con Copertina e Header"
+      pandoc_args=(
+        "$INPUT_MD"
+        --from markdown
+        --pdf-engine=xelatex
+        --highlight-style=kate
+        --template "$SELECTED_TEMPLATE"
+        --variable "logo=$LOGO"
+        --include-in-header "$HEADER_FOOTER_TEX"
+        --include-before-body "$COVER_TEX"
+        --toc
+        -o "$OUTPUT_PDF"
+      )
+  fi
+
 else
+  # Blocco HTML
   pandoc_args=(
     "$INPUT_MD"
-    --from
-    markdown+yaml_metadata_block
-    --to
-    html
+    --from markdown+yaml_metadata_block
+    --to html
     --template
     "$SELECTED_TEMPLATE"
     --highlight-style=kate
