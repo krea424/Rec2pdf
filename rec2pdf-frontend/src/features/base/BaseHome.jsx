@@ -1,12 +1,17 @@
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 import { AlertCircle } from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
-import { Toast } from "../../components/ui";
+import { Toast } from "../../components/ui/Toast";
+import { classNames } from "../../utils/classNames";
+
+// Componenti della Feature (Tutti nella stessa cartella 'base')
 import PipelinePanel from "./PipelinePanel";
 import UploadCard from "./UploadCard";
-import BaseSummaryCards from "./BaseSummaryCards";
 import RefinementPanel from "./RefinementPanel";
-import { classNames } from "../../utils/classNames";
+import BaseSummaryCards from "./BaseSummaryCards"; 
+
+// Componenti Globali
+import PipelineStatusBar from "../../components/ui/PipelineStatusBar";
 
 const ErrorBanner = () => {
   const { errorBanner, setErrorBanner } = useAppContext();
@@ -55,11 +60,15 @@ const ConnectionGuard = () => {
 
 const BaseHome = () => {
   const context = useAppContext();
-  const { pipelineComplete, history, audioBlob, busy, baseJourneyVisibility } = context;
-  const publishPanelVisible = baseJourneyVisibility?.publish ?? false;
+  const { 
+    pipelineComplete, 
+    history, 
+    audioBlob, 
+    busy, 
+    baseJourneyVisibility 
+  } = context;
 
   const completionHint = useMemo(() => {
-    // Calcoliamo l'entry più recente qui dentro per evitare dipendenze obsolete
     const latestEntry = history?.[0] || null;
     if (!pipelineComplete || !latestEntry?.pdfPath) {
       return null;
@@ -71,10 +80,9 @@ const BaseHome = () => {
       : "appena generato";
 
     return `PDF pronto da ${workspaceName} · ${timestamp}`;
-  }, [history, pipelineComplete]); // Dipende da history e pipelineComplete
+  }, [history, pipelineComplete]);
 
   const journeyStage = useMemo(() => {
-    // Calcoliamo l'entry più recente anche qui
     const latestEntry = history?.[0] || null;
     if (pipelineComplete && latestEntry?.pdfPath) {
       return "download";
@@ -83,20 +91,15 @@ const BaseHome = () => {
       return "publish";
     }
     return "record";
-  }, [audioBlob, busy, history, pipelineComplete]); // Dipende da history e pipelineComplete
+  }, [audioBlob, busy, history, pipelineComplete]);
 
-  const shouldShowPublishPanel = useMemo(() => {
-    if (pipelineComplete || busy) {
-      return true;
-    }
-    return publishPanelVisible;
-  }, [busy, pipelineComplete, publishPanelVisible]);
-
-  // TODO(Task 6): Add an Advanced Library CTA that toggles ModeContext before
-  // navigating, ensuring unsaved recording state is preserved.
+  // === LOGICA VISIBILITÀ "DYNAMIC ISLAND" ===
+  // Mostriamo il pannello grande SOLO se NON stiamo lavorando (busy = false)
+  // E se c'è un motivo per mostrarlo (audio caricato o pipeline finita per il download)
+  const showMainPanel = (audioBlob && !busy) || (pipelineComplete && !busy);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative min-h-[80vh]">
       <ConnectionGuard />
       <ErrorBanner />
 
@@ -108,24 +111,39 @@ const BaseHome = () => {
         </div>
       ) : null}
 
-      <BaseSummaryCards />
-
-      <section
+      {/* CONTENITORE PRINCIPALE CON EFFETTO FOCUS (Dimming quando busy) */}
+      <div 
         className={classNames(
-          "grid gap-6",
-          shouldShowPublishPanel
-            ? "lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]"
-            : "max-w-3xl mx-auto"
+          "transition-all duration-700 ease-in-out",
+          busy ? "opacity-30 blur-sm scale-[0.99] pointer-events-none grayscale" : "opacity-100 scale-100"
         )}
       >
-        <UploadCard journeyStage={journeyStage} />
-        {shouldShowPublishPanel ? (
-          // Rimuoviamo il prop 'latestEntry'
-          <PipelinePanel journeyStage={journeyStage} />
-        ) : null}
-      </section>
+          <BaseSummaryCards />
+
+          <section
+            className={classNames(
+              "grid gap-6 mt-6 transition-all duration-500",
+              showMainPanel
+                ? "lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]"
+                : "max-w-3xl mx-auto"
+            )}
+          >
+            <div className="w-full transition-all duration-500">
+                <UploadCard journeyStage={journeyStage} />
+            </div>
+
+            {showMainPanel && (
+              <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                 <PipelinePanel journeyStage={journeyStage} />
+              </div>
+            )}
+          </section>
+      </div>
 
       {baseJourneyVisibility?.refine ? <RefinementPanel /> : null}
+      
+      {/* DYNAMIC ISLAND: Sempre visibile, gestisce lei la sua logica interna */}
+      <PipelineStatusBar />
     </div>
   );
 };

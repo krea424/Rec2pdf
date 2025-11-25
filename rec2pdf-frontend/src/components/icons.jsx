@@ -309,6 +309,29 @@ export const ChevronRight = (props) => (
   </IconBase>
 );
 
+// --- NUOVE ICONE AGGIUNTE ---
+
+export const ChevronDown = (props) => (
+  <IconBase {...props}>
+    <path d="m6 9 6 6 6-6" />
+  </IconBase>
+);
+
+export const ChevronUp = (props) => (
+  <IconBase {...props}>
+    <path d="m18 15-6-6-6 6" />
+  </IconBase>
+);
+
+export const Edit3 = (props) => (
+  <IconBase {...props}>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </IconBase>
+);
+
+// ----------------------------
+
 export const TimerIcon = Timer;
 export const LinkIcon = Link;
 
@@ -348,4 +371,7 @@ export default {
   TagIcon,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Edit3
 };
