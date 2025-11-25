@@ -203,7 +203,7 @@ export default function MarkdownEditorModal({
                             </button>
                         </div>
 
-                        <div className="flex-1 flex flex-col lg:flex-row divide-y divide-white/5 lg:divide-y-0 lg:divide-x lg:divide-white/5">
+                        <div className="flex-1 flex flex-col lg:flex-row divide-y divide-white/5 lg:divide-y-0 lg:divide-x lg:divide-white/5 min-h-0">
                             {/* Pannello Scrittura */}
                             <div
                                 className={classNames(
@@ -236,7 +236,7 @@ export default function MarkdownEditorModal({
                                         <span className="text-[11px] text-white/50">PDF styled</span>
                                     </div>
                                     <div className="flex-1 overflow-y-auto px-4 py-4 lg:p-8 custom-scrollbar smooth-scroll-pane min-h-0">
-                                        <div className="mx-auto h-full max-w-3xl rounded-2xl bg-white text-slate-900 shadow-[0_20px_60px_-25px_rgba(15,23,42,0.35)] ring-1 ring-slate-100 min-h-0">
+                                        <div className="mx-auto max-w-3xl rounded-2xl bg-white text-slate-900 shadow-[0_20px_60px_-25px_rgba(15,23,42,0.35)] ring-1 ring-slate-100 min-h-0 w-full">
                                             <div className="hidden items-center justify-between border-b border-slate-200 px-6 py-4 lg:flex">
                                                 <div>
                                                     <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
