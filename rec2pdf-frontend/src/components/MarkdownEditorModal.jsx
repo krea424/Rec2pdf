@@ -103,9 +103,24 @@ export default function MarkdownEditorModal({
                 Opzioni
               </button>
            </div>
-           <IconButton variant="ghost" onClick={handleClose}>
-              <XCircle className="h-6 w-6 text-white/70" />
-           </IconButton>
+           <div className="flex items-center gap-2">
+              {activeTab === "editor" && (
+                <Button
+                  onClick={() => onSave?.(value)}
+                  disabled={loading || saving || !hasUnsavedChanges}
+                  size="sm"
+                  variant="primary"
+                  leadingIcon={Save}
+                  isLoading={saving}
+                  className="h-9 px-3 text-xs font-bold"
+                >
+                  Save
+                </Button>
+              )}
+              <IconButton variant="ghost" onClick={handleClose}>
+                <XCircle className="h-6 w-6 text-white/70" />
+              </IconButton>
+           </div>
         </div>
 
         {/* ================= COLONNA SINISTRA: EDITOR (Principale) ================= */}
@@ -215,13 +230,13 @@ export default function MarkdownEditorModal({
                                     editorPane === "write" ? "hidden lg:flex" : "flex"
                                 )}
                             >
-                                <div className="flex w-full flex-col">
+                                <div className="flex w-full flex-col min-h-0">
                                     <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3 lg:hidden">
                                         <span className="text-sm font-semibold text-white">Anteprima</span>
                                         <span className="text-[11px] text-white/50">PDF styled</span>
                                     </div>
-                                    <div className="flex-1 overflow-y-auto px-4 py-4 lg:p-8 custom-scrollbar smooth-scroll-pane">
-                                        <div className="mx-auto h-full max-w-3xl rounded-2xl bg-white text-slate-900 shadow-[0_20px_60px_-25px_rgba(15,23,42,0.35)] ring-1 ring-slate-100">
+                                    <div className="flex-1 overflow-y-auto px-4 py-4 lg:p-8 custom-scrollbar smooth-scroll-pane min-h-0">
+                                        <div className="mx-auto h-full max-w-3xl rounded-2xl bg-white text-slate-900 shadow-[0_20px_60px_-25px_rgba(15,23,42,0.35)] ring-1 ring-slate-100 min-h-0">
                                             <div className="hidden items-center justify-between border-b border-slate-200 px-6 py-4 lg:flex">
                                                 <div>
                                                     <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
