@@ -1047,6 +1047,7 @@ function AppContent(){
   const [slug,setSlug]=useState("meeting");
   const [secondsCap,setSecondsCap]=useState(0);
   const [backendUrl, setBackendUrl] = useState(DEFAULT_BACKEND_URL);
+  const normalizedBackendUrl = useMemo(() => normalizeBackendUrlValue(backendUrl), [backendUrl]);
   const [logs,setLogs]=useState([]);
   const [pdfPath,setPdfPath]=useState("");
   const [mdPath, setMdPath] = useState("");
@@ -3803,6 +3804,40 @@ useEffect(() => {
     },
     [backendUrl, fetchBodyWithAuth]
   );
+  // ... dopo handleCreatePrompt ...
+
+  const handleUpdatePrompt = useCallback(async (id, payload) => {
+    if (!normalizedBackendUrl) return { ok: false, message: "Backend non connesso" };
+    
+    setPromptLoading(true);
+    try {
+      const response = await fetchWithAuth(`${normalizedBackendUrl}/api/prompts/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      
+      if (response.ok && data.prompt) {
+        // Aggiorna la lista locale senza ricaricare
+        setPrompts(prev => prev.map(p => p.id === id ? data.prompt : p));
+        
+        // Se stiamo modificando il prompt attualmente attivo, aggiorniamo anche lui
+        if (promptState.promptId === id) {
+            // Opzionale: forzare un refresh dello stato se necessario
+        }
+        
+        return { ok: true };
+      } else {
+        return { ok: false, message: data.message || "Errore aggiornamento" };
+      }
+    } catch (error) {
+      return { ok: false, message: error.message };
+    } finally {
+      setPromptLoading(false);
+    }
+  }, [normalizedBackendUrl, fetchWithAuth, promptState.promptId]);
 
   const handleDeletePrompt = useCallback(
     async (promptId) => {
@@ -5052,7 +5087,7 @@ const handleRefineAndGenerate = useCallback(async () => {
     }
   };
 
-  const normalizedBackendUrl = useMemo(() => normalizeBackendUrlValue(backendUrl), [backendUrl]);
+
 
   const mdEditorDirty = useMemo(() => mdEditor.content !== mdEditor.originalContent, [mdEditor.content, mdEditor.originalContent]);
   const speakerMapHasNames = useMemo(
@@ -5278,20 +5313,21 @@ const handleRefineAndGenerate = useCallback(async () => {
 
   const handleRepublishFromMd = useCallback(async (entry, overrideMdPath, options = {}) => {
     const mdPathResolved = overrideMdPath || deriveMarkdownPath(entry?.mdPath, entry?.pdfPath);
+    
+    console.group("♻️ DEBUG RIGENERAZIONE PDF (PERSISTENZA FIX)");
+
     if (!mdPathResolved) {
       pushLogs(['❌ Percorso del testo non disponibile.']);
+      console.groupEnd();
       return;
     }
     if (busy) {
-      pushLogs(['⚠️ Pipeline in corso, attendere.']);
+      pushLogs(['⚠️ Pipeline in corso.']);
+      console.groupEnd();
       return;
     }
 
     const backendTarget = entry?.backendUrl || normalizedBackendUrl;
-    if (!backendTarget) {
-      setErrorBanner({ title: 'Backend non configurato', details: 'URL mancante.' });
-      return;
-    }
     const backendUsed = normalizeBackendUrlValue(backendTarget);
 
     // Speaker Map
@@ -5301,38 +5337,6 @@ const handleRefineAndGenerate = useCallback(async () => {
       ? sanitizeSpeakerMapForSubmit(speakers, overrideSpeakerMap)
       : {};
     const hasSpeakerMapPayload = Object.keys(sanitizedSpeakerMap).length > 0;
-
-    // === 1. ANALISI DEL CONTENUTO (SOURCE OF TRUTH) ===
-    let detectedTemplate = null;
-    let detectedType = '';
-
-    if (options?.contentOverride) {
-        const content = options.contentOverride;
-        
-        // Regex che cerca "layout: nome" ovunque, ignorando spazi e case
-        // Cattura: layout: consulting, layout: "consulting", layout: verbale_meeting
-        const consultingMatch = /layout:\s*["']?consulting["']?/i.test(content);
-        const meetingMatch = /layout:\s*["']?(verbale|meeting|verbale_meeting)["']?/i.test(content);
-        
-        // Regex per template esplicito: template: "nomefile.html"
-        const templateMatch = content.match(/template:\s*["']?([^"'\n\r]+)["']?/i);
-
-        if (consultingMatch) {
-            detectedTemplate = 'consulting_report.html';
-            detectedType = 'html';
-        } else if (meetingMatch) {
-            detectedTemplate = 'verbale_meeting.html';
-            detectedType = 'html';
-        } else if (templateMatch) {
-            detectedTemplate = templateMatch[1].trim();
-            detectedType = detectedTemplate.endsWith('.html') ? 'html' : 'tex';
-        }
-
-        if (detectedTemplate) {
-            console.log(`[Frontend] 🎯 Template forzato dal testo: ${detectedTemplate}`);
-        }
-    }
-    // ====================================================
 
     revealPipelinePanel();
     setBusy(true);
@@ -5348,7 +5352,7 @@ const handleRefineAndGenerate = useCallback(async () => {
     try {
       const fd = new FormData();
       
-      // Invio contenuto diretto
+      // 1. Contenuto Testuale
       if (options?.contentOverride) {
         fd.append('markdownContent', options.contentOverride);
       }
@@ -5357,7 +5361,7 @@ const handleRefineAndGenerate = useCallback(async () => {
       if (entry?.localPdfPath) fd.append('localPdfPath', entry.localPdfPath);
       if (entry?.localMdPath) fd.append('localMdPath', entry.localMdPath);
 
-      // Logo
+      // 2. Logo
       if (isFileLike(customPdfLogo)) {
         fd.append('pdfLogo', customPdfLogo, customPdfLogo.name || 'logo');
       } else if (isWorkspaceProfileLogoDescriptor(customPdfLogo)) {
@@ -5372,28 +5376,100 @@ const handleRefineAndGenerate = useCallback(async () => {
         backendUrl: normalizeBackendUrlValue(backendUrl),
       });
 
-      // === 2. APPLICAZIONE TEMPLATE (GERARCHIA CORRETTA) ===
-      // Priorità 1: Il testo contiene un layout esplicito? (Vince su tutto)
-      if (detectedTemplate) {
-          fd.append('pdfTemplate', detectedTemplate);
-          if (detectedType) fd.append('pdfTemplateType', detectedType);
-          pushLogs([`📄 Stile applicato dal testo: ${detectedTemplate}`]);
-      }
-      // Priorità 2: L'utente ha selezionato un template nel menu ora?
-      else if (pdfTemplateSelection && pdfTemplateSelection.fileName) {
-          appendPdfTemplateSelection(fd, pdfTemplateSelection);
-      }
-      // Priorità 3: Fallback storico (solo se non c'è lock profilo o se il lock non ha template)
-      else if (!workspaceProfileLocked) {
-          if (entry?.prompt?.pdfRules?.template) {
-               fd.append('pdfTemplate', entry.prompt.pdfRules.template);
-          } else if (entry?.prompt?.pdfRules?.layout) {
-              const layout = entry.prompt.pdfRules.layout.toLowerCase();
-              if (layout === 'consulting') fd.append('pdfTemplate', 'consulting_report.html');
-              else if (layout === 'verbale_meeting') fd.append('pdfTemplate', 'verbale_meeting.html');
+      // ==================================================================
+      // === 3. DETERMINAZIONE TEMPLATE (LOGICA BLINDATA) ===
+      // ==================================================================
+      
+      let templateToSend = null;
+      let typeToSend = null;
+      let cssToSend = null;
+
+      // Helper mapping
+      const mapLayoutToFile = (layoutName) => {
+          if (!layoutName) return null;
+          const norm = layoutName.toLowerCase();
+          if (norm.includes('consulting')) return { tpl: 'consulting_report.html', type: 'html', css: 'consulting_report.css' };
+          if (norm.includes('verbale') || norm.includes('meeting')) return { tpl: 'verbale_meeting.html', type: 'html', css: 'verbale_meeting.css' };
+          if (norm.includes('executive') || norm.includes('brief')) return { tpl: 'executive_brief.html', type: 'html', css: 'executive_brief.css' };
+          return null;
+      };
+
+      // A. Analisi del Testo (Cerchiamo layout: o template:)
+      if (options?.contentOverride) {
+          const content = options.contentOverride;
+          // Regex più permissiva (accetta spazi multipli)
+          const layoutMatch = content.match(/layout:\s*["']?([^"'\n\r]+)["']?/i);
+          const templateMatch = content.match(/template:\s*["']?([^"'\n\r]+)["']?/i);
+
+          if (templateMatch) {
+              templateToSend = templateMatch[1].trim();
+              typeToSend = templateToSend.endsWith('.html') ? 'html' : 'tex';
+              if (typeToSend === 'html') cssToSend = templateToSend.replace('.html', '.css');
+              console.log("👉 Trovato nel testo (template):", templateToSend);
+          } else if (layoutMatch) {
+              const mapped = mapLayoutToFile(layoutMatch[1].trim());
+              if (mapped) {
+                  templateToSend = mapped.tpl;
+                  typeToSend = mapped.type;
+                  cssToSend = mapped.css;
+                  console.log("👉 Trovato nel testo (layout):", templateToSend);
+              }
           }
       }
-      // =====================================================
+
+      // B. Selezione Manuale Menu (Vince se presente ORA)
+      if (!workspaceProfileLocked && pdfTemplateSelection && pdfTemplateSelection.fileName) {
+          // Usiamo il menu SOLO se è diverso dal default, altrimenti rischiamo di sovrascrivere
+          if (pdfTemplateSelection.fileName !== 'default.tex') {
+             templateToSend = pdfTemplateSelection.fileName;
+             typeToSend = pdfTemplateSelection.type;
+             cssToSend = pdfTemplateSelection.css;
+             console.log("👉 Scelto da Menu Manuale:", templateToSend);
+          }
+      } 
+
+      // C. SAFETY NET: Recupero dallo Storico (Se A e B falliscono o sono nulli)
+      // Questo è il fix per il problema "torna a default"
+      if (!templateToSend) {
+          console.log("⚠️ Nessun template nel testo/menu. Cerco nello storico...");
+          
+          // 1. Cerca template file esplicito
+          const historicalTemplate = 
+              entry?.prompt?.pdfRules?.template || 
+              entry?.metadata?.pdfTemplate || 
+              entry?.workspace?.pdfTemplate;
+
+          // 2. Cerca layout astratto
+          const historicalLayout = 
+              entry?.prompt?.pdfRules?.layout || 
+              entry?.metadata?.layout;
+
+          if (historicalTemplate) {
+              templateToSend = historicalTemplate;
+              typeToSend = historicalTemplate.endsWith('.html') ? 'html' : 'tex';
+              if (typeToSend === 'html') cssToSend = historicalTemplate.replace('.html', '.css');
+              console.log("👉 Ripristinato da storico (file):", templateToSend);
+          } else if (historicalLayout) {
+              const mapped = mapLayoutToFile(historicalLayout);
+              if (mapped) {
+                  templateToSend = mapped.tpl;
+                  typeToSend = mapped.type;
+                  cssToSend = mapped.css;
+                  console.log("👉 Ripristinato da storico (layout):", templateToSend);
+              }
+          }
+      }
+
+      // D. APPLICAZIONE
+      if (templateToSend) {
+          fd.append('pdfTemplate', templateToSend);
+          if (typeToSend) fd.append('pdfTemplateType', typeToSend);
+          if (cssToSend) fd.append('pdfTemplateCss', cssToSend);
+          pushLogs([`📄 Stile confermato: ${templateToSend}`]);
+      } else {
+          console.warn("⚠️ Nessun template trovato ovunque. Uso default.");
+      }
+      // ==================================================================
 
       if (hasSpeakerMapPayload) {
         fd.append('speakerMap', JSON.stringify(sanitizedSpeakerMap));
@@ -5448,6 +5524,7 @@ const handleRefineAndGenerate = useCallback(async () => {
       });
     } finally {
       setBusy(false);
+      console.groupEnd();
     }
   }, [
     activeWorkspaceProfile, backendUrl, busy, customPdfLogo, fetchWithAuth, 
@@ -5860,6 +5937,7 @@ const handleRefineAndGenerate = useCallback(async () => {
   setPromptDetailsOpen,
   handleCreatePrompt,
   handleDeletePrompt,
+  handleUpdatePrompt, // <--- AGGIUNGI QUESTA RIGA
   mime,
   audioBlob,
   audioUrl,
