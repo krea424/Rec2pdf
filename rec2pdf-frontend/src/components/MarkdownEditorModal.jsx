@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { classNames } from "../utils/classNames";
 import {
   FileText,
@@ -46,6 +48,14 @@ export default function MarkdownEditorModal({
   if (!open) return null;
 
   const [activeTab, setActiveTab] = useState("editor");
+  const [editorPane, setEditorPane] = useState("write");
+
+  const previewContent =
+    typeof value === "string"
+      ? value
+      : typeof renderedValue === "string"
+        ? renderedValue
+        : "";
 
   const handleClose = () => {
     if (hasUnsavedChanges) {
@@ -141,10 +151,9 @@ export default function MarkdownEditorModal({
             </div>
             
             {/* 
-                3. AREA TESTO "NUCLEAR FIX":
-                - relative: Crea il contesto per l'assoluto.
-                - flex-1: Occupa tutto lo spazio verticale rimanente sotto l'header.
-                - min-h-0: Impedisce al flexbox di espandersi oltre lo schermo.
+                3. AREA TESTO + ANTEPRIMA:
+                - split view su desktop, toggle "Scrivi/Anteprima" su mobile
+                - entrambi i pannelli hanno scroll indipendente
             */}
             <div className="flex-1 relative w-full min-h-0 bg-[#09090b]">
                 {loading ? (
@@ -152,21 +161,88 @@ export default function MarkdownEditorModal({
                         <Skeleton className="h-full w-full rounded-xl bg-white/5" />
                     </div>
                 ) : (
-                    /* 
-                        4. TEXTAREA NATIVA:
-                        - absolute inset-0: Forza l'elemento a "incollarsi" ai 4 bordi del genitore.
-                        - h-full w-full: Ridondante ma sicuro.
-                        - resize-none: Disabilita il triangolino di resize del browser.
-                        - outline-none: Rimuove il bordo blu di default del browser.
-                    */
-                    <textarea
-                        value={value}
-                        onChange={(e) => onChange?.(e.target.value)}
-                        spellCheck={false}
-                        disabled={saving}
-                        className="absolute inset-0 h-full w-full resize-none border-none bg-transparent p-6 lg:p-10 font-mono text-base leading-relaxed text-zinc-100 focus:ring-0 focus:outline-none selection:bg-indigo-500/30 placeholder-white/10 mx-auto max-w-7xl"
-                        placeholder="Il contenuto del documento apparirà qui..."
-                    />
+                    <div className="absolute inset-0 flex flex-col">
+                        {/* Toggle editor/preview mobile */}
+                        <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3 lg:hidden">
+                            <button
+                                onClick={() => setEditorPane("write")}
+                                className={classNames(
+                                    "flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition-colors",
+                                    editorPane === "write"
+                                        ? "bg-white/10 text-white"
+                                        : "bg-white/5 text-white/60"
+                                )}
+                            >
+                                Scrivi
+                            </button>
+                            <button
+                                onClick={() => setEditorPane("preview")}
+                                className={classNames(
+                                    "flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition-colors",
+                                    editorPane === "preview"
+                                        ? "bg-white/10 text-white"
+                                        : "bg-white/5 text-white/60"
+                                )}
+                            >
+                                Anteprima
+                            </button>
+                        </div>
+
+                        <div className="flex-1 flex flex-col lg:flex-row divide-y divide-white/5 lg:divide-y-0 lg:divide-x lg:divide-white/5">
+                            {/* Pannello Scrittura */}
+                            <div
+                                className={classNames(
+                                    "flex-1 min-h-0 bg-[#09090b]",
+                                    editorPane === "preview" ? "hidden lg:flex" : "flex"
+                                )}
+                            >
+                                <div className="flex-1 overflow-y-auto p-4 lg:p-8 custom-scrollbar smooth-scroll-pane">
+                                    <textarea
+                                        value={previewContent}
+                                        onChange={(e) => onChange?.(e.target.value)}
+                                        spellCheck={false}
+                                        disabled={saving}
+                                        className="h-full min-h-[360px] w-full resize-none rounded-xl border border-white/5 bg-[#0b0b0f] p-4 lg:p-6 font-mono text-base leading-relaxed text-zinc-100 focus:ring-0 focus:outline-none selection:bg-indigo-500/30 placeholder-white/20 shadow-inner shadow-black/30 custom-scrollbar smooth-scroll-pane"
+                                        placeholder="Il contenuto del documento apparirà qui..."
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Pannello Anteprima */}
+                            <div
+                                className={classNames(
+                                    "flex-1 min-h-0 bg-[#0b0b10]",
+                                    editorPane === "write" ? "hidden lg:flex" : "flex"
+                                )}
+                            >
+                                <div className="flex w-full flex-col">
+                                    <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3 lg:hidden">
+                                        <span className="text-sm font-semibold text-white">Anteprima</span>
+                                        <span className="text-[11px] text-white/50">PDF styled</span>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto px-4 py-4 lg:p-8 custom-scrollbar smooth-scroll-pane">
+                                        <div className="mx-auto h-full max-w-3xl rounded-2xl bg-white text-slate-900 shadow-[0_20px_60px_-25px_rgba(15,23,42,0.35)] ring-1 ring-slate-100">
+                                            <div className="hidden items-center justify-between border-b border-slate-200 px-6 py-4 lg:flex">
+                                                <div>
+                                                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                                                        Anteprima documento
+                                                    </p>
+                                                    <p className="text-sm text-slate-700">Stile consulting / professional</p>
+                                                </div>
+                                            </div>
+                                            <div className="px-5 py-5 lg:px-8 lg:py-8">
+                                                <div className="prose prose-slate max-w-none prose-headings:font-serif prose-headings:text-slate-900 prose-lead:text-slate-700 prose-strong:text-slate-900 prose-a:text-indigo-700 prose-blockquote:border-slate-300 prose-blockquote:text-slate-700 prose-hr:border-slate-200 prose-table:border-collapse prose-table:border prose-table:border-slate-200 prose-th:border prose-th:border-slate-200 prose-td:border prose-td:border-slate-200 prose-td:px-3 prose-td:py-2">
+                                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                        {previewContent || "*Inizia a scrivere per vedere l'anteprima...*"}
+                                                    </ReactMarkdown>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 )}
             </div>
         </div>
@@ -188,7 +264,7 @@ export default function MarkdownEditorModal({
             </div>
 
             {/* Contenuto Scrollabile */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar smooth-scroll-pane">
                 
                 {/* SEZIONE 1: Speaker Mapper */}
                 <div className="space-y-4">
