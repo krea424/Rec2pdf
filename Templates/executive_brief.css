@@ -1,0 +1,152 @@
+/* --- Executive Brief (McKinsey / Bain Style) --- */
+
+@page {
+    size: A4;
+    margin: 20mm 20mm 25mm 20mm;
+    @bottom-right {
+        content: "Pagina " counter(page);
+        font-family: "Helvetica Neue", sans-serif;
+        font-size: 8pt;
+        color: #94a3b8;
+    }
+    @bottom-left {
+        content: "Confidential - Internal Use Only";
+        font-family: "Helvetica Neue", sans-serif;
+        font-size: 8pt;
+        color: #cbd5e1;
+    }
+}
+
+body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 10pt;
+    line-height: 1.5;
+    color: #1e293b; /* Slate 800 */
+    margin: 0;
+}
+
+/* --- HEADER --- */
+.header-strip {
+    border-bottom: 2px solid #0f172a;
+    padding-bottom: 20px;
+    margin-bottom: 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+}
+
+.brand {
+    font-size: 12pt;
+    font-weight: 900;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #0f172a;
+}
+
+.meta-date {
+    font-size: 9pt;
+    color: #64748b;
+}
+
+/* --- TITOLO --- */
+h1 {
+    font-size: 24pt;
+    font-weight: 300; /* Light, elegante */
+    color: #0f172a;
+    margin-bottom: 10px;
+    letter-spacing: -0.5px;
+}
+
+.subtitle {
+    font-size: 12pt;
+    color: #0d9488; /* Teal 600 - Colore Accento */
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 30px;
+}
+
+/* --- HIGHLIGHT CARDS (La Feature "Wow") --- */
+/* Se il markdown passa una lista 'key_points', la trasformiamo in griglia */
+.highlights-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr); /* 3 Colonne */
+    gap: 15px;
+    margin-bottom: 40px;
+    page-break-inside: avoid;
+}
+
+.highlight-card {
+    background-color: #f8fafc;
+    border-top: 4px solid #0d9488; /* Teal border on top */
+    padding: 15px;
+    font-size: 9pt;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.highlight-card strong {
+    display: block;
+    color: #0f172a;
+    font-size: 10pt;
+    margin-bottom: 5px;
+    text-transform: uppercase;
+}
+
+/* --- CONTENUTO --- */
+h2 {
+    font-size: 14pt;
+    color: #0f172a;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 8px;
+    margin-top: 30px;
+    margin-bottom: 15px;
+}
+
+p {
+    margin-bottom: 12px;
+    text-align: justify;
+}
+
+/* --- TABELLE (Action Items) --- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 9pt;
+}
+
+th {
+    background-color: #0f172a; /* Dark Navy */
+    color: white;
+    padding: 10px;
+    text-align: left;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 8pt;
+}
+
+td {
+    border-bottom: 1px solid #cbd5e1;
+    padding: 10px;
+    vertical-align: top;
+}
+
+tr:last-child td {
+    border-bottom: 2px solid #0f172a;
+}
+
+/* --- TRASCRIZIONE --- */
+.transcript-block {
+    margin-top: 10px;
+    padding: 10px;
+    border-left: 2px solid #e2e8f0;
+    background-color: #fff;
+    page-break-inside: avoid;
+}
+.speaker-name {
+    font-size: 8pt;
+    font-weight: 700;
+    color: #0d9488;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}

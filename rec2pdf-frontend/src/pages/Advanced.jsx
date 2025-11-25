@@ -1,6 +1,10 @@
+import React from "react";
 import { Link } from "react-router-dom";
 import { useAppContext } from "../hooks/useAppContext";
 import { Button, Toast } from "../components/ui";
+import { Plus, Sparkles, CheckCircle2, Cpu, Settings } from "../components/icons";
+import { classNames } from "../utils/classNames";
+// Reimportiamo il manager delle impostazioni
 import InputManager from "../features/advanced/InputManager";
 
 const ErrorBanner = () => {
@@ -26,7 +30,16 @@ const ErrorBanner = () => {
 };
 
 const AdvancedCreatePage = ({ context }) => {
-  const { theme, themes } = context;
+  const { 
+    prompts, 
+    promptState, 
+    handleSelectPromptTemplate, 
+    openSettingsDrawer,
+    theme,
+    themes 
+  } = context;
+
+  // Stili per InputManager (ereditati dal vecchio codice per coerenza)
   const isBoardroom = theme === "boardroom";
   const boardroomPrimarySurface =
     "border-white/20 bg-gradient-to-br from-white/[0.14] via-white/[0.05] to-transparent backdrop-blur-3xl shadow-[0_45px_120px_-60px_rgba(4,20,44,0.95)]";
@@ -38,25 +51,133 @@ const AdvancedCreatePage = ({ context }) => {
     "border-white/16 bg-white/[0.05] text-white/80";
 
   return (
-    <div>
+    <div className="mx-auto max-w-6xl p-6 pb-20">
       {!context.secureOK && (
-        <div className="mt-4 rounded-xl border border-rose-900/40 bg-rose-950/40 p-3 text-sm text-rose-200">
+        <div className="mb-6 rounded-xl border border-rose-900/40 bg-rose-950/40 p-3 text-sm text-rose-200">
           ⚠️ Per accedere al microfono serve HTTPS (o localhost in sviluppo).
         </div>
       )}
 
       <ErrorBanner />
-      <div className="mt-10">
-        <InputManager
-          context={context}
-          theme={theme}
-          themes={themes}
-          isBoardroom={isBoardroom}
-          boardroomPrimarySurface={boardroomPrimarySurface}
-          boardroomSecondarySurface={boardroomSecondarySurface}
-          boardroomChipSurface={boardroomChipSurface}
-          boardroomInfoSurface={boardroomInfoSurface}
-        />
+
+      <div className="space-y-12">
+        
+        {/* Header Sezione */}
+        <div className="flex items-end justify-between border-b border-white/10 pb-6">
+            <div>
+                <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+                    <Cpu className="h-6 w-6 text-indigo-400" />
+                    Configurazione Avanzata
+                </h1>
+                <p className="mt-2 text-sm text-zinc-400 max-w-2xl">
+                    Definisci il "Cervello AI" e il contesto operativo per la tua sessione.
+                </p>
+            </div>
+            <Button 
+                variant="secondary" 
+                size="sm" 
+                onClick={() => openSettingsDrawer('library')}
+                leadingIcon={Plus}
+            >
+                Nuovo Prompt
+            </Button>
+        </div>
+
+        {/* SEZIONE 1: Prompt Intelligence */}
+        <section className="space-y-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
+                <Sparkles className="h-4 w-4" /> 1. Seleziona Prompt Guida
+            </h3>
+            
+            {prompts.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/30 p-10 text-center">
+                    <p className="text-zinc-400">Nessun prompt trovato nella libreria.</p>
+                    <Button 
+                        variant="primary" 
+                        className="mt-4"
+                        onClick={() => openSettingsDrawer('library')}
+                    >
+                        Crea il primo Prompt
+                    </Button>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {prompts.map(prompt => {
+                        const isActive = promptState.promptId === prompt.id;
+                        return (
+                            <button 
+                                key={prompt.id}
+                                onClick={() => handleSelectPromptTemplate(prompt)}
+                                className={classNames(
+                                    "relative flex flex-col items-start gap-3 rounded-2xl border p-5 text-left transition-all duration-200 group",
+                                    isActive 
+                                    ? "border-indigo-500/50 bg-indigo-500/10 ring-1 ring-indigo-500/50 shadow-lg shadow-indigo-900/20" 
+                                    : "border-white/10 bg-[#121214] hover:bg-[#18181b] hover:border-white/20"
+                                )}
+                            >
+                                <div className="flex w-full items-start justify-between">
+                                    <div className={classNames(
+                                        "p-2 rounded-lg transition-colors",
+                                        isActive ? "bg-indigo-500/20 text-indigo-300" : "bg-white/5 text-zinc-400 group-hover:text-zinc-200"
+                                    )}>
+                                        <Sparkles className="h-5 w-5" />
+                                    </div>
+                                    {isActive && <CheckCircle2 className="h-5 w-5 text-indigo-400 animate-in zoom-in duration-200" />}
+                                </div>
+
+                                <div>
+                                    <h4 className={classNames(
+                                        "font-semibold text-base",
+                                        isActive ? "text-white" : "text-zinc-200"
+                                    )}>
+                                        {prompt.title}
+                                    </h4>
+                                    <p className="text-xs text-zinc-500 mt-1 font-mono uppercase tracking-wide">
+                                        {prompt.persona || "Assistente Generico"}
+                                    </p>
+                                </div>
+
+                                {prompt.description && (
+                                    <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
+                                        {prompt.description}
+                                    </p>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </section>
+
+        {/* SEZIONE 2: Contesto & Output (InputManager Reintrodotto) */}
+        <section className="space-y-4 pt-4 border-t border-white/5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
+                <Settings className="h-4 w-4" /> 2. Configurazione Contesto & Output
+            </h3>
+            
+            {/* Qui inseriamo il vecchio InputManager che gestisce Workspace, Template, Logo, etc. */}
+            <InputManager
+                context={context}
+                theme={theme}
+                themes={themes}
+                isBoardroom={isBoardroom}
+                boardroomPrimarySurface={boardroomPrimarySurface}
+                boardroomSecondarySurface={boardroomSecondarySurface}
+                boardroomChipSurface={boardroomChipSurface}
+                boardroomInfoSurface={boardroomInfoSurface}
+            />
+        </section>
+
+        {/* Footer Flottante */}
+        <div className="fixed bottom-6 right-6 z-20">
+             <Link 
+                to="/create" 
+                className="flex items-center gap-2 rounded-full bg-emerald-500 px-6 py-3 text-sm font-bold text-slate-900 shadow-xl hover:bg-emerald-400 hover:scale-105 transition-all"
+            >
+                Torna alla Pipeline &rarr;
+            </Link>
+        </div>
+
       </div>
     </div>
   );
@@ -81,16 +202,12 @@ const AdvancedPage = () => {
         <div className="rounded-3xl border border-amber-500/40 bg-amber-500/10 p-6">
           <h2 className="text-lg font-semibold text-amber-100">Modalità avanzata non disponibile</h2>
           <p className="mt-2 text-amber-100/80">
-            Il tuo account non ha ancora accesso alle funzionalità avanzate. Contatta l'amministratore per abilitare il flag
-            <code className="mx-1 rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-xs">MODE_ADVANCED</code> oppure torna alla
-            vista standard.
+            Il tuo account non ha ancora accesso alle funzionalità avanzate.
           </p>
           <p className="mt-3 text-amber-100/70">
-            Puoi sempre continuare a lavorare nella pipeline base dalla pagina
             <Link to="/create" className="ml-1 underline">
-              Create
+              Torna alla Home
             </Link>
-            .
           </p>
         </div>
       </div>
@@ -102,20 +219,10 @@ const AdvancedPage = () => {
       <div className="mx-auto max-w-5xl space-y-4 p-6 text-sm text-zinc-300">
         <div className="rounded-3xl border border-sky-500/40 bg-sky-500/10 p-6">
           <h2 className="text-lg font-semibold text-sky-100">Nuova control room in rollout</h2>
-          <p className="mt-2 text-sky-100/85">
-            Stai usando la vista avanzata classica. Per provare la nuova control room apri Supabase → Authentication → Users,
-            modifica il tuo profilo e aggiungi
-            <code className="mx-1 rounded bg-sky-500/20 px-1.5 py-0.5 font-mono text-xs">MODE_ADVANCED_V2</code>
-            all'attributo <code className="mx-1 font-mono text-xs">modeFlags</code> insieme a
-            <code className="mx-1 rounded bg-sky-500/20 px-1.5 py-0.5 font-mono text-xs">MODE_ADVANCED</code>. In locale puoi
-            settare <code className="mx-1 font-mono text-xs">VITE_DEFAULT_MODE_FLAGS=MODE_BASE,MODE_ADVANCED,MODE_ADVANCED_V2</code>.
-          </p>
           <p className="mt-3 text-sky-100/70">
-            Nel frattempo puoi continuare a utilizzare la pipeline standard dalla pagina
             <Link to="/create" className="ml-1 underline">
-              Create
+              Torna alla Home
             </Link>
-            .
           </p>
         </div>
       </div>
