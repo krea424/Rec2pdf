@@ -31,7 +31,7 @@ export const useJobPolling = (jobId, onUpdate, onComplete, onFailure, fetcher) =
   
   // 1. FASE DI ATTESA (Primi ~90 secondi)
   // Se facciamo check ogni 10s, i primi 9 tentativi coprono 90s.
-  if (attemptCount < 9) return 15000; // 10 secondi
+  if (attemptCount < 9) return 20000; // 10 secondi
 
   // 2. FASE TARGET (Da 1:30 a ~5:00 minuti)
   // Qui ci aspettiamo che finisca. Diventiamo molto reattivi.
