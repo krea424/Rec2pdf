@@ -6387,6 +6387,13 @@ app.get('/api/diag', async (req, res) => {
 
 // == REFACTORING ASYNC: runPipeline (estrazione logica) ==
 const runPipeline = async (job = {}) => {
+  // === TELEMETRY SETUP ===
+  const metrics = { start: performance.now(), stages: {} };
+  const markStart = (label) => { metrics.stages[label] = { start: performance.now() }; };
+  const markEnd = (label) => { 
+      if(metrics.stages[label]) metrics.stages[label].duration = Math.round(performance.now() - metrics.stages[label].start); 
+  };
+  // =======================
   const logs = [];
   // === INCOLLA QUI LO SNIPPET DI DEBUG ===
   try {
@@ -6791,6 +6798,7 @@ const workspaceProfileTemplate = String(
     out('🧩 Esecuzione pipeline con Supabase Storage…', 'upload', 'info');
 
     out('🎛️ Transcodifica in WAV…', 'transcode', 'running');
+    markStart('transcode'); // <--- INSERISCI
     const originalExt = path.extname(sanitizedOriginalName) || path.extname(originalAudioName) || '';
     const audioLocalPath = registerTempFile(path.join(pipelineDir, `${baseName}${originalExt || '.audio'}`));
     const wavLocalPath = registerTempFile(path.join(pipelineDir, `${baseName}.wav`));
@@ -6835,6 +6843,7 @@ const workspaceProfileTemplate = String(
         await fsp.readFile(wavLocalPath),
         'audio/wav'
       );
+      markEnd('transcode');   // <--- INSERISCI
       out('✅ Transcodifica completata', 'transcode', 'completed');
     } finally {
       await safeUnlink(audioLocalPath);
@@ -6864,14 +6873,15 @@ const workspaceProfileTemplate = String(
         }
         const diarizeCmd = [
           'whisperx',
-          JSON.stringify(wavLocalForTranscribe),
-          '--language it',
-          '--compute_type float32',
-          '--diarize',
-          `--hf_token ${JSON.stringify(HUGGING_FACE_TOKEN)}`,
-          `--output_dir ${JSON.stringify(transcribeOutputDir)}`,
-          '--output_format json'
-        ].join(' ');
+  JSON.stringify(wavLocalForTranscribe),
+  '--language it',
+  '--model small', // small è un buon compromesso, 'base' sarebbe fulmineo ma meno preciso
+  '--device cpu',
+  '--compute_type int8', // <--- FIX: Quantizzazione per CPU
+  '--threads 4',         // <--- FIX: Usa tutti i core di Cloud Run (di solito 2 o 4)
+  '--output_format txt',
+  `--output_dir ${JSON.stringify(transcribeOutputDir)}`
+].join(' ');
         const wx = await run('bash', ['-lc', diarizeCmd]);
         if (wx.code !== 0) {
           out(wx.stderr || wx.stdout || 'whisperX failed', 'transcribe', 'failed');
@@ -6885,16 +6895,18 @@ const workspaceProfileTemplate = String(
         }
         transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, candidates[0]));
       } else {
-        const whisperxCmd = [
-          'whisperx',
-          JSON.stringify(wavLocalForTranscribe),
-          '--language it',
-          '--model small',
-          '--device cpu',
-          '--compute_type float32',
-          '--output_format txt',
-          `--output_dir ${JSON.stringify(transcribeOutputDir)}`
-        ].join(' ');
+        // VERSIONE OTTIMIZZATA (VELOCE)
+const whisperxCmd = [
+  'whisperx',
+  JSON.stringify(wavLocalForTranscribe),
+  '--language it',
+  '--model small', // small è un buon compromesso, 'base' sarebbe fulmineo ma meno preciso
+  '--device cpu',
+  '--compute_type int8', // <--- FIX: Quantizzazione per CPU
+  '--threads 4',         // <--- FIX: Usa tutti i core di Cloud Run (di solito 2 o 4)
+  '--output_format txt',
+  `--output_dir ${JSON.stringify(transcribeOutputDir)}`
+].join(' ');
         const w = await run('bash', ['-lc', whisperxCmd]);
         if (w.code !== 0) {
           out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
@@ -6973,9 +6985,10 @@ const workspaceProfileTemplate = String(
         'completed'
       );
     };
-
+    markStart('transcribe'); // <--- INSERISCI PRIMA DEL TRY
     try {
       await performTranscription();
+      markEnd('transcribe');   // <--- INSERISCI SUBITO DOPO L'AWAIT
     } finally {
       await safeUnlink(wavLocalForTranscribe);
       await safeUnlink(transcriptLocalPath);
@@ -7049,6 +7062,7 @@ const workspaceProfileTemplate = String(
     const forcePandocFallback = activeTemplateIsFallback;
 
     out('📝 Generazione Markdown…', 'markdown', 'running');
+    markStart('ai_generation'); // <--- INSERISCI QUI (RIGA 7058)
     let transcriptLocalForMarkdown = '';
     let mdLocalPath = '';
     try {
@@ -7138,6 +7152,7 @@ const yamlFrontMatter = yaml.dump(frontMatter, {
           notes: promptNotes,
         }
       );
+      markEnd('ai_generation'); // <--- INSERISCI QUI (SUBITO DOPO IL PUNTO E VIRGOLA)
 
       const now = new Date();
       const localTimestamp = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, -1);
@@ -7260,6 +7275,7 @@ console.log('⚠️  [DEBUG MAC M1] Fine Ispezione');
     }
 
     out('📄 Pubblicazione PDF con publish.sh…', 'publish', 'running');
+    markStart('pdf_render'); // <--- START
     let customLogoPath = '';
 
     const customLogoDescriptor = isPlainObject(payload.customLogo) ? payload.customLogo : null;
@@ -7336,6 +7352,7 @@ console.log('⚠️  [DEBUG MAC M1] Fine Ispezione');
         logger: out,
         forcePandocFallback,
       });
+      markEnd('pdf_render'); // <--- INSERISCI QUI LA FINE DEL TIMER
 
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,
@@ -7402,6 +7419,24 @@ console.log('⚠️  [DEBUG MAC M1] Fine Ispezione');
       speakers: speakerLabels,
       refinedData: refinedDataPayload,
     };
+    // === TELEMETRY REPORT ===
+    const totalDuration = Math.round(performance.now() - metrics.start);
+    const perfReport = {
+        jobId: job.id,
+        total_ms: totalDuration,
+        cold_start_check: totalDuration > 30000 ? 'LIKELY_COLD' : 'WARM',
+        breakdown: Object.fromEntries(
+            Object.entries(metrics.stages).map(([k, v]) => [k, v.duration])
+        ),
+        meta: {
+            rag_enabled: !!retrievedWorkspaceContext, // O come hai chiamato la variabile del contesto
+            diarization: diarizeEnabled,
+            input_type: originalExt
+        }
+    };
+    // Usiamo console.error o console.log con un prefisso speciale per trovarlo subito nei log di Google
+    console.log("📊 [PERF REPORT] " + JSON.stringify(perfReport));
+    // ========================
 
     await updateJobStatus({
       status: 'completed',
