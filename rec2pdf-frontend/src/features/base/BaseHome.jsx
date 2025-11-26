@@ -1,10 +1,10 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useEffect, useRef } from "react";
 import { AlertCircle } from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
 import { Toast } from "../../components/ui/Toast";
 import { classNames } from "../../utils/classNames";
 
-// Componenti della Feature (Tutti nella stessa cartella 'base')
+// Componenti della Feature
 import PipelinePanel from "./PipelinePanel";
 import UploadCard from "./UploadCard";
 import RefinementPanel from "./RefinementPanel";
@@ -68,6 +68,33 @@ const BaseHome = () => {
     baseJourneyVisibility 
   } = context;
 
+  // Ref per lo scroll automatico
+  const actionPanelRef = useRef(null);
+
+  // === UX AUTOMATION: AUTO-SCROLL SU MOBILE ===
+  useEffect(() => {
+    // Condizione 1: Audio appena caricato/registrato (pronti per generare)
+    const isReadyToGenerate = audioBlob && !busy && !pipelineComplete;
+    
+    // Condizione 2: Pipeline finita (pronti per scaricare)
+    const isReadyToDownload = pipelineComplete && !busy;
+
+    if (isReadyToGenerate || isReadyToDownload) {
+      // Piccolo timeout per dare tempo al DOM di renderizzare il pannello e alle animazioni di partire
+      const timer = setTimeout(() => {
+        if (actionPanelRef.current) {
+          actionPanelRef.current.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center' // Centra l'elemento nello schermo
+          });
+        }
+      }, 400); // 400ms è sufficiente per aspettare l'animazione 'fade-in'
+      
+      return () => clearTimeout(timer);
+    }
+  }, [audioBlob, busy, pipelineComplete]);
+  // ============================================
+
   const completionHint = useMemo(() => {
     const latestEntry = history?.[0] || null;
     if (!pipelineComplete || !latestEntry?.pdfPath) {
@@ -93,9 +120,6 @@ const BaseHome = () => {
     return "record";
   }, [audioBlob, busy, history, pipelineComplete]);
 
-  // === LOGICA VISIBILITÀ "DYNAMIC ISLAND" ===
-  // Mostriamo il pannello grande SOLO se NON stiamo lavorando (busy = false)
-  // E se c'è un motivo per mostrarlo (audio caricato o pipeline finita per il download)
   const showMainPanel = (audioBlob && !busy) || (pipelineComplete && !busy);
 
   return (
@@ -104,32 +128,28 @@ const BaseHome = () => {
       <ErrorBanner />
 
       {completionHint ? (
-        <div className="flex justify-end max-w-5xl mx-auto"> {/* Allineato al contenuto */}
+        <div className="flex justify-end">
           <p className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100">
             {completionHint}
           </p>
         </div>
       ) : null}
 
-      {/* CONTENITORE PRINCIPALE CENTRATO (Max Width 5XL per tutto) */}
+      {/* CONTENITORE PRINCIPALE CON EFFETTO FOCUS */}
       <div 
         className={classNames(
-          "mx-auto max-w-5xl transition-all duration-700 ease-in-out",
+          "transition-all duration-700 ease-in-out",
           busy ? "opacity-30 blur-sm scale-[0.99] pointer-events-none grayscale" : "opacity-100 scale-100"
         )}
       >
-          {/* 1. BARRA CONTESTO (Le nuove card compatte) */}
-          <div className="mb-4">
-             <BaseSummaryCards />
-          </div>
+          <BaseSummaryCards />
 
-          {/* 2. AREA DI LAVORO (Upload + Pipeline) */}
           <section
             className={classNames(
-              "grid gap-6 transition-all duration-500",
+              "grid gap-6 mt-6 transition-all duration-500",
               showMainPanel
-                ? "lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]" // Split view quando c'è il pannello
-                : "grid-cols-1" // Full width quando c'è solo l'upload
+                ? "lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]"
+                : "max-w-3xl mx-auto"
             )}
           >
             <div className="w-full transition-all duration-500">
@@ -137,7 +157,11 @@ const BaseHome = () => {
             </div>
 
             {showMainPanel && (
-              <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              // Aggiungiamo il REF qui per scrollare verso questo elemento
+              <div 
+                ref={actionPanelRef} 
+                className="animate-in fade-in slide-in-from-bottom-4 duration-500 scroll-mt-24" // scroll-mt per lasciare spazio dall'header
+              >
                  <PipelinePanel journeyStage={journeyStage} />
               </div>
             )}
