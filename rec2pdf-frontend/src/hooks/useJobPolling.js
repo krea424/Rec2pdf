@@ -25,12 +25,22 @@ export const useJobPolling = (jobId, onUpdate, onComplete, onFailure, fetcher) =
     }
   }, []);
 
-  // Calcolo intelligente dell'intervallo
-  const getNextInterval = (attemptCount) => {
-    if (attemptCount < 5) return 2000;   // Primi 10s: ogni 2s (Sprint)
-    if (attemptCount < 20) return 5000;  // Fino a ~1.5m: ogni 5s (Crociera)
-    return 10000;                        // Oltre: ogni 10s (Risparmio)
-  };
+ // Calcolo intelligente dell'intervallo basato sull'esperienza (Job > 2 min)
+ const getNextInterval = (attemptCount) => {
+  // Supponendo che ogni check avvenga dopo il delay precedente.
+  
+  // 1. FASE DI ATTESA (Primi ~90 secondi)
+  // Se facciamo check ogni 10s, i primi 9 tentativi coprono 90s.
+  if (attemptCount < 9) return 15000; // 10 secondi
+
+  // 2. FASE TARGET (Da 1:30 a ~5:00 minuti)
+  // Qui ci aspettiamo che finisca. Diventiamo molto reattivi.
+  if (attemptCount < 60) return 5000;  // 3 secondi
+
+  // 3. FASE LONG RUN (Oltre 5 minuti)
+  // Se non ha ancora finito, rallentiamo per non intasare il server.
+  return 10000;                        // 10 secondi
+};
 
   const poll = useCallback(async () => {
     if (!jobId || !fetcher) return;
