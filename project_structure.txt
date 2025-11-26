@@ -99,6 +99,7 @@
 │       ├── project_phoenix_charter.md
 │       └── verbale_kickoff_meeting_20251005.md
 ├── LICENSE
+├── Makefile
 ├── project_structure.txt
 ├── README copy.txt
 ├── README.md
@@ -118,6 +119,7 @@
 │   ├── '
 │   │   └── Users
 │   │       └── moromoro
+│   ├── Makefile
 │   ├── package-lock.json
 │   ├── package.json
 │   ├── prompts
@@ -212,6 +214,8 @@
 │   │   │   ├── MarkdownEditorModal.jsx
 │   │   │   ├── PermissionBanner.jsx
 │   │   │   ├── PromptLibrary.jsx
+│   │   │   ├── prompts
+│   │   │   │   └── PromptBuilder.jsx
 │   │   │   ├── SetupAssistant.jsx
 │   │   │   ├── SpeakerMapper.jsx
 │   │   │   ├── ui
@@ -221,6 +225,7 @@
 │   │   │   │   ├── EmptyState.jsx
 │   │   │   │   ├── index.js
 │   │   │   │   ├── Input.jsx
+│   │   │   │   ├── PipelineStatusBar.jsx
 │   │   │   │   ├── Select.jsx
 │   │   │   │   ├── Skeleton.jsx
 │   │   │   │   ├── Tabs.jsx
@@ -310,6 +315,9 @@
     ├── consulting_report.json
     ├── cover.tex
     ├── default.tex
+    ├── executive_brief.css
+    ├── executive_brief.html
+    ├── executive_brief.json
     ├── header_footer.tex
     ├── verbale_meeting
     │   └── check.svg
@@ -317,4 +325,4 @@
     ├── verbale_meeting.html
     └── verbale_meeting.json
 
-59 directories, 259 files
+60 directories, 266 files
