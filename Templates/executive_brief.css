@@ -150,3 +150,7 @@ tr:last-child td {
     text-transform: uppercase;
     margin-bottom: 2px;
 }
+/* Nascondi il titolo duplicato che arriva dal Markdown body */
+.content h1:first-child {
+    display: none;
+}
