@@ -2322,6 +2322,9 @@ const generateMarkdown = async (txtPath, promptPayload, options = {}) => {
         summary: parsed.summary || '',
         author: parsed.author || '',
         content: parsed.body || '',
+           // === FIX: ESTRAZIONE DATI EXTRA ===
+           key_points: Array.isArray(parsed.key_points) ? parsed.key_points : [],
+           // ==================================
         modelName: activeModelName,
       };
     } catch (jsonError) {
@@ -7121,6 +7124,7 @@ const yamlFrontMatter = yaml.dump(frontMatter, {
         author: aiAuthor,
         content: markdownBody,
         modelName: aiModel,
+        key_points: aiKeyPoints, // <--- AGGIUNGI QUESTO
       } = await generateMarkdown(
         transcriptLocalForMarkdown,
         promptRulePayload,
@@ -7153,6 +7157,9 @@ const yamlFrontMatter = yaml.dump(frontMatter, {
       identifier: baseName,
       location: destDir,
       summary: aiSummary || String(payload.summary || '').trim(),
+      // === FIX: INIEZIONE DATI PER TEMPLATE ===
+      key_points: aiKeyPoints, 
+      // ========================================
       ssot: false,
       status: workspaceStatus || '',
       created: localTimestamp,

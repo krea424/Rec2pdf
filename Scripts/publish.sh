@@ -230,12 +230,25 @@ if [[ "$TEMPLATE_KIND" == "tex" ]]; then
 fi
 
 # Seleziona il logo
+# Seleziona il logo: custom se disponibile, altrimenti default
 CUSTOM_LOGO_PATH="${CUSTOM_PDF_LOGO:-}"
+
 if [[ -n "$CUSTOM_LOGO_PATH" && -f "$CUSTOM_LOGO_PATH" ]]; then
   LOGO="$CUSTOM_LOGO_PATH"
   echo "📌 Logo (Custom)   : $LOGO"
 else
-  LOGO="$SCRIPT_DIR/../assets/thinkDOC.pdf"
+  # DEFAULT: Scegliamo il formato in base al motore
+  if [[ "$TEMPLATE_KIND" == "html" ]]; then
+      # Per HTML serve PNG o SVG
+      LOGO="$SCRIPT_DIR/../assets/thinkDOC.png"
+      # Fallback se non esiste png, prova svg
+      if [[ ! -f "$LOGO" ]]; then
+          LOGO="$SCRIPT_DIR/../assets/thinkDOC.svg"
+      fi
+  else
+      # Per LaTeX va bene PDF
+      LOGO="$SCRIPT_DIR/../assets/thinkDOC.pdf"
+  fi
   echo "📌 Logo (Default)  : $LOGO"
 fi
 
