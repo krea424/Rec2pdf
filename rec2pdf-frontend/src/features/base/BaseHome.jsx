@@ -104,28 +104,32 @@ const BaseHome = () => {
       <ErrorBanner />
 
       {completionHint ? (
-        <div className="flex justify-end">
+        <div className="flex justify-end max-w-5xl mx-auto"> {/* Allineato al contenuto */}
           <p className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100">
             {completionHint}
           </p>
         </div>
       ) : null}
 
-      {/* CONTENITORE PRINCIPALE CON EFFETTO FOCUS (Dimming quando busy) */}
+      {/* CONTENITORE PRINCIPALE CENTRATO (Max Width 5XL per tutto) */}
       <div 
         className={classNames(
-          "transition-all duration-700 ease-in-out",
+          "mx-auto max-w-5xl transition-all duration-700 ease-in-out",
           busy ? "opacity-30 blur-sm scale-[0.99] pointer-events-none grayscale" : "opacity-100 scale-100"
         )}
       >
-          <BaseSummaryCards />
+          {/* 1. BARRA CONTESTO (Le nuove card compatte) */}
+          <div className="mb-4">
+             <BaseSummaryCards />
+          </div>
 
+          {/* 2. AREA DI LAVORO (Upload + Pipeline) */}
           <section
             className={classNames(
-              "grid gap-6 mt-6 transition-all duration-500",
+              "grid gap-6 transition-all duration-500",
               showMainPanel
-                ? "lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]"
-                : "max-w-3xl mx-auto"
+                ? "lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]" // Split view quando c'è il pannello
+                : "grid-cols-1" // Full width quando c'è solo l'upload
             )}
           >
             <div className="w-full transition-all duration-500">
@@ -142,7 +146,6 @@ const BaseHome = () => {
 
       {baseJourneyVisibility?.refine ? <RefinementPanel /> : null}
       
-      {/* DYNAMIC ISLAND: Sempre visibile, gestisce lei la sua logica interna */}
       <PipelineStatusBar />
     </div>
   );

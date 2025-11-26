@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React from "react";
 import { useAppContext } from "../../hooks/useAppContext";
 import { 
   Mic, 
@@ -7,7 +7,8 @@ import {
   FileCode, 
   XCircle, 
   CheckCircle2,
-  Waves 
+  Waves,
+  Music
 } from "../../components/icons";
 import { classNames } from "../../utils/classNames";
 
@@ -18,7 +19,7 @@ export default function UploadCard({ journeyStage }) {
     stopRecording,
     elapsed,
     fmtTime,
-    level,
+    level, // Valore raw da 0.0 a 1.0
     onPickFile,
     handleMarkdownFilePicked,
     handleTextFilePicked,
@@ -35,49 +36,47 @@ export default function UploadCard({ journeyStage }) {
   const isRecording = journeyStage === "record" && recording;
   const hasAudio = !!audioBlob;
 
-  // Helper per le card di upload secondarie
-  const UploadButton = ({ icon: Icon, label, subLabel, onClick, active, fileInputId }) => (
+  // Componente Bottone Upload Compatto
+  const UploadButton = ({ icon: Icon, label, subLabel, onClick, active, disabled }) => (
     <button
       onClick={onClick}
-      disabled={busy || isRecording}
+      disabled={disabled}
       className={classNames(
-        "group relative flex flex-col items-start gap-2 rounded-xl border p-4 text-left transition-all duration-200",
+        "group relative flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all duration-200 w-full",
         active 
-          ? "border-emerald-500/30 bg-emerald-500/5" 
-          : "border-white/10 bg-[#18181b] hover:border-white/20 hover:bg-[#202023]",
-        (busy || isRecording) && "opacity-50 cursor-not-allowed"
+          ? "border-emerald-500/30 bg-emerald-500/5 ring-1 ring-emerald-500/20" 
+          : "border-white/5 bg-[#18181b] hover:border-white/10 hover:bg-[#202023]",
+        disabled && "opacity-40 cursor-not-allowed"
       )}
     >
       <div className={classNames(
-        "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors",
         active ? "bg-emerald-500/20 text-emerald-400" : "bg-white/5 text-zinc-400 group-hover:text-zinc-200"
       )}>
         <Icon className="h-4 w-4" />
       </div>
-      <div>
-        <p className={classNames("text-sm font-semibold", active ? "text-emerald-100" : "text-zinc-200")}>
+      <div className="min-w-0 flex-1">
+        <p className={classNames("text-xs font-bold uppercase tracking-wide", active ? "text-emerald-100" : "text-zinc-300")}>
           {label}
         </p>
-        <p className="text-[10px] text-zinc-500 uppercase tracking-wide">{subLabel}</p>
+        <p className="truncate text-[10px] text-zinc-500 font-medium">{subLabel}</p>
       </div>
       {active && (
-        <div className="absolute right-3 top-3 text-emerald-500">
-          <CheckCircle2 className="h-4 w-4" />
-        </div>
+        <CheckCircle2 className="h-4 w-4 text-emerald-500 animate-in zoom-in duration-200" />
       )}
     </button>
   );
 
   return (
-    <div className="flex flex-col gap-6 rounded-2xl border border-white/10 bg-[#121214] p-6 shadow-sm transition-all">
+    <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[#121214] p-5 shadow-sm transition-all">
       
       {/* HEADER: Titolo e Timer */}
-      <div className="flex items-center justify-between border-b border-white/5 pb-4">
-        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
-          <Mic className={classNames("h-4 w-4", isRecording && "text-rose-500 animate-pulse")} />
+      <div className="flex items-center justify-between border-b border-white/5 pb-3">
+        <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">
+          <div className={classNames("h-1.5 w-1.5 rounded-full", isRecording ? "bg-rose-500 animate-pulse" : "bg-zinc-600")} />
           Acquisizione Input
         </div>
-        <div className="font-mono text-sm font-medium text-zinc-400">
+        <div className="font-mono text-xs font-medium text-zinc-400 bg-white/5 px-2 py-1 rounded-md border border-white/5">
           {isRecording ? (
             <span className="text-rose-400">{fmtTime(elapsed)}</span>
           ) : (
@@ -87,54 +86,76 @@ export default function UploadCard({ journeyStage }) {
       </div>
 
       {/* AREA PRINCIPALE: Registrazione */}
-      <div className="relative">
-        {/* Visualizer Sfondo (Opzionale, per effetto wow) */}
-        {isRecording && (
-           <div className="absolute inset-0 flex items-center justify-center opacity-20 pointer-events-none">
-              <div className="h-16 w-full bg-gradient-to-r from-transparent via-rose-500 to-transparent animate-pulse" style={{ transform: `scaleY(${Math.max(0.2, level * 2)})` }} />
-           </div>
-        )}
-
+      <div className="relative overflow-hidden rounded-xl">
+        
         {!hasAudio ? (
           <button
             onClick={isRecording ? stopRecording : startRecording}
             disabled={busy}
             className={classNames(
-              "group flex w-full items-center justify-center gap-3 rounded-2xl border py-8 transition-all duration-300",
+              "group flex w-full items-center justify-center gap-4 border py-10 transition-all duration-300 relative z-10 overflow-hidden",
+              // Aumentato py-10 per dare più spazio all'onda
               isRecording
-                ? "border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20"
-                : "border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 hover:border-emerald-500/50"
+                ? "border-rose-500/30 bg-rose-500/5 hover:bg-rose-500/10"
+                : "border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/40"
             )}
+            style={{ borderRadius: 'inherit' }}
           >
+            {/* === EFFETTO ONDA SOTTOFONDO === */}
+            {isRecording && (
+               <div className="absolute inset-0 flex items-center justify-center opacity-30 pointer-events-none z-0">
+                  <div 
+                    className="h-full w-full bg-gradient-to-r from-transparent via-rose-500 to-transparent transition-transform duration-75 ease-out blur-xl" 
+                    // Moltiplichiamo level (0-1) per scalare l'onda verticalmente
+                    style={{ transform: `scaleY(${Math.max(0.1, level * 15)}) scaleX(1.5)` }} 
+                  />
+               </div>
+            )}
+
+            {/* Icona Pulsante */}
             <div className={classNames(
-              "flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-all",
-              isRecording ? "bg-rose-500 text-white animate-pulse" : "bg-emerald-500 text-slate-900 group-hover:scale-110"
+              "flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-all duration-300 z-10",
+              isRecording 
+                ? "bg-rose-500 text-white scale-110 shadow-rose-900/20" 
+                : "bg-emerald-500 text-slate-900 group-hover:scale-105 shadow-emerald-900/20"
             )}>
-              {isRecording ? <div className="h-5 w-5 rounded bg-white" /> : <Mic className="h-7 w-7" />}
+              {isRecording ? (
+                <div className="h-4 w-4 rounded-sm bg-white" />
+              ) : (
+                <Mic className="h-6 w-6" />
+              )}
             </div>
-            <div className="text-left">
-              <p className={classNames("text-lg font-bold", isRecording ? "text-rose-100" : "text-emerald-100")}>
+            
+            {/* Testo */}
+            <div className="text-left z-10">
+              <p className={classNames("text-base font-bold", isRecording ? "text-rose-100" : "text-white")}>
                 {isRecording ? "Ferma Registrazione" : "Avvia Registrazione"}
               </p>
-              <p className={classNames("text-xs", isRecording ? "text-rose-300" : "text-emerald-400/70")}>
-                {isRecording ? "Clicca per terminare e processare" : "Usa il microfono del dispositivo"}
+              <p className={classNames("text-[11px]", isRecording ? "text-rose-300/80" : "text-zinc-400")}>
+                {isRecording ? "Clicca per terminare" : "Usa il microfono del dispositivo"}
               </p>
             </div>
           </button>
         ) : (
-          <div className="flex w-full items-center justify-between rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4">
-             <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
-                   <Waves className="h-6 w-6" />
+          // Stato: Audio Acquisito
+          <div className="flex w-full items-center justify-between border border-emerald-500/20 bg-emerald-500/5 p-4 z-10 relative" style={{ borderRadius: 'inherit' }}>
+             <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/10">
+                   <Waves className="h-5 w-5" />
                 </div>
                 <div>
-                   <p className="text-sm font-bold text-white">Audio Acquisito</p>
-                   <p className="text-xs text-emerald-200/60">Pronto per l'elaborazione</p>
+                   <p className="text-sm font-bold text-white">Audio Pronto</p>
+                   <p className="text-[10px] text-emerald-200/60 font-mono">
+                       {audioBlob.name || "Registrazione vocale"} • {(audioBlob.size / 1024 / 1024).toFixed(2)} MB
+                   </p>
                 </div>
              </div>
              {!busy && (
-               <button onClick={resetAll} className="rounded-lg p-2 text-zinc-500 hover:bg-white/10 hover:text-rose-400 transition">
-                  <XCircle className="h-5 w-5" />
+               <button 
+                onClick={resetAll} 
+                className="flex items-center gap-1.5 rounded-lg border border-white/5 bg-black/20 px-3 py-1.5 text-[10px] font-medium text-zinc-400 hover:bg-rose-500/10 hover:text-rose-400 hover:border-rose-500/20 transition"
+               >
+                  <XCircle className="h-3.5 w-3.5" /> Annulla
                </button>
              )}
           </div>
@@ -143,94 +164,54 @@ export default function UploadCard({ journeyStage }) {
 
       {/* GRIGLIA UPLOAD SECONDARI */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {/* 1. Audio File */}
         <UploadButton 
-            icon={Upload} 
-            label="Carica Audio" 
+            icon={Music} 
+            label="Audio File" 
             subLabel="MP3, WAV, M4A" 
             onClick={() => fileInputRef.current?.click()}
-            active={hasAudio && !recording} // Active se c'è audio ma non stiamo registrando
+            active={hasAudio && !recording}
+            disabled={busy || isRecording}
         />
-        <input
-            type="file"
-            accept="audio/*"
-            className="hidden"
-            ref={fileInputRef}
-            onChange={onPickFile}
-        />
-
-        {/* 2. Markdown */}
         <UploadButton 
             icon={FileCode} 
-            label="Carica .md" 
-            subLabel="Markdown" 
+            label="Markdown" 
+            subLabel="Carica .md" 
             onClick={() => markdownInputRef.current?.click()}
             active={!!lastMarkdownUpload}
+            disabled={busy || isRecording}
         />
-        <input
-            type="file"
-            accept=".md,.markdown"
-            className="hidden"
-            ref={markdownInputRef}
-            onChange={handleMarkdownFilePicked}
-        />
-
-        {/* 3. Text */}
         <UploadButton 
             icon={FileText} 
-            label="Carica .txt" 
-            subLabel="Testo Semplice" 
+            label="Testo" 
+            subLabel="Carica .txt" 
             onClick={() => textInputRef.current?.click()}
             active={!!lastTextUpload}
+            disabled={busy || isRecording}
         />
-        <input
-            type="file"
-            accept=".txt"
-            className="hidden"
-            ref={textInputRef}
-            onChange={handleTextFilePicked}
-        />
+        
+        {/* Input nascosti */}
+        <input type="file" accept="audio/*" className="hidden" ref={fileInputRef} onChange={onPickFile} />
+        <input type="file" accept=".md,.markdown" className="hidden" ref={markdownInputRef} onChange={handleMarkdownFilePicked} />
+        <input type="file" accept=".txt" className="hidden" ref={textInputRef} onChange={handleTextFilePicked} />
       </div>
 
-      {/* DROPZONE (Visiva) */}
-      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02] py-6 text-center transition-colors hover:border-white/20 hover:bg-white/[0.04]">
-        <p className="text-sm font-medium text-zinc-300">Trascina qui i tuoi file</p>
-        <p className="mt-1 text-xs text-zinc-500">Supporta audio, markdown e testo.</p>
+      {/* DROPZONE */}
+      <div className="relative group rounded-lg border border-dashed border-white/5 bg-white/[0.01] py-3 text-center transition-colors hover:border-white/10 hover:bg-white/[0.03]">
+        <p className="text-[10px] font-medium text-zinc-500 group-hover:text-zinc-400">
+            Oppure trascina qui i tuoi file per caricarli
+        </p>
       </div>
 
-      {/* STATUS FOOTER */}
-      <div className="space-y-2 rounded-xl bg-black/20 p-4 text-xs">
-         <div className="flex justify-between items-center">
-            <span className="text-zinc-500 uppercase tracking-wider font-bold text-[10px]">Stato Input</span>
-            <span className="text-zinc-600">{busy ? "Elaborazione..." : "In attesa"}</span>
-         </div>
-         
-         <div className="h-px bg-white/5 w-full my-2" />
-
-         <div className="flex justify-between">
-            <span className="text-zinc-400">Sorgente Audio</span>
-            <span className={hasAudio ? "text-emerald-400" : "text-zinc-600"}>
-                {hasAudio ? (recording ? "Registrazione..." : "Caricato") : "Vuoto"}
-            </span>
-         </div>
-         <div className="flex justify-between">
-            <span className="text-zinc-400">Markdown / Testo</span>
-            <span className={lastMarkdownUpload || lastTextUpload ? "text-indigo-400" : "text-zinc-600"}>
-                {lastMarkdownUpload ? "Markdown Caricato" : lastTextUpload ? "Testo Caricato" : "Vuoto"}
-            </span>
-         </div>
-
-         {/* Input Level Bar */}
-         <div className="mt-3">
-            <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
-                <span>Livello Mic</span>
-                <span>{Math.round(level * 100)}%</span>
+      {/* FOOTER DI STATO (PULITO & ALLINEATO A DESTRA) */}
+      <div className="flex items-center justify-end gap-6 rounded-lg bg-black/30 border border-white/5 px-4 py-2.5">
+         <div className="flex items-center gap-4 text-[10px] font-medium text-zinc-500">
+            <div className={classNames("flex items-center gap-1.5", hasAudio ? "text-emerald-400" : "")}>
+                <div className={classNames("h-1.5 w-1.5 rounded-full", hasAudio ? "bg-emerald-400" : "bg-zinc-700")} />
+                Audio
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
-                <div 
-                    className="h-full bg-emerald-500 transition-all duration-75" 
-                    style={{ width: `${Math.min(100, level * 100)}%` }} 
-                />
+            <div className={classNames("flex items-center gap-1.5", lastMarkdownUpload || lastTextUpload ? "text-indigo-400" : "")}>
+                <div className={classNames("h-1.5 w-1.5 rounded-full", lastMarkdownUpload || lastTextUpload ? "bg-indigo-400" : "bg-zinc-700")} />
+                Testo
             </div>
          </div>
       </div>

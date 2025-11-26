@@ -7,10 +7,11 @@ import { Button, IconButton } from "../ui";
 import SettingsDrawer from "./SettingsDrawer";
 import CommandPalette from "../CommandPalette";
 
+// === 1. NUOVA NOMENCLATURA ===
 const NAV_ITEMS = [
-  { to: "/create", label: "Create" },
-  { to: "/library", label: "Library" },
-  { to: "/advanced", label: "Advanced A" },
+  { to: "/create", label: "Home" },      // Era Create
+  { to: "/library", label: "Archivio" },  // Era Library
+  { to: "/advanced", label: "Configura" }, // Era Advanced A
 ];
 
 const OnboardingBanner = () => {
@@ -76,17 +77,27 @@ const AppShell = () => {
         "text-zinc-100",
       )}
     >
-      <div className="mx-auto max-w-5xl px-4 py-8">
+      <div className="mx-auto max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8">
         <header className="flex flex-col gap-6">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex items-center">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            
+            {/* LOGO */}
+            <div className="flex items-center gap-3">
               <img
                 src={customLogo || logoAsset}
                 alt="ThinkDoc Logo"
-                className="h-14 w-auto object-contain md:h-16 lg:h-20"
+                className="h-10 w-auto object-contain"
               />
+              <div className="hidden sm:block h-6 w-px bg-white/10 mx-2" />
+              <span className="hidden sm:block text-sm font-medium text-zinc-400 tracking-wide">
+                Intelligence Platform
+              </span>
             </div>
-            <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+
+            {/* NAVIGAZIONE & AZIONI */}
+            <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
+              
+              {/* MENU CENTRALE */}
               <nav
                 aria-label="Sezioni applicazione"
                 className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 shadow-subtle backdrop-blur"
@@ -97,10 +108,10 @@ const AppShell = () => {
                     to={item.to}
                     className={({ isActive }) =>
                       cx(
-                        "rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition",
+                        "rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition-all duration-200",
                         isActive
-                          ? "bg-indigo-500/70 text-white shadow-sm"
-                          : "text-white/60 hover:bg-white/10 hover:text-white/85",
+                          ? "bg-indigo-600 text-white shadow-md shadow-indigo-900/20"
+                          : "text-zinc-400 hover:bg-white/5 hover:text-white",
                       )
                     }
                   >
@@ -108,30 +119,40 @@ const AppShell = () => {
                   </NavLink>
                 ))}
               </nav>
+
+              <div className="h-6 w-px bg-white/10 mx-1 hidden sm:block" />
+
+              {/* PULSANTE IMPOSTAZIONI (Rinominato) */}
               <Button
                 type="button"
                 variant="ghost"
-                className="gap-2 px-3 text-sm font-medium text-surface-200 hover:text-white"
+                className="gap-2 px-3 text-xs font-medium text-zinc-400 hover:text-white hover:bg-white/5"
                 onClick={() => {
-                  openSettingsDrawer?.("workspace");
+                  // Apre il drawer generico, non solo workspace
+                  openSettingsDrawer?.(); 
                 }}
                 leadingIcon={Settings}
               >
-                Impostazioni workspace
+                Impostazioni
               </Button>
+
+              {/* LOGOUT */}
               <Button
                 type="button"
                 variant="ghost"
-                className="gap-2 px-3 text-sm font-medium text-surface-200 hover:text-white"
+                className="gap-2 px-3 text-xs font-medium text-zinc-400 hover:text-rose-400 hover:bg-white/5"
                 onClick={handleLogout}
                 leadingIcon={LogOut}
               >
-                Logout
+                Esci
               </Button>
+
+              {/* FULLSCREEN */}
               <IconButton
                 variant="ghost"
                 onClick={toggleFullScreen}
                 aria-label="Attiva schermo intero"
+                className="text-zinc-400 hover:text-white"
               >
                 <Maximize className="h-4 w-4" />
               </IconButton>
@@ -139,10 +160,10 @@ const AppShell = () => {
           </div>
         </header>
 
-        <div className="mt-6 space-y-6">
+        <div className="mt-8 space-y-6">
           <OnboardingBanner />
 
-          <main>
+          <main className="animate-in fade-in duration-500">
             <Outlet />
           </main>
         </div>
@@ -155,4 +176,3 @@ const AppShell = () => {
 };
 
 export default AppShell;
-

@@ -257,6 +257,15 @@ export const Maximize = (props) => (
   </IconBase>
 );
 
+export const Minimize = (props) => (
+  <IconBase {...props}>
+    <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+    <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+    <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+    <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+  </IconBase>
+);
+
 export const Sparkles = (props) => (
   <IconBase {...props}>
     <path d="m5 3 1.5 3.5L10 8l-3.5 1.5L5 13 3.5 9.5 0 8l3.5-1.5z" transform="translate(4 2)" />
@@ -309,8 +318,6 @@ export const ChevronRight = (props) => (
   </IconBase>
 );
 
-// --- NUOVE ICONE AGGIUNTE ---
-
 export const ChevronDown = (props) => (
   <IconBase {...props}>
     <path d="m6 9 6 6 6-6" />
@@ -338,7 +345,40 @@ export const Image = (props) => (
   </IconBase>
 );
 
-// ----------------------------
+export const Music = (props) => (
+  <IconBase {...props}>
+    <path d="M9 18V5l12-2v13" />
+    <circle cx="6" cy="18" r="3" />
+    <circle cx="18" cy="16" r="3" />
+  </IconBase>
+);
+
+export const LayoutDashboard = (props) => (
+  <IconBase {...props}>
+    <rect width="7" height="9" x="3" y="3" rx="1" />
+    <rect width="7" height="5" x="14" y="3" rx="1" />
+    <rect width="7" height="9" x="14" y="12" rx="1" />
+    <rect width="7" height="5" x="3" y="16" rx="1" />
+  </IconBase>
+);
+
+export const Library = (props) => (
+  <IconBase {...props}>
+    <path d="m16 6 4 14" />
+    <path d="M12 6v14" />
+    <path d="M8 8v12" />
+    <path d="M4 4v16" />
+  </IconBase>
+);
+
+export const Settings2 = (props) => (
+  <IconBase {...props}>
+    <path d="M20 7h-9" />
+    <path d="M14 17H5" />
+    <circle cx="17" cy="17" r="3" />
+    <circle cx="7" cy="7" r="3" />
+  </IconBase>
+);
 
 export const TimerIcon = Timer;
 export const LinkIcon = Link;
@@ -372,6 +412,7 @@ export default {
   XCircle,
   Info,
   Maximize,
+  Minimize,
   Sparkles,
   Trash2,
   Search,
@@ -382,5 +423,9 @@ export default {
   ChevronDown,
   ChevronUp,
   Edit3,
-  Image // <--- Aggiunta all'export di default
+  Image,
+  Music,
+  LayoutDashboard,
+  Library,
+  Settings2
 };
