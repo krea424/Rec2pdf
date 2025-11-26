@@ -11,6 +11,14 @@
         "ingest": "node scripts/ingest.js",
         "test:rag-eval": "node tests/rag_evaluation/evaluate.js"
     },
+    "scripts": {
+    "start": "node server.js",
+    "dev": "NODE_ENV=development nodemon server.js",
+    "test": "jest",
+    "ingest": "node scripts/ingest.js",
+    "test:rag-eval": "node tests/rag_evaluation/evaluate.js",
+    "tunnel": "ngrok http --domain=unbeamed-yong-unceremoniously.ngrok-free.dev 8080"
+  },
     "dependencies": {
         "@google/generative-ai": "^0.11.5",
         "@supabase/supabase-js": "^2.74.0",

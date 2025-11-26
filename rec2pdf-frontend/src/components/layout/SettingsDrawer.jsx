@@ -18,10 +18,10 @@ const AdvancedBackendSection = lazy(
   () => import("../../features/settings/sections/AdvancedBackendSection"),
 );
 
-// Configurazione Navigazione
+// Configurazione Navigazione (Traduzioni e Icone)
 const BASE_NAV = [
   { key: "recording", label: "Registrazione", icon: Mic },
-  { key: "diagnostics", label: "Diagnostics", icon: Bug },
+  { key: "diagnostics", label: "Diagnostica", icon: Bug }, // Tradotto
   { key: "workspace", label: "Workspace", icon: Folder },
   { key: "branding", label: "Branding", icon: Palette },
   { key: "prompts", label: "Prompt Intelligence", icon: Sparkles }, 
@@ -172,7 +172,7 @@ export default function SettingsDrawer({ open, onClose }) {
       open={open}
       onClose={clearStateOnClose}
       title="Impostazioni"
-      description="Configura Rec2pdf e monitora lo stato del backend."
+      description="Gestisci le preferenze globali e monitora lo stato del sistema."
       className="max-w-3xl"
     >
       <div>
