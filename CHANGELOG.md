@@ -1,6 +1,35 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [14.0.0] - 2025-11-27
+
+### 🚀 Major Architectural Changes (The "Supersonic" Update)
+Questa release segna un cambio di paradigma nelle prestazioni e nell'affidabilità del sistema.
+
+- **Hybrid Transcription Engine (Groq + WhisperX):** Introdotto un router intelligente per la trascrizione audio:
+  - **Groq LPU (Fast Mode):** Utilizzato per note e audio singolo speaker. Trascrive 10 minuti in <15 secondi (~37x più veloce rispetto alla v13). Include compressione FFmpeg automatica (32kbps) per massimizzare la durata supportata.
+  - **WhisperX (Meeting Mode):** Mantenuto per i casi d'uso che richiedono diarizzazione (riconoscimento speaker), ora ottimizzato con quantizzazione `int8` per ridurre il carico CPU.
+- **Direct-to-Storage Upload:** Il frontend ora carica i file audio direttamente su Supabase Storage, bypassando il backend. Questo elimina i colli di bottiglia di memoria su Cloud Run e risolve definitivamente i fallimenti di upload (HTTP 0) su reti mobili e per file di grandi dimensioni (>30MB).
+
+### 🎨 UI/UX & Dashboard Redesign
+- **Nuova Dashboard:** Layout completamente ridisegnato con navigazione localizzata (Home, Archivio, Configura).
+- **Pipeline "Dynamic Island":** La visualizzazione dello stato della pipeline è ora più compatta e informativa, nascondendo i log tecnici a favore di uno stato visivo chiaro.
+- **Upload Card Refactoring:** Nuovi pulsanti compatti e ripristino del visualizzatore a onde organiche durante la registrazione.
+- **Automazione Meeting:** Attivando lo switch "Modalità Riunione", il sistema preseleziona automaticamente il prompt e il template corretti per i verbali.
+- **Doppio Pannello Editor:** Introdotta la visualizzazione split-screen per modificare Markdown e vedere l'anteprima PDF simultaneamente.
+
+### ⚡️ Infrastructure & Performance
+- **Docker Optimization:** Riduzione drastica della dimensione dell'immagine Docker (da ~10GB a ~3.4GB) grazie a build multi-stage ottimizzate.
+- **PDF Engine Upgrade:** Passaggio definitivo a **Weasyprint** come motore di rendering PDF primario per una migliore compatibilità CSS.
+- **Polling Adattivo:** Migliorata la logica di polling (`useJobPolling`) per ridurre il traffico di rete e aggiornare la UI più velocemente al completamento dei job.
+- **Webhook Routing:** Implementato routing basato sull'ambiente (Development/Production) per i trigger asincroni.
+
+### 🐛 Fixed
+- Risolto crash upload su iPhone per registrazioni lunghe (>6 min) grazie al Direct Upload.
+- Risolto problema di posizionamento logo nel template `executive_brief`.
+- Corretto scroll della preview su dispositivi mobile.
+- Fix su reset dello stato applicazione dopo logout o completamento pipeline.
+
 ## [13.0.0] - 2025-11-19
 
 ### Added

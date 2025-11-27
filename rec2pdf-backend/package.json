@@ -1,6 +1,6 @@
 {
     "name": "rec2pdf-backend",
-    "version": "13.0.0",
+    "version": "14.0.0",
     "private": true,
     "description": "Backend HTTP per pipeline Rec→Whisper→genMD→PPUBR",
     "main": "server.js",

@@ -21,6 +21,18 @@ L'ultima versione introduce una **nuova architettura asincrona** basata su "Job 
 - **Accesso Multi-Utente**: Architettura sicura basata su Supabase con policy di Row Level Security (RLS).
 - **Ambiente di Sviluppo Dockerizzato**: Supporto completo per lo sviluppo locale tramite Docker.
 
+## Architettura (v14 - Hybrid & Direct-Upload)
+
+Il sistema utilizza un'architettura ibrida e asincrona progettata per velocità ("Fast Mode") e profondità di analisi ("Meeting Mode").
+
+1.  **Direct Upload (Client-Side):** Il Frontend carica l'audio direttamente su Supabase Storage. Questo garantisce resilienza su reti mobili e bypassa i limiti di timeout/dimensione del server.
+2.  **Job Queue:** A upload completato, il Frontend crea un record nella tabella `jobs`. Un Webhook sicuro attiva il Worker.
+3.  **Hybrid Worker (Backend):** Il backend analizza la richiesta e instrada il lavoro:
+    *   **Groq LPU:** Per note personali e audio singolo speaker. Velocità estrema (trascrizione quasi istantanea).
+    *   **WhisperX (Locale):** Per riunioni multi-speaker. Esegue diarizzazione e allineamento temporale preciso.
+4.  **RAG & AI Synthesis:** Il testo viene arricchito con il contesto della Knowledge Base (vettoriale) e processato da LLM (Gemini/OpenAI) per generare il documento strutturato.
+5.  **PDF Rendering:** Generazione PDF tipografica tramite Weasyprint con template HTML/CSS personalizzabili.
+
 ## Architettura (v13 - Asincrona)
 
 Il sistema utilizza un pattern a **"Job Queue"** per garantire l'elaborazione asincrona e robusta dei file.
