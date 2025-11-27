@@ -7598,31 +7598,45 @@ app.get('/api/jobs/:id', authenticateRequest, async (req, res) => {
 // == REFACTORING ASYNC: fine endpoint stato job ==
 
 
+// --- INIZIO NUOVO ENDPOINT REC2PDF (IBRIDO) ---
 app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
   const cleanupFiles = new Set();
 
   try {
-    if (!req.files || !req.files.audio) {
-      return res.status(400).json({ ok: false, message: 'Nessun file audio', logs: [], stageEvents: [] });
+    const userId = req.user?.id || 'anonymous';
+    let audioStoragePath = '';
+    let originalName = 'audio';
+
+    // 1. LOGICA IBRIDA: Controllo input
+    // CASO A: Il frontend ha già caricato il file (Nuovo metodo Mobile/Large files)
+    if (req.body.audioStoragePath) {
+        audioStoragePath = req.body.audioStoragePath;
+        // Tentiamo di recuperare il nome originale dal path o usiamo un default
+        originalName = path.basename(audioStoragePath);
+        console.log(`[REC2PDF] Modalità Direct-Upload rilevata. Path: ${audioStoragePath}`);
+    } 
+    // CASO B: Il frontend ha inviato il file fisico (Vecchio metodo / Fallback)
+    else if (req.files && req.files.audio && req.files.audio.length > 0) {
+        const audioFile = req.files.audio[0];
+        originalName = audioFile.originalname || 'audio';
+        const audioBuffer = await fsp.readFile(audioFile.path);
+        cleanupFiles.add(audioFile.path);
+        
+        const sanitizedOriginalName = sanitizeStorageFileName(originalName, 'audio');
+        audioStoragePath = `uploads/${userId}/${Date.now()}_${sanitizedOriginalName}`;
+
+        console.log(`[REC2PDF] Modalità Legacy Upload. Carico su: ${audioStoragePath}`);
+        await uploadFileToBucket(
+          SUPABASE_AUDIO_BUCKET,
+          audioStoragePath,
+          audioBuffer,
+          audioFile.mimetype || 'application/octet-stream'
+        );
+    } else {
+        return res.status(400).json({ ok: false, message: 'Nessun audio fornito (manca sia il file che il path).' });
     }
 
-    const audioFile = req.files.audio[0];
-    const userId = req.user?.id || 'anonymous';
-    const audioBuffer = await fsp.readFile(audioFile.path);
-    cleanupFiles.add(audioFile.path);
-    const sanitizedOriginalName = sanitizeStorageFileName(audioFile.originalname || 'audio', 'audio');
-    const audioStoragePath = `uploads/${userId}/${Date.now()}_${sanitizedOriginalName}`;
-
-    await uploadFileToBucket(
-      SUPABASE_AUDIO_BUCKET,
-      audioStoragePath,
-      audioBuffer,
-      audioFile.mimetype || 'application/octet-stream'
-    );
-    // === DEBUG UPLOAD ===
-    console.log(`[REC2PDF ENDPOINT] File audio caricato con successo su: ${audioStoragePath}`);
-// === FINE DEBUG ===
-
+    // 2. Preparazione Payload (Comune a entrambi i casi)
     const bodyPayload = req.body && typeof req.body === 'object' ? { ...req.body } : {};
     const workspaceId = getWorkspaceIdFromRequest(req);
     const aiOverrides = extractAiProviderOverrides(req);
@@ -7652,68 +7666,61 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
       summary: bodyPayload.summary,
       aiTextProvider: aiOverrides.text,
       aiEmbeddingProvider: aiOverrides.embedding,
-      originalAudioName: audioFile.originalname || 'audio',
-      sanitizedAudioName: sanitizedOriginalName,
+      // Usiamo le variabili calcolate sopra
+      originalAudioName: originalName,
+      sanitizedAudioName: sanitizeStorageFileName(originalName, 'audio'),
     };
 
     if (typeof req.user?.email === 'string') {
       payload.userEmail = req.user.email;
     }
 
+    // Gestione Logo (Se presente come file)
     if (req.files && req.files.pdfLogo && req.files.pdfLogo.length) {
-      const logoFile = req.files.pdfLogo[0];
-      const ensuredPath = await ensureTempFileHasExtension(logoFile);
-      if (ensuredPath) {
-        cleanupFiles.add(ensuredPath);
-        if (supabase) {
-          try {
-            const uploadResult = await uploadProfileLogoToSupabase(ensuredPath, {
-              workspaceId: workspaceId || 'job',
-              profileId: payload.workspaceProfileId || payload.slug || 'profile',
-              fileName: logoFile.originalname || 'logo.pdf',
-              contentType: logoFile.mimetype || guessLogoContentType(logoFile.originalname || 'logo.pdf'),
-            });
-            payload.pdfLogoStoragePath = uploadResult.storagePath;
-            payload.customLogoBucket = SUPABASE_LOGO_BUCKET;
-          } catch (logoError) {
-            console.error('⚠️ Upload logo personalizzato fallito:', logoError?.message || logoError);
-          }
-        }
-      }
+       const logoFile = req.files.pdfLogo[0];
+       const ensuredPath = await ensureTempFileHasExtension(logoFile);
+       if (ensuredPath) {
+         cleanupFiles.add(ensuredPath);
+         if (supabase) {
+           try {
+             const uploadResult = await uploadProfileLogoToSupabase(ensuredPath, {
+               workspaceId: workspaceId || 'job',
+               profileId: payload.workspaceProfileId || payload.slug || 'profile',
+               fileName: logoFile.originalname || 'logo.pdf',
+               contentType: logoFile.mimetype || guessLogoContentType(logoFile.originalname || 'logo.pdf'),
+             });
+             payload.pdfLogoStoragePath = uploadResult.storagePath;
+             payload.customLogoBucket = SUPABASE_LOGO_BUCKET;
+           } catch (logoError) {
+             console.error('⚠️ Upload logo personalizzato fallito:', logoError?.message || logoError);
+           }
+         }
+       }
     }
 
-   // == REFACTORING ASYNC: Creazione job asincrono ==
-   if (!supabase) {
-    throw new Error('Supabase non configurato per la creazione del job');
-  }
+    // Creazione Job Asincrono
+    if (!supabase) {
+      throw new Error('Supabase non configurato per la creazione del job');
+    }
 
-  // ============================================================
-  // == INIZIO MODIFICA: Lettura Environment (Routing) ==
-  // ============================================================
-  // Leggiamo cosa ci ha mandato il frontend. Se manca, assumiamo 'production' per sicurezza.
-  const rawEnv = req.body.environment; 
-  // Validazione stretta: accettiamo solo 'development' o 'production'
-  const jobEnvironment = rawEnv === 'development' ? 'development' : 'production';
-  
-  console.log(`[Backend] Creazione job per ambiente: ${jobEnvironment}`);
-  // ============================================================
+    // Environment Injection
+    const rawEnv = req.body.environment; 
+    const jobEnvironment = rawEnv === 'development' ? 'development' : 'production';
 
-  const jobPayload = {
-    user_id: userId,
-    user_email: req.user?.email || '',
-    input_file_path: audioStoragePath,
-    request_payload: payload,
-    status: 'pending',
-    environment: jobEnvironment, // <--- CAMPO AGGIUNTO QUI
-  };
+    const jobPayload = {
+      user_id: userId,
+      user_email: req.user?.email || '',
+      input_file_path: audioStoragePath, // <--- PUNTO CRITICO: Usiamo il path risolto sopra
+      request_payload: payload,
+      status: 'pending',
+      environment: jobEnvironment,
+    };
 
-  const { data: createdJob, error: jobError } = await supabase
-    .from(SUPABASE_JOBS_TABLE)
-    .insert(jobPayload)
-    .select()
-    .single();
-
-    
+    const { data: createdJob, error: jobError } = await supabase
+      .from(SUPABASE_JOBS_TABLE)
+      .insert(jobPayload)
+      .select()
+      .single();
 
     if (jobError || !createdJob) {
       console.error('❌ Creazione job fallita:', jobError?.message || jobError);
@@ -7721,30 +7728,19 @@ app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }
     }
 
     return res.status(202).json({ ok: true, jobId: createdJob.id });
+
   } catch (error) {
-    const message = String(error && error.message ? error.message : error);
-    const responsePayload = { ok: false, message };
-    if (error && typeof error === 'object') {
-      if (Array.isArray(error.logs)) {
-        responsePayload.logs = error.logs;
-      }
-      if (Array.isArray(error.stageEvents)) {
-        responsePayload.stageEvents = error.stageEvents;
-      }
-    }
-    return res.status(500).json(responsePayload);
+     const message = String(error && error.message ? error.message : error);
+     // Logghiamo l'errore per debug
+     console.error('[REC2PDF ERROR]', error);
+     return res.status(500).json({ ok: false, message });
   } finally {
-    try { if (req.files && req.files.audio) await safeUnlink(req.files.audio[0].path); } catch { }
-    try { if (req.files && req.files.pdfLogo) await safeUnlink(req.files.pdfLogo[0].path); } catch { }
-    for (const filePath of cleanupFiles) {
-      try {
-        await safeUnlink(filePath);
-      } catch {
-        // ignore
-      }
-    }
+     for (const filePath of cleanupFiles) {
+        try { await safeUnlink(filePath); } catch {}
+     }
   }
 });
+// --- FINE NUOVO ENDPOINT ---
 // == REFACTORING ASYNC: fine creazione job asincrono ==
 
 
@@ -7801,136 +7797,7 @@ app.get('/api/jobs/:id', authenticateRequest, async (req, res) => {
 // == REFACTORING ASYNC: fine endpoint stato job ==
 
 
-app.post('/api/rec2pdf', uploadMiddleware.fields([{ name: 'audio', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]), async (req, res) => {
-  const cleanupFiles = new Set();
 
-  try {
-    if (!req.files || !req.files.audio) {
-      return res.status(400).json({ ok: false, message: 'Nessun file audio', logs: [], stageEvents: [] });
-    }
-
-    const audioFile = req.files.audio[0];
-    const userId = req.user?.id || 'anonymous';
-    const audioBuffer = await fsp.readFile(audioFile.path);
-    cleanupFiles.add(audioFile.path);
-    const sanitizedOriginalName = sanitizeStorageFileName(audioFile.originalname || 'audio', 'audio');
-    const audioStoragePath = `uploads/${userId}/${Date.now()}_${sanitizedOriginalName}`;
-
-    await uploadFileToBucket(
-      SUPABASE_AUDIO_BUCKET,
-      audioStoragePath,
-      audioBuffer,
-      audioFile.mimetype || 'application/octet-stream'
-    );
-
-    const bodyPayload = req.body && typeof req.body === 'object' ? { ...req.body } : {};
-    const workspaceId = getWorkspaceIdFromRequest(req);
-    const aiOverrides = extractAiProviderOverrides(req);
-
-    const payload = {
-      ...bodyPayload,
-      slug: String(bodyPayload.slug || '').trim(),
-      workspaceId,
-      workspaceProjectId: String(bodyPayload.workspaceProjectId || '').trim(),
-      workspaceProjectName: String(bodyPayload.workspaceProjectName || bodyPayload.workspaceProject || '').trim(),
-      workspaceStatus: String(bodyPayload.workspaceStatus || '').trim(),
-      workspaceProfileId: String(bodyPayload.workspaceProfileId || '').trim(),
-      workspaceProfileTemplate: String(bodyPayload.workspaceProfileTemplate || '').trim(),
-      workspaceProfileLabel: String(bodyPayload.workspaceProfileLabel || '').trim(),
-      workspaceProfileLogoPath: String(bodyPayload.workspaceProfileLogoPath || '').trim(),
-      workspaceProfileLogoLabel: String(bodyPayload.workspaceProfileLogoLabel || '').trim(),
-      workspaceProfileLogoDownloadUrl: String(bodyPayload.workspaceProfileLogoDownloadUrl || '').trim(),
-      promptFocus: String(bodyPayload.promptFocus || '').trim(),
-      promptNotes: String(bodyPayload.promptNotes || '').trim(),
-      promptId: String(bodyPayload.promptId || '').trim(),
-      dest: bodyPayload.dest,
-      workspaceProjectDestDir: bodyPayload.workspaceProjectDestDir,
-      projectDestDir: bodyPayload.projectDestDir,
-      workspaceDestDir: bodyPayload.workspaceDestDir,
-      workspaceDestination: bodyPayload.workspaceDestination,
-      title: bodyPayload.title,
-      summary: bodyPayload.summary,
-      aiTextProvider: aiOverrides.text,
-      aiEmbeddingProvider: aiOverrides.embedding,
-      originalAudioName: audioFile.originalname || 'audio',
-      sanitizedAudioName: sanitizedOriginalName,
-    };
-
-    if (typeof req.user?.email === 'string') {
-      payload.userEmail = req.user.email;
-    }
-
-    if (req.files && req.files.pdfLogo && req.files.pdfLogo.length) {
-      const logoFile = req.files.pdfLogo[0];
-      const ensuredPath = await ensureTempFileHasExtension(logoFile);
-      if (ensuredPath) {
-        cleanupFiles.add(ensuredPath);
-        if (supabase) {
-          try {
-            const uploadResult = await uploadProfileLogoToSupabase(ensuredPath, {
-              workspaceId: workspaceId || 'job',
-              profileId: payload.workspaceProfileId || payload.slug || 'profile',
-              fileName: logoFile.originalname || 'logo.pdf',
-              contentType: logoFile.mimetype || guessLogoContentType(logoFile.originalname || 'logo.pdf'),
-            });
-            payload.pdfLogoStoragePath = uploadResult.storagePath;
-            payload.customLogoBucket = SUPABASE_LOGO_BUCKET;
-          } catch (logoError) {
-            console.error('⚠️ Upload logo personalizzato fallito:', logoError?.message || logoError);
-          }
-        }
-      }
-    }
-
-    // == REFACTORING ASYNC: Creazione job asincrono ==
-    if (!supabase) {
-      throw new Error('Supabase non configurato per la creazione del job');
-    }
-
-    const jobPayload = {
-      user_id: userId,
-      user_email: req.user?.email || '',
-      input_file_path: audioStoragePath,
-      request_payload: payload,
-      status: 'pending',
-    };
-
-    const { data: createdJob, error: jobError } = await supabase
-      .from(SUPABASE_JOBS_TABLE)
-      .insert(jobPayload)
-      .select()
-      .single();
-
-    if (jobError || !createdJob) {
-      console.error('❌ Creazione job fallita:', jobError?.message || jobError);
-      throw new Error(jobError?.message || 'Impossibile creare il job di elaborazione');
-    }
-
-    return res.status(202).json({ ok: true, jobId: createdJob.id });
-  } catch (error) {
-    const message = String(error && error.message ? error.message : error);
-    const responsePayload = { ok: false, message };
-    if (error && typeof error === 'object') {
-      if (Array.isArray(error.logs)) {
-        responsePayload.logs = error.logs;
-      }
-      if (Array.isArray(error.stageEvents)) {
-        responsePayload.stageEvents = error.stageEvents;
-      }
-    }
-    return res.status(500).json(responsePayload);
-  } finally {
-    try { if (req.files && req.files.audio) await safeUnlink(req.files.audio[0].path); } catch { }
-    try { if (req.files && req.files.pdfLogo) await safeUnlink(req.files.pdfLogo[0].path); } catch { }
-    for (const filePath of cleanupFiles) {
-      try {
-        await safeUnlink(filePath);
-      } catch {
-        // ignore
-      }
-    }
-  }
-});
 // == REFACTORING ASYNC: fine creazione job asincrono ==
 
 

@@ -4406,14 +4406,18 @@ const handleRefineAndGenerate = useCallback(async () => {
     setBusy(false);
   }
 }, [audioBlob, busy, backendUrl, fetchBodyWithAuth, activePrompt, aiProviderOverrides.text, openRefinementPanel, closeRefinementPanel, setRefinedData, setCueCardAnswers, setErrorBanner, pushLogs]);
-  const processViaBackend=async()=>{
-    const blob=audioBlob;
-    if(!blob) return;
-    const blobSource='name'in blob?'upload':'recording';
-    if(!backendUrl){
-      setErrorBanner({title:'Backend URL mancante',details:`Imposta ${DEFAULT_BACKEND_URL} o il tuo endpoint.`});
+  // --- INIZIO MODIFICA APP.JSX ---
+  const processViaBackend = async () => {
+    const blob = audioBlob;
+    if (!blob) return;
+    
+    // Controllo URL backend
+    if (!backendUrl) {
+      setErrorBanner({ title: 'Backend URL mancante', details: `Imposta ${DEFAULT_BACKEND_URL} o il tuo endpoint.` });
       return;
     }
+
+    // Reset UI
     revealPipelinePanel();
     resetPipelineProgress(true);
     setShowRawLogs(false);
@@ -4422,80 +4426,108 @@ const handleRefineAndGenerate = useCallback(async () => {
     setPdfPath("");
     setMdPath("");
     setErrorBanner(null);
-    const sessionLogs=[];
-    const appendLogs=(entries)=>{
-      const sanitized=(entries||[]).filter(Boolean);
-      if(!sanitized.length) return;
+
+    const sessionLogs = [];
+    const appendLogs = (entries) => {
+      const sanitized = (entries || []).filter(Boolean);
+      if (!sanitized.length) return;
       sessionLogs.push(...sanitized);
-      setLogs(ls=>ls.concat(sanitized));
+      setLogs(ls => ls.concat(sanitized));
     };
-    let refinedPayloadForUpload=null;
-    const refinedValidation=normalizeRefinedDataForUpload(refinedData);
-    if(!refinedValidation.ok){
-      const message=refinedValidation.error||'Dati di raffinazione non validi.';
+
+    // Validazione Refined Data (se presente)
+    let refinedPayloadForUpload = null;
+    const refinedValidation = normalizeRefinedDataForUpload(refinedData);
+    if (!refinedValidation.ok) {
+      const message = refinedValidation.error || 'Dati di raffinazione non validi.';
       handlePipelineEvents([
         { stage: 'upload', status: 'failed', message },
         { stage: 'complete', status: 'failed', message },
-      ],{ animate:false });
+      ], { animate: false });
       appendLogs([`❌ ${message}`]);
       setErrorBanner({ title: 'Dati di raffinazione non validi', details: message });
       setBusy(false);
       return;
     }
     refinedPayloadForUpload = mergePromptStateIntoRefinedPayload(refinedValidation.value, promptState);
-    try{
-      const fd=new FormData();
+
+    try {
       // ============================================================
-      // == INIZIO MODIFICA: Environment Injection (Passo B) ==
+      // STEP 1: UPLOAD DIRETTO A SUPABASE (Client-Side)
       // ============================================================
-      // Vite imposta import.meta.env.DEV a true se sei in locale (npm run dev)
-      // e false se sei in build/produzione.
-      const currentEnv = import.meta.env.DEV ? 'development' : 'production';
-      fd.append('environment', currentEnv);
+      const userId = session?.user?.id || 'anonymous';
+      const timestamp = Date.now();
       
-      // Log di verifica nella console del browser (F12)
-      console.log(`[Frontend] Invio job per ambiente: ${currentEnv}`);
+      // Determina estensione e nome file
+      const mimeType = blob.type || 'audio/webm';
+      let ext = 'webm';
+      if (mimeType.includes('wav')) ext = 'wav';
+      else if (mimeType.includes('mp4') || mimeType.includes('m4a')) ext = 'm4a';
+      else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) ext = 'mp3';
+      
+      // Nome file sicuro
+      const safeSlug = (slug || 'recording').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const fileName = `${timestamp}_${safeSlug}.${ext}`;
+      const storagePath = `uploads/${userId}/${fileName}`;
+
+      appendLogs([`☁️ Upload diretto su Supabase (${fmtBytes(blob.size)})...`]);
+
+      // Esegui upload
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('audio-uploads')
+        .upload(storagePath, blob, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        throw new Error(`Upload Supabase fallito: ${uploadError.message}`);
+      }
+      
+      appendLogs(['✅ Upload completato. Avvio elaborazione backend...']);
+
       // ============================================================
-      // == FINE MODIFICA ==
+      // STEP 2: CHIAMATA AL BACKEND (Solo metadati)
       // ============================================================
-      const m=(mime||blob.type||"").toLowerCase();
-      const ext=m.includes('webm')?'webm':m.includes('ogg')?'ogg':m.includes('wav')?'wav':'m4a';
-      fd.append('audio',blob,`${blobSource}.${ext}`);
+      const fd = new FormData();
+      
+      // NOTA: Non appendiamo più 'audio' come file blob!
+      // Passiamo il percorso appena creato
+      fd.append('audioStoragePath', storagePath);
+      
+      // Passiamo gli altri dati necessari
       if (refinedPayloadForUpload) {
         fd.append('refinedData', JSON.stringify(refinedPayloadForUpload));
       }
+      
+      // Logo PDF (questo rimane un file piccolo, possiamo lasciarlo in FormData o gestirlo a parte, 
+      // per ora lasciamolo così per semplicità dato che è piccolo)
       appendPdfLogoIfPresent(fd, customPdfLogo);
-      const isPlaceholder=isDestDirPlaceholder(destDir);
+
+      const isPlaceholder = isDestDirPlaceholder(destDir);
       if (!isPlaceholder) {
-        fd.append('dest',destDir);
+        fd.append('dest', destDir);
       } else {
-        appendLogs(["ℹ️ Cartella destinazione non specificata o segnaposto: il backend userà la sua cartella predefinita."]);
+        appendLogs(["ℹ️ Cartella destinazione default backend."]);
       }
-      fd.append('slug',slug||'meeting');
+      
+      fd.append('slug', slug || 'meeting');
+      
+      // Workspace & Progetti
       if (workspaceSelection.workspaceId) {
         fd.append('workspaceId', workspaceSelection.workspaceId);
-        if (workspaceSelection.projectId) {
-          fd.append('workspaceProjectId', workspaceSelection.projectId);
-        }
-        if (workspaceSelection.projectName) {
-          fd.append('workspaceProjectName', workspaceSelection.projectName);
-        }
-        if (workspaceSelection.status) {
-          fd.append('workspaceStatus', workspaceSelection.status);
-        }
-        if (selectedWorkspaceDestDir) {
-          fd.append('workspaceDestDir', selectedWorkspaceDestDir);
-        }
-        if (selectedProjectDestDir) {
-          fd.append('workspaceProjectDestDir', selectedProjectDestDir);
-        }
+        if (workspaceSelection.projectId) fd.append('workspaceProjectId', workspaceSelection.projectId);
+        if (workspaceSelection.projectName) fd.append('workspaceProjectName', workspaceSelection.projectName);
+        if (workspaceSelection.status) fd.append('workspaceStatus', workspaceSelection.status);
+        if (selectedWorkspaceDestDir) fd.append('workspaceDestDir', selectedWorkspaceDestDir);
+        if (selectedProjectDestDir) fd.append('workspaceProjectDestDir', selectedProjectDestDir);
       }
-      if (aiProviderOverrides.text) {
-        fd.append('aiTextProvider', aiProviderOverrides.text);
-      }
-      if (aiProviderOverrides.embedding) {
-        fd.append('aiEmbeddingProvider', aiProviderOverrides.embedding);
-      }
+
+      // AI Providers
+      if (aiProviderOverrides.text) fd.append('aiTextProvider', aiProviderOverrides.text);
+      if (aiProviderOverrides.embedding) fd.append('aiEmbeddingProvider', aiProviderOverrides.embedding);
+
+      // Profili & Template
       appendWorkspaceProfileDetails(fd, {
         selection: workspaceProfileSelection,
         profile: activeWorkspaceProfile,
@@ -4505,6 +4537,8 @@ const handleRefineAndGenerate = useCallback(async () => {
       if (!workspaceProfileLocked) {
         appendPdfTemplateSelection(fd, pdfTemplateSelection);
       }
+
+      // Prompt
       const trimmedFocusForAudio = typeof promptState.focus === 'string' ? promptState.focus.trim() : '';
       const trimmedNotesForAudio = typeof promptState.notes === 'string' ? promptState.notes.trim() : '';
 
@@ -4514,26 +4548,30 @@ const handleRefineAndGenerate = useCallback(async () => {
           fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
         }
       }
-      if (trimmedFocusForAudio) {
-        fd.append('promptFocus', trimmedFocusForAudio);
+      if (trimmedFocusForAudio) fd.append('promptFocus', trimmedFocusForAudio);
+      if (trimmedNotesForAudio) fd.append('promptNotes', trimmedNotesForAudio);
+
+      // Diarizzazione
+      if (enableDiarization) {
+        fd.append('diarize', 'true');
+        appendLogs(['🗣️ Modalità riunione attivata.']);
       }
-      if (trimmedNotesForAudio) {
-        fd.append('promptNotes', trimmedNotesForAudio);
-      }
-      if(enableDiarization){
-        fd.append('diarize','true');
-        appendLogs(['🗣️ Modalità riunione attivata: verrà eseguita la diarizzazione degli speaker.']);
-      }
-      const cap=Number(secondsCap||0);
-      if(cap>0) fd.append('seconds',String(cap));
-      // ASYNC REFACTOR: Inizio della modifica
+      
+      const cap = Number(secondsCap || 0);
+      if (cap > 0) fd.append('seconds', String(cap));
+
+      // Environment
+      const currentEnv = import.meta.env.DEV ? 'development' : 'production';
+      fd.append('environment', currentEnv);
+
+      // Chiamata API
       const { ok, status, data } = await fetchBodyWithAuth(`${backendUrl}/api/rec2pdf`, {
         method: 'POST',
         body: fd,
       });
 
       if (!ok) {
-        throw new Error(data?.message || `Errore nella creazione del job (HTTP ${status || '0'})`);
+        throw new Error(data?.message || `Errore avvio job (HTTP ${status || '0'})`);
       }
 
       const { jobId } = data || {};
@@ -4541,22 +4579,23 @@ const handleRefineAndGenerate = useCallback(async () => {
         throw new Error('Il backend non ha restituito un ID di job valido.');
       }
 
-      appendLogs([`✔️ Richiesta accettata. Inizio monitoraggio job ID: ${jobId}`]);
+      appendLogs([`✔️ Richiesta accettata. Job ID: ${jobId}`]);
 
       localStorage.setItem('activeJobId', jobId);
       setActiveJobId(jobId);
-      // ASYNC REFACTOR: Fine della modifica
-    } catch(err){
-      const message=String(err&&err.message?err.message:err);
+
+    } catch (err) {
+      const message = String(err && err.message ? err.message : err);
       handlePipelineEvents([
         { stage: 'upload', status: 'failed', message },
         { stage: 'complete', status: 'failed', message: 'Pipeline non avviata' },
-      ],{ animate:false });
+      ], { animate: false });
       appendLogs([`❌ ${message}`]);
       setErrorBanner({ title: 'Avvio pipeline fallito', details: message });
       setBusy(false);
     }
   };
+// --- FINE MODIFICA APP.JSX ---
 
   const processMarkdownUpload=async(file,options={})=>{
     if(!file) return;
