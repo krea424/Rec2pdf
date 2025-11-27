@@ -6,25 +6,19 @@
     "main": "server.js",
     "scripts": {
         "start": "node server.js",
-        "dev": "NODE_ENV=development nodemon server.js", 
+        "dev": "NODE_ENV=development nodemon server.js",
         "test": "jest",
         "ingest": "node scripts/ingest.js",
-        "test:rag-eval": "node tests/rag_evaluation/evaluate.js"
+        "test:rag-eval": "node tests/rag_evaluation/evaluate.js",
+        "tunnel": "ngrok http --domain=unbeamed-yong-unceremoniously.ngrok-free.dev 8080"
     },
-    "scripts": {
-    "start": "node server.js",
-    "dev": "NODE_ENV=development nodemon server.js",
-    "test": "jest",
-    "ingest": "node scripts/ingest.js",
-    "test:rag-eval": "node tests/rag_evaluation/evaluate.js",
-    "tunnel": "ngrok http --domain=unbeamed-yong-unceremoniously.ngrok-free.dev 8080"
-  },
     "dependencies": {
         "@google/generative-ai": "^0.11.5",
         "@supabase/supabase-js": "^2.74.0",
         "cors": "^2.8.5",
         "dotenv": "^17.2.3",
         "express": "^4.19.2",
+        "groq-sdk": "^0.37.0",
         "handlebars": "^4.7.8",
         "js-yaml": "^4.1.0",
         "multer": "^1.4.5-lts.1",

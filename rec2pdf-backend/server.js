@@ -24,6 +24,7 @@ const { getAIService } = require('./services/aiService');
 // ==========================================================
 const aiOrchestrator = require('./services/aiOrchestrator');
 // ==========================================================
+const Groq = require('groq-sdk');
 
 const {
   listProviders: listAiProviders,
@@ -6850,126 +6851,110 @@ const workspaceProfileTemplate = String(
       await safeUnlink(wavLocalPath);
     }
 
+   // --- INIZIO BLOCCO TRASCRIZIONE IBRIDA (GROQ + WHISPERX) ---
+    
+    // 1. Log iniziale intelligente
     out(
       diarizeEnabled
-        ? '🎧 Trascrizione + diarizzazione con WhisperX…'
-        : '🎧 Trascrizione con Whisper…',
+        ? '🎧 Trascrizione + diarizzazione con WhisperX (Locale)...'
+        : '🚀 Trascrizione ultra-veloce con Groq...',
       'transcribe',
       'running'
     );
+
     const wavLocalForTranscribe = registerTempFile(path.join(pipelineDir, `${baseName}.wav`));
     let transcriptLocalPath = '';
+
     const performTranscription = async () => {
-      // --- DEBUG 3: Verifica dentro la funzione ---
-      console.log(`[DEBUG WORKER] Avvio trascrizione. Diarize attivo? ${diarizeEnabled}`);
-      // --------------------------------------------
+      // Scarichiamo sempre il file originale/WAV dallo storage
       const wavBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, wavStoragePath);
       await fsp.writeFile(wavLocalForTranscribe, wavBuffer);
       const transcribeOutputDir = pipelineDir;
+
+      // === BIVIO STRATEGICO ===
+
+      // CASO A: DIARIZZAZIONE ATTIVA (Meeting) -> Usiamo WhisperX Locale
       if (diarizeEnabled) {
+        console.log('[TRANSCRIPTION] Modalità Meeting: Uso WhisperX locale (Lento ma con Speaker ID).');
+        
         if (!HUGGING_FACE_TOKEN) {
-          out('❌ HUGGING_FACE_TOKEN mancante: impossibile eseguire diarizzazione', 'transcribe', 'failed');
           throw new Error('Diarizzazione WhisperX non disponibile: HUGGING_FACE_TOKEN non configurato');
         }
+        
+        // WhisperX con ottimizzazione int8 per CPU
         const diarizeCmd = [
           'whisperx',
-  JSON.stringify(wavLocalForTranscribe),
-  '--language it',
-  '--model small', // small è un buon compromesso, 'base' sarebbe fulmineo ma meno preciso
-  '--device cpu',
-  '--compute_type int8', // <--- FIX: Quantizzazione per CPU
-  '--threads 4',         // <--- FIX: Usa tutti i core di Cloud Run (di solito 2 o 4)
-  '--output_format txt',
-  `--output_dir ${JSON.stringify(transcribeOutputDir)}`
-].join(' ');
-        const wx = await run('bash', ['-lc', diarizeCmd]);
-        if (wx.code !== 0) {
-          out(wx.stderr || wx.stdout || 'whisperX failed', 'transcribe', 'failed');
-          throw new Error('Trascrizione fallita (whisperX)');
-        }
-        const candidates = (await fsp.readdir(transcribeOutputDir)).filter(
-          (file) => file.startsWith(baseName) && file.endsWith('.json')
-        );
-        if (!candidates.length) {
-          throw new Error('Trascrizione diarizzata .json non trovata');
-        }
+          JSON.stringify(wavLocalForTranscribe),
+          '--language it',
+          '--compute_type int8', // Ottimizzazione CPU
+          '--diarize',
+          `--hf_token ${JSON.stringify(HUGGING_FACE_TOKEN)}`,
+          `--output_dir ${JSON.stringify(transcribeOutputDir)}`,
+          '--output_format json'
+        ].join(' ');
+        
+        await run('bash', ['-lc', diarizeCmd]);
+        
+        // Recupero risultato JSON
+        const candidates = (await fsp.readdir(transcribeOutputDir)).filter(f => f.endsWith('.json'));
+        if (!candidates.length) throw new Error('Trascrizione WhisperX fallita (nessun JSON prodotto).');
         transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, candidates[0]));
-      } else {
-        // VERSIONE OTTIMIZZATA (VELOCE)
-const whisperxCmd = [
-  'whisperx',
-  JSON.stringify(wavLocalForTranscribe),
-  '--language it',
-  '--model small', // small è un buon compromesso, 'base' sarebbe fulmineo ma meno preciso
-  '--device cpu',
-  '--compute_type int8', // <--- FIX: Quantizzazione per CPU
-  '--threads 4',         // <--- FIX: Usa tutti i core di Cloud Run (di solito 2 o 4)
-  '--output_format txt',
-  `--output_dir ${JSON.stringify(transcribeOutputDir)}`
-].join(' ');
-        const w = await run('bash', ['-lc', whisperxCmd]);
-        if (w.code !== 0) {
-          out(w.stderr || w.stdout || 'whisper failed', 'transcribe', 'failed');
-          throw new Error('Trascrizione fallita');
+      } 
+      
+      // CASO B: DIARIZZAZIONE SPENTA (Note/Video) -> Usiamo GROQ (Velocità)
+      else {
+        console.log('[TRANSCRIPTION] Modalità Fast: Uso Groq LPU.');
+        
+        if (!process.env.GROQ_API_KEY) {
+           throw new Error('GROQ_API_KEY mancante. Impossibile usare trascrizione veloce.');
         }
-        const dirEntries = await fsp.readdir(transcribeOutputDir);
-        const txtCandidates = dirEntries.filter((file) => file.endsWith('.txt'));
-        const preferredTxt =
-          txtCandidates.find((file) => file.startsWith(baseName)) || txtCandidates[0] || '';
 
-        if (preferredTxt) {
-          transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, preferredTxt));
-        } else {
-          // Fallback: alcune build di whisperx producono solo .json/.vtt/.srt/.tsv
-          const fallback = dirEntries.find(
-            (file) =>
-              file.startsWith(baseName) &&
-              (file.endsWith('.json') || file.endsWith('.vtt') || file.endsWith('.srt') || file.endsWith('.tsv'))
-          );
-          if (fallback) {
-            out(`ℹ️ Trascrizione .txt assente, uso file ${fallback}`, 'transcribe', 'warning');
-            transcriptLocalPath = registerTempFile(path.join(transcribeOutputDir, fallback));
-          } else {
-            // Secondo fallback: prova CLI whisper standard se presente
-            const whisperTxtPath = path.join(transcribeOutputDir, `${baseName}.txt`);
-            const whisperAvailable = await run('bash', ['-lc', 'command -v whisper >/dev/null']);
-            if (whisperAvailable.code !== 0) {
-              const filesFound = dirEntries.length ? dirEntries.join(', ') : 'nessun file';
-              throwWithStage(
-                'transcribe',
-                `Trascrizione .txt non trovata (file presenti: ${filesFound}); CLI whisper non installata per il fallback`
-              );
-            }
-
-            const whisperCmd = [
-              'whisper',
-              JSON.stringify(wavLocalForTranscribe),
-              '--language it',
-              '--model base',
-              '--output_format txt',
-              `--output_dir ${JSON.stringify(transcribeOutputDir)}`
-            ].join(' ');
-            const whisperRun = await run('bash', ['-lc', whisperCmd]);
-            if (whisperRun.code === 0) {
-              try {
-                await fsp.access(whisperTxtPath);
-                out('ℹ️ Fallback whisper CLI riuscito', 'transcribe', 'warning');
-                transcriptLocalPath = registerTempFile(whisperTxtPath);
-              } catch {
-                const filesFound = dirEntries.length ? dirEntries.join(', ') : 'nessun file';
-                throwWithStage('transcribe', `Trascrizione .txt non trovata (file presenti: ${filesFound})`);
-              }
-            } else {
-              const filesFound = dirEntries.length ? dirEntries.join(', ') : 'nessun file';
-              const stderr = whisperRun.stderr || whisperRun.stdout || 'whisper non disponibile';
-              throwWithStage(
-                'transcribe',
-                `Trascrizione .txt non trovata (file presenti: ${filesFound}) - fallback whisper: ${stderr}`
-              );
-            }
-          }
+        // 1. Compressione Audio con FFmpeg (Strategia "Anti-Limit 25MB")
+        // Convertiamo in MP3 mono a 32k bitrate. Questo permette file fino a ~100 minuti.
+        const groqAudioPath = registerTempFile(path.join(pipelineDir, 'groq_optimized.mp3'));
+        
+        console.log('[TRANSCRIPTION] Compressione audio per Groq...');
+        const ffmpegCompress = [
+            '-y',
+            '-i', wavLocalForTranscribe,
+            '-ar', '16000', // 16kHz è sufficiente per il parlato
+            '-ac', '1',     // Mono
+            '-map', '0:a:0',
+            '-b:a', '32k',  // Bitrate magico per ridurre la size
+            groqAudioPath
+        ];
+        
+        const compressResult = await run('ffmpeg', ffmpegCompress);
+        if (compressResult.code !== 0) {
+            console.error('FFmpeg compression error:', compressResult.stderr);
+            throw new Error('Errore durante la compressione audio per Groq.');
         }
+        
+        // 2. Chiamata API Groq
+        console.log('[TRANSCRIPTION] Invio a Groq API...');
+        const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+        
+        const transcription = await groq.audio.transcriptions.create({
+          file: fs.createReadStream(groqAudioPath),
+          model: "whisper-large-v3",
+          response_format: "json",
+          language: "it", // Forziamo italiano per sicurezza, o rimuovi per auto-detect
+          temperature: 0.0 
+        });
+
+        // 3. Normalizzazione Output
+        // Groq restituisce testo semplice o JSON. Noi salviamo un .txt per compatibilità con il resto della pipeline
+        const txtContent = transcription.text;
+        if (!txtContent) throw new Error('Groq ha restituito una trascrizione vuota.');
+
+        const txtPath = path.join(transcribeOutputDir, `${baseName}.txt`);
+        await fsp.writeFile(txtPath, txtContent);
+        transcriptLocalPath = registerTempFile(txtPath);
+        
+        console.log(`[TRANSCRIPTION] Groq ha trascritto ${txtContent.length} caratteri in un lampo!`);
       }
+
+      // Upload risultato su Supabase (Comune a entrambi i flussi)
       const transcriptMime = diarizeEnabled ? 'application/json' : 'text/plain';
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,
@@ -6977,14 +6962,10 @@ const whisperxCmd = [
         await fsp.readFile(transcriptLocalPath),
         transcriptMime
       );
-      out(
-        diarizeEnabled
-          ? `✅ Trascrizione diarizzata completata: ${path.basename(transcriptLocalPath)}`
-          : `✅ Trascrizione completata: ${path.basename(transcriptLocalPath)}`,
-        'transcribe',
-        'completed'
-      );
+      
+      out(`✅ Trascrizione completata (${diarizeEnabled ? 'WhisperX' : 'Groq'})`, 'transcribe', 'completed');
     };
+    // --- FINE BLOCCO TRASCRIZIONE IBRIDA ---
     markStart('transcribe'); // <--- INSERISCI PRIMA DEL TRY
     try {
       await performTranscription();
