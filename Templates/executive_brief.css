@@ -31,7 +31,7 @@ body {
     padding-bottom: 20px;
     margin-bottom: 30px;
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start; /* contenuti partono da sinistra */
     align-items: flex-end;
 }
 
@@ -41,6 +41,10 @@ body {
     letter-spacing: 1px;
     text-transform: uppercase;
     color: #0f172a;
+    margin-left: 0;      /* elimina margini extra */
+    padding-left: 0;     /* elimina padding extra */
+    display: flex;       /* utile se dentro c’è un’immagine */
+    align-items: center; /* centra verticalmente il logo */
 }
 
 .meta-date {
