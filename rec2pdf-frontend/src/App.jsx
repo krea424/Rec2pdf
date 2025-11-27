@@ -1220,16 +1220,30 @@ function AppContent(){
     }
     try {
       const raw = localStorage.getItem(PDF_TEMPLATE_SELECTION_KEY);
-      if (!raw) {
-        return buildPdfTemplateSelection();
+      // SE non c'è nulla in memoria, O se c'è il vecchio default, forziamo il nuovo Executive
+      if (!raw || raw.includes('default.tex')) {
+        return buildPdfTemplateSelection({
+            fileName: 'executive_brief.html',
+            type: 'html',
+            css: 'executive_brief.css'
+        });
       }
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object') {
-        return buildPdfTemplateSelection();
+         // Fallback sicuro sul nuovo default
+         return buildPdfTemplateSelection({
+            fileName: 'executive_brief.html',
+            type: 'html',
+            css: 'executive_brief.css'
+        });
       }
       return buildPdfTemplateSelection(parsed);
     } catch {
-      return buildPdfTemplateSelection();
+      return buildPdfTemplateSelection({
+            fileName: 'executive_brief.html',
+            type: 'html',
+            css: 'executive_brief.css'
+        });
     }
   });
   const [promptState, setPromptState] = useState(() => {
@@ -1602,31 +1616,54 @@ const activePrompt = useMemo(
     }
   }, [prompts, promptState.promptId]);
 
-  useEffect(() => {
-    if (!Array.isArray(prompts) || prompts.length === 0) return;
-    setPromptState((prev) => {
-      if (prev.promptId) {
-        return prev;
-      }
-      const defaultPrompt = prompts.find((prompt) => {
-        const slugMatch = typeof prompt.slug === 'string' && prompt.slug === 'format_base';
-        const titleMatch =
-          typeof prompt.title === 'string' && prompt.title.trim().toLowerCase() === 'format base';
-        return slugMatch || titleMatch;
-      });
-      if (!defaultPrompt || !defaultPrompt.id) {
-        return prev;
-      }
+ // --- DEFAULT PROMPT: EXECUTIVE STRATEGY ---
+ useEffect(() => {
+  // Se i prompt non sono ancora caricati, esci
+  if (!Array.isArray(prompts) || prompts.length === 0) return;
+
+  setPromptState((prev) => {
+    // Se l'utente ha già un prompt selezionato (es. da localStorage), mantienilo
+    if (prev.promptId) {
+      return prev;
+    }
+
+    // 1. Cerchiamo il nuovo prompt Executive
+    const executivePrompt = prompts.find((p) => 
+      p.id === 'prompt_executive_strategy' || 
+      p.slug === 'executive_briefing_strategy'
+    );
+
+    // 2. Se lo troviamo, lo impostiamo come default
+    if (executivePrompt) {
       return buildPromptState({
-        promptId: defaultPrompt.id,
+        promptId: executivePrompt.id,
         focus: prev.focus || '',
         notes: prev.notes || '',
         cueProgress: {},
         cueCardAnswers: {},
-        expandPromptDetails: false,
+        expandPromptDetails: false, // Teniamo i dettagli chiusi per pulizia UI
       });
-    });
-  }, [prompts, setPromptState]);
+    }
+
+    // 3. Fallback: se non trova l'executive, usa il vecchio "Format Base" (o il primo disponibile)
+    const defaultFallback = prompts.find(p => 
+      p.slug === 'format_base' || p.title.toLowerCase().includes('format base')
+    ) || prompts[0];
+
+    if (defaultFallback) {
+       return buildPromptState({ 
+         promptId: defaultFallback.id,
+         focus: prev.focus || '',
+         notes: prev.notes || '',
+         cueProgress: {},
+         cueCardAnswers: {},
+         expandPromptDetails: false
+       });
+    }
+
+    return prev;
+  });
+}, [prompts, setPromptState]);
 
   useEffect(() => {
     setNavigatorSelection((prev) => {

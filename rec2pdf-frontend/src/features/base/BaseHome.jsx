@@ -138,7 +138,7 @@ const BaseHome = () => {
       {/* CONTENITORE PRINCIPALE CON EFFETTO FOCUS */}
       <div 
         className={classNames(
-          "transition-all duration-700 ease-in-out",
+          "transition-all duration-700 ease-in-out flex flex-col items-center", // Aggiunto flex-col items-center
           busy ? "opacity-30 blur-sm scale-[0.99] pointer-events-none grayscale" : "opacity-100 scale-100"
         )}
       >
@@ -146,10 +146,10 @@ const BaseHome = () => {
 
           <section
             className={classNames(
-              "grid gap-6 mt-6 transition-all duration-500",
+              "grid gap-6 mt-6 transition-all duration-500 w-full max-w-7xl", // Aggiunto w-full max-w-7xl per allineare con le card sopra
               showMainPanel
                 ? "lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]"
-                : "max-w-3xl mx-auto"
+                : "max-w-3xl mx-auto" // Questo rimane per lo stato iniziale "stretto"
             )}
           >
             <div className="w-full transition-all duration-500">
