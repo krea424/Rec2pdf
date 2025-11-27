@@ -4372,6 +4372,45 @@ const parseStoragePath = (rawPath) => {
 
 const DEFAULT_PROMPTS = [
   {
+    id: 'prompt_executive_strategy',
+    slug: 'executive_briefing_strategy',
+    title: 'Executive Briefing Strategy',
+    description: 'Sintesi strategica di alto livello per decisori. Focus su impatto, rischi, opportunità e roadmap, con stile assertivo e diretto.',
+    persona: 'Senior Strategy Advisor',
+    color: '#0ea5e9', // Sky 500
+    tags: ['strategy', 'c-level', 'decision-making'],
+    cueCards: [
+      { key: 'bottom_line', title: 'Bottom Line Up Front (BLUF)', hint: "Qual è la singola cosa più importante da sapere subito?" },
+      { key: 'market_impact', title: 'Impatto di Mercato', hint: "Come questo influenza la nostra posizione competitiva?" },
+      { key: 'risks_blockers', title: 'Rischi & Blocchi', hint: "Cosa può andare storto e come lo mitigheremo?" },
+      { key: 'strategic_ask', title: 'Richiesta (The Ask)', hint: "Cosa serve per procedere? (Budget, Approval, Risorse)" },
+    ],
+    markdownRules: {
+      tone: 'Assertivo, conciso, orientato all\'azione. Nessun "fluff".',
+      voice: 'Prima persona plurale (Noi/L\'azienda).',
+      bulletStyle: 'Elenchi puntati densi di dati.',
+      summaryStyle: 'Paragrafo BLUF (Bottom Line Up Front) in grassetto.',
+      includeCallouts: true,
+    },
+    pdfRules: {
+      accentColor: '#0ea5e9',
+      layout: 'executive_brief', // Questo mappa sul template HTML
+      template: 'executive_brief.html',
+      includeCover: true,
+      includeToc: false, // I brief executive di solito non hanno indice se < 5 pagine
+    },
+    checklist: {
+      sections: [
+        'Executive Summary (BLUF)',
+        'Contesto Strategico',
+        'Analisi Opzioni',
+        'Raccomandazione',
+        'Next Steps & Owner',
+      ],
+    },
+    builtIn: true,
+  },
+  {
     id: 'prompt_brief_creativo',
     slug: 'brief_creativo',
     title: 'Brief creativo',

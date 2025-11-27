@@ -229,28 +229,36 @@ if [[ "$TEMPLATE_KIND" == "tex" ]]; then
   echo "📌 Include cover : $COVER_TEX"
 fi
 
-# Seleziona il logo
-# Seleziona il logo: custom se disponibile, altrimenti default
+# --- INIZIO MODIFICA LOGO SMART ---
+
+# Seleziona il logo: custom se disponibile, altrimenti default intelligente
 CUSTOM_LOGO_PATH="${CUSTOM_PDF_LOGO:-}"
 
 if [[ -n "$CUSTOM_LOGO_PATH" && -f "$CUSTOM_LOGO_PATH" ]]; then
   LOGO="$CUSTOM_LOGO_PATH"
   echo "📌 Logo (Custom)   : $LOGO"
 else
-  # DEFAULT: Scegliamo il formato in base al motore
-  if [[ "$TEMPLATE_KIND" == "html" ]]; then
-      # Per HTML serve PNG o SVG
-      LOGO="$SCRIPT_DIR/../assets/thinkDOC.png"
-      # Fallback se non esiste png, prova svg
-      if [[ ! -f "$LOGO" ]]; then
-          LOGO="$SCRIPT_DIR/../assets/thinkDOC.svg"
-      fi
+  # DEFAULT: Logica di fallback (PNG > SVG > PDF)
+  # Cerchiamo nella cartella assets globale
+  ASSETS_ROOT="$SCRIPT_DIR/../assets"
+  
+  if [[ -f "$ASSETS_ROOT/thinkDOC.png" ]]; then
+      LOGO="$ASSETS_DIR/thinkDOC.png"
+      echo "📌 Logo (Default)  : PNG rilevato"
+  elif [[ -f "$ASSETS_ROOT/thinkDOC.svg" ]]; then
+      LOGO="$ASSETS_DIR/thinkDOC.svg"
+      echo "📌 Logo (Default)  : SVG rilevato"
+  elif [[ -f "$ASSETS_ROOT/thinkDOC.pdf" ]]; then
+      LOGO="$ASSETS_DIR/thinkDOC.pdf"
+      echo "📌 Logo (Default)  : PDF rilevato"
   else
-      # Per LaTeX va bene PDF
-      LOGO="$SCRIPT_DIR/../assets/thinkDOC.pdf"
+      # Fallback estremo se non trova nulla (evita crash)
+      echo "⚠️  Nessun logo di default trovato in $ASSETS_ROOT"
+      LOGO="" 
   fi
-  echo "📌 Logo (Default)  : $LOGO"
 fi
+
+# --- FINE MODIFICA ---
 
 # DEBUG LOGO
 echo "🔍 [DEBUG SCRIPT] Controllo Logo:"
