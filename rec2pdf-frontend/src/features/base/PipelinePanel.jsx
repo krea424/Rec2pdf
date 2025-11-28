@@ -69,23 +69,59 @@ const PipelinePanel = ({ journeyStage = "record" }) => {
   const handleDownload = useCallback(async () => {
     if (!pdfPath) return;
     trackEvent("pipeline.export_pdf", { path: pdfPath });
+
+    // --- FIX IOS/MOBILE ---
+    // 1. Apriamo la finestra IMMEDIATAMENTE (prima di qualsiasi await)
+    // Questo dice al browser: "L'utente ha cliccato, apri una finestra".
+    const newWindow = window.open('', '_blank');
+    
+    // 2. Mettiamo un feedback visivo nella nuova finestra mentre carica
+    if (newWindow) {
+        newWindow.document.write(`
+            <html>
+                <head><title>Caricamento...</title></head>
+                <body style="background-color: #121214; color: #e4e4e7; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: system-ui, sans-serif; margin: 0;">
+                    <div style="text-align: center;">
+                        <div style="margin-bottom: 16px; font-size: 24px;">⏳</div>
+                        <div>Recupero il tuo PDF sicuro...</div>
+                    </div>
+                </body>
+            </html>
+        `);
+    }
+
     try {
       const pathParts = pdfPath.split('/');
       const bucket = pathParts[0];
       const objectPath = pathParts.slice(1).join('/');
       const params = new URLSearchParams({ bucket, path: objectPath });
       const targetUrl = `${normalizedBackendUrl}/api/file?${params.toString()}`;
+      
       const session = (await supabase.auth.getSession())?.data.session;
       if (!session) throw new Error("Sessione utente non trovata.");
+      
       const response = await fetch(targetUrl, { headers: { 'Authorization': `Bearer ${session.access_token}` } });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.message);
-      window.open(data.url, '_blank', 'noopener,noreferrer');
+      
+      if (!response.ok || !data.ok) throw new Error(data.message || "Errore nel recupero del file");
+
+      // 3. Reindirizziamo la finestra già aperta all'URL finale
+      if (newWindow) {
+          newWindow.location.href = data.url;
+      } else {
+          // Fallback estremo se il browser ha bloccato anche l'apertura sincrona
+          window.location.href = data.url;
+      }
+
       setHasDownloaded(true);
       hasUnlockedNextStepsRef.current = true;
       setHasUnlockedNextSteps(true);
+
     } catch (error) {
-      alert(`Errore nel download: ${error.message}`);
+      // Se fallisce, chiudiamo la finestra che avevamo aperto
+      if (newWindow) newWindow.close();
+      console.error("Download error:", error);
+      alert(`Impossibile scaricare il PDF: ${error.message}`);
     }
   }, [pdfPath, trackEvent, normalizedBackendUrl]);
 
