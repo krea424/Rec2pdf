@@ -1,0 +1,45 @@
+
+<svg width="480" height="140" viewBox="0 0 480 140" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .logo-text {
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+        font-weight: 600;
+      }
+    </style>
+  </defs>
+
+  <!-- Sfondo scuro -->
+  <rect x="0" y="0" width="480" height="140" fill="#0B1120"/>
+
+  <!-- ICONA ASTRATTA SU SFONDO SCURO -->
+  <!-- Blocco principale teal, con angoli arrotondati -->
+  <rect x="20" y="20" width="90" height="100" rx="22" ry="22" fill="#00A693"/>
+
+  <!-- Forma che richiama un documento (smusso in alto a destra), leggermente più chiara -->
+  <path d="M110 45
+           Q110 20 85 20
+           L65 20
+           Q40 20 40 45
+           L40 100
+           Q40 120 60 120
+           L90 120
+           Q110 120 110 100
+           Z"
+        fill="#00BFA5"/>
+
+  <!-- Onda sonora che attraversa il blocco (trasformazione audio -> documento) -->
+  <path d="M35 90
+           Q55 60 75 75
+           T115 60"
+        fill="none"
+        stroke="#FFFFFF"
+        stroke-width="7"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+
+  <!-- WORDMARK ThinkDOC per uso su sfondo scuro -->
+  <text x="140" y="72" font-size="36" class="logo-text">
+    <tspan fill="#F9FAFB">Think</tspan><tspan fill="#00D4B0" font-weight="700">DOC</tspan>
+  </text>
+</svg>

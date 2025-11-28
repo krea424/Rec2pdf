@@ -4634,248 +4634,286 @@ const handleRefineAndGenerate = useCallback(async () => {
   };
 // --- FINE MODIFICA APP.JSX ---
 
-  const processMarkdownUpload=async(file,options={})=>{
-    if(!file) return;
-    if(!backendUrl){
-      setErrorBanner({title:'Backend URL mancante',details:`Imposta ${DEFAULT_BACKEND_URL} o il tuo endpoint.`});
+const processMarkdownUpload = async (file, options = {}) => {
+  if (!file) return;
+  if (!backendUrl) {
+    setErrorBanner({ title: 'Backend URL mancante', details: `Imposta ${DEFAULT_BACKEND_URL} o il tuo endpoint.` });
+    return;
+  }
+
+  const endpointOverride = options.endpoint;
+  const fileFieldName = options.fileFieldName || 'markdown';
+  const startMessage = options.startMessage || `🚀 Avvio impaginazione da Markdown: ${file.name}`;
+  const fallbackEventsOverride = Array.isArray(options.fallbackEvents) ? options.fallbackEvents : null;
+  const extraFormData = options.extraFormData || null;
+
+  resetPipelineProgress(true);
+  setShowRawLogs(false);
+  setBusy(true);
+  setLogs([]);
+  setPdfPath("");
+  setMdPath("");
+  setErrorBanner(null);
+
+  const sessionLogs = [];
+  const appendLogs = (entries) => {
+    const sanitized = (entries || []).filter(Boolean);
+    if (!sanitized.length) return;
+    sessionLogs.push(...sanitized);
+    setLogs(ls => ls.concat(sanitized));
+  };
+
+  const isPlaceholder = isDestDirPlaceholder(destDir);
+  if (isPlaceholder) {
+    appendLogs(["ℹ️ Cartella destinazione non specificata o segnaposto: il backend userà la sua cartella predefinita."]);
+  }
+  appendLogs([startMessage]);
+
+  // --- FIX: INIZIALIZZAZIONE VARIABILE ---
+  // Prima mancava o era definita solo dentro l'if
+  // --- DEFINIZIONE VARIABILE ---
+  let refinedPayloadForUpload = null;
+    
+  if (refinedData) {
+      const refinedValidation = normalizeRefinedDataForUpload(refinedData);
+      if (refinedValidation.ok) {
+          refinedPayloadForUpload = mergePromptStateIntoRefinedPayload(refinedValidation.value, promptState);
+      }
+  }
+  // -----------------------------
+
+  try {
+    const fd = new FormData();
+    fd.append(fileFieldName, file, file.name);
+    
+    appendPdfLogoIfPresent(fd, customPdfLogo);
+    
+    if (!isPlaceholder) {
+      fd.append('dest', destDir);
+    }
+    
+    const slugValue = (slug || file.name.replace(/\.[^.]+$/i, '') || 'documento').trim();
+    if (slugValue) {
+      fd.append('slug', slugValue);
+    }
+
+    if (workspaceSelection.workspaceId) {
+      fd.append('workspaceId', workspaceSelection.workspaceId);
+      if (workspaceSelection.projectId) fd.append('workspaceProjectId', workspaceSelection.projectId);
+      if (workspaceSelection.projectName) fd.append('workspaceProjectName', workspaceSelection.projectName);
+      if (workspaceSelection.status) fd.append('workspaceStatus', workspaceSelection.status);
+      if (selectedWorkspaceDestDir) fd.append('workspaceDestDir', selectedWorkspaceDestDir);
+      if (selectedProjectDestDir) fd.append('workspaceProjectDestDir', selectedProjectDestDir);
+    }
+
+    appendWorkspaceProfileDetails(fd, {
+      selection: workspaceProfileSelection,
+      profile: activeWorkspaceProfile,
+      logoDescriptor: customPdfLogo,
+      backendUrl: normalizeBackendUrlValue(backendUrl),
+    });
+
+    if (!workspaceProfileLocked) {
+      appendPdfTemplateSelection(fd, pdfTemplateSelection);
+    }
+
+    const trimmedFocusForUpload = typeof promptState.focus === 'string' ? promptState.focus.trim() : '';
+    const trimmedNotesForUpload = typeof promptState.notes === 'string' ? promptState.notes.trim() : '';
+
+    if (promptState.promptId) {
+      fd.append('promptId', promptState.promptId);
+      if (promptCompletedCues.length) {
+        fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
+      }
+    }
+    if (trimmedFocusForUpload) fd.append('promptFocus', trimmedFocusForUpload);
+    if (trimmedNotesForUpload) fd.append('promptNotes', trimmedNotesForUpload);
+
+    if (aiProviderOverrides.text) fd.append('aiTextProvider', aiProviderOverrides.text);
+    if (aiProviderOverrides.embedding) fd.append('aiEmbeddingProvider', aiProviderOverrides.embedding);
+
+    if (extraFormData && typeof extraFormData === 'object') {
+      Object.entries(extraFormData).forEach(([key, value]) => {
+        if (typeof value === 'undefined' || value === null) return;
+        fd.append(key, value);
+      });
+    }
+
+    // --- FIX: USO DELLA VARIABILE CORRETTA ---
+    // Qui prima c'era 'refinedDataPayload' che non esisteva
+    if (refinedPayloadForUpload) {
+      fd.append('refinedData', JSON.stringify(refinedPayloadForUpload));
+    }
+    // -----------------------------------------
+
+    const targetEndpoint = endpointOverride || `${backendUrl}/api/ppubr-upload`;
+    let endpointLabel = '/api/ppubr-upload';
+    try {
+      const parsed = new URL(targetEndpoint);
+      endpointLabel = parsed.pathname || endpointLabel;
+    } catch {
+      const match = targetEndpoint.match(/\/api\/[a-zA-Z0-9_-]+/);
+      if (match && match[0]) endpointLabel = match[0];
+      else endpointLabel = targetEndpoint;
+    }
+
+    const { ok, status, data, raw, contentType } = await fetchBodyWithAuth(targetEndpoint, { method: 'POST', body: fd });
+    
+    const stageEventsPayload = Array.isArray(data?.stageEvents) ? data.stageEvents : [];
+
+    if (!ok) {
+      if (stageEventsPayload.length) {
+        handlePipelineEvents(stageEventsPayload, { animate: false });
+      } else {
+        let fallbackMessage = data?.message || (raw ? raw.slice(0, 200) : status === 0 ? 'Connessione fallita/CORS' : 'Errore backend');
+        if (status === 404 && (raw.includes('Endpoint') || raw.includes('Cannot POST'))) {
+          fallbackMessage = `Endpoint ${endpointLabel} non disponibile sul backend. Riavvia o aggiorna il server.`;
+        }
+        handlePipelineEvents([
+          { stage: 'publish', status: 'failed', message: fallbackMessage },
+          { stage: 'complete', status: 'failed', message: 'Pipeline interrotta' },
+        ], { animate: false });
+      }
+      if (data?.logs?.length) appendLogs(data.logs);
+      
+      let message = data?.message || (raw ? raw.slice(0, 200) : status === 0 ? 'Connessione fallita/CORS' : 'Errore backend');
+      if (status === 404 && (raw.includes('Endpoint') || raw.includes('Cannot POST'))) {
+        message = `Endpoint ${endpointLabel} non disponibile sul backend. Riavvia o aggiorna il server.`;
+      } else if (status === 404 && !contentType?.includes('application/json')) {
+        message = 'Risposta non valida dal backend (HTML/404). Controlla la versione del server.';
+      }
+      
+      appendLogs([`❌ ${message}`]);
+      setErrorBanner({ title: 'Impaginazione fallita', details: message });
       return;
     }
-    const endpointOverride=options.endpoint;
-    const fileFieldName=options.fileFieldName||'markdown';
-    const startMessage=options.startMessage||`🚀 Avvio impaginazione da Markdown: ${file.name}`;
-    const fallbackEventsOverride=Array.isArray(options.fallbackEvents)?options.fallbackEvents:null;
-    const extraFormData=options.extraFormData||null;
-    resetPipelineProgress(true);
-    setShowRawLogs(false);
-    setBusy(true);
-    setLogs([]);
-    setPdfPath("");
-    setMdPath("");
-    setErrorBanner(null);
-    const sessionLogs=[];
-    const appendLogs=(entries)=>{
-      const sanitized=(entries||[]).filter(Boolean);
-      if(!sanitized.length) return;
-      sessionLogs.push(...sanitized);
-      setLogs(ls=>ls.concat(sanitized));
-    };
-    const isPlaceholder=isDestDirPlaceholder(destDir);
-    if(isPlaceholder){
-      appendLogs(["ℹ️ Cartella destinazione non specificata o segnaposto: il backend userà la sua cartella predefinita."]); 
-    }
-    appendLogs([startMessage]);
-    try{
-      const fd=new FormData();
-      fd.append(fileFieldName,file,file.name);
-      appendPdfLogoIfPresent(fd, customPdfLogo);
-      if(!isPlaceholder){
-        fd.append('dest',destDir);
-      }
-      const slugValue=(slug||file.name.replace(/\.[^.]+$/i,'')||'documento').trim();
-      if(slugValue){
-        fd.append('slug',slugValue);
-      }
-      if (workspaceSelection.workspaceId) {
-        fd.append('workspaceId', workspaceSelection.workspaceId);
-        if (workspaceSelection.projectId) {
-          fd.append('workspaceProjectId', workspaceSelection.projectId);
-        }
-        if (workspaceSelection.projectName) {
-          fd.append('workspaceProjectName', workspaceSelection.projectName);
-        }
-        if (workspaceSelection.status) {
-          fd.append('workspaceStatus', workspaceSelection.status);
-        }
-        if (selectedWorkspaceDestDir) {
-          fd.append('workspaceDestDir', selectedWorkspaceDestDir);
-        }
-        if (selectedProjectDestDir) {
-          fd.append('workspaceProjectDestDir', selectedProjectDestDir);
-        }
-      }
-      appendWorkspaceProfileDetails(fd, {
-        selection: workspaceProfileSelection,
-        profile: activeWorkspaceProfile,
-        logoDescriptor: customPdfLogo,
-        backendUrl: normalizeBackendUrlValue(backendUrl),
-      });
-      if (!workspaceProfileLocked) {
-        appendPdfTemplateSelection(fd, pdfTemplateSelection);
-      }
-      const trimmedFocusForUpload = typeof promptState.focus === 'string' ? promptState.focus.trim() : '';
-      const trimmedNotesForUpload = typeof promptState.notes === 'string' ? promptState.notes.trim() : '';
 
-      if (promptState.promptId) {
-        fd.append('promptId', promptState.promptId);
-        if (promptCompletedCues.length) {
-          fd.append('promptCuesCompleted', JSON.stringify(promptCompletedCues));
+    const fallbackEvents = fallbackEventsOverride && fallbackEventsOverride.length ? fallbackEventsOverride : [
+      { stage: 'upload', status: 'completed', message: 'Markdown caricato manualmente.' },
+      { stage: 'transcode', status: 'completed', message: 'Step non necessario.' },
+      { stage: 'transcribe', status: 'completed', message: 'Trascrizione non richiesta.' },
+      { stage: 'markdown', status: 'completed', message: 'Markdown fornito.' },
+      { stage: 'publish', status: 'completed', message: 'PPUBR completato.' },
+      { stage: 'complete', status: 'completed', message: 'Pipeline conclusa.' },
+    ];
+
+    const successEvents = stageEventsPayload.length ? stageEventsPayload : fallbackEvents;
+    handlePipelineEvents(successEvents, { animate: true });
+
+    if (data?.logs?.length) appendLogs(data.logs);
+
+    if (data?.pdfPath) {
+      const pdfNormalized = normalizeStoragePathWithBucket(data.pdfPath);
+      const mdNormalized = normalizeStoragePathWithBucket(data?.mdPath || "");
+      
+      setPdfPath(pdfNormalized);
+      setMdPath(mdNormalized);
+      appendLogs([`✅ PDF generato: ${pdfNormalized}`]);
+
+      const normalizedBackend = normalizeBackendUrlValue(backendUrl || '');
+      const pdfUrl = buildFileUrl(normalizedBackend, data.pdfPath);
+      const mdUrl = buildFileUrl(normalizedBackend, data?.mdPath || '');
+      
+      const logosUsed = {
+        frontend: customLogo ? 'custom' : 'default',
+        pdf: resolvePdfLogoLabel(customPdfLogo),
+      };
+
+      const structureMeta = data?.structure || null;
+      if (structureMeta && Number.isFinite(structureMeta.score)) {
+        appendLogs([`📊 Completezza stimata: ${structureMeta.score}%`]);
+        if (Array.isArray(structureMeta.missingSections) && structureMeta.missingSections.length) {
+          appendLogs([`🧩 Sezioni mancanti: ${structureMeta.missingSections.join(', ')}`]);
         }
       }
-      if (trimmedFocusForUpload) {
-        fd.append('promptFocus', trimmedFocusForUpload);
-      }
-      if (trimmedNotesForUpload) {
-        fd.append('promptNotes', trimmedNotesForUpload);
-      }
-      if (aiProviderOverrides.text) {
-        fd.append('aiTextProvider', aiProviderOverrides.text);
-      }
-      if (aiProviderOverrides.embedding) {
-        fd.append('aiEmbeddingProvider', aiProviderOverrides.embedding);
-      }
-      if(extraFormData&&typeof extraFormData==='object'){
-        Object.entries(extraFormData).forEach(([key,value])=>{
-          if(typeof value==='undefined'||value===null) return;
-          fd.append(key,value);
-        });
-      }
-      const targetEndpoint=endpointOverride||`${backendUrl}/api/ppubr-upload`;
-      let endpointLabel='/api/ppubr-upload';
-      try{
-        const parsed=new URL(targetEndpoint);
-        endpointLabel=parsed.pathname||endpointLabel;
-      }catch{
-        const match=targetEndpoint.match(/\/api\/[a-zA-Z0-9_-]+/);
-        if(match&&match[0]) endpointLabel=match[0];
-        else endpointLabel=targetEndpoint;
-      }
-      const {ok,status,data,raw,contentType}=await fetchBodyWithAuth(targetEndpoint,{method:'POST',body:fd});
-      const stageEventsPayload=Array.isArray(data?.stageEvents)?data.stageEvents:[];
-      if(!ok){
-        if(stageEventsPayload.length){
-          handlePipelineEvents(stageEventsPayload,{animate:false});
-        }else{
-          let fallbackMessage=data?.message||(raw?raw.slice(0,200):status===0?'Connessione fallita/CORS':'Errore backend');
-          if(status===404&&(raw.includes('Endpoint')||raw.includes('Cannot POST'))){
-            fallbackMessage=`Endpoint ${endpointLabel} non disponibile sul backend. Riavvia o aggiorna il server.`;
+
+      const fallbackPrompt = promptState.promptId
+        ? {
+            id: promptState.promptId,
+            title: activePrompt?.title || '',
+            slug: activePrompt?.slug || '',
+            description: activePrompt?.description || '',
+            persona: activePrompt?.persona || '',
+            color: activePrompt?.color || '#6366f1',
+            tags: Array.isArray(activePrompt?.tags) ? activePrompt.tags : [],
+            cueCards: Array.isArray(activePrompt?.cueCards) ? activePrompt.cueCards : [],
+            checklist: activePrompt?.checklist || null,
+            markdownRules: activePrompt?.markdownRules || null,
+            pdfRules: activePrompt?.pdfRules || null,
+            focus: promptState.focus || '',
+            notes: promptState.notes || '',
+            completedCues: promptCompletedCues,
+            builtIn: Boolean(activePrompt?.builtIn),
           }
-          handlePipelineEvents([
-            {stage:'publish',status:'failed',message:fallbackMessage},
-            {stage:'complete',status:'failed',message:'Pipeline interrotta'},
-          ],{animate:false});
-        }
-        if(data?.logs?.length) appendLogs(data.logs);
-        let message=data?.message||(raw?raw.slice(0,200):status===0?'Connessione fallita/CORS':'Errore backend');
-        if(status===404&&(raw.includes('Endpoint')||raw.includes('Cannot POST'))){
-          message=`Endpoint ${endpointLabel} non disponibile sul backend. Riavvia o aggiorna il server.`;
-        } else if(status===404&&!contentType?.includes('application/json')){
-          message='Risposta non valida dal backend (HTML/404). Controlla la versione del server.';
-        }
-        appendLogs([`❌ ${message}`]);
-        setErrorBanner({title:'Impaginazione fallita',details:message});
-        return;
-      }
-      const fallbackEvents=fallbackEventsOverride&&fallbackEventsOverride.length?fallbackEventsOverride:[
-        {stage:'upload',status:'completed',message:'Markdown caricato manualmente.'},
-        {stage:'transcode',status:'completed',message:'Step non necessario.'},
-        {stage:'transcribe',status:'completed',message:'Trascrizione non richiesta.'},
-        {stage:'markdown',status:'completed',message:'Markdown fornito.'},
-        {stage:'publish',status:'completed',message:'PPUBR completato.'},
-        {stage:'complete',status:'completed',message:'Pipeline conclusa.'},
-      ];
-      const successEvents=stageEventsPayload.length?stageEventsPayload:fallbackEvents;
-      handlePipelineEvents(successEvents,{animate:true});
-      if(data?.logs?.length) appendLogs(data.logs);
-      if(data?.pdfPath){
-        const pdfNormalized = normalizeStoragePathWithBucket(data.pdfPath);
-        const mdNormalized = normalizeStoragePathWithBucket(data?.mdPath||"");
-        setPdfPath(pdfNormalized);
-        setMdPath(mdNormalized);
-        appendLogs([`✅ PDF generato: ${pdfNormalized}`]);
-        const normalizedBackend=normalizeBackendUrlValue(backendUrl||'');
-        const pdfUrl=buildFileUrl(normalizedBackend,data.pdfPath);
-        const mdUrl=buildFileUrl(normalizedBackend,data?.mdPath||'');
-        const logosUsed={
-          frontend:customLogo?'custom':'default',
-          pdf:resolvePdfLogoLabel(customPdfLogo),
-        };
-        const structureMeta = data?.structure || null;
-        if (structureMeta && Number.isFinite(structureMeta.score)) {
-          appendLogs([`📊 Completezza stimata: ${structureMeta.score}%`]);
-          if (Array.isArray(structureMeta.missingSections) && structureMeta.missingSections.length) {
-            appendLogs([`🧩 Sezioni mancanti: ${structureMeta.missingSections.join(', ')}`]);
-          }
-        }
-        const fallbackPrompt = promptState.promptId
+        : null;
+      const promptSummary = data?.prompt || fallbackPrompt;
+
+      const historyEntry = hydrateHistoryEntry({
+        id: Date.now(),
+        timestamp: new Date().toISOString(),
+        slug: slugValue || 'documento',
+        title: slugValue || file.name,
+        duration: null,
+        pdfPath: data.pdfPath,
+        pdfUrl,
+        mdPath: data?.mdPath || '',
+        mdUrl,
+        localPdfPath: data?.localPdfPath || '',
+        localMdPath: data?.localMdPath || '',
+        backendUrl: normalizedBackend,
+        logos: logosUsed,
+        tags: [],
+        logs: sessionLogs,
+        stageEvents: successEvents,
+        source: 'markdown-upload',
+        bytes: file.size || null,
+        workspace: data?.workspace || (workspaceSelection.workspaceId
           ? {
-              id: promptState.promptId,
-              title: activePrompt?.title || '',
-              slug: activePrompt?.slug || '',
-              description: activePrompt?.description || '',
-              persona: activePrompt?.persona || '',
-              color: activePrompt?.color || '#6366f1',
-              tags: Array.isArray(activePrompt?.tags) ? activePrompt.tags : [],
-              cueCards: Array.isArray(activePrompt?.cueCards) ? activePrompt.cueCards : [],
-              checklist: activePrompt?.checklist || null,
-              markdownRules: activePrompt?.markdownRules || null,
-              pdfRules: activePrompt?.pdfRules || null,
-              focus: promptState.focus || '',
-              notes: promptState.notes || '',
-              completedCues: promptCompletedCues,
-              builtIn: Boolean(activePrompt?.builtIn),
+              id: workspaceSelection.workspaceId,
+              name: '',
+              client: '',
+              color: '#6366f1',
+              projectId: workspaceSelection.projectId || '',
+              projectName: workspaceSelection.projectName || '',
+              status: workspaceSelection.status || '',
             }
-          : null;
-        const promptSummary = data?.prompt || fallbackPrompt;
-        const historyEntry=hydrateHistoryEntry({
-          id:Date.now(),
-          timestamp:new Date().toISOString(),
-          slug:slugValue||'documento',
-          title:slugValue||file.name,
-          duration:null,
-          pdfPath:data.pdfPath,
-          pdfUrl,
-          mdPath:data?.mdPath||'',
-          mdUrl,
-          localPdfPath: data?.localPdfPath || '',
-          localMdPath: data?.localMdPath || '',
-          backendUrl:normalizedBackend,
-          logos:logosUsed,
-          tags:[],
-          logs:sessionLogs,
-          stageEvents:successEvents,
-          source:'markdown-upload',
-          bytes:file.size||null,
-          workspace: data?.workspace || (workspaceSelection.workspaceId
-            ? {
-                id: workspaceSelection.workspaceId,
-                name: '',
-                client: '',
-                color: '#6366f1',
-                projectId: workspaceSelection.projectId || '',
-                projectName: workspaceSelection.projectName || '',
-                status: workspaceSelection.status || '',
-              }
-            : null),
-          structure: structureMeta,
-          prompt: promptSummary,
-          speakers: Array.isArray(data?.speakers) ? data.speakers : [],
-          speakerMap: data?.speakerMap || {},
-        });
-        setHistory(prev=>{
-          const next=[historyEntry,...prev];
-          return next.slice(0,HISTORY_LIMIT);
-        });
-        setActivePanel('doc');
-        appendLogs([`💾 Sessione Markdown salvata nella Libreria (${historyEntry.title}).`]);
-        fetchWorkspaces({ silent: true });
-      }else{
-        appendLogs(['⚠️ Risposta backend senza percorso PDF.']);
-      }
-    }catch(err){
-      const message=err?.message||String(err);
-      appendLogs([`❌ ${message}`]);
-      handlePipelineEvents([
-        {stage:'publish',status:'failed',message},
-        {stage:'complete',status:'failed',message:'Pipeline interrotta'},
-      ],{animate:false});
-      setErrorBanner({title:'Impaginazione fallita',details:message});
-    }finally{
-      setBusy(false);
-      if(markdownInputRef.current){
-        markdownInputRef.current.value='';
-      }
+          : null),
+        structure: structureMeta,
+        prompt: promptSummary,
+        speakers: Array.isArray(data?.speakers) ? data.speakers : [],
+        speakerMap: data?.speakerMap || {},
+      });
+
+      setHistory(prev => {
+        const next = [historyEntry, ...prev];
+        return next.slice(0, HISTORY_LIMIT);
+      });
+
+      setActivePanel('doc');
+      appendLogs([`💾 Sessione Markdown salvata nella Libreria (${historyEntry.title}).`]);
+      fetchWorkspaces({ silent: true });
+    } else {
+      appendLogs(['⚠️ Risposta backend senza percorso PDF.']);
     }
-  };
+
+  } catch (err) {
+    const message = err?.message || String(err);
+    appendLogs([`❌ ${message}`]);
+    handlePipelineEvents([
+      { stage: 'publish', status: 'failed', message },
+      { stage: 'complete', status: 'failed', message: 'Pipeline interrotta' },
+    ], { animate: false });
+    setErrorBanner({ title: 'Impaginazione fallita', details: message });
+  } finally {
+    setBusy(false);
+    if (markdownInputRef.current) {
+      markdownInputRef.current.value = '';
+    }
+    if (textInputRef.current) {
+      textInputRef.current.value = '';
+    }
+  }
+};
 
   // TODO(Task 3): Surface this handler through the Base upload bar for .md
   // files alongside audio and .txt inputs.
