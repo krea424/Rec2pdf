@@ -1,13 +1,13 @@
 import React, { useState } from "react";
 import supabase from "../supabaseClient";
 import { classNames } from "../utils/classNames";
-import { 
-  Sparkles, 
-  Mail, 
-  Github, 
-  Chrome // Usiamo Chrome come icona generica per Google se non hai l'SVG specifico, o un'icona user
-} from "./icons"; // Assicurati di avere queste icone o sostituiscile con quelle disponibili
-// Se non hai l'icona Google specifica nel set, puoi usare un placeholder o importarla come SVG inline
+import { Mail } from "./icons";
+
+// --- IMPORTAZIONE ASSET LOCALI ---
+import googleLogo from "../assets/logo_google.svg";
+import githubLogo from "../assets/logo_github.png";
+// NUOVO LOGO PRINCIPALE
+import mainLogo from "../assets/thinkDOC3.svg";
 
 const LoginPage = () => {
   const [email, setEmail] = useState("");
@@ -45,19 +45,20 @@ const LoginPage = () => {
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-[#020b1a] via-[#081d36] to-[#103054] p-4 text-white">
       
-      {/* Card Principale con effetto Glassmorphism "Boardroom" */}
+      {/* Card Principale */}
       <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-8 shadow-[0_40px_120px_-20px_rgba(0,0,0,0.5)] backdrop-blur-2xl ring-1 ring-white/5">
         
-        {/* Header Logo */}
-        <div className="mb-10 flex flex-col items-center text-center">
-          <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 shadow-inner ring-1 ring-white/10">
-             {/* Sostituisci con il tuo Logo SVG se disponibile, altrimenti icona generica */}
-             <Sparkles className="h-8 w-8 text-indigo-300" />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-white">
-            Think<span className="text-indigo-400">Doc</span>
-          </h1>
-          <p className="mt-2 text-sm text-zinc-400">
+        {/* Header Logo Minimale */}
+        <div className="mb-8 flex flex-col items-center text-center">
+          {/* Logo libero, senza contenitore, più grande */}
+          <img 
+            src={mainLogo} 
+            alt="ThinkDoc Logo" 
+            className="h-20 w-auto object-contain mb-4" 
+          />
+          
+          {/* Sottotitolo discreto */}
+          <p className="text-sm font-medium text-zinc-400 tracking-wide">
             Intelligence Platform per Knowledge Worker
           </p>
         </div>
@@ -120,15 +121,16 @@ const LoginPage = () => {
             onClick={() => handleOAuth("github")}
             className="flex items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-zinc-300 transition-all hover:bg-white/10 hover:text-white"
           >
-            <Github className="h-5 w-5" /> GitHub
+            <img src={githubLogo} alt="GitHub" className="h-5 w-5 opacity-90" />
+            GitHub
           </button>
           <button
             type="button"
             onClick={() => handleOAuth("google")}
             className="flex items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-zinc-300 transition-all hover:bg-white/10 hover:text-white"
           >
-            {/* Se non hai l'icona Google, usa Chrome o un placeholder */}
-            <span className="font-bold text-white">G</span> Google
+            <img src={googleLogo} alt="Google" className="h-5 w-5" />
+            Google
           </button>
         </div>
 
