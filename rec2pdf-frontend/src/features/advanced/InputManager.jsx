@@ -183,19 +183,22 @@ const InputManager = ({ context }) => {
             }
           >
              <div className="relative">
-                <select
-                    value={pdfTemplateSelection.fileName || ""}
-                    onChange={(e) => handleSelectPdfTemplate(e.target.value)}
-                    disabled={workspaceProfileLocked} // Disabilitato se il profilo comanda
-                    className="w-full appearance-none rounded-xl border border-white/10 bg-black/20 px-4 py-3 pr-10 text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed focus:border-indigo-500 focus:outline-none"
-                >
-                    <option value="">Default (Standard)</option>
-                    {pdfTemplates.map((t) => (
-                        <option key={t.fileName} value={t.fileName}>
-                            {t.name || t.fileName}
-                        </option>
-                    ))}
-                </select>
+             <select
+    value={pdfTemplateSelection.fileName || ""}
+    onChange={(e) => handleSelectPdfTemplate(e.target.value)}
+    disabled={workspaceProfileLocked} 
+    className="w-full appearance-none rounded-xl border border-white/10 bg-black/20 px-4 py-3 pr-10 text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed focus:border-indigo-500 focus:outline-none"
+>
+    {/* Placeholder opzionale se la lista è vuota o sta caricando */}
+    {pdfTemplates.length === 0 && <option value="">Caricamento template...</option>}
+    
+    {/* Lista pulita dei template reali */}
+    {pdfTemplates.map((t) => (
+        <option key={t.fileName} value={t.fileName}>
+            {t.name || t.fileName}
+        </option>
+    ))}
+</select>
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
             </div>
             {workspaceProfileLocked && (

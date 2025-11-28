@@ -6,13 +6,13 @@ import {
   Sparkles, 
   Users, 
   FileText, 
-  Image as ImageIcon, // Importiamo l'icona immagine
+  Image as ImageIcon, 
   ChevronRight 
 } from "../../components/icons.jsx";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
 
-// Sottocomponente Card Compatta (Invariato, per riferimento)
+// Sottocomponente Card Compatta (Invariato)
 const SummaryCard = ({ 
   icon: Icon, 
   label, 
@@ -72,33 +72,27 @@ const BaseSummaryCards = () => {
     activePrompt, 
     activeWorkspaceProfile,
     pdfTemplateSelection,
-    customPdfLogo, // Recuperiamo il logo custom
-    customLogo     // Recuperiamo il logo UI (opzionale, se vuoi mostrare quello)
+    customPdfLogo,
+    customLogo
   } = useAppContext();
 
   const goToAdvanced = (section) => {
     navigate("/advanced", { state: { scrollTo: section } });
   };
 
-  // --- LOGICHE LABEL ---
-
-  // 1. Workspace
+  // --- LOGICHE LABEL (Invariate) ---
   const workspaceLabel = activeWorkspace?.name || workspaceSelection?.name || "Nessun workspace";
   const isWorkspaceActive = !!workspaceSelection?.workspaceId;
 
-  // 2. Progetto
   const projectLabel = workspaceSelection?.projectName || "Nessun progetto";
   const isProjectActive = !!workspaceSelection?.projectId || !!workspaceSelection?.projectName;
 
-  // 3. Prompt
   const promptLabel = activePrompt?.title || "Format Base";
   const isPromptActive = !!activePrompt?.id; 
 
-  // 4. Profilo
   const profileLabel = activeWorkspaceProfile?.label || "Nessun profilo";
   const isProfileActive = !!activeWorkspaceProfile?.id;
 
-  // 5. Template
   const getTemplateLabel = () => {
     if (pdfTemplateSelection?.fileName) return pdfTemplateSelection.fileName;
     if (activeWorkspaceProfile?.pdfTemplate) return activeWorkspaceProfile.pdfTemplate;
@@ -112,21 +106,15 @@ const BaseSummaryCards = () => {
     .replace(/-/g, ' ');
   const isTemplateActive = rawTemplate !== "Default";
 
-  // 6. Logo (NUOVA LOGICA)
   const getLogoLabel = () => {
-    // Priorità 1: Upload manuale in sessione
     if (customPdfLogo) {
-        // Se è un File object (upload manuale)
         if (customPdfLogo.name) return "Custom Upload"; 
-        // Se è un descrittore (es. da profilo)
         if (customPdfLogo.label) return customPdfLogo.label;
         return "Custom";
     }
-    // Priorità 2: Dal profilo workspace attivo
     if (activeWorkspaceProfile?.pdfLogo) {
         return activeWorkspaceProfile.pdfLogo.originalName || "Da Profilo";
     }
-    // Priorità 3: Default
     return "Default (ThinkDOC)";
   };
   const logoLabel = getLogoLabel();
@@ -134,14 +122,9 @@ const BaseSummaryCards = () => {
 
   return (
     <section aria-label="Riepilogo Sessione" className="w-full flex justify-center">
-      {/* 
-         MODIFICA UI: 
-         1. Aggiunto 'max-w-7xl' per limitare la larghezza su schermi ultra-wide.
-         2. Aggiunto 'w-full' per occupare lo spazio disponibile fino al max-w.
-         3. Mantenuta la griglia responsive.
-      */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6 w-full max-w-7xl">
         
+        {/* 1. WORKSPACE -> Apre Pannello 2 (workspace) */}
         <SummaryCard
           icon={Folder}
           label="Workspace"
@@ -150,9 +133,10 @@ const BaseSummaryCards = () => {
           colorClass="text-emerald-400"
           bgClass="bg-emerald-400/10"
           borderClass="border-emerald-400/20"
-          onClick={() => goToAdvanced("workspace")}
+          onClick={() => goToAdvanced("workspace")} 
         />
 
+        {/* 2. PROGETTO -> Apre Pannello 2 (workspace) */}
         <SummaryCard
           icon={Target}
           label="Progetto"
@@ -164,6 +148,7 @@ const BaseSummaryCards = () => {
           onClick={() => goToAdvanced("workspace")}
         />
 
+        {/* 3. PROMPT -> Apre Pannello 1 (prompt) - UNICO DIVERSO */}
         <SummaryCard
           icon={Sparkles}
           label="Prompt"
@@ -175,6 +160,7 @@ const BaseSummaryCards = () => {
           onClick={() => goToAdvanced("prompt")}
         />
 
+        {/* 4. PROFILO -> Apre Pannello 2 (workspace) */}
         <SummaryCard
           icon={Users}
           label="Profilo"
@@ -183,9 +169,10 @@ const BaseSummaryCards = () => {
           colorClass="text-rose-400"
           bgClass="bg-rose-400/10"
           borderClass="border-rose-400/20"
-          onClick={() => goToAdvanced("profile")}
+          onClick={() => goToAdvanced("workspace")}
         />
 
+        {/* 5. TEMPLATE -> Apre Pannello 2 (workspace) */}
         <SummaryCard
           icon={FileText}
           label="Template"
@@ -194,9 +181,10 @@ const BaseSummaryCards = () => {
           colorClass="text-amber-400"
           bgClass="bg-amber-400/10"
           borderClass="border-amber-400/20"
-          onClick={() => goToAdvanced("template")}
+          onClick={() => goToAdvanced("workspace")}
         />
 
+        {/* 6. LOGO -> Apre Pannello 2 (workspace) */}
         <SummaryCard
           icon={ImageIcon}
           label="Logo PDF"
@@ -205,7 +193,7 @@ const BaseSummaryCards = () => {
           colorClass="text-cyan-400"
           bgClass="bg-cyan-400/10"
           borderClass="border-cyan-400/20"
-          onClick={() => goToAdvanced("branding")}
+          onClick={() => goToAdvanced("workspace")}
         />
 
       </div>

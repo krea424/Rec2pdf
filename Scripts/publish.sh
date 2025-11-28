@@ -21,7 +21,7 @@ cleanup_tmp_files() {
 trap cleanup_tmp_files EXIT
 
 # ============================================ 
-# BrightLedger – MD_First_PDF_Publish v0.4.1
+# BrightLedger – MD_First_PDF_Publish v0.4.2
 # ============================================ 
 
 die() { echo "❌ $*" >&2; exit 1; }
@@ -51,6 +51,7 @@ TEMPLATE_DIR="$TOOL_ROOT/Templates"
 DEFAULT_TEX="$TEMPLATE_DIR/default.tex"
 HEADER_FOOTER_TEX="$TEMPLATE_DIR/header_footer.tex"
 COVER_TEX="$TEMPLATE_DIR/cover.tex"
+ASSETS_DIR="$TOOL_ROOT/assets" # Definizione esplicita
 
 [[ -f "$DEFAULT_TEX" ]] || die "Template default.tex non trovato: $DEFAULT_TEX"
 [[ -f "$HEADER_FOOTER_TEX" ]] || die "Template header_footer.tex non trovato: $HEADER_FOOTER_TEX"
@@ -229,36 +230,56 @@ if [[ "$TEMPLATE_KIND" == "tex" ]]; then
   echo "📌 Include cover : $COVER_TEX"
 fi
 
-# --- INIZIO MODIFICA LOGO SMART ---
+# --- INIZIO LOGICA SMART LOGO (Context Aware) ---
 
-# Seleziona il logo: custom se disponibile, altrimenti default intelligente
+# 1. Controllo Custom Logo (Priorità assoluta)
 CUSTOM_LOGO_PATH="${CUSTOM_PDF_LOGO:-}"
 
 if [[ -n "$CUSTOM_LOGO_PATH" && -f "$CUSTOM_LOGO_PATH" ]]; then
   LOGO="$CUSTOM_LOGO_PATH"
   echo "📌 Logo (Custom)   : $LOGO"
 else
-  # DEFAULT: Logica di fallback (PNG > SVG > PDF)
-  # Cerchiamo nella cartella assets globale
-  ASSETS_ROOT="$SCRIPT_DIR/../assets"
+  # 2. Default Logo Logic (Dipende dal motore: LaTeX vs HTML)
+  # ASSETS_DIR è definito all'inizio dello script
   
-  if [[ -f "$ASSETS_ROOT/thinkDOC.png" ]]; then
-      LOGO="$ASSETS_DIR/thinkDOC.png"
-      echo "📌 Logo (Default)  : PNG rilevato"
-  elif [[ -f "$ASSETS_ROOT/thinkDOC.svg" ]]; then
-      LOGO="$ASSETS_DIR/thinkDOC.svg"
-      echo "📌 Logo (Default)  : SVG rilevato"
-  elif [[ -f "$ASSETS_ROOT/thinkDOC.pdf" ]]; then
-      LOGO="$ASSETS_DIR/thinkDOC.pdf"
-      echo "📌 Logo (Default)  : PDF rilevato"
+  if [[ "$TEMPLATE_KIND" == "tex" ]]; then
+      # --- LATEX PREFERISCE PDF o PNG ---
+      if [[ -f "$ASSETS_DIR/thinkDOC.pdf" ]]; then
+          LOGO="$ASSETS_DIR/thinkDOC.pdf"
+          echo "📌 Logo (Default per LaTeX) : PDF rilevato (Ottimo)"
+      elif [[ -f "$ASSETS_DIR/thinkDOC.png" ]]; then
+          LOGO="$ASSETS_DIR/thinkDOC.png"
+          echo "📌 Logo (Default per LaTeX) : PNG rilevato (Buono)"
+      elif [[ -f "$ASSETS_DIR/thinkDOC.jpg" ]]; then
+          LOGO="$ASSETS_DIR/thinkDOC.jpg"
+          echo "📌 Logo (Default per LaTeX) : JPG rilevato"
+      else
+          # Disperazione: proviamo SVG ma probabilmente fallirà
+          LOGO="$ASSETS_DIR/thinkDOC.svg"
+          echo "⚠️  Attenzione: Per LaTeX trovato solo SVG. Potrebbe causare errore 'no BoundingBox'."
+      fi
   else
-      # Fallback estremo se non trova nulla (evita crash)
-      echo "⚠️  Nessun logo di default trovato in $ASSETS_ROOT"
-      LOGO="" 
+      # --- HTML PREFERISCE SVG ---
+      if [[ -f "$ASSETS_DIR/thinkDOC.svg" ]]; then
+          LOGO="$ASSETS_DIR/thinkDOC.svg"
+          echo "📌 Logo (Default per HTML) : SVG rilevato (Ottimo)"
+      elif [[ -f "$ASSETS_DIR/thinkDOC.png" ]]; then
+          LOGO="$ASSETS_DIR/thinkDOC.png"
+          echo "📌 Logo (Default per HTML) : PNG rilevato"
+      else
+          LOGO="$ASSETS_DIR/thinkDOC.pdf"
+          echo "⚠️  Attenzione: Per HTML trovato solo PDF. Potrebbe non essere visualizzato."
+      fi
   fi
 fi
 
-# --- FINE MODIFICA ---
+# Debug finale
+if [[ ! -f "$LOGO" ]]; then
+    echo "❌ ERRORE CRITICO: Nessun logo valido trovato in $ASSETS_DIR"
+    # Non facciamo exit qui per permettere a pandoc di provare comunque, ma segnaliamo l'errore
+fi
+
+# --- FINE LOGICA SMART LOGO ---
 
 # DEBUG LOGO
 echo "🔍 [DEBUG SCRIPT] Controllo Logo:"
@@ -327,31 +348,35 @@ fi
 # ----- Comando Pandoc (FIXED) -----
 if [[ "$TEMPLATE_KIND" == "tex" ]]; then
 
-  # === BIVIO: MODALITÀ SEMPLICE vs STANDARD ===
-  if [[ "${PDF_SIMPLE_MODE:-}" == "true" ]]; then
-      echo "⚡ Modalità Semplice (Raw): Uso template nativo di Pandoc"
-      pandoc_args=(
-        "$INPUT_MD"
-        --from markdown
-        --pdf-engine=xelatex
-        --variable "geometry:margin=2.5cm"
-        --variable "fontsize=11pt"
-        -o "$OUTPUT_PDF"
-      )
-  else
-      echo "✨ Modalità Standard: Uso template custom con Copertina e Header"
-      pandoc_args=(
-        "$INPUT_MD"
-        --from markdown
-        --pdf-engine=xelatex
-        --highlight-style=kate
-        --template "$SELECTED_TEMPLATE"
-        --variable "logo=$LOGO"
-        --include-in-header "$HEADER_FOOTER_TEX"
-        --include-before-body "$COVER_TEX"
-        --toc
-        -o "$OUTPUT_PDF"
-      )
+  # Verifica esistenza file di supporto critici per il template LaTeX
+  if [[ ! -f "$COVER_TEX" ]]; then
+     echo "⚠️  Attenzione: cover.tex non trovato ($COVER_TEX). La copertina non verrà generata."
+  fi
+  if [[ ! -f "$HEADER_FOOTER_TEX" ]]; then
+     echo "⚠️  Attenzione: header_footer.tex non trovato ($HEADER_FOOTER_TEX). Gli header potrebbero mancare."
+  fi
+
+  echo "✨ Modalità Standard (LaTeX): Generazione Report Tecnico con Copertina e Indice"
+  
+  # Costruzione array argomenti per massima leggibilità e sicurezza
+  pandoc_args=(
+    "$INPUT_MD"
+    --from markdown
+    --pdf-engine=xelatex
+    --highlight-style=kate
+    --template "$SELECTED_TEMPLATE"
+    --variable "logo=$LOGO"
+    --toc
+    --toc-depth=2
+    -o "$OUTPUT_PDF"
+  )
+
+  # Includi header e cover solo se i file esistono fisicamente
+  if [[ -f "$HEADER_FOOTER_TEX" ]]; then
+      pandoc_args+=(--include-in-header "$HEADER_FOOTER_TEX")
+  fi
+  if [[ -f "$COVER_TEX" ]]; then
+      pandoc_args+=(--include-before-body "$COVER_TEX")
   fi
 
 else

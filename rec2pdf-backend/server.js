@@ -1311,60 +1311,65 @@ const listTemplatesMetadata = async () => {
   try {
     const dirEntries = await fsp.readdir(TEMPLATES_DIR, { withFileTypes: true });
     const descriptors = new Map();
+    
     for (const entry of dirEntries) {
       if (!entry.isFile()) continue;
       const ext = path.extname(entry.name).toLowerCase();
       if (!SUPPORTED_TEMPLATE_EXTENSIONS.has(ext)) continue;
+      // Ignoriamo i file di supporto LaTeX
       if (['cover.tex', 'header_footer.tex'].includes(entry.name)) continue;
+      
       try {
         const descriptor = await resolveTemplateDescriptor(entry.name);
         descriptors.set(descriptor.fileName, descriptor);
       } catch (error) {
-        const reason =
-          error instanceof TemplateResolutionError ? error.userMessage : error?.message || error;
-        console.warn(`⚠️  Template ignorato (${entry.name}): ${reason}`);
+        console.warn(`⚠️  Template ignorato (${entry.name}): ${error.message}`);
       }
     }
 
     const ordered = [];
 
+    // 1. EXECUTIVE BRIEF (Il nostro nuovo preferito HTML)
+    const executiveDescriptor = descriptors.get('executive_brief.html');
+    if (executiveDescriptor) {
+      ordered.push(descriptorToMetadata(executiveDescriptor, { 
+        nameOverride: '1. Executive Brief (HTML)',
+        description: 'Layout moderno e sintetico, ideale per il business.' 
+      }));
+      descriptors.delete('executive_brief.html');
+    }
+
+    // 2. REPORT TECNICO (Il vecchio default.tex, rinominato)
     const defaultDescriptor = descriptors.get('default.tex');
     if (defaultDescriptor) {
-      ordered.push(descriptorToMetadata(defaultDescriptor, { nameOverride: '1_Default.tex' }));
+      ordered.push(descriptorToMetadata(defaultDescriptor, { 
+        nameOverride: '2. Report Tecnico (LaTeX)',
+        description: 'Layout classico e formale con copertina e indice. Ideale per documentazione tecnica.'
+      }));
       descriptors.delete('default.tex');
     }
 
-   
-
+    // 3. VERBALE MEETING
     const verbaleDescriptor = descriptors.get('verbale_meeting.html');
     if (verbaleDescriptor) {
-      ordered.push(
-        descriptorToMetadata(verbaleDescriptor, { nameOverride: '3_verbale_meeting' })
-      );
+      ordered.push(descriptorToMetadata(verbaleDescriptor, { 
+        nameOverride: '3. Verbale Riunione (HTML)',
+        description: 'Layout specifico per verbali con lista azioni e speaker.'
+      }));
       descriptors.delete('verbale_meeting.html');
     }
 
+    // 4. TUTTI GLI ALTRI (Ordinati alfabeticamente)
     const remaining = Array.from(descriptors.values())
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((descriptor) => descriptorToMetadata(descriptor));
+    
     ordered.push(...remaining);
 
     return ordered;
   } catch (error) {
-    if (error && error.code === 'ENOENT') {
-      return [
-        {
-          name: PANDOC_FALLBACK_TEMPLATE_LABEL,
-          fileName: PANDOC_FALLBACK_TEMPLATE_ID,
-          type: 'pandoc',
-          hasCss: false,
-          cssFileName: '',
-          description: PANDOC_FALLBACK_TEMPLATE_DESCRIPTION,
-          engine: '',
-        },
-      ];
-    }
-    throw error;
+    console.error("❌ Errore lista template:", error);
+    return []; // Ritorniamo array vuoto invece di crashare o dare fallback strani
   }
 };
 

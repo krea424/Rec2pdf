@@ -157,7 +157,8 @@ const BaseWorkspaceNavigator = ({
   );
 
   const cardClass = classNames(
-    "rounded-2xl border border-white/10 bg-white/5 p-5 text-white",
+    // Sostituisco 'bg-white/5' con 'bg-[#121214]' e aggiungo 'shadow-sm'
+    "rounded-2xl border border-white/10 bg-[#121214] p-5 text-white shadow-sm",
     themeStyles?.card
   );
 
