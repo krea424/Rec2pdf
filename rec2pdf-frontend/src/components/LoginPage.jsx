@@ -6,7 +6,6 @@ import { Mail } from "./icons";
 // --- IMPORTAZIONE ASSET LOCALI ---
 import googleLogo from "../assets/logo_google.svg";
 import githubLogo from "../assets/logo_github.png";
-// NUOVO LOGO PRINCIPALE
 import mainLogo from "../assets/thinkDOC3.svg";
 
 const LoginPage = () => {
@@ -43,31 +42,52 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-[#020b1a] via-[#081d36] to-[#103054] p-4 text-white">
+    <div className="flex min-h-screen w-full items-center justify-center bg-[#020408] p-4 text-white relative overflow-hidden">
       
+      {/* Effetto Glow di sfondo */}
+      <div className="absolute top-[-10%] left-[-10%] h-[500px] w-[500px] rounded-full bg-indigo-500/10 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] rounded-full bg-purple-500/10 blur-[120px] pointer-events-none" />
+
       {/* Card Principale */}
-      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-8 shadow-[0_40px_120px_-20px_rgba(0,0,0,0.5)] backdrop-blur-2xl ring-1 ring-white/5">
+      <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#121214] p-8 shadow-2xl z-10">
         
-        {/* Header Logo Minimale */}
+        {/* Header Logo */}
         <div className="mb-8 flex flex-col items-center text-center">
-          {/* Logo libero, senza contenitore, più grande */}
           <img 
             src={mainLogo} 
-            alt="ThinkDoc Logo" 
-            className="h-20 w-auto object-contain mb-4" 
+            alt="ThinkDoc" 
+            className="h-14 w-auto object-contain mb-4" 
           />
-          
-          {/* Sottotitolo discreto */}
-          <p className="text-sm font-medium text-zinc-400 tracking-wide">
-            Intelligence Platform per Knowledge Worker
+          <h2 className="text-xl font-bold text-white tracking-tight">
+            Bentornato
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Accedi per continuare il tuo lavoro
           </p>
         </div>
 
-        {/* Form Magic Link */}
-        <form onSubmit={handleMagicLink} className="space-y-5">
+        {/* 1. PRIORITY: GOOGLE LOGIN (Full Width, High Contrast) */}
+        <button
+          type="button"
+          onClick={() => handleOAuth("google")}
+          className="group relative flex w-full items-center justify-center gap-3 rounded-xl bg-white py-3.5 text-sm font-bold text-slate-900 shadow-lg transition-all hover:bg-zinc-200 hover:scale-[1.01] active:scale-[0.99]"
+        >
+          <img src={googleLogo} alt="Google" className="h-5 w-5" />
+          <span>Continua con Google</span>
+        </button>
+
+        {/* Divider */}
+        <div className="my-6 flex items-center gap-4">
+          <div className="h-px flex-1 bg-white/10" />
+          <span className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">oppure via email</span>
+          <div className="h-px flex-1 bg-white/10" />
+        </div>
+
+        {/* 2. SECONDARY: MAGIC LINK FORM */}
+        <form onSubmit={handleMagicLink} className="space-y-4">
           <div className="space-y-2">
-            <label htmlFor="email" className="ml-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-              Email Aziendale
+            <label htmlFor="email" className="ml-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+              Indirizzo Email
             </label>
             <div className="relative">
               <Mail className="pointer-events-none absolute left-4 top-3.5 h-5 w-5 text-zinc-500" />
@@ -75,10 +95,10 @@ const LoginPage = () => {
                 id="email"
                 type="email"
                 required
-                placeholder="nome@azienda.com"
+                placeholder="nome@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-black/20 py-3 pl-11 pr-4 text-sm text-white placeholder-zinc-600 transition-all focus:border-indigo-500/50 focus:bg-black/40 focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
+                className="w-full rounded-xl border border-white/10 bg-black/40 py-3 pl-11 pr-4 text-sm text-white placeholder-zinc-600 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
           </div>
@@ -87,57 +107,44 @@ const LoginPage = () => {
             type="submit"
             disabled={loading}
             className={classNames(
-              "w-full rounded-xl py-3.5 text-sm font-bold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]",
-              loading 
-                ? "cursor-not-allowed bg-zinc-700 text-zinc-400" 
-                : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-indigo-900/20"
+              "w-full rounded-xl border border-white/10 bg-white/5 py-3.5 text-sm font-semibold text-white transition-all hover:bg-white/10 hover:border-white/20 active:scale-[0.99]",
+              loading ? "cursor-not-allowed opacity-70" : ""
             )}
           >
-            {loading ? "Invio in corso..." : "Invia Magic Link"}
+            {loading ? "Invio link in corso..." : "Invia Link di Accesso"}
           </button>
         </form>
 
         {/* Feedback Message */}
         {message && (
           <div className={classNames(
-            "mt-4 rounded-lg p-3 text-center text-xs font-medium",
-            message.type === "error" ? "bg-rose-500/10 text-rose-300 border border-rose-500/20" : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
+            "mt-6 rounded-xl p-4 text-center text-xs font-medium border",
+            message.type === "error" 
+              ? "bg-rose-500/10 text-rose-300 border-rose-500/20" 
+              : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
           )}>
             {message.text}
           </div>
         )}
 
-        {/* Divider */}
-        <div className="my-8 flex items-center gap-4">
-          <div className="h-px flex-1 bg-white/5" />
-          <span className="text-[10px] font-medium uppercase tracking-widest text-zinc-600">oppure continua con</span>
-          <div className="h-px flex-1 bg-white/5" />
-        </div>
-
-        {/* Social Login */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* 3. TERTIARY: GITHUB (Subtle) */}
+        <div className="mt-8 pt-6 border-t border-white/5 flex flex-col items-center gap-3">
           <button
             type="button"
             onClick={() => handleOAuth("github")}
-            className="flex items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-zinc-300 transition-all hover:bg-white/10 hover:text-white"
+            className="flex items-center gap-2 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-300"
           >
-            <img src={githubLogo} alt="GitHub" className="h-5 w-5 opacity-90" />
-            GitHub
-          </button>
-          <button
-            type="button"
-            onClick={() => handleOAuth("google")}
-            className="flex items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-zinc-300 transition-all hover:bg-white/10 hover:text-white"
-          >
-            <img src={googleLogo} alt="Google" className="h-5 w-5" />
-            Google
+            <img src={githubLogo} alt="GitHub" className="h-4 w-4 opacity-60" />
+            Sei uno sviluppatore? Accedi con GitHub
           </button>
         </div>
 
-        {/* Footer */}
-        <p className="mt-8 text-center text-[10px] text-zinc-600">
-          Accedendo accetti i <a href="#" className="underline hover:text-zinc-400">Termini di Servizio</a> e la <a href="#" className="underline hover:text-zinc-400">Privacy Policy</a>.
-        </p>
+        {/* Footer Legal */}
+        <div className="mt-6 text-center">
+            <p className="text-[10px] text-zinc-700">
+                Protected by reCAPTCHA and subject to the Privacy Policy and Terms of Service.
+            </p>
+        </div>
       </div>
     </div>
   );
