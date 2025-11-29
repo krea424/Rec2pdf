@@ -6895,7 +6895,7 @@ const workspaceProfileTemplate = String(
       await safeUnlink(wavLocalPath);
     }
 
-   // --- INIZIO BLOCCO TRASCRIZIONE IBRIDA (GROQ + WHISPERX) ---
+  // --- INIZIO BLOCCO TRASCRIZIONE IBRIDA (GROQ + WHISPERX) ---
     
     // 1. Log iniziale intelligente
     out(
@@ -6909,6 +6909,7 @@ const workspaceProfileTemplate = String(
     const wavLocalForTranscribe = registerTempFile(path.join(pipelineDir, `${baseName}.wav`));
     let transcriptLocalPath = '';
 
+    // Definizione della funzione di trascrizione
     const performTranscription = async () => {
       // Scarichiamo sempre il file originale/WAV dallo storage
       const wavBuffer = await downloadFileFromBucket(SUPABASE_PROCESSED_BUCKET, wavStoragePath);
@@ -6930,6 +6931,7 @@ const workspaceProfileTemplate = String(
           'whisperx',
           JSON.stringify(wavLocalForTranscribe),
           '--language it',
+          '--model small',
           '--compute_type int8', // Ottimizzazione CPU
           '--diarize',
           `--hf_token ${JSON.stringify(HUGGING_FACE_TOKEN)}`,
@@ -6954,7 +6956,6 @@ const workspaceProfileTemplate = String(
         }
 
         // 1. Compressione Audio con FFmpeg (Strategia "Anti-Limit 25MB")
-        // Convertiamo in MP3 mono a 32k bitrate. Questo permette file fino a ~100 minuti.
         const groqAudioPath = registerTempFile(path.join(pipelineDir, 'groq_optimized.mp3'));
         
         console.log('[TRANSCRIPTION] Compressione audio per Groq...');
@@ -6982,12 +6983,11 @@ const workspaceProfileTemplate = String(
           file: fs.createReadStream(groqAudioPath),
           model: "whisper-large-v3",
           response_format: "json",
-          language: "it", // Forziamo italiano per sicurezza, o rimuovi per auto-detect
+          language: "it", 
           temperature: 0.0 
         });
 
         // 3. Normalizzazione Output
-        // Groq restituisce testo semplice o JSON. Noi salviamo un .txt per compatibilità con il resto della pipeline
         const txtContent = transcription.text;
         if (!txtContent) throw new Error('Groq ha restituito una trascrizione vuota.');
 
@@ -7009,15 +7009,17 @@ const workspaceProfileTemplate = String(
       
       out(`✅ Trascrizione completata (${diarizeEnabled ? 'WhisperX' : 'Groq'})`, 'transcribe', 'completed');
     };
-    // --- FINE BLOCCO TRASCRIZIONE IBRIDA ---
-    markStart('transcribe'); // <--- INSERISCI PRIMA DEL TRY
+
+    // ESECUZIONE EFFETTIVA (Importante!)
+    markStart('transcribe');
     try {
       await performTranscription();
-      markEnd('transcribe');   // <--- INSERISCI SUBITO DOPO L'AWAIT
+      markEnd('transcribe');
     } finally {
       await safeUnlink(wavLocalForTranscribe);
       await safeUnlink(transcriptLocalPath);
     }
+    // --- FINE BLOCCO TRASCRIZIONE IBRIDA ---
 
     const manualTemplateSelection = workspaceProfileTemplate;
     const profileTemplateSetting = workspaceProfile?.pdfTemplate;

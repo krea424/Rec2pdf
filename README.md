@@ -2,14 +2,8 @@
 
 Rec2pdf è la soluzione pensata per knowledge worker, consulenti e project manager, ma anche semplici user, che necessitano di trasformare rapidamente idee e brainstorming vocali in documenti professionali. Supera il divario tra il pensiero parlato e un deliverable strutturato, analizzando l'audio con un LLM per generare report, verbali e analisi di alta qualità. Grazie a una pipeline automatizzata che opera in locale, Rec2pdf garantisce massima autonomia, sicurezza dei dati e un output editoriale curato, pronto per la condivisione.
 
-## Novità v13.0.0 (Architettura Asincrona)
 
-L'ultima versione introduce una **nuova architettura asincrona** basata su "Job Queue", che migliora la scalabilità e l'affidabilità del sistema.
 
-- **Nuova Architettura Asincrona (v13)**: Il sistema utilizza un pattern a "Job Queue". Il Frontend carica il file e crea un record nella tabella `jobs` su Supabase. Un Webhook di Supabase notifica il Backend (Worker) che elabora il file in background. Il Frontend esegue il polling dello stato per mostrare i risultati.
-- **Sviluppo Locale con ngrok**: Il setup di sviluppo locale ora richiede `ngrok` per ricevere i webhook di Supabase in locale.
-- **Fallback Dinamico a OpenAI**: In caso di problemi con l'API di Gemini, il sistema passa automaticamente a OpenAI per garantire la continuità del servizio.
-- **Sviluppo con Docker**: È ora possibile eseguire l'intero stack dell'applicazione in un ambiente Docker locale, semplificando il setup.
 
 ## Features Principali
 
@@ -21,52 +15,7 @@ L'ultima versione introduce una **nuova architettura asincrona** basata su "Job 
 - **Accesso Multi-Utente**: Architettura sicura basata su Supabase con policy di Row Level Security (RLS).
 - **Ambiente di Sviluppo Dockerizzato**: Supporto completo per lo sviluppo locale tramite Docker.
 
-## Architettura (v14 - Hybrid & Direct-Upload)
 
-Il sistema utilizza un'architettura ibrida e asincrona progettata per velocità ("Fast Mode") e profondità di analisi ("Meeting Mode").
-
-1.  **Direct Upload (Client-Side):** Il Frontend carica l'audio direttamente su Supabase Storage. Questo garantisce resilienza su reti mobili e bypassa i limiti di timeout/dimensione del server.
-2.  **Job Queue:** A upload completato, il Frontend crea un record nella tabella `jobs`. Un Webhook sicuro attiva il Worker.
-3.  **Hybrid Worker (Backend):** Il backend analizza la richiesta e instrada il lavoro:
-    *   **Groq LPU:** Per note personali e audio singolo speaker. Velocità estrema (trascrizione quasi istantanea).
-    *   **WhisperX (Locale):** Per riunioni multi-speaker. Esegue diarizzazione e allineamento temporale preciso.
-4.  **RAG & AI Synthesis:** Il testo viene arricchito con il contesto della Knowledge Base (vettoriale) e processato da LLM (Gemini/OpenAI) per generare il documento strutturato.
-5.  **PDF Rendering:** Generazione PDF tipografica tramite Weasyprint con template HTML/CSS personalizzabili.
-
-## Architettura (v13 - Asincrona)
-
-Il sistema utilizza un pattern a **"Job Queue"** per garantire l'elaborazione asincrona e robusta dei file.
-
-1.  Il **Frontend** carica il file (audio o testo) e crea un nuovo record nella tabella `jobs` su Supabase, impostando lo stato iniziale.
-2.  Un **Webhook** configurato su Supabase rileva l'inserimento del nuovo job e invia una notifica al Backend.
-3.  Il **Backend (Worker)** riceve la notifica e avvia l'elaborazione in background. Le fasi includono: Transcodifica -> Trascrizione -> RAG -> PDF.
-4.  Durante l'elaborazione, il backend aggiorna lo stato del job nella tabella `jobs` (es. `processing`, `completed`, `failed`).
-5.  Il **Frontend** esegue il polling dello stato del job a intervalli regolari e, una volta completato, mostra i risultati all'utente, fornendo i link per il download.
-
-## Sviluppo Locale (Setup v13)
-
-Per eseguire l'ambiente di sviluppo completo in locale è necessario `ngrok` per esporre il backend e ricevere i webhook da Supabase.
-
-### Prerequisiti Aggiuntivi
-- **ngrok**: Necessario per ricevere i webhook di Supabase in locale.
-
-### Avvio in Locale
-1.  **Avviare lo stack Docker**:
-    ```bash
-    docker-compose up
-    ```
-2.  **Avviare il tunnel ngrok** per esporre la porta del backend (8080 di default):
-    ```bash
-    ngrok http 8080
-    ```
-3.  **Configurare il Webhook su Supabase**:
-    Usa l'URL `https` fornito da ngrok e configuralo per inviare una notifica all'endpoint del worker.
-    - **URL del Webhook**: `https://<tuo-ngrok>.ngrok-free.app/api/worker/trigger`
-    - Vai sulla dashboard di Supabase -> Database -> Webhooks e crea un nuovo webhook sulla tabella `jobs` per gli eventi di `INSERT`.
-4.  **Avviare il frontend**:
-    ```bash
-    cd rec2pdf-frontend && npm run dev
-    ```
 
 ## Quickstart
 
