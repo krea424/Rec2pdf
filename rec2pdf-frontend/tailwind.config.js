@@ -3,6 +3,34 @@ import typography from "@tailwindcss/typography";
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,jsx,ts,tsx}"],
+  // --- AGGIUNTA SAFELIST ---
+  // Forza la generazione di queste classi anche se Tailwind non le "vede" staticamente
+  safelist: [
+    // Gradienti base
+    'bg-gradient-to-b',
+    'bg-gradient-to-br',
+    'bg-gradient-to-r',
+    // Colori specifici per i temi Executive e Boardroom
+    'from-[#030712]', 'via-[#0b1220]', 'to-[#0f172a]',
+    'from-[#020b1a]', 'via-[#081d36]', 'to-[#103054]',
+    
+    // Pattern per i colori dei temi (Zinc, Slate, Gray, Neutral)
+    // Copre le gradazioni scure (800, 900, 950) usate nei temi
+    {
+      pattern: /from-(zinc|slate|gray|neutral)-(800|900|950)/,
+    },
+    {
+      pattern: /via-(zinc|slate|gray|neutral)-(800|900|950)/,
+    },
+    {
+      pattern: /to-(zinc|slate|gray|neutral)-(800|900|950)/,
+    },
+    
+    // Classi specifiche per il tema "Boardroom" o "Executive" se usano colori custom
+    // (Se usi colori esadecimali arbitrari tipo from-[#020b1a] nel codice, 
+    // Tailwind JIT dovrebbe vederli, ma se sono variabili, aggiungili qui)
+  ],
+  // -------------------------
   theme: {
     extend: {
       spacing: {
