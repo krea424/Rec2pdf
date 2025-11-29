@@ -68,18 +68,24 @@ const AppShell = () => {
 
   const cx = classNames;
 
+  // Fallback di sicurezza: se il tema corrente non esiste, usa 'boardroom'
+  const currentTheme = themes[theme] ? themes[theme] : themes['boardroom'];
+
   return (
     <div
       className={cx(
-        "min-h-screen w-full",
-        "bg-gradient-to-b",
-        themes[theme].bg,
+        "min-h-screen w-full transition-colors duration-700 ease-in-out",
+        // Usiamo bg-gradient-to-br (Bottom Right) per matchare lo stile della Login
+        "bg-gradient-to-br", 
+        currentTheme.bg,
         "text-zinc-100",
       )}
     >
+      {/* ... resto del contenuto (Header, Main, etc.) invariato ... */}
       <div className="mx-auto max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8">
         <header className="flex flex-col gap-6">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            {/* ... codice header esistente ... */}
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             
             {/* LOGO */}
             <div className="flex items-center gap-3">
@@ -122,15 +128,12 @@ const AppShell = () => {
 
               <div className="h-6 w-px bg-white/10 mx-1 hidden sm:block" />
 
-              {/* PULSANTE IMPOSTAZIONI (Rinominato) */}
+              {/* PULSANTE IMPOSTAZIONI */}
               <Button
                 type="button"
                 variant="ghost"
                 className="gap-2 px-3 text-xs font-medium text-zinc-400 hover:text-white hover:bg-white/5"
-                onClick={() => {
-                  // Apre il drawer generico, non solo workspace
-                  openSettingsDrawer?.(); 
-                }}
+                onClick={() => openSettingsDrawer?.()}
                 leadingIcon={Settings}
               >
                 Impostazioni

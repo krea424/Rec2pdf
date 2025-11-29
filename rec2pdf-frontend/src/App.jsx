@@ -977,7 +977,6 @@ const themes = {
     bg: "from-zinc-950 via-zinc-900 to-zinc-950",
     card: "bg-zinc-900/50 border-zinc-800",
     input: "bg-zinc-900/60 border-zinc-800",
-    input_hover: "hover:bg-zinc-800/60",
     button: "bg-zinc-800 hover:bg-zinc-700 border-zinc-700",
     log: "bg-black/40 border-black/40",
   },
@@ -985,7 +984,6 @@ const themes = {
     bg: "from-slate-950 via-slate-900 to-slate-950",
     card: "bg-slate-900/50 border-slate-800",
     input: "bg-slate-900/60 border-slate-800",
-    input_hover: "hover:bg-slate-800/60",
     button: "bg-slate-800 hover:bg-slate-700 border-slate-700",
     log: "bg-black/40 border-black/40",
   },
@@ -993,7 +991,6 @@ const themes = {
     bg: "from-gray-900 via-slate-900 to-gray-900",
     card: "bg-white/5 border-white/10",
     input: "bg-white/10 border-white/20",
-    input_hover: "hover:bg-white/20",
     button: "bg-slate-700 hover:bg-slate-600 border-slate-600",
     log: "bg-white/5 border-white/10",
   },
@@ -1001,7 +998,6 @@ const themes = {
     bg: "from-[#030712] via-[#0b1220] to-[#0f172a]",
     card: "bg-slate-900/60 border-emerald-500/20 backdrop-blur",
     input: "bg-slate-900/50 border-emerald-500/30 backdrop-blur",
-    input_hover: "hover:bg-slate-900/40",
     button: "bg-emerald-500 hover:bg-emerald-400 text-slate-900 border-emerald-300 font-semibold",
     log: "bg-slate-950/70 border-emerald-500/20",
   },
@@ -1009,9 +1005,7 @@ const themes = {
     bg: "from-[#020b1a] via-[#081d36] to-[#103054]",
     card: "border-white/20 bg-gradient-to-br from-white/[0.14] via-white/[0.05] to-transparent backdrop-blur-3xl shadow-[0_45px_120px_-60px_rgba(4,20,44,0.95)]",
     input: "border-white/16 bg-white/[0.05] backdrop-blur-2xl shadow-[0_32px_90px_-58px_rgba(9,33,68,0.85)]",
-    input_hover: "hover:border-brand-200/60 hover:bg-white/[0.08]",
-    button:
-      "bg-gradient-to-r from-brand-400 via-[#1f9bbd] to-[#6b6bff] text-slate-950 border-transparent font-semibold transition-all duration-300 ease-out shadow-[0_32px_90px_-55px_rgba(63,163,255,0.6)] hover:from-brand-500 hover:via-[#1f9bbd] hover:to-[#8f7bff] hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:ring-brand-200/60",
+    button: "bg-gradient-to-r from-brand-400 via-[#1f9bbd] to-[#6b6bff] text-slate-950 border-transparent font-semibold transition-all duration-300 ease-out shadow-[0_32px_90px_-55px_rgba(63,163,255,0.6)] hover:from-brand-500 hover:via-[#1f9bbd] hover:to-[#8f7bff] hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:ring-brand-200/60",
     log: "border-white/16 bg-[#071a33]/80 backdrop-blur-2xl",
   },
 };
@@ -1465,6 +1459,7 @@ const activePrompt = useMemo(
   }, [customLogo]);
 
   useEffect(() => {
+    console.log("🎨 Tema cambiato in:", theme); // <--- DEBUG
     if (!themes[theme]) {
       setTheme('boardroom');
       return;
@@ -5929,6 +5924,7 @@ const processMarkdownUpload = async (file, options = {}) => {
     theme,
     themes,
     cycleTheme,
+    setTheme, // <--- AGGIUNGI QUESTA RIGA
     customLogo,
     setCustomLogo,
     customPdfLogo,
@@ -6168,19 +6164,24 @@ const processMarkdownUpload = async (file, options = {}) => {
   resetDiarizationPreference, handleRefineAndGenerate
   ]);
 
-  if (!sessionChecked) {
-    return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-6 py-4 text-sm text-zinc-300">
-          Verifica sessione in corso…
-        </div>
+ // ...
+ if (!sessionChecked) {
+  // Mostra un loader elegante invece di crashare o mostrare bianco
+  return (
+    <div className="flex min-h-screen w-full items-center justify-center bg-[#020408] text-white">
+      <div className="flex flex-col items-center gap-4">
+         {/* Puoi usare il tuo logo o uno spinner */}
+         <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent"></div>
+         <p className="text-sm text-zinc-400 animate-pulse">Caricamento...</p>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  if (!session) {
-    return <LoginPage />;
-  }
+if (!session) {
+  return <LoginPage />;
+}
+// ...
 
   // In App.jsx, subito prima del return di AppContent
 

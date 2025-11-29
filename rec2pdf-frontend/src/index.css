@@ -127,3 +127,7 @@
     background-color: #64748b;
   }
 }
+/* Previene il pull-to-refresh su mobile */
+body {
+  overscroll-behavior-y: none;
+}
