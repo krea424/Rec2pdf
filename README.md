@@ -2,8 +2,17 @@
 
 Rec2pdf è la soluzione pensata per knowledge worker, consulenti e project manager, ma anche semplici user, che necessitano di trasformare rapidamente idee e brainstorming vocali in documenti professionali. Supera il divario tra il pensiero parlato e un deliverable strutturato, analizzando l'audio con un LLM per generare report, verbali e analisi di alta qualità. Grazie a una pipeline automatizzata che opera in locale, Rec2pdf garantisce massima autonomia, sicurezza dei dati e un output editoriale curato, pronto per la condivisione.
 
+## Novità v14.0.0 (Hybrid & Direct-Upload)
 
+Il sistema utilizza un'architettura ibrida e asincrona progettata per velocità ("Fast Mode") e profondità di analisi ("Meeting Mode").
 
+1.  **Direct Upload (Client-Side):** Il Frontend carica l'audio direttamente su Supabase Storage. Questo garantisce resilienza su reti mobili e bypassa i limiti di timeout/dimensione del server.
+2.  **Job Queue:** A upload completato, il Frontend crea un record nella tabella `jobs`. Un Webhook sicuro attiva il Worker.
+3.  **Hybrid Worker (Backend):** Il backend analizza la richiesta e instrada il lavoro:
+    *   **Groq LPU:** Per note personali e audio singolo speaker. Velocità estrema (trascrizione quasi istantanea).
+    *   **WhisperX (Locale):** Per riunioni multi-speaker. Esegue diarizzazione e allineamento temporale preciso.
+4.  **RAG & AI Synthesis:** Il testo viene arricchito con il contesto della Knowledge Base (vettoriale) e processato da LLM (Gemini/OpenAI) per generare il documento strutturato.
+5.  **PDF Rendering:** Generazione PDF tipografica tramite Weasyprint con template HTML/CSS personalizzabili.
 
 ## Features Principali
 
@@ -15,11 +24,17 @@ Rec2pdf è la soluzione pensata per knowledge worker, consulenti e project manag
 - **Accesso Multi-Utente**: Architettura sicura basata su Supabase con policy di Row Level Security (RLS).
 - **Ambiente di Sviluppo Dockerizzato**: Supporto completo per lo sviluppo locale tramite Docker.
 
-
-
 ## Quickstart
 
-... (resto del file) ...
+### Avvio in Locale
+1.  **Avviare lo stack Docker**:
+    ```bash
+    docker-compose up
+    ```
+2.  **Avviare il frontend**:
+    ```bash
+    cd rec2pdf-frontend && npm run dev
+    ```
 
 ## Bootstrap Supabase
 
@@ -114,7 +129,7 @@ npm run preview  # serve statico su http://localhost:4173
 ## Scorciatoie da tastiera
 - `⌘/Ctrl + K` apre e richiude la **command palette** globale finché il focus non è su un campo di input, consentendo di lanciare comandi senza cambiare vista.【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L133-L208】
 - Con la palette aperta premi `R` per avviare/fermare la registrazione, `U` per aprire il selettore file audio, `E` per navigare all'editor e `K` per passare alla libreria.【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L59-L112】
-- Le lettere `B` e `A` passano rispettivamente alla modalità Base e Advanced sia dalla palette sia dal toggle in header, che mostra lo stato corrente e salva la preferenza in tempo reale.【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L88-L190】【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L56-L107】
+- Le lettere `B` e `A` passano rispettivamente alla modalità Base e Advanced sia dalla palette sia dal toggle in header, che mostra lo stato corrente e salva la preferenza in tempo reale.【F:rec2pdf-frontend/src/components/layout/AppShell.jsx†L56-L107】
 - Usa `Esc`, `Tab` e `Shift+Tab` per navigare e chiudere la palette, mantenendo il focus sul contesto iniziale senza perdere l'operazione in corso.【F:rec2pdf-frontend/src/components/CommandPalette.jsx†L132-L190】
 
 ## Workflow tipico
