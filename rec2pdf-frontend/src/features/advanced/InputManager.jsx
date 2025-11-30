@@ -199,6 +199,12 @@ const InputManager = ({ context }) => {
         </option>
     ))}
 </select>
+{/* Mostra descrizione del template selezionato */}
+{pdfTemplateSelection.fileName && (
+    <p className="mt-2 text-[11px] text-zinc-500 leading-tight">
+        {pdfTemplates.find(t => t.fileName === pdfTemplateSelection.fileName)?.description}
+    </p>
+)}
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
             </div>
             {workspaceProfileLocked && (
