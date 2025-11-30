@@ -1863,29 +1863,30 @@ const activePrompt = useMemo(
     resetCreationFlowState();
   };
   const handleLogout = useCallback(async () => {
-    // 1. PULIZIA LOCALE IMMEDIATA
-    // Rimuoviamo il "Zombie Job" dalla memoria del browser
+    // 1. PULIZIA STATO APPLICAZIONE (Job e UI)
     localStorage.removeItem('activeJobId');
     
-    // Resettiamo tutti gli stati dell'interfaccia (busy, logs, percorsi)
-    resetAll(); 
+    // 2. PULIZIA PREFERENZE UTENTE (Il Fix per i Default)
+    // Rimuovendo queste chiavi, al prossimo login gli useEffect
+    // non troveranno nulla e applicheranno i default "Executive".
+    localStorage.removeItem('rec2pdfPromptSelection');      // Resetta il Prompt
+    localStorage.removeItem('rec2pdfPdfTemplateSelection'); // Resetta il Template
+    localStorage.removeItem('rec2pdfWorkspaceSelection');   // Resetta il Workspace (Opzionale, ma consigliato per privacy)
     
-    // (Opzionale) Se vuoi pulire anche altre preferenze, fallo qui
-    // localStorage.removeItem('rec2pdfWorkspaceSelection'); 
+    // 3. RESET UI
+    resetAll(); 
   
-    // 2. LOGOUT SUPABASE
+    // 4. LOGOUT SUPABASE
     try {
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.warn("Errore durante il sign out Supabase:", error);
-        // Non blocchiamo l'utente se il logout server-side fallisce, 
-        // localmente abbiamo già pulito.
       }
     }
     catch (error) {
-    console.error("Eccezione durante il logout:", error);
+      console.error("Eccezione durante il logout:", error);
     }
-    }, [setErrorBanner, resetAll]); // Assicurati che resetAll sia nelle dipendenze
+  }, [resetAll]); // Assicurati che resetAll sia nelle dipendenze
 
 
   const pushLogs=useCallback((arr)=>{ setLogs(ls=>ls.concat((arr||[]).filter(Boolean))); },[]);
