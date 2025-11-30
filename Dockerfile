@@ -1,77 +1,123 @@
-# Usa Debian 12 (Bookworm) Full - Massima compatibilità
-FROM node:20-bookworm
+# ==========================================
+# STAGE 1: BUILDER (Costruzione Robusta)
+# ==========================================
+FROM node:20-slim as builder
 
-# 1. Configurazione Ambiente per Cloud Run
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    # Variabili Cache su /tmp (RAM)
-    HF_HOME="/tmp/hf" \
-    TORCH_HOME="/tmp/torch" \
-    XDG_CACHE_HOME="/tmp/cache" \
-    MPLCONFIGDIR="/tmp/matplotlib" \
-    NUMBA_CACHE_DIR="/tmp/numba" \
-    # Percorsi App
-    PROJECT_ROOT=/app \
-    TEMPLATES_DIR=/app/Templates \
-    ASSETS_DIR=/app/assets \
-    PUBLISH_SCRIPT=/app/Scripts/publish.sh
+    HF_HOME="/app/ai_models" \
+    TORCH_HOME="/app/ai_models/torch"
 
 WORKDIR /app
 
-# 2. Installazione Dipendenze di Sistema (TUTTO INSIEME)
-# Installiamo Python, FFmpeg, e le librerie per Weasyprint e WhisperX
+# 1. Installiamo tool + ffmpeg + certificati
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
-    python3-dev \
     python3-venv \
-    ffmpeg \
     git \
-    libsndfile1 \
     build-essential \
-    # Dipendenze WeasyPrint
+    wget \
+    ffmpeg \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Virtual Environment
+RUN python3 -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
+
+# 3. Installazione Python "Golden Config" + WEASYPRINT
+RUN pip install --upgrade pip && \
+    # Torch CPU (versione stabile per WhisperX)
+    pip install "torch==2.1.2" "torchaudio==2.1.2" --index-url https://download.pytorch.org/whl/cpu && \
+    # Dipendenze core
+    pip install "numpy<2.0.0" "pandas<2.2.0" "transformers==4.36.2" "pyannote.audio==3.1.1" && \
+    # WhisperX
+    pip install git+https://github.com/m-bain/whisperX.git && \
+    # --- NUOVO: Installiamo il motore PDF ---
+    pip install weasyprint
+
+# 4. Preriscaldamento Modelli
+RUN mkdir -p /app/ai_models/torch && \
+    echo "Scaricamento modelli base..." && \
+    ffmpeg -f lavfi -i "anullsrc=r=16000:cl=mono" -t 1 -q:a 9 dummy.wav && \
+    whisperx dummy.wav --model small --language it --device cpu --compute_type float32 --align_model WAV2VEC2_ASR_BASE_10K_VOXPOPULI_ASR_ITALIAN_V2 || true && \
+    rm dummy.wav
+
+# 5. Dipendenze Node
+COPY rec2pdf-backend/package*.json ./rec2pdf-backend/
+WORKDIR /app/rec2pdf-backend
+RUN npm ci --omit=dev
+
+
+# ==========================================
+# STAGE 2: RUNNER (Produzione Stabile)
+# ==========================================
+FROM node:20-slim
+
+ENV NODE_ENV=production \
+    PORT=8080 \
+    HF_HOME="/app/ai_models" \
+    TORCH_HOME="/app/ai_models/torch" \
+    PATH="/app/venv/bin:${PATH}"
+
+WORKDIR /app
+
+# 6. Installazione Librerie di Sistema
+# Rimosso: wkhtmltopdf, xvfb
+# Aggiunto: Librerie Pango per WeasyPrint
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    pandoc \
+    # --- Dipendenze Grafiche per WeasyPrint ---
     libpango-1.0-0 \
     libpangoft2-1.0-0 \
     libharfbuzz-subset0 \
     libjpeg-dev \
     libopenjp2-7-dev \
     libffi-dev \
-    # Dipendenze LaTeX
-    pandoc \
+    # ------------------------------------------
+    libsndfile1 \
+    libgomp1 \
+    git \
+    procps \
+    ca-certificates \
     texlive-latex-base \
-    texlive-fonts-recommended \
     texlive-latex-extra \
+    texlive-fonts-recommended \
     texlive-xetex \
+    python3 \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Setup Python Environment Globale
-# Usiamo --break-system-packages perché siamo in un container isolato, è ok.
-RUN python3 -m pip install --upgrade pip --break-system-packages
+# 7. Copia Artefatti
+COPY --from=builder /app/venv /app/venv
+# Link simbolico per whisperx
+RUN ln -s /app/venv/bin/whisperx /usr/local/bin/whisperx
+# Link simbolico anche per weasyprint (per sicurezza, così pandoc lo trova)
+RUN ln -s /app/venv/bin/weasyprint /usr/local/bin/weasyprint
 
-# Installiamo Torch CPU (per risparmiare spazio)
-RUN python3 -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu --break-system-packages
+COPY --from=builder /app/ai_models /app/ai_models
+COPY --from=builder /app/rec2pdf-backend/node_modules /app/rec2pdf-backend/node_modules
 
-# Installiamo WhisperX e Weasyprint
-RUN python3 -m pip install git+https://github.com/m-bain/whisperX.git --break-system-packages
-RUN python3 -m pip install weasyprint --break-system-packages
-
-# 4. Setup Node.js Backend
-COPY rec2pdf-backend/package*.json ./rec2pdf-backend/
-WORKDIR /app/rec2pdf-backend
-RUN npm ci --omit=dev
-
-# 5. Copia del Codice Sorgente
-WORKDIR /app
 COPY rec2pdf-backend /app/rec2pdf-backend
 COPY Scripts /app/Scripts
 COPY Templates /app/Templates
 COPY assets /app/assets
 
-# 6. Permessi
+# Setup Finale
 WORKDIR /app/rec2pdf-backend
 RUN chmod +x ../Scripts/publish.sh
 
-# Esposizione
+# === FIX CRITICO PERCORSI ===
+# Definiamo i percorsi ASSOLUTI così non ci sono dubbi
+ENV PROJECT_ROOT=/app
+ENV TEMPLATES_DIR=/app/Templates
+ENV ASSETS_DIR=/app/assets
+ENV PUBLISH_SCRIPT=/app/Scripts/publish.sh
+# ============================
+
+
 EXPOSE 8080
 CMD ["node", "server.js"]
