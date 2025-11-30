@@ -1,6 +1,8 @@
 const { canonicalizeProjectScopeId, sanitizeProjectIdentifier, CONTEXT_SEPARATOR } = require('./services/utils.js');
 const { RAGService } = require('./services/ragService');
 const { PromptService } = require('./services/promptService');
+// AGGIUNGI QUI L'IMPORTAZIONE
+const IntentService = require('./services/intentService'); 
 const promptService = new PromptService();
 require('dotenv').config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
@@ -53,6 +55,8 @@ const supabase =
       })
     : null;
 const ragService = supabase ? new RAGService(supabase) : null;
+// AGGIUNGI QUI LA RIGA CHE DAVA ERRORE:
+const intentService = supabase ? new IntentService(supabase) : null; 
 
 const getSupabaseClient = () => {
   if (!supabase) {
@@ -1329,23 +1333,25 @@ const listTemplatesMetadata = async () => {
 
     const ordered = [];
 
-    // 1. EXECUTIVE BRIEF (Il nostro nuovo preferito HTML)
-    const executiveDescriptor = descriptors.get('executive_brief.html');
-    if (executiveDescriptor) {
-      ordered.push(descriptorToMetadata(executiveDescriptor, { 
-        nameOverride: '1. Executive Brief (HTML)',
-        description: 'Layout moderno e sintetico, ideale per il business.' 
-      }));
-      descriptors.delete('executive_brief.html');
-    }
+  // 1. EXECUTIVE BRIEF
+  const executiveDescriptor = descriptors.get('executive_brief.html');
+  if (executiveDescriptor) {
+    ordered.push(descriptorToMetadata(executiveDescriptor, { 
+      // Rimuovi nameOverride o impostalo a null
+      // nameOverride: '...', 
+      
+      // Se vuoi forzare solo l'ordine ma usare il nome del JSON:
+      nameOverride: null, 
+    }));
+    descriptors.delete('executive_brief.html');
+  }
 
     // 2. REPORT TECNICO (Il vecchio default.tex, rinominato)
     const defaultDescriptor = descriptors.get('default.tex');
     if (defaultDescriptor) {
       ordered.push(descriptorToMetadata(defaultDescriptor, { 
-        nameOverride: '2. Report Tecnico (LaTeX)',
-        description: 'Layout classico e formale con copertina e indice. Ideale per documentazione tecnica.'
-      }));
+        nameOverride: null,
+              }));
       descriptors.delete('default.tex');
     }
 
@@ -1353,9 +1359,8 @@ const listTemplatesMetadata = async () => {
     const verbaleDescriptor = descriptors.get('verbale_meeting.html');
     if (verbaleDescriptor) {
       ordered.push(descriptorToMetadata(verbaleDescriptor, { 
-        nameOverride: '3. Verbale Riunione (HTML)',
-        description: 'Layout specifico per verbali con lista azioni e speaker.'
-      }));
+        nameOverride:null,
+              }));
       descriptors.delete('verbale_meeting.html');
     }
 
@@ -7156,6 +7161,112 @@ const yamlFrontMatter = yaml.dump(frontMatter, {
       } else {
         transcriptTextForQuery = transcriptBuffer.toString('utf8');
       }
+      // ... (codice esistente: fine del blocco if/else diarizeEnabled)
+      // transcriptTextForQuery è ora popolata
+
+     // ==================================================================
+      // === INTENT RECOGNITION (AUTO-PILOT) ===
+      // ==================================================================
+      
+      let autoDetectedPrompt = null;
+      let activePromptId = String(payload.promptId || '').trim();
+      
+      // LISTA DEI DEFAULT SOVRASCRIVIBILI
+      // Se il prompt in arrivo corrisponde a uno di questi, significa che l'utente 
+      // ha lasciato il default e quindi l'AI ha il permesso di analizzare e cambiare.
+      const OVERRIDABLE_DEFAULTS = [
+          '',                             // Nessun prompt
+          'prompt_format_base',           // Vecchio default
+          'format_base',                  // Slug vecchio
+          'prompt_executive_strategy',    // Legacy ID Executive
+          'executive_briefing_strategy',  // Slug Executive
+          // 👇 AGGIUNGIAMO L'UUID REALE DEL TUO PROMPT EXECUTIVE (preso dai log)
+          'prompt_1b370933-c8a8-46a8-9efc-bfbc35b2c51a' 
+      ];
+
+      // Logica: Attiva AI solo se il prompt attuale è nella lista dei "sacrificabili"
+      const shouldRunAutoDetect = OVERRIDABLE_DEFAULTS.includes(activePromptId);
+      
+      if (shouldRunAutoDetect && transcriptTextForQuery && intentService) {
+          out('🧠 Analisi intento in corso (Default rilevato)...', 'ai_generation', 'running');
+          
+          try {
+              const analysis = await intentService.analyzeAndResolve(transcriptTextForQuery);
+              
+              if (analysis.prompt) {
+                  autoDetectedPrompt = formatPromptForResponse(analysis.prompt);
+                  
+                  // Se l'AI suggerisce lo stesso prompt del default, non facciamo nulla di speciale
+                  if (autoDetectedPrompt.id !== activePromptId) {
+                      activePromptId = autoDetectedPrompt.id; // L'AI cambia il prompt
+                      out(`💡 Intento rilevato: ${analysis.intent}`, 'ai_generation', 'info');
+                      out(`🎯 Prompt aggiornato dall'AI: ${autoDetectedPrompt.title}`, 'ai_generation', 'info');
+                  } else {
+                      out(`💡 Intento confermato: ${analysis.intent}. Mantengo il prompt attuale.`, 'ai_generation', 'info');
+                  }
+
+                  // Sovrascriviamo il titolo se generico
+                  const currentTitle = String(payload.title || '').toLowerCase();
+                  if (!payload.title || currentTitle.includes('sessione') || currentTitle.includes('meeting') || currentTitle.includes('audio')) {
+                      payload.title = analysis.suggestedTitle;
+                  }
+              }
+
+              // GESTIONE TEMPLATE (Stessa logica: sovrascrivi solo se default)
+              const currentTemplate = String(payload.workspaceProfileTemplate || '').trim();
+              // Consideriamo default sia il vuoto che l'Executive HTML
+              const isDefaultTemplate = !currentTemplate || currentTemplate.includes('executive_brief.html') || currentTemplate.includes('luxury_report.html');
+
+              if (isDefaultTemplate && analysis.template) {
+                  // Se il template suggerito è diverso da quello attuale
+                  if (!currentTemplate.includes(analysis.template)) {
+                      out(`🎨 Template adattato all'intento: ${analysis.template}`, 'ai_generation', 'info');
+                      try {
+                          const suggestedDescriptor = await resolveTemplateDescriptor(analysis.template);
+                          if (suggestedDescriptor) {
+                              activeTemplateDescriptor = suggestedDescriptor;
+                              activeTemplateIsFallback = false; 
+                          }
+                      } catch (tplErr) {
+                          console.warn("Template suggerito non trovato:", tplErr.message);
+                      }
+                  }
+              }
+
+          } catch (intentError) {
+              console.error('Errore IntentService:', intentError);
+              out('⚠️ Auto-detection fallita, proseguo con il default.', 'ai_generation', 'warning');
+          }
+      } else {
+          // Se arriviamo qui, significa che activePromptId NON è nella lista dei default.
+          // Quindi l'utente ha scelto deliberatamente qualcos'altro (es. "Brief Creativo").
+          if (activePromptId) {
+             out('🔒 Rispetto la selezione manuale dell\'utente (AI Auto-pilot inattivo).', 'ai_generation', 'info');
+          }
+      }
+
+      // Logica di selezione finale (Invariata)
+      if (!selectedPrompt) {
+          if (autoDetectedPrompt) {
+              selectedPrompt = autoDetectedPrompt;
+          } else if (activePromptId) {
+              const prompts = await listPrompts();
+              selectedPrompt = findPromptById(prompts, activePromptId);
+          }
+      }
+      
+      // Costruzione regole (Invariata)
+      if (selectedPrompt && !promptRulePayload) {
+           promptRulePayload = buildPromptRulePayload(selectedPrompt, {
+              focus: promptFocus,
+              notes: promptNotes,
+              completedCues: promptCuesCompleted,
+          });
+      }
+      // ==================================================================
+
+      mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
+      // ... (prosegue con generateMarkdown)
 
       mdLocalPath = registerTempFile(path.join(pipelineDir, `documento_${baseName}.md`));
 

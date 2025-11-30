@@ -44,16 +44,42 @@ const PipelinePanel = ({ journeyStage = "record" }) => {
   const focusDownload = journeyStage === "download" && pipelineComplete && pdfPath && !hasDownloaded;
   const shouldDimContent = focusPublish || focusDownload;
 
-  // --- LOGICA TOGGLE & AZIONI ---
   const toggleDiarization = useCallback(() => {
     if (busy) return;
+    
     setEnableDiarization((prev) => {
       const nextValue = !prev;
+      
       if (nextValue === true) {
+        // --- ATTIVAZIONE: Imposta Prompt e Template per Riunioni ---
         const meetingPrompt = prompts.find(p => p.id === 'prompt_meeting_minutes' || p.slug === 'verbale_meeting');
-        if (meetingPrompt) setPromptState(prev => ({ ...prev, promptId: meetingPrompt.id }));
-        setPdfTemplateSelection({ fileName: 'verbale_meeting.html', type: 'html', css: 'verbale_meeting.css' });
+        if (meetingPrompt) {
+            setPromptState(prev => ({ ...prev, promptId: meetingPrompt.id }));
+        }
+        setPdfTemplateSelection({ 
+            fileName: 'verbale_meeting.html', // O 'luxury_report.html' se hai rinominato
+            type: 'html', 
+            css: 'verbale_meeting.css' 
+        });
+      } else {
+        // --- DISATTIVAZIONE: Resetta ai Default "Executive" ---
+        // Questo è il pezzo che mancava!
+        const executivePrompt = prompts.find(p => p.id === 'prompt_executive_strategy' || p.slug === 'executive_briefing_strategy');
+        if (executivePrompt) {
+            setPromptState(prev => ({ ...prev, promptId: executivePrompt.id }));
+        } else {
+            // Fallback se non trova executive
+            setPromptState(prev => ({ ...prev, promptId: '' })); 
+        }
+        
+        // Resetta il template al default Executive
+        setPdfTemplateSelection({ 
+            fileName: 'executive_brief.html', 
+            type: 'html', 
+            css: 'executive_brief.css' 
+        });
       }
+      
       return nextValue;
     });
   }, [busy, prompts, setPromptState, setPdfTemplateSelection, setEnableDiarization]);

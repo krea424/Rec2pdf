@@ -1,0 +1,183 @@
+/* --- Verbale Meeting v3 (Luxury / McKinsey Style) --- */
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 10pt;
+    line-height: 1.6;
+    color: #334155; /* Slate 700 - Grigio scuro professionale */
+    margin: 0;
+    padding: 0;
+    text-align: justify;
+}
+
+/* --- HEADER --- */
+.pdf-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #e2e8f0; /* Linea sottile */
+    padding-bottom: 15px;
+    margin-bottom: 40px;
+}
+
+.logo {
+    font-size: 16pt;
+    font-weight: 800;
+    color: #0f172a; /* Slate 900 */
+    text-transform: uppercase;
+    letter-spacing: -0.5px;
+}
+
+.logo span {
+    color: #f97316; /* Arancione Brand */
+}
+
+.header-meta {
+    font-size: 8pt;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* --- TITLE BOX (Il tocco "Luxury") --- */
+.title-container {
+    background-color: #f8fafc; /* Grigio chiarissimo */
+    border-radius: 6px;
+    padding: 30px;
+    margin-bottom: 40px;
+    border: 1px solid #f1f5f9;
+}
+
+.doc-label {
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+}
+
+h1 {
+    font-size: 18pt;
+    color: #1e3a8a; /* Deep Blue */
+    margin: 0 0 20px 0;
+    line-height: 1.2;
+    font-weight: 700;
+}
+
+.doc-author {
+    font-size: 10pt;
+    color: #475569;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 15px;
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+}
+
+.doc-author strong {
+    color: #94a3b8;
+    text-transform: uppercase;
+    font-size: 8pt;
+    letter-spacing: 0.5px;
+}
+
+/* --- TITOLI DI SEZIONE (L'accento arancione) --- */
+h2 {
+    font-size: 14pt;
+    color: #0f172a;
+    /* Barra verticale arancione spessa */
+    border-left: 5px solid #f97316; 
+    padding-left: 15px;
+    margin-top: 35px;
+    margin-bottom: 15px;
+    font-weight: 700;
+    /* Sfondo leggerissimo opzionale per estendere la barra */
+    background: linear-gradient(to right, #fff7ed 0%, #ffffff 100%);
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+h3 {
+    font-size: 11pt;
+    color: #334155;
+    font-weight: 700;
+    margin-top: 20px;
+    margin-bottom: 10px;
+}
+
+/* --- TABELLE (Stile Benchmark) --- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 25px 0;
+    font-size: 9pt;
+    page-break-inside: avoid;
+    border-radius: 4px 4px 0 0;
+    overflow: hidden; /* Per i bordi arrotondati header */
+}
+
+th {
+    background-color: #1e3a8a; /* Intestazione scura (quasi nera/blu) */
+    color: white;
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 8pt;
+    letter-spacing: 0.5px;
+}
+
+td {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 12px 15px;
+    vertical-align: top;
+    color: #334155;
+}
+
+/* Righe alterne molto sottili */
+tr:nth-child(even) {
+    background-color: #f8fafc;
+}
+
+/* --- LISTE E TESTO --- */
+p {
+    margin-bottom: 12px;
+}
+
+ul, ol {
+    margin-bottom: 20px;
+    padding-left: 20px;
+}
+
+li {
+    margin-bottom: 6px;
+    padding-left: 5px;
+}
+
+/* --- FOOTER --- */
+@page {
+    margin-top: 25mm;
+    margin-bottom: 25mm;
+    margin-left: 25mm;
+    margin-right: 25mm;
+    size: A4;
+
+    @bottom-right {
+        content: counter(page);
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 9pt;
+        color: #cbd5e1;
+    }
+    
+    @bottom-left {
+        content: "Documento Riservato";
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 8pt;
+        color: #e2e8f0;
+    }
+}
