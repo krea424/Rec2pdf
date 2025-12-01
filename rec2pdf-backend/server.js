@@ -7328,8 +7328,17 @@ const yamlFrontMatter = yaml.dump(frontMatter, {
       BLDVersion: 'v1_0_0',
       BLDUpdated: new Date().toLocaleDateString('it-IT'),
       BLDAuthor: aiAuthor || userEmail || 'rec2pdf',
-      // Regole PDF
-      pdfRules: selectedPrompt?.pdfRules || { layout: 'verbale_meeting', template: 'verbale_meeting.html' }
+     // --- FIX PERSISTENZA TEMPLATE ---
+      // Salviamo nel Markdown il template effettivamente usato (scelto dall'AI o dall'utente)
+      // così la rigenerazione saprà quale usare.
+      pdfRules: {
+        ...(selectedPrompt?.pdfRules || {}), // Mantiene colori e altre impostazioni
+        template: activeTemplateDescriptor ? activeTemplateDescriptor.fileName : (selectedPrompt?.pdfRules?.template || 'default.tex'),
+        layout: activeTemplateDescriptor ? activeTemplateDescriptor.baseName : (selectedPrompt?.pdfRules?.layout || 'default')
+    },
+    // Aggiungiamo un campo esplicito 'template' alla radice per facilitare il parsing
+    template: activeTemplateDescriptor ? activeTemplateDescriptor.fileName : 'default.tex',
+    // -------------------------------
   };
 
   // 2. Logica FAIL-SAFE per la trascrizione
@@ -7986,9 +7995,8 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
       }
     }
 
-    const publishEnv = buildEnvOptions(
-      customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
-    );
+    const basePublishEnv = customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null;
+    let publishEnv = buildEnvOptions(basePublishEnv);
 
     const resolvedLocalPdfPath = normalizeLocalFilePathInput(localPdfPathRaw);
     const resolvedLocalMdPath = normalizeLocalFilePathInput(localMdPathRaw);
@@ -8073,7 +8081,9 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
 
       // --- FIX: Priorità al contenuto inviato dal client (Direct Injection) ---
       let mdBuffer;
-      if (req.body.markdownContent) {
+      const markdownContentProvided =
+        typeof req.body?.markdownContent === 'string' && req.body.markdownContent.length > 0;
+      if (markdownContentProvided) {
         console.log(`[PPUBR] Uso contenuto Markdown fornito direttamente dal client (${req.body.markdownContent.length} bytes)`);
         mdBuffer = Buffer.from(req.body.markdownContent, 'utf8');
       } else {
@@ -8085,9 +8095,42 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
       // -----------------------------------------------------------------------
 
       let activeTemplateDescriptor = null;
-      const layoutCandidate = extractLayoutFromMarkdown(mdBuffer.toString('utf8'));
-      if (layoutCandidate) {
-        activeTemplateDescriptor = await resolveTemplateFromLayout(layoutCandidate, { logger: out });
+      const mdContentString = mdBuffer.toString('utf8');
+  
+      // --- DEBUG LOG ---
+      // Vediamo i primi 500 caratteri per capire cosa arriva davvero
+      console.log('[PPUBR DEBUG] Markdown Header Preview:\n', mdContentString.substring(0, 500));
+      // -----------------
+  
+      // 1. PRIORITÀ: Cerchiamo il template esplicito
+      // Nuova Regex più robusta: cerca 'template:' seguito da qualsiasi cosa fino a fine riga, ignorando virgolette
+      const templateMatch = mdContentString.match(/^template:\s*["']?([^"'\r\n]+)["']?/m);
+      
+      // Cerchiamo anche dentro pdfRules (caso annidato)
+      const nestedMatch = mdContentString.match(/pdfRules:[\s\S]*?template:\s*["']?([^"'\r\n]+)["']?/);
+  
+      let foundTemplateName = null;
+      if (templateMatch && templateMatch[1]) foundTemplateName = templateMatch[1].trim();
+      else if (nestedMatch && nestedMatch[1]) foundTemplateName = nestedMatch[1].trim();
+  
+      if (foundTemplateName) {
+          console.log(`[PPUBR DEBUG] Trovato template nel testo: '${foundTemplateName}'`);
+          try {
+              activeTemplateDescriptor = await resolveTemplateDescriptor(foundTemplateName);
+              out(`📄 Template recuperato dal Markdown: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+          } catch (e) {
+              out(`⚠️ Template nel Markdown ('${foundTemplateName}') non valido: ${e.message}`, 'publish', 'warning');
+          }
+      } else {
+          console.log('[PPUBR DEBUG] Nessun template trovato nel testo.');
+      }
+  
+      // 2. FALLBACK: Se non c'è un template esplicito, proviamo con il layout astratto
+      if (!activeTemplateDescriptor) {
+          const layoutCandidate = extractLayoutFromMarkdown(mdContentString);
+          if (layoutCandidate) {
+              activeTemplateDescriptor = await resolveTemplateFromLayout(layoutCandidate, { logger: out });
+          }
       }
       if (!activeTemplateDescriptor && hasSpeakerMap) {
         try {
@@ -8102,6 +8145,72 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
         }
       }
 
+      const templateEnv = activeTemplateDescriptor ? buildTemplateEnv(activeTemplateDescriptor) : null;
+      publishEnv = buildEnvOptions(basePublishEnv, templateEnv);
+
+      // Backup dell'ultima versione presente prima di sovrascrivere (per storicizzare ogni rigenerazione)
+      try {
+        const existingMd = await downloadFileFromBucket(bucket, objectPath, {
+          attempts: 1,
+          initialDelayMs: 0,
+        });
+        if (existingMd && existingMd.length) {
+          const backupObjectPath = `${objectPath}.${yyyymmddHHMMSS()}.bak`;
+          try {
+            await uploadFileToBucket(
+              bucket,
+              backupObjectPath,
+              existingMd,
+              'text/markdown; charset=utf-8'
+            );
+            out(`🗂️ Backup Markdown creato: ${backupObjectPath}`);
+          } catch (backupErr) {
+            out(`⚠️ Backup Markdown non riuscito: ${backupErr?.message || backupErr}`);
+          }
+        }
+      } catch (backupFetchErr) {
+        // Se il file non esiste ancora, ignoriamo il backup (es. prima rigenerazione)
+        out(`ℹ️ Nessun backup precedente o download fallito: ${backupFetchErr?.message || backupFetchErr}`);
+      }
+
+      // Persistiamo SUBITO il Markdown usato per la rigenerazione, così le letture successive
+      // (e questa stessa generazione) puntano alla stessa versione salvata.
+      try {
+        const mdBufferToPersist = await fsp.readFile(mdLocalPath);
+        await uploadFileToBucket(
+          bucket,
+          objectPath,
+          mdBufferToPersist,
+          'text/markdown; charset=utf-8'
+        );
+
+        // Verifica immediata per evitare inconsistenze su successive rigenerazioni.
+        try {
+          const persisted = await downloadFileFromBucket(bucket, objectPath, {
+            attempts: 2,
+            initialDelayMs: 150,
+          });
+          if (!persisted || Buffer.compare(persisted, mdBufferToPersist) !== 0) {
+            out('⚠️ Disallineamento Markdown rilevato, ritento upload…');
+            await uploadFileToBucket(
+              bucket,
+              objectPath,
+              mdBufferToPersist,
+              'text/markdown; charset=utf-8'
+            );
+          }
+        } catch (verifyErr) {
+          out(`⚠️ Verifica upload Markdown saltata: ${verifyErr?.message || verifyErr}`);
+        }
+
+        const mdUploadLabel = markdownContentProvided ? 'aggiornato' : 'confermato';
+        out(`☁️ Markdown ${mdUploadLabel} su Supabase: ${objectPath}`);
+      } catch (e) {
+        out(`❌ Upload Markdown su Supabase fallito: ${e?.message || e}`);
+        return res.status(500).json({ ok: false, message: e?.message || e, logs });
+      }
+
+      // Rigenerazione PDF usando SEMPRE il markdown appena persistito
       const mdPathForPublish = await createMappedMarkdownCopy(mdLocalPath);
 
       out(`--- DEBUG: START publishWithTemplateFallback in /api/ppubr ---`);
@@ -8453,10 +8562,16 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     if (customLogoPath) {
       out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
     }
+    // --- FIX: INIEZIONE AMBIENTE TEMPLATE ---
+    // Costruiamo le variabili d'ambiente necessarie per il template (CSS, path, engine)
+    const templateEnv = activeTemplateDescriptor ? buildTemplateEnv(activeTemplateDescriptor) : {};
+
     const publishEnv = buildEnvOptions(
       promptEnv,
-      customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
+      customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null,
+      templateEnv // <--- QUESTA È LA CHIAVE MANCANTE
     );
+    // ----------------------------------------
 
     // Chiama publish.sh
     const pdfPath = path.join(destDir, `${baseName}.pdf`);
@@ -8884,10 +8999,31 @@ app.post(
       if (customLogoPath) {
         out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
       }
-      const publishEnv = buildEnvOptions(
-        promptEnv,
-        customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null
-      );
+     // --- FIX: INIEZIONE AMBIENTE TEMPLATE (RIGENERAZIONE) ---
+    // Costruiamo le variabili d'ambiente necessarie per il template (CSS, path, engine)
+    // activeTemplateDescriptor è stato appena risolto dal Markdown (vedi fix precedente)
+    // --- FIX: INIEZIONE AMBIENTE TEMPLATE (RIGENERAZIONE) ---
+    let templateEnv = {};
+    if (activeTemplateDescriptor) {
+        console.log(`[PPUBR DEBUG] Costruisco ENV per template: ${activeTemplateDescriptor.fileName}`);
+        templateEnv = buildTemplateEnv(activeTemplateDescriptor);
+        // Logghiamo cosa stiamo per passare
+        console.log('[PPUBR DEBUG] Template ENV:', JSON.stringify(templateEnv, null, 2));
+    } else {
+        console.warn('[PPUBR DEBUG] Nessun activeTemplateDescriptor, uso default.');
+    }
+
+    const publishEnv = buildEnvOptions(
+      promptEnv, 
+      customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null,
+      templateEnv 
+    );
+    
+    // Logghiamo l'ambiente finale (solo le chiavi rilevanti)
+    console.log('[PPUBR DEBUG] Publish ENV (Template Keys):', 
+        Object.keys(publishEnv.env || {}).filter(k => k.startsWith('WORKSPACE_PROFILE_TEMPLATE'))
+    );
+    // ----------------------------------------
 
       let mdLocalForPublish = '';
       let pdfLocalPath = '';

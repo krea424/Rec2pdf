@@ -1,6 +1,25 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [15.0.0] - 2025-12-01
+
+### ✨ Features
+- **Intent Recognition:** Il sistema ora è in grado di riconoscere l'intento dell'utente, migliorando l'instradamento e l'elaborazione delle richieste.
+- **Logo Card:** Aggiunta una nuova card per la gestione del logo, con la possibilità di cambiare l'impostazione di default.
+
+### 🐛 Fixes
+- **Auth:** Ripristinate le preferenze utente di default al momento del logout.
+- **Server:** Corretta la gestione del flag `riunione` in `server.js`.
+- **UI:** Risolto un problema di refresh dei temi su iPhone.
+- **UI:** Refactoring della pagina di login per una migliore esperienza utente.
+- **UI:** Corretti vari bug relativi alla visualizzazione del logo.
+- **Mobile:** Migliorato il supporto per il download dei PDF su dispositivi mobili.
+- **Templates:** Risolti diversi bug relativi alla generazione e applicazione dei template.
+- **Templates:** Corretto il colore della tabella nel template `executive`.
+
+### ⚙️ Infrastructure
+- **Docker:** Ripristinato un Dockerfile a 2 stadi per una maggiore stabilità e ottimizzazione delle build per Cloud Run.
+
 ## [14.0.0] - 2025-11-27
 
 ### 🚀 Major Architectural Changes (The "Supersonic" Update)
