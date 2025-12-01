@@ -2,17 +2,19 @@
 
 Rec2pdf è la soluzione pensata per knowledge worker, consulenti e project manager, ma anche semplici user, che necessitano di trasformare rapidamente idee e brainstorming vocali in documenti professionali. Supera il divario tra il pensiero parlato e un deliverable strutturato, analizzando l'audio con un LLM per generare report, verbali e analisi di alta qualità. Grazie a una pipeline automatizzata che opera in locale, Rec2pdf garantisce massima autonomia, sicurezza dei dati e un output editoriale curato, pronto per la condivisione.
 
-## Novità v14.0.0 (Hybrid & Direct-Upload)
+## Novità v15.0.0 (Intent Recognition & UI Refresh)
 
-Il sistema utilizza un'architettura ibrida e asincrona progettata per velocità ("Fast Mode") e profondità di analisi ("Meeting Mode").
+Questa release introduce due importanti novità: il riconoscimento degli intenti per una migliore elaborazione delle richieste e un aggiornamento dell'interfaccia utente con nuove funzionalità.
 
-1.  **Direct Upload (Client-Side):** Il Frontend carica l'audio direttamente su Supabase Storage. Questo garantisce resilienza su reti mobili e bypassa i limiti di timeout/dimensione del server.
-2.  **Job Queue:** A upload completato, il Frontend crea un record nella tabella `jobs`. Un Webhook sicuro attiva il Worker.
-3.  **Hybrid Worker (Backend):** Il backend analizza la richiesta e instrada il lavoro:
+1.  **Intent Recognition:** Il sistema è ora in grado di analizzare la richiesta per determinare l'intento dell'utente, ottimizzando la pipeline di elaborazione.
+2.  **UI Refresh:** L'interfaccia utente è stata migliorata con l'introduzione di una "logo card" per una gestione più intuitiva del branding e con un refactoring generale della pagina di login.
+3.  **Direct Upload (Client-Side):** Il Frontend carica l'audio direttamente su Supabase Storage. Questo garantisce resilienza su reti mobili e bypassa i limiti di timeout/dimensione del server.
+4.  **Job Queue:** A upload completato, il Frontend crea un record nella tabella `jobs`. Un Webhook sicuro attiva il Worker.
+5.  **Hybrid Worker (Backend):** Il backend analizza la richiesta e instrada il lavoro:
     *   **Groq LPU:** Per note personali e audio singolo speaker. Velocità estrema (trascrizione quasi istantanea).
     *   **WhisperX (Locale):** Per riunioni multi-speaker. Esegue diarizzazione e allineamento temporale preciso.
-4.  **RAG & AI Synthesis:** Il testo viene arricchito con il contesto della Knowledge Base (vettoriale) e processato da LLM (Gemini/OpenAI) per generare il documento strutturato.
-5.  **PDF Rendering:** Generazione PDF tipografica tramite Weasyprint con template HTML/CSS personalizzabili.
+6.  **RAG & AI Synthesis:** Il testo viene arricchito con il contesto della Knowledge Base (vettoriale) e processato da LLM (Gemini/OpenAI) per generare il documento strutturato.
+7.  **PDF Rendering:** Generazione PDF tipografica tramite Weasyprint con template HTML/CSS personalizzabili.
 
 ## Features Principali
 
