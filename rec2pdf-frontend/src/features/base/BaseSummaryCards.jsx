@@ -73,38 +73,66 @@ const BaseSummaryCards = () => {
     activeWorkspaceProfile,
     pdfTemplateSelection,
     customPdfLogo,
-    customLogo
+    customLogo,
+    pdfTemplates, // <--- 1. AGGIUNTO: Importiamo la lista dei template per avere i nomi ufficiali
+    promptState // <--- AGGIUNGI QUESTA RIGA (con la virgola prima)
   } = useAppContext();
 
   const goToAdvanced = (section) => {
     navigate("/advanced", { state: { scrollTo: section } });
   };
 
-  // --- LOGICHE LABEL (Invariate) ---
+  // --- LOGICHE LABEL ---
   const workspaceLabel = activeWorkspace?.name || workspaceSelection?.name || "Nessun workspace";
   const isWorkspaceActive = !!workspaceSelection?.workspaceId;
 
   const projectLabel = workspaceSelection?.projectName || "Nessun progetto";
   const isProjectActive = !!workspaceSelection?.projectId || !!workspaceSelection?.projectName;
 
-  const promptLabel = activePrompt?.title || "Format Base";
-  const isPromptActive = !!activePrompt?.id; 
+  // --- LOGICA PROMPT LABEL (FIX AUTO-DETECT) ---
+  const promptLabel = (promptState?.promptId === 'auto_detect' || !promptState?.promptId)
+      ? "✨ AI Auto-Detect"
+      : (activePrompt?.title || "Format Base");
+
+  // La card è attiva se c'è un prompt reale OPPURE se siamo in auto-detect
+  const isPromptActive = (promptState?.promptId === 'auto_detect' || !promptState?.promptId) || !!activePrompt?.id;
 
   const profileLabel = activeWorkspaceProfile?.label || "Nessun profilo";
   const isProfileActive = !!activeWorkspaceProfile?.id;
 
-  const getTemplateLabel = () => {
-    if (pdfTemplateSelection?.fileName) return pdfTemplateSelection.fileName;
-    if (activeWorkspaceProfile?.pdfTemplate) return activeWorkspaceProfile.pdfTemplate;
-    if (activePrompt?.pdfRules?.template) return activePrompt.pdfRules.template;
-    return "Default";
-  };
-  const rawTemplate = getTemplateLabel();
-  const templateLabel = rawTemplate
+ // --- 2. NUOVA LOGICA INTELLIGENTE PER IL TEMPLATE ---
+ const getTemplateLabel = () => {
+  // A. Risoluzione del file attivo
+  let fileName = pdfTemplateSelection?.fileName;
+  if (!fileName || fileName === 'auto_detect') {
+      if (activeWorkspaceProfile?.pdfTemplate) fileName = activeWorkspaceProfile.pdfTemplate;
+      else if (activePrompt?.pdfRules?.template) fileName = activePrompt.pdfRules.template;
+  }
+
+  // B. Gestione casi speciali (MODIFICATO: Aggiunto ✨)
+  if (fileName === 'auto_detect' || !fileName) return "✨ Auto-Detect";
+  
+  // C. Cerca il nome ufficiale nei metadati
+  const officialTemplate = pdfTemplates.find(t => t.fileName === fileName);
+  if (officialTemplate && officialTemplate.name) {
+      return officialTemplate.name.replace(/^\d+[._]\s*/, '');
+  }
+
+  // D. Fix specifico per il vecchio default
+  if (fileName === 'default.tex') return "Report Tecnico";
+
+  // E. Fallback generico
+  return fileName
     .replace(/\.(html|tex)$/i, '')
     .replace(/_/g, ' ')
     .replace(/-/g, ' ');
-  const isTemplateActive = rawTemplate !== "Default";
+};
+
+const templateLabel = getTemplateLabel();
+
+// MODIFICATO: La card è attiva se non è il fallback "Default". 
+// "✨ Auto-Detect" ora è considerato uno stato ATTIVO.
+const isTemplateActive = templateLabel !== "Default";
 
   const getLogoLabel = () => {
     if (customPdfLogo) {
@@ -124,7 +152,7 @@ const BaseSummaryCards = () => {
     <section aria-label="Riepilogo Sessione" className="w-full flex justify-center">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6 w-full max-w-7xl">
         
-        {/* 1. WORKSPACE -> Apre Pannello 2 (workspace) */}
+        {/* 1. WORKSPACE */}
         <SummaryCard
           icon={Folder}
           label="Workspace"
@@ -136,7 +164,7 @@ const BaseSummaryCards = () => {
           onClick={() => goToAdvanced("workspace")} 
         />
 
-        {/* 2. PROGETTO -> Apre Pannello 2 (workspace) */}
+        {/* 2. PROGETTO */}
         <SummaryCard
           icon={Target}
           label="Progetto"
@@ -148,7 +176,7 @@ const BaseSummaryCards = () => {
           onClick={() => goToAdvanced("workspace")}
         />
 
-        {/* 3. PROMPT -> Apre Pannello 1 (prompt) - UNICO DIVERSO */}
+        {/* 3. PROMPT */}
         <SummaryCard
           icon={Sparkles}
           label="Prompt"
@@ -160,7 +188,7 @@ const BaseSummaryCards = () => {
           onClick={() => goToAdvanced("prompt")}
         />
 
-        {/* 4. PROFILO -> Apre Pannello 2 (workspace) */}
+        {/* 4. PROFILO */}
         <SummaryCard
           icon={Users}
           label="Profilo"
@@ -172,7 +200,7 @@ const BaseSummaryCards = () => {
           onClick={() => goToAdvanced("workspace")}
         />
 
-        {/* 5. TEMPLATE -> Apre Pannello 2 (workspace) */}
+        {/* 5. TEMPLATE */}
         <SummaryCard
           icon={FileText}
           label="Template"
@@ -184,7 +212,7 @@ const BaseSummaryCards = () => {
           onClick={() => goToAdvanced("workspace")}
         />
 
-        {/* 6. LOGO -> Apre Pannello 2 (workspace) */}
+        {/* 6. LOGO */}
         <SummaryCard
           icon={ImageIcon}
           label="Logo PDF"
