@@ -1214,32 +1214,26 @@ function AppContent(){
     }
     try {
       const raw = localStorage.getItem(PDF_TEMPLATE_SELECTION_KEY);
-      // SE non c'è nulla in memoria, O se c'è il vecchio default, forziamo il nuovo Executive
+      
+      // NUOVA LOGICA: Se non c'è nulla salvato (o c'è il vecchio default), parti in AUTO
       if (!raw || raw.includes('default.tex')) {
-        return buildPdfTemplateSelection({
-            fileName: 'executive_brief.html',
-            type: 'html',
-            css: 'executive_brief.css'
-        });
+        return { 
+            fileName: 'auto_detect', // <--- FIX: Default Magico
+            type: '', 
+            css: '' 
+        };
       }
+      
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object') {
-         // Fallback sicuro sul nuovo default
-         return buildPdfTemplateSelection({
-            fileName: 'executive_brief.html',
-            type: 'html',
-            css: 'executive_brief.css'
-        });
+         return { fileName: 'auto_detect', type: '', css: '' };
       }
       return buildPdfTemplateSelection(parsed);
     } catch {
-      return buildPdfTemplateSelection({
-            fileName: 'executive_brief.html',
-            type: 'html',
-            css: 'executive_brief.css'
-        });
+      return { fileName: 'auto_detect', type: '', css: '' };
     }
   });
+  
   const [promptState, setPromptState] = useState(() => {
     if (typeof window === 'undefined') {
       return buildPromptState();
@@ -1247,8 +1241,9 @@ function AppContent(){
     try {
       const raw = localStorage.getItem(PROMPT_SELECTION_KEY);
       if (!raw) {
-        return buildPromptState();
-      }
+      // MODIFICA: Il default iniziale è AUTO, non vuoto
+      return buildPromptState({ promptId: 'auto_detect' }); 
+    }
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object') {
         return buildPromptState();
@@ -1611,54 +1606,31 @@ const activePrompt = useMemo(
     }
   }, [prompts, promptState.promptId]);
 
- // --- DEFAULT PROMPT: EXECUTIVE STRATEGY ---
+ // --- DEFAULT PROMPT: AUTO-DETECT (Nuova Logica) ---
  useEffect(() => {
-  // Se i prompt non sono ancora caricati, esci
-  if (!Array.isArray(prompts) || prompts.length === 0) return;
-
+  // 1. Imposta il Prompt su "Auto-Detect" se non c'è selezione
   setPromptState((prev) => {
-    // Se l'utente ha già un prompt selezionato (es. da localStorage), mantienilo
-    if (prev.promptId) {
-      return prev;
-    }
+    // Se l'utente ha già una selezione (caricata dal localStorage), la manteniamo
+    if (prev.promptId) return prev;
 
-    // 1. Cerchiamo il nuovo prompt Executive
-    const executivePrompt = prompts.find((p) => 
-      p.id === 'prompt_executive_strategy' || 
-      p.slug === 'executive_briefing_strategy'
-    );
-
-    // 2. Se lo troviamo, lo impostiamo come default
-    if (executivePrompt) {
-      return buildPromptState({
-        promptId: executivePrompt.id,
-        focus: prev.focus || '',
-        notes: prev.notes || '',
-        cueProgress: {},
-        cueCardAnswers: {},
-        expandPromptDetails: false, // Teniamo i dettagli chiusi per pulizia UI
-      });
-    }
-
-    // 3. Fallback: se non trova l'executive, usa il vecchio "Format Base" (o il primo disponibile)
-    const defaultFallback = prompts.find(p => 
-      p.slug === 'format_base' || p.title.toLowerCase().includes('format base')
-    ) || prompts[0];
-
-    if (defaultFallback) {
-       return buildPromptState({ 
-         promptId: defaultFallback.id,
-         focus: prev.focus || '',
-         notes: prev.notes || '',
-         cueProgress: {},
-         cueCardAnswers: {},
-         expandPromptDetails: false
-       });
-    }
-
-    return prev;
+    // Se non c'è nulla, impostiamo la modalità Magica
+    return buildPromptState({
+      promptId: 'auto_detect', // ID Speciale per attivare l'AI
+      focus: '',
+      notes: '',
+      cueProgress: {},
+      cueCardAnswers: {},
+      expandPromptDetails: false, 
+    });
   });
-}, [prompts, setPromptState]);
+
+  // 2. Imposta il Template su "Auto-Detect" se non c'è selezione
+  setPdfTemplateSelection((prev) => {
+    if (prev.fileName) return prev;
+    // Template magico
+    return { fileName: 'auto_detect', type: '', css: '' };
+  });
+}, [setPromptState, setPdfTemplateSelection]);
 
   useEffect(() => {
     setNavigatorSelection((prev) => {

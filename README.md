@@ -1,6 +1,8 @@
 # Rec2pdf
 
 Rec2pdf è la soluzione pensata per knowledge worker, consulenti e project manager, ma anche semplici user, che necessitano di trasformare rapidamente idee e brainstorming vocali in documenti professionali. Supera il divario tra il pensiero parlato e un deliverable strutturato, analizzando l'audio con un LLM per generare report, verbali e analisi di alta qualità. Grazie a una pipeline automatizzata che opera in locale, Rec2pdf garantisce massima autonomia, sicurezza dei dati e un output editoriale curato, pronto per la condivisione.
+Rec2PDF è una piattaforma SaaS multi-tenant per la produttività documentale, progettata principalmente per clienti business (studi professionali, PMI, corporate), ma utilizzabile anche da utenti individuali.
+A livello architetturale, ogni cliente – azienda o singolo utente – è gestito come un tenant separato, con workspace isolati e controlli di accesso dedicati.
 
 ## Novità v15.0.0 (Intent Recognition & UI Refresh)
 

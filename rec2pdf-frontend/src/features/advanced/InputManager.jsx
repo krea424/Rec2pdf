@@ -171,9 +171,8 @@ const InputManager = ({ context }) => {
                 Carica automaticamente template e logo salvati nel workspace.
             </p>
           </InputCard>
-
-          {/* 2. TEMPLATE PDF */}
-          <InputCard 
+         {/* 2. TEMPLATE PDF */}
+       <InputCard 
             label="Template Grafico" 
             icon={FileText}
             action={
@@ -184,27 +183,39 @@ const InputManager = ({ context }) => {
           >
              <div className="relative">
              <select
-    value={pdfTemplateSelection.fileName || ""}
-    onChange={(e) => handleSelectPdfTemplate(e.target.value)}
-    disabled={workspaceProfileLocked} 
-    className="w-full appearance-none rounded-xl border border-white/10 bg-black/20 px-4 py-3 pr-10 text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed focus:border-indigo-500 focus:outline-none"
->
-    {/* Placeholder opzionale se la lista è vuota o sta caricando */}
-    {pdfTemplates.length === 0 && <option value="">Caricamento template...</option>}
-    
-    {/* Lista pulita dei template reali */}
-    {pdfTemplates.map((t) => (
-        <option key={t.fileName} value={t.fileName}>
-            {t.name || t.fileName}
-        </option>
-    ))}
-</select>
-{/* Mostra descrizione del template selezionato */}
-{pdfTemplateSelection.fileName && (
-    <p className="mt-2 text-[11px] text-zinc-500 leading-tight">
-        {pdfTemplates.find(t => t.fileName === pdfTemplateSelection.fileName)?.description}
-    </p>
-)}
+                value={pdfTemplateSelection.fileName || "auto_detect"}
+                onChange={(e) => handleSelectPdfTemplate(e.target.value === 'auto_detect' ? { fileName: 'auto_detect' } : e.target.value)}
+                disabled={workspaceProfileLocked} 
+                className="w-full appearance-none rounded-xl border border-white/10 bg-black/20 px-4 py-3 pr-10 text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed focus:border-indigo-500 focus:outline-none"
+            >
+                {/* --- OPZIONE MAGICA --- */}
+                <option value="auto_detect" className="font-bold text-indigo-300 bg-indigo-950/30">
+                    ✨ Adatta al contenuto (Auto)
+                </option>
+                <option disabled>──────────</option>
+
+                {/* Placeholder opzionale */}
+                {pdfTemplates.length === 0 && <option value="">Caricamento template...</option>}
+                
+                {/* Lista pulita dei template reali */}
+                {pdfTemplates.map((t) => (
+                    <option key={t.fileName} value={t.fileName}>
+                        {t.name || t.fileName}
+                    </option>
+                ))}
+            </select>
+            {/* Mostra descrizione del template selezionato */}
+            {pdfTemplateSelection.fileName && pdfTemplateSelection.fileName !== 'auto_detect' && (
+                <p className="mt-2 text-[11px] text-zinc-500 leading-tight">
+                    {pdfTemplates.find(t => t.fileName === pdfTemplateSelection.fileName)?.description}
+                </p>
+            )}
+            {/* Descrizione per Auto-Detect */}
+            {(!pdfTemplateSelection.fileName || pdfTemplateSelection.fileName === 'auto_detect') && (
+                <p className="mt-2 text-[11px] text-indigo-400/80 leading-tight">
+                    L'AI sceglierà il layout migliore in base al contenuto.
+                </p>
+            )}
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
             </div>
             {workspaceProfileLocked && (
