@@ -137,6 +137,49 @@ const AdvancedCreatePage = ({ context }) => {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* CARD SPECIALE: AUTO-DETECT */}
+            <button 
+                onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectPromptTemplate({ id: 'auto_detect' }); // Passiamo l'ID magico
+                    setActiveSection('prompt');
+                }}
+                className={classNames(
+                    "relative flex flex-col items-start gap-3 rounded-2xl border p-5 text-left transition-all duration-200 group",
+                    // Se promptId è 'auto_detect' o vuoto, questa card è attiva
+                    (promptState.promptId === 'auto_detect' || !promptState.promptId)
+                    ? "border-indigo-500/50 bg-indigo-500/10 ring-1 ring-indigo-500/50 shadow-lg shadow-indigo-900/20" 
+                    : "border-white/10 bg-[#121214] hover:bg-[#18181b] hover:border-white/20"
+                )}
+            >
+                <div className="flex w-full items-start justify-between">
+                    <div className={classNames(
+                        "p-2 rounded-lg transition-colors",
+                        (promptState.promptId === 'auto_detect' || !promptState.promptId) 
+                        ? "bg-indigo-500/20 text-indigo-300" 
+                        : "bg-white/5 text-zinc-400 group-hover:text-zinc-200"
+                    )}>
+                        {/* Icona Magica */}
+                        <Sparkles className="h-5 w-5" />
+                    </div>
+                    {(promptState.promptId === 'auto_detect' || !promptState.promptId) && 
+                        <CheckCircle2 className="h-5 w-5 text-indigo-400 animate-in zoom-in duration-200" />
+                    }
+                </div>
+
+                <div>
+                    <h4 className={classNames("font-semibold text-base", (promptState.promptId === 'auto_detect' || !promptState.promptId) ? "text-white" : "text-zinc-200")}>
+                        ✨ AI Auto-Detect
+                    </h4>
+                    <p className="text-xs text-zinc-500 mt-1 font-mono uppercase tracking-wide">
+                        Consigliato
+                    </p>
+                </div>
+
+                <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
+                    Lascia che l'AI analizzi il contenuto e scelga il formato migliore per te.
+                </p>
+            </button>
                     {prompts.map(prompt => {
                         const isActive = promptState.promptId === prompt.id;
                         return (

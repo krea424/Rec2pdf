@@ -7164,89 +7164,75 @@ const yamlFrontMatter = yaml.dump(frontMatter, {
       // ... (codice esistente: fine del blocco if/else diarizeEnabled)
       // transcriptTextForQuery è ora popolata
 
-     // ==================================================================
-      // === INTENT RECOGNITION (AUTO-PILOT) ===
+// ==================================================================
+      // === INTENT RECOGNITION (LOGICA RIGOROSA) ===
       // ==================================================================
       
       let autoDetectedPrompt = null;
       let activePromptId = String(payload.promptId || '').trim();
       
-      // LISTA DEI DEFAULT SOVRASCRIVIBILI
-      // Se il prompt in arrivo corrisponde a uno di questi, significa che l'utente 
-      // ha lasciato il default e quindi l'AI ha il permesso di analizzare e cambiare.
-      const OVERRIDABLE_DEFAULTS = [
-          '',                             // Nessun prompt
-          'prompt_format_base',           // Vecchio default
-          'format_base',                  // Slug vecchio
-          'prompt_executive_strategy',    // Legacy ID Executive
-          'executive_briefing_strategy',  // Slug Executive
-          // 👇 AGGIUNGIAMO L'UUID REALE DEL TUO PROMPT EXECUTIVE (preso dai log)
-          'prompt_1b370933-c8a8-46a8-9efc-bfbc35b2c51a' 
-      ];
-
-      // Logica: Attiva AI solo se il prompt attuale è nella lista dei "sacrificabili"
-      const shouldRunAutoDetect = OVERRIDABLE_DEFAULTS.includes(activePromptId);
+      // NUOVA LOGICA: L'AI parte SOLO se l'utente ha scelto esplicitamente "Auto-Detect"
+      // o se non ha scelto nulla (caso legacy/API diretta)
+      const isAutoMode = activePromptId === 'auto_detect' || activePromptId === '';
       
-      if (shouldRunAutoDetect && transcriptTextForQuery && intentService) {
-          out('🧠 Analisi intento in corso (Default rilevato)...', 'ai_generation', 'running');
+      if (isAutoMode && transcriptTextForQuery && intentService) {
+          out('🧠 Modalità Auto-Detect attiva: Analisi intento...', 'ai_generation', 'running');
           
           try {
               const analysis = await intentService.analyzeAndResolve(transcriptTextForQuery);
               
               if (analysis.prompt) {
                   autoDetectedPrompt = formatPromptForResponse(analysis.prompt);
+                  activePromptId = autoDetectedPrompt.id; 
                   
-                  // Se l'AI suggerisce lo stesso prompt del default, non facciamo nulla di speciale
-                  if (autoDetectedPrompt.id !== activePromptId) {
-                      activePromptId = autoDetectedPrompt.id; // L'AI cambia il prompt
-                      out(`💡 Intento rilevato: ${analysis.intent}`, 'ai_generation', 'info');
-                      out(`🎯 Prompt aggiornato dall'AI: ${autoDetectedPrompt.title}`, 'ai_generation', 'info');
-                  } else {
-                      out(`💡 Intento confermato: ${analysis.intent}. Mantengo il prompt attuale.`, 'ai_generation', 'info');
-                  }
-
-                  // Sovrascriviamo il titolo se generico
-                  const currentTitle = String(payload.title || '').toLowerCase();
-                  if (!payload.title || currentTitle.includes('sessione') || currentTitle.includes('meeting') || currentTitle.includes('audio')) {
+                  // Titolo automatico (se manca o è il placeholder)
+                  if (!payload.title || payload.title === 'auto_detect') {
                       payload.title = analysis.suggestedTitle;
                   }
+                  
+                  out(`💡 Intento rilevato: ${analysis.intent}`, 'ai_generation', 'info');
+                  out(`🎯 Prompt selezionato dall'AI: ${autoDetectedPrompt.title}`, 'ai_generation', 'info');
               }
 
-              // GESTIONE TEMPLATE (Stessa logica: sovrascrivi solo se default)
+              // GESTIONE TEMPLATE AUTO
+              // Se il template è 'auto_detect' o vuoto, usiamo quello suggerito dall'AI
               const currentTemplate = String(payload.workspaceProfileTemplate || '').trim();
-              // Consideriamo default sia il vuoto che l'Executive HTML
-              const isDefaultTemplate = !currentTemplate || currentTemplate.includes('executive_brief.html') || currentTemplate.includes('luxury_report.html');
+              const isTemplateAuto = currentTemplate === 'auto_detect' || currentTemplate === '';
 
-              if (isDefaultTemplate && analysis.template) {
-                  // Se il template suggerito è diverso da quello attuale
-                  if (!currentTemplate.includes(analysis.template)) {
-                      out(`🎨 Template adattato all'intento: ${analysis.template}`, 'ai_generation', 'info');
-                      try {
-                          const suggestedDescriptor = await resolveTemplateDescriptor(analysis.template);
-                          if (suggestedDescriptor) {
-                              activeTemplateDescriptor = suggestedDescriptor;
-                              activeTemplateIsFallback = false; 
-                          }
-                      } catch (tplErr) {
-                          console.warn("Template suggerito non trovato:", tplErr.message);
+              if (isTemplateAuto && analysis.template) {
+                  out(`🎨 Template adattato: ${analysis.template}`, 'ai_generation', 'info');
+                  try {
+                      const suggestedDescriptor = await resolveTemplateDescriptor(analysis.template);
+                      if (suggestedDescriptor) {
+                          activeTemplateDescriptor = suggestedDescriptor;
+                          activeTemplateIsFallback = false; 
                       }
+                  } catch (tplErr) {
+                      console.warn("Template suggerito non trovato:", tplErr.message);
                   }
               }
 
           } catch (intentError) {
               console.error('Errore IntentService:', intentError);
-              out('⚠️ Auto-detection fallita, proseguo con il default.', 'ai_generation', 'warning');
+              out('⚠️ Auto-detection fallita. Applico fallback Executive.', 'ai_generation', 'warning');
           }
       } else {
-          // Se arriviamo qui, significa che activePromptId NON è nella lista dei default.
-          // Quindi l'utente ha scelto deliberatamente qualcos'altro (es. "Brief Creativo").
-          if (activePromptId) {
-             out('🔒 Rispetto la selezione manuale dell\'utente (AI Auto-pilot inattivo).', 'ai_generation', 'info');
+          // Se non è auto_detect, è una scelta manuale.
+          if (activePromptId !== 'auto_detect') {
+             out('🔒 Selezione manuale rilevata. AI Auto-pilot disattivato.', 'ai_generation', 'info');
           }
       }
 
-      // Logica di selezione finale (Invariata)
-      if (!selectedPrompt) {
+      // Logica di selezione finale (Se activePromptId è ancora 'auto_detect' perché l'AI ha fallito, dobbiamo forzare un default)
+      if (activePromptId === 'auto_detect') {
+           // Fallback estremo: Executive Strategy
+           const prompts = await listPrompts();
+           // Cerca per slug o prendi il primo disponibile
+           selectedPrompt = prompts.find(p => p.slug === 'executive_briefing_strategy') || prompts[0];
+           activePromptId = selectedPrompt?.id;
+           out('⚠️ Fallback su default Executive.', 'ai_generation', 'info');
+      } else if (!selectedPrompt) {
+          // Logica standard di recupero per ID
           if (autoDetectedPrompt) {
               selectedPrompt = autoDetectedPrompt;
           } else if (activePromptId) {
@@ -8562,6 +8548,100 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     if (customLogoPath) {
       out(`🎨 Utilizzo logo personalizzato: ${req.files.pdfLogo[0].originalname}`, 'publish', 'info');
     }
+    let activeTemplateDescriptor = null;
+    let activeTemplateIsFallback = false;
+    try {
+      const requestedTemplate = String(
+        req.body?.pdfTemplate ||
+        req.body?.workspaceProfileTemplate ||
+        ''
+      ).trim();
+
+      if (requestedTemplate) {
+        if (isPandocFallbackTemplate(requestedTemplate)) {
+          try {
+            activeTemplateDescriptor = await resolveTemplateDescriptor('default.tex');
+            activeTemplateIsFallback = true;
+            out('📄 Template semplice (Pandoc fallback) selezionato', 'publish', 'info');
+          } catch (templateError) {
+            const reason =
+              templateError instanceof TemplateResolutionError
+                ? templateError.userMessage
+                : templateError?.message || templateError;
+            out(`⚠️ Template fallback non accessibile: ${reason}`, 'publish', 'warning');
+          }
+        } else {
+          try {
+            activeTemplateDescriptor = await resolveTemplateDescriptor(requestedTemplate);
+            out(`📄 Template selezionato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+          } catch (templateError) {
+            const reason =
+              templateError instanceof TemplateResolutionError
+                ? templateError.userMessage
+                : templateError?.message || templateError;
+            out(`⚠️ Template selezionato non accessibile: ${reason}`, 'publish', 'warning');
+          }
+        }
+      }
+
+      if (!activeTemplateDescriptor) {
+        try {
+          const mdContentString = await fsp.readFile(mdPath, 'utf8');
+          const templateMatch = mdContentString.match(/^template:\s*["']?([^"'\r\n]+)["']?/m);
+          const nestedMatch = mdContentString.match(/pdfRules:[\s\S]*?template:\s*["']?([^"'\r\n]+)["']?/);
+
+          let foundTemplateName = null;
+          if (templateMatch && templateMatch[1]) foundTemplateName = templateMatch[1].trim();
+          else if (nestedMatch && nestedMatch[1]) foundTemplateName = nestedMatch[1].trim();
+
+          if (foundTemplateName) {
+            try {
+              activeTemplateDescriptor = await resolveTemplateDescriptor(foundTemplateName);
+              out(`📄 Template recuperato dal Markdown: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+            } catch (templateError) {
+              const reason =
+                templateError instanceof TemplateResolutionError
+                  ? templateError.userMessage
+                  : templateError?.message || templateError;
+              out(`⚠️ Template nel Markdown ('${foundTemplateName}') non valido: ${reason}`, 'publish', 'warning');
+            }
+          }
+
+          if (!activeTemplateDescriptor) {
+            const layoutCandidate = extractLayoutFromMarkdown(mdContentString);
+            if (layoutCandidate) {
+              activeTemplateDescriptor = await resolveTemplateFromLayout(layoutCandidate, { logger: out });
+            }
+          }
+        } catch (contentError) {
+          out(
+            `⚠️ Lettura template dal Markdown fallita: ${contentError?.message || contentError}`,
+            'publish',
+            'warning'
+          );
+        }
+      }
+
+      if (!activeTemplateDescriptor && !activeTemplateIsFallback) {
+        try {
+          activeTemplateDescriptor = await resolveTemplateDescriptor('default.tex');
+          out(`📄 Template predefinito applicato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+        } catch (templateError) {
+          const reason =
+            templateError instanceof TemplateResolutionError
+              ? templateError.userMessage
+              : templateError?.message || templateError;
+          out(`⚠️ Template predefinito non accessibile: ${reason}`, 'publish', 'warning');
+        }
+      }
+    } catch (templateErr) {
+      const reason =
+        templateErr instanceof TemplateResolutionError
+          ? templateErr.userMessage
+          : templateErr?.message || templateErr;
+      out(`⚠️ Risoluzione template fallita: ${reason}`, 'publish', 'warning');
+    }
+    const forcePandocFallback = activeTemplateIsFallback;
     // --- FIX: INIEZIONE AMBIENTE TEMPLATE ---
     // Costruiamo le variabili d'ambiente necessarie per il template (CSS, path, engine)
     const templateEnv = activeTemplateDescriptor ? buildTemplateEnv(activeTemplateDescriptor) : {};
@@ -8569,7 +8649,8 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     const publishEnv = buildEnvOptions(
       promptEnv,
       customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null,
-      templateEnv // <--- QUESTA È LA CHIAVE MANCANTE
+      templateEnv,
+      forcePandocFallback ? { PDF_SIMPLE_MODE: 'true' } : null
     );
     // ----------------------------------------
 
@@ -8580,7 +8661,9 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
       mdLocalPath: mdPath,
       pdfLocalPath: pdfPath,
       publishEnv,
+      templateInfo: activeTemplateDescriptor,
       logger: out,
+      forcePandocFallback,
     });
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
@@ -8653,6 +8736,9 @@ app.post(
     let promptFocus = '';
     let promptNotes = '';
     let promptCuesCompleted = [];
+    let refinedDataPayload = null;
+    let activeTemplateDescriptor = null;
+    let activeTemplateIsFallback = false;
     const tempFiles = new Set();
     const tempDirs = new Set();
 
@@ -8722,6 +8808,37 @@ app.post(
         } catch {
           promptCuesCompleted = [];
         }
+      }
+
+      const refinedExtraction = extractRefinedDataFromBody(req.body || {});
+      if (refinedExtraction.found) {
+        if (refinedExtraction.error) {
+          out(`⚠️ ${refinedExtraction.error}`, 'upload', 'warning');
+        }
+        const refinedResult = sanitizeRefinedDataInput(refinedExtraction.value);
+        if (!refinedResult.ok) {
+          out(`⚠️ refinedData non valido: ${refinedResult.error}`, 'upload', 'warning');
+        } else if (refinedResult.value) {
+          refinedDataPayload = refinedResult.value;
+          out('✨ Dati di raffinazione ricevuti', 'upload', 'info');
+        }
+      }
+
+      if (refinedDataPayload) {
+        let mergedRefined = refinedDataPayload;
+        if (!promptFocus && refinedDataPayload.focus) {
+          promptFocus = refinedDataPayload.focus;
+        } else if (promptFocus && refinedDataPayload.focus !== promptFocus) {
+          mergedRefined = { ...mergedRefined, focus: promptFocus };
+        }
+
+        if (!promptNotes && refinedDataPayload.notes) {
+          promptNotes = refinedDataPayload.notes;
+        } else if (promptNotes && refinedDataPayload.notes !== promptNotes) {
+          mergedRefined = { ...mergedRefined, notes: promptNotes };
+        }
+
+        refinedDataPayload = mergedRefined;
       }
 
       const promptId = String(req.body?.promptId || '').trim();
@@ -8986,6 +9103,88 @@ app.post(
           'text/markdown'
         );
         out(`✅ Markdown generato: ${path.basename(mdLocalPath)}`, 'markdown', 'completed');
+
+        try {
+          const requestedTemplate = String(
+            req.body?.pdfTemplate ||
+            req.body?.workspaceProfileTemplate ||
+            ''
+          ).trim();
+
+          if (requestedTemplate) {
+            if (isPandocFallbackTemplate(requestedTemplate)) {
+              try {
+                activeTemplateDescriptor = await resolveTemplateDescriptor('default.tex');
+                activeTemplateIsFallback = true;
+                out('📄 Template semplice (Pandoc fallback) selezionato', 'publish', 'info');
+              } catch (templateError) {
+                const reason =
+                  templateError instanceof TemplateResolutionError
+                    ? templateError.userMessage
+                    : templateError?.message || templateError;
+                out(`⚠️ Template fallback non accessibile: ${reason}`, 'publish', 'warning');
+              }
+            } else {
+              try {
+                activeTemplateDescriptor = await resolveTemplateDescriptor(requestedTemplate);
+                out(`📄 Template selezionato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+              } catch (templateError) {
+                const reason =
+                  templateError instanceof TemplateResolutionError
+                    ? templateError.userMessage
+                    : templateError?.message || templateError;
+                out(`⚠️ Template selezionato non accessibile: ${reason}`, 'publish', 'warning');
+              }
+            }
+          }
+
+          if (!activeTemplateDescriptor) {
+            const templateMatch = finalMarkdownContent.match(/^template:\s*["']?([^"'\r\n]+)["']?/m);
+            const nestedMatch = finalMarkdownContent.match(/pdfRules:[\s\S]*?template:\s*["']?([^"'\r\n]+)["']?/);
+            let foundTemplateName = null;
+            if (templateMatch && templateMatch[1]) foundTemplateName = templateMatch[1].trim();
+            else if (nestedMatch && nestedMatch[1]) foundTemplateName = nestedMatch[1].trim();
+
+            if (foundTemplateName) {
+              try {
+                activeTemplateDescriptor = await resolveTemplateDescriptor(foundTemplateName);
+                out(`📄 Template recuperato dal Markdown: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+              } catch (templateError) {
+                const reason =
+                  templateError instanceof TemplateResolutionError
+                    ? templateError.userMessage
+                    : templateError?.message || templateError;
+                out(`⚠️ Template nel Markdown ('${foundTemplateName}') non valido: ${reason}`, 'publish', 'warning');
+              }
+            }
+
+            if (!activeTemplateDescriptor) {
+              const layoutCandidate = extractLayoutFromMarkdown(finalMarkdownContent);
+              if (layoutCandidate) {
+                activeTemplateDescriptor = await resolveTemplateFromLayout(layoutCandidate, { logger: out });
+              }
+            }
+          }
+
+          if (!activeTemplateDescriptor && !activeTemplateIsFallback) {
+            try {
+              activeTemplateDescriptor = await resolveTemplateDescriptor('default.tex');
+              out(`📄 Template predefinito applicato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+            } catch (templateError) {
+              const reason =
+                templateError instanceof TemplateResolutionError
+                  ? templateError.userMessage
+                  : templateError?.message || templateError;
+              out(`⚠️ Template predefinito non accessibile: ${reason}`, 'publish', 'warning');
+            }
+          }
+        } catch (templateErr) {
+          const reason =
+            templateErr instanceof TemplateResolutionError
+              ? templateErr.userMessage
+              : templateErr?.message || templateErr;
+          out(`⚠️ Risoluzione template fallita: ${reason}`, 'publish', 'warning');
+        }
       } finally {
         await safeUnlink(txtLocalPath);
         await safeUnlink(mdLocalPath);
@@ -9013,10 +9212,12 @@ app.post(
         console.warn('[PPUBR DEBUG] Nessun activeTemplateDescriptor, uso default.');
     }
 
+    const forcePandocFallback = activeTemplateIsFallback;
     const publishEnv = buildEnvOptions(
       promptEnv, 
       customLogoPath ? { CUSTOM_PDF_LOGO: customLogoPath } : null,
-      templateEnv 
+      templateEnv,
+      forcePandocFallback ? { PDF_SIMPLE_MODE: 'true' } : null
     );
     
     // Logghiamo l'ambiente finale (solo le chiavi rilevanti)
@@ -9037,7 +9238,9 @@ app.post(
           mdLocalPath: mdLocalForPublish,
           pdfLocalPath,
           publishEnv,
+          templateInfo: activeTemplateDescriptor,
           logger: out,
+          forcePandocFallback,
         });
 
         await uploadFileToBucket(
