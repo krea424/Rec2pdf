@@ -3,7 +3,8 @@ import { useAppContext } from "../hooks/useAppContext";
 
 const EditorPage = () => {
   const context = useAppContext();
-  const { theme, themes } = context;
+  const { theme, themes, pdfTemplates } = context; // <--- AGGIUNTO pdfTemplates
+  
   const renderedValue =
     typeof context.mdEditor.renderedContent === "string" && context.mdEditor.renderedContent.length
       ? context.mdEditor.renderedContent
@@ -12,6 +13,7 @@ const EditorPage = () => {
 
   return (
     <MarkdownEditorModal
+      // ... props esistenti ...
       open={context.mdEditor.open}
       title={context.mdEditor?.entry?.title || context.mdEditor?.entry?.slug || ""}
       path={context.mdEditor.path}
@@ -37,6 +39,9 @@ const EditorPage = () => {
       speakerMap={context.mdEditor?.speakerMap || {}}
       onSpeakerMapChange={context.handleSpeakerMapChange}
       speakerMapHasNames={speakerMapHasNames}
+      
+      // --- NUOVA PROP ---
+      availableTemplates={pdfTemplates} 
     />
   );
 };

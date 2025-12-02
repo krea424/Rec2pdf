@@ -6275,10 +6275,36 @@ app.post('/api/pre-analyze', async (req, res) => {
     return res.status(400).json({ ok: false, message: '"cueCards" deve essere un array.' });
   }
 
-  const cueCards = sanitizeRefinedCueCardList(req.body.cueCards);
-  if (!cueCards.length) {
-    return res.status(400).json({ ok: false, message: 'Nessuna cue card valida fornita.' });
+ // === MODIFICA 1: AUTO-DETECT INTENT ===
+  // Cambiamo da const a let per poterle sovrascrivere
+  let cueCards = sanitizeRefinedCueCardList(req.body.cueCards);
+  let detectedPrompt = null;
+
+  // Se non ci sono Cue Cards (siamo in Auto-Detect) E abbiamo il servizio intent attivo
+  if (cueCards.length === 0 && intentService) {
+      console.log('[API pre-analyze] Nessuna cue card fornita. Avvio Intent Recognition...');
+      try {
+          // 1. Chiediamo all'AI di capire l'intento dalla trascrizione
+          const analysis = await intentService.analyzeAndResolve(transcription);
+          
+          // 2. Se l'AI ha trovato un prompt, lo usiamo
+          if (analysis.prompt) {
+              const p = formatPromptForResponse(analysis.prompt);
+              // 3. Estraiamo le cue cards dal prompt rilevato
+              cueCards = p.cueCards || [];
+              detectedPrompt = p; // Lo salviamo per mandarlo al frontend
+              console.log(`[API pre-analyze] Intento rilevato: ${analysis.intent}. Usate ${cueCards.length} cue cards.`);
+          }
+      } catch (err) {
+          console.warn('[API pre-analyze] Errore intent detection:', err.message);
+      }
   }
+
+  // Solo ORA, se sono ancora vuote, diamo errore
+  if (!cueCards.length) {
+    return res.status(400).json({ ok: false, message: 'Nessuna cue card valida trovata o rilevata automaticamente.' });
+  }
+  // ======================================
 
   let provider;
   try {
@@ -6376,7 +6402,13 @@ app.post('/api/pre-analyze', async (req, res) => {
     });
   }
 
-  return res.json({ ok: true, suggestedAnswers });
+  // === MODIFICA 2: INVIO PROMPT RILEVATO ===
+  return res.json({ 
+    ok: true, 
+    suggestedAnswers,
+    detectedPrompt: detectedPrompt // <--- AGGIUNTO QUESTO CAMPO
+});
+// =========================================
 });
 
 app.get('/api/diag', async (req, res) => {
@@ -8081,12 +8113,47 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
       // -----------------------------------------------------------------------
 
       let activeTemplateDescriptor = null;
+      let activeTemplateIsFallback = false;
       const mdContentString = mdBuffer.toString('utf8');
   
       // --- DEBUG LOG ---
       // Vediamo i primi 500 caratteri per capire cosa arriva davvero
       console.log('[PPUBR DEBUG] Markdown Header Preview:\n', mdContentString.substring(0, 500));
       // -----------------
+
+      // 0. PRIORITÀ ASSOLUTA: Template esplicito richiesto dal client (Editor)
+      const requestedTemplate = String(
+        req.body?.pdfTemplate ||
+        req.body?.workspaceProfileTemplate ||
+        ''
+      ).trim();
+
+      if (requestedTemplate) {
+        if (isPandocFallbackTemplate(requestedTemplate)) {
+          try {
+            activeTemplateDescriptor = await resolveTemplateDescriptor('default.tex');
+            activeTemplateIsFallback = true;
+            out('📄 Template semplice (Pandoc fallback) selezionato', 'publish', 'info');
+          } catch (templateError) {
+            const reason =
+              templateError instanceof TemplateResolutionError
+                ? templateError.userMessage
+                : templateError?.message || templateError;
+            out(`⚠️ Template fallback non accessibile: ${reason}`, 'publish', 'warning');
+          }
+        } else {
+          try {
+            activeTemplateDescriptor = await resolveTemplateDescriptor(requestedTemplate);
+            out(`📄 Template selezionato: ${activeTemplateDescriptor.fileName}`, 'publish', 'info');
+          } catch (templateError) {
+            const reason =
+              templateError instanceof TemplateResolutionError
+                ? templateError.userMessage
+                : templateError?.message || templateError;
+            out(`⚠️ Template selezionato non accessibile: ${reason}`, 'publish', 'warning');
+          }
+        }
+      }
   
       // 1. PRIORITÀ: Cerchiamo il template esplicito
       // Nuova Regex più robusta: cerca 'template:' seguito da qualsiasi cosa fino a fine riga, ignorando virgolette
@@ -8099,7 +8166,7 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
       if (templateMatch && templateMatch[1]) foundTemplateName = templateMatch[1].trim();
       else if (nestedMatch && nestedMatch[1]) foundTemplateName = nestedMatch[1].trim();
   
-      if (foundTemplateName) {
+      if (!activeTemplateDescriptor && foundTemplateName) {
           console.log(`[PPUBR DEBUG] Trovato template nel testo: '${foundTemplateName}'`);
           try {
               activeTemplateDescriptor = await resolveTemplateDescriptor(foundTemplateName);
@@ -8132,7 +8199,11 @@ app.post('/api/ppubr', uploadMiddleware.fields([{ name: 'pdfLogo', maxCount: 1 }
       }
 
       const templateEnv = activeTemplateDescriptor ? buildTemplateEnv(activeTemplateDescriptor) : null;
-      publishEnv = buildEnvOptions(basePublishEnv, templateEnv);
+      publishEnv = buildEnvOptions(
+        basePublishEnv,
+        templateEnv,
+        activeTemplateIsFallback ? { PDF_SIMPLE_MODE: 'true' } : null
+      );
 
       // Backup dell'ultima versione presente prima di sovrascrivere (per storicizzare ogni rigenerazione)
       try {
@@ -9508,14 +9579,29 @@ app.post('/api/transcribe-only', uploadMiddleware.single('audio'), async (req, r
     if (ff.code !== 0) throw new Error(ff.stderr || 'ffmpeg failed');
 
     // 2. Trascrizione
+    // Prefer WhisperX with safe torch flags; fall back to classic whisper if it fails
     const whisperxCmd = [
+      'TORCH_LOAD_TRUSTED=1',
+      'TORCH_LOAD_WEIGHTS_ONLY=0',
       'whisperx', JSON.stringify(wavLocalPath),
       '--language it', '--model small', '--device cpu', '--compute_type float32',
       '--output_format', 'txt',
+      '--vad', 'silero', // evita pyannote/omegaconf incompatibility su Torch 2.6
       '--output_dir', JSON.stringify(tempDir)
     ].join(' ');
-    const w = await run('bash', ['-lc', whisperxCmd]);
-    if (w.code !== 0) throw new Error(w.stderr || 'whisper failed');
+    let w = await run('bash', ['-lc', whisperxCmd]);
+
+    if (w.code !== 0) {
+      console.warn('⚠️ whisperx fallito, fallback a whisper CLI', w.stderr || w.stdout);
+      const whisperCmd = [
+        'whisper', JSON.stringify(wavLocalPath),
+        '--language it', '--model small',
+        '--device cpu', '--output_format txt',
+        '--output_dir', JSON.stringify(tempDir)
+      ].join(' ');
+      w = await run('bash', ['-lc', whisperCmd]);
+      if (w.code !== 0) throw new Error(w.stderr || 'whisper failed');
+    }
     
     const transcriptFileName = (await fsp.readdir(tempDir)).find(f => f.endsWith('.txt'));
     if (!transcriptFileName) throw new Error('File di trascrizione non trovato.');

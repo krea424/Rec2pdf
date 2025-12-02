@@ -10,10 +10,10 @@ import {
   XCircle,
   CheckCircle2,
   Users,
-  Settings
+  Settings,
+  ChevronDown
 } from "./icons";
 import { Button, IconButton } from "./ui/Button";
-// Rimuoviamo TextArea custom per usare quella nativa e avere controllo totale
 import { Toast } from "./ui/Toast";
 import { Skeleton } from "./ui/Skeleton";
 import SpeakerMapper from "./SpeakerMapper";
@@ -44,9 +44,12 @@ export default function MarkdownEditorModal({
   speakerMap = {},
   onSpeakerMapChange,
   speakerMapHasNames = false,
+  availableTemplates = [], // <--- NUOVA PROP
 }) {
   if (!open) return null;
 
+  // Stato per il template override nell'editor
+  const [selectedTemplateOverride, setSelectedTemplateOverride] = useState("");
   const [activeTab, setActiveTab] = useState("editor");
   const [editorPane, setEditorPane] = useState("write");
 
@@ -71,17 +74,17 @@ export default function MarkdownEditorModal({
   const hasSpeakers = Array.isArray(speakers) && speakers.length > 0;
   
   return (
-    // 1. CONTENITORE ESTERNO: Padding ridotto (p-4) per massimizzare lo spazio
+    // 1. CONTENITORE ESTERNO
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md p-4 transition-opacity duration-300">
       
-      {/* 2. CARD PRINCIPALE: h-full forza l'altezza al massimo dello spazio disponibile nel padding */}
+      {/* 2. CARD PRINCIPALE */}
       <div
         className={classNames(
           "flex h-full w-full max-w-[1920px] flex-col lg:flex-row overflow-hidden rounded-2xl border border-white/10 bg-[#09090b] shadow-2xl ring-1 ring-white/5",
           themeStyles?.card
         )}
       >
-        {/* HEADER MOBILE (Visibile solo < lg) */}
+        {/* HEADER MOBILE */}
         <div className="flex items-center justify-between border-b border-white/10 bg-[#121214] px-4 py-3 lg:hidden shrink-0">
            <div className="flex gap-2">
               <button 
@@ -123,12 +126,12 @@ export default function MarkdownEditorModal({
            </div>
         </div>
 
-        {/* ================= COLONNA SINISTRA: EDITOR (Principale) ================= */}
+        {/* ================= COLONNA SINISTRA: EDITOR ================= */}
         <div className={classNames(
             "flex flex-1 flex-col border-r border-white/10 bg-[#09090b] transition-all min-h-0",
             activeTab === "editor" ? "block h-full" : "hidden lg:flex"
         )}>
-            {/* Header Desktop (Altezza Fissa) */}
+            {/* Header Desktop */}
             <div className="hidden lg:flex items-center justify-between border-b border-white/10 px-6 py-4 bg-[#09090b] shrink-0">
                 <div className="flex items-center gap-4">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20">
@@ -165,11 +168,7 @@ export default function MarkdownEditorModal({
                 </div>
             </div>
             
-            {/* 
-                3. AREA TESTO + ANTEPRIMA:
-                - split view su desktop, toggle "Scrivi/Anteprima" su mobile
-                - entrambi i pannelli hanno scroll indipendente
-            */}
+            {/* AREA TESTO + ANTEPRIMA */}
             <div className="flex-1 relative w-full min-h-0 bg-[#09090b]">
                 {loading ? (
                     <div className="absolute inset-0 p-6">
@@ -262,7 +261,7 @@ export default function MarkdownEditorModal({
             </div>
         </div>
 
-        {/* ================= COLONNA DESTRA: TOOLBAR (Opzioni) ================= */}
+        {/* ================= COLONNA DESTRA: TOOLBAR ================= */}
         <div className={classNames(
             "flex w-full lg:w-[420px] xl:w-[480px] flex-col bg-[#121214] border-l border-white/5 shadow-2xl z-10 shrink-0",
             activeTab === "options" ? "block h-full" : "hidden lg:flex"
@@ -317,11 +316,33 @@ export default function MarkdownEditorModal({
                 {/* SEZIONE 2: Azioni Pubblicazione */}
                 <div className="space-y-4">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500">Rigenerazione PDF</h4>
+
+                    {/* --- SELETTORE TEMPLATE (NUOVO) --- */}
+                    <div className="space-y-2">
+                        <label className="text-[10px] uppercase tracking-wide text-zinc-400 font-semibold">
+                            Cambia Stile Grafico
+                        </label>
+                        <div className="relative">
+                            <select
+                                value={selectedTemplateOverride}
+                                onChange={(e) => setSelectedTemplateOverride(e.target.value)}
+                                className="w-full appearance-none rounded-xl border border-white/10 bg-black/20 px-4 py-3 pr-10 text-sm text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                            >
+                                <option value="">Mantieni attuale (Default)</option>
+                                {availableTemplates.map((t) => (
+                                    <option key={t.fileName} value={t.fileName}>
+                                        {t.name || t.fileName}
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                        </div>
+                    </div>
                     
                     <div className="grid gap-3">
                         {/* Pulsante Rigenera con Nomi */}
                         <Button
-                            onClick={() => onRepublishWithSpeakers?.()}
+                            onClick={() => onRepublishWithSpeakers?.({ template: selectedTemplateOverride })}
                             disabled={busy || hasUnsavedChanges || !hasSpeakers || !speakerMapHasNames}
                             variant={hasSpeakers && speakerMapHasNames ? "primary" : "ghost"}
                             className={classNames(
@@ -341,7 +362,7 @@ export default function MarkdownEditorModal({
 
                         {/* Pulsante Rigenera Standard */}
                         <Button
-                            onClick={() => onRepublish?.()}
+                            onClick={() => onRepublish?.({ template: selectedTemplateOverride })}
                             disabled={busy || hasUnsavedChanges}
                             variant="secondary"
                             className="w-full justify-start h-14 bg-zinc-800 border border-white/10 hover:bg-zinc-700 text-zinc-200 px-4 rounded-xl"

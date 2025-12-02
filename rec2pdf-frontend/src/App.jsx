@@ -4330,20 +4330,17 @@ const handleRefineAndGenerate = useCallback(async () => {
 
   setBusy(true);
   setErrorBanner(null);
-  openRefinementPanel(); // Apre subito il pannello in stato di caricamento
+  openRefinementPanel(); 
   pushLogs(['🚀 Avvio del flusso di raffinamento...']);
 
   try {
-    // 1. Esegui solo la trascrizione (creeremo un endpoint apposito)
+    // 1. Trascrizione
     const formData = new FormData();
     formData.append('audio', blob, blob.name || 'audio.webm');
-    
-    // Aggiungiamo i provider AI per coerenza
     if (aiProviderOverrides.text) {
       formData.append('aiTextProvider', aiProviderOverrides.text);
     }
 
-    // Chiamata a un nuovo endpoint SOLO per la trascrizione
     const transcribeResponse = await fetchBodyWithAuth(`${backendUrl}/api/transcribe-only`, {
       method: 'POST',
       body: formData,
@@ -4356,19 +4353,18 @@ const handleRefineAndGenerate = useCallback(async () => {
     const { transcription, speakers } = transcribeResponse.data;
     pushLogs(['✅ Trascrizione completata.']);
 
-    // 2. Popola `refinedData` con la trascrizione
     const initialRefinedData = {
       transcription,
       speakers: speakers || [],
     };
     setRefinedData(initialRefinedData);
     
-    // 3. Chiama /api/pre-analyze per i suggerimenti
-    pushLogs(['🧠 Richiesta suggerimenti AI per le cue card...']);
-    // RIGA CORRETTA
+    // 2. Pre-analisi + Auto-Detect
+    pushLogs(['🧠 Analisi intento e generazione suggerimenti...']);
+    
     const preAnalyzePayload = buildRefinementPreAnalyzePayload({
       transcription,
-      prompt: activePrompt,
+      prompt: activePrompt, // Se è null (Auto-Detect), il backend attiverà l'AI
       workspaceId: workspaceSelection?.workspaceId,
     });
     
@@ -4379,12 +4375,33 @@ const handleRefineAndGenerate = useCallback(async () => {
     });
 
     if (preAnalyzeResult.ok) {
-      pushLogs(['✅ Suggerimenti ricevuti.']);
+      pushLogs(['✅ Analisi completata.']);
       
-      // La risposta grezza dal backend è in `preAnalyzeResult.raw`
-      const suggestedAnswers = preAnalyzeResult.raw?.suggestedAnswers;
+      // === FIX: APPLICAZIONE IMMEDIATA PROMPT RILEVATO ===
+      const detected = preAnalyzeResult.data?.detectedPrompt || preAnalyzeResult.raw?.detectedPrompt;
+      if (detected) {
+        pushLogs([`💡 Intento rilevato: ${detected.title}`]);
+        
+        // 1. Aggiorna lo stato globale (per il futuro)
+        setPromptState(prev => ({ 
+            ...prev, 
+            promptId: detected.id,
+            expandPromptDetails: true 
+        }));
+
+        // 2. INIEZIONE DIRETTA (Il Fix per la UI)
+        // Iniettiamo le cue cards rilevate direttamente nei dati raffinati.
+        // Questo garantisce che il RefinementPanel le veda SUBITO, 
+        // senza aspettare il ricalcolo di activePrompt.
+        setRefinedData(prev => ({
+            ...(prev || {}),
+            cueCards: detected.cueCards || [] 
+        }));
+    }
+    // =================================================
+
+      const suggestedAnswers = preAnalyzeResult.raw?.suggestedAnswers || preAnalyzeResult.data?.suggestedAnswers;
     
-      // Controlliamo che `suggestedAnswers` sia un array prima di usarlo
       if (Array.isArray(suggestedAnswers)) {
         const answersMap = suggestedAnswers.reduce((acc, item) => {
           if (item && typeof item.key === 'string') {
@@ -4393,11 +4410,13 @@ const handleRefineAndGenerate = useCallback(async () => {
           return acc;
         }, {});
         setCueCardAnswers(answersMap);
-      } else {
-        // Se non è un array, logghiamo un avviso ma non blocchiamo l'app
-        console.warn('La risposta di pre-analisi non conteneva un array `suggestedAnswers` valido.', preAnalyzeResult.raw);
-        pushLogs(['⚠️ Formato suggerimenti non valido ricevuto dal backend.']);
-      }
+      } 
+
+      // Persist suggested answers alongside cue cards for the UI (collapse/suggest buttons)
+      setRefinedData(prev => ({
+        ...(prev || {}),
+        suggestedAnswers: Array.isArray(suggestedAnswers) ? suggestedAnswers : (prev?.suggestedAnswers || []),
+      }));
     } else {
       pushLogs([`⚠️ Pre-analisi fallita: ${preAnalyzeResult.message}`]);
     }
@@ -4410,7 +4429,7 @@ const handleRefineAndGenerate = useCallback(async () => {
   } finally {
     setBusy(false);
   }
-}, [audioBlob, busy, backendUrl, fetchBodyWithAuth, activePrompt, aiProviderOverrides.text, openRefinementPanel, closeRefinementPanel, setRefinedData, setCueCardAnswers, setErrorBanner, pushLogs]);
+}, [audioBlob, busy, backendUrl, fetchBodyWithAuth, activePrompt, aiProviderOverrides.text, openRefinementPanel, closeRefinementPanel, setRefinedData, setCueCardAnswers, setErrorBanner, pushLogs, setPromptState, workspaceSelection]);
   // --- INIZIO MODIFICA APP.JSX ---
   const processViaBackend = async () => {
     const blob = audioBlob;
@@ -5465,81 +5484,98 @@ const processMarkdownUpload = async (file, options = {}) => {
       let templateToSend = null;
       let typeToSend = null;
       let cssToSend = null;
-
-      // Helper mapping
+  
+      // Helper mapping (Manteniamo la funzione esistente)
       const mapLayoutToFile = (layoutName) => {
-          if (!layoutName) return null;
-          const norm = layoutName.toLowerCase();
-          if (norm.includes('consulting')) return { tpl: 'consulting_report.html', type: 'html', css: 'consulting_report.css' };
-          if (norm.includes('verbale') || norm.includes('meeting')) return { tpl: 'verbale_meeting.html', type: 'html', css: 'verbale_meeting.css' };
-          if (norm.includes('executive') || norm.includes('brief')) return { tpl: 'executive_brief.html', type: 'html', css: 'executive_brief.css' };
-          return null;
+        if (!layoutName) return null;
+        const norm = layoutName.toLowerCase();
+        if (norm.includes('consulting')) return { tpl: 'consulting_report.html', type: 'html', css: 'consulting_report.css' };
+        if (norm.includes('verbale') || norm.includes('meeting')) return { tpl: 'verbale_meeting.html', type: 'html', css: 'verbale_meeting.css' };
+        if (norm.includes('executive') || norm.includes('brief')) return { tpl: 'executive_brief.html', type: 'html', css: 'executive_brief.css' };
+        return null;
       };
-
-      // A. Analisi del Testo (Cerchiamo layout: o template:)
-      if (options?.contentOverride) {
-          const content = options.contentOverride;
-          // Regex più permissiva (accetta spazi multipli)
-          const layoutMatch = content.match(/layout:\s*["']?([^"'\n\r]+)["']?/i);
-          const templateMatch = content.match(/template:\s*["']?([^"'\n\r]+)["']?/i);
-
-          if (templateMatch) {
-              templateToSend = templateMatch[1].trim();
-              typeToSend = templateToSend.endsWith('.html') ? 'html' : 'tex';
-              if (typeToSend === 'html') cssToSend = templateToSend.replace('.html', '.css');
-              console.log("👉 Trovato nel testo (template):", templateToSend);
-          } else if (layoutMatch) {
-              const mapped = mapLayoutToFile(layoutMatch[1].trim());
-              if (mapped) {
-                  templateToSend = mapped.tpl;
-                  typeToSend = mapped.type;
-                  cssToSend = mapped.css;
-                  console.log("👉 Trovato nel testo (layout):", templateToSend);
-              }
+  
+      // ==================================================================
+      // 0. PRIORITÀ ASSOLUTA: OVERRIDE DALL'EDITOR
+      // Se l'utente ha scelto un template dal modale, vince su tutto.
+      // ==================================================================
+      if (options?.templateOverride) {
+          const tplName = options.templateOverride;
+          // Ignoriamo se vuoto o se è il valore placeholder 'auto_detect'
+          if (tplName && tplName !== 'auto_detect') {
+              templateToSend = tplName;
+              typeToSend = tplName.endsWith('.html') ? 'html' : 'tex';
+              if (typeToSend === 'html') cssToSend = tplName.replace('.html', '.css');
+              console.log("👉 OVERRIDE MANUALE EDITOR:", templateToSend);
           }
       }
-
-      // B. Selezione Manuale Menu (Vince se presente ORA)
-      if (!workspaceProfileLocked && pdfTemplateSelection && pdfTemplateSelection.fileName) {
-          // Usiamo il menu SOLO se è diverso dal default, altrimenti rischiamo di sovrascrivere
-          if (pdfTemplateSelection.fileName !== 'default.tex') {
-             templateToSend = pdfTemplateSelection.fileName;
-             typeToSend = pdfTemplateSelection.type;
-             cssToSend = pdfTemplateSelection.css;
-             console.log("👉 Scelto da Menu Manuale:", templateToSend);
+  
+      // A. Analisi del Testo (Cerchiamo layout: o template:)
+      // ESEGUIAMO SOLO SE NON C'È GIÀ UN OVERRIDE
+      if (!templateToSend && options?.contentOverride) {
+        const content = options.contentOverride;
+        // Regex più permissiva (accetta spazi multipli)
+        const layoutMatch = content.match(/layout:\s*["']?([^"'\n\r]+)["']?/i);
+        const templateMatch = content.match(/template:\s*["']?([^"'\n\r]+)["']?/i);
+  
+        if (templateMatch) {
+          templateToSend = templateMatch[1].trim();
+          typeToSend = templateToSend.endsWith('.html') ? 'html' : 'tex';
+          if (typeToSend === 'html') cssToSend = templateToSend.replace('.html', '.css');
+          console.log("👉 Trovato nel testo (template):", templateToSend);
+        } else if (layoutMatch) {
+          const mapped = mapLayoutToFile(layoutMatch[1].trim());
+          if (mapped) {
+            templateToSend = mapped.tpl;
+            typeToSend = mapped.type;
+            cssToSend = mapped.css;
+            console.log("👉 Trovato nel testo (layout):", templateToSend);
           }
-      } 
-
+        }
+      }
+  
+      // B. Selezione Manuale Menu (Vince se presente ORA e non c'è override)
+      // ESEGUIAMO SOLO SE NON C'È GIÀ UN TEMPLATE DEFINITO
+      if (!templateToSend && !workspaceProfileLocked && pdfTemplateSelection && pdfTemplateSelection.fileName) {
+        // Usiamo il menu SOLO se è diverso dal default e non è auto_detect
+        if (pdfTemplateSelection.fileName !== 'default.tex' && pdfTemplateSelection.fileName !== 'auto_detect') {
+          templateToSend = pdfTemplateSelection.fileName;
+          typeToSend = pdfTemplateSelection.type;
+          cssToSend = pdfTemplateSelection.css;
+          console.log("👉 Scelto da Menu Manuale:", templateToSend);
+        }
+      }
+  
       // C. SAFETY NET: Recupero dallo Storico (Se A e B falliscono o sono nulli)
       // Questo è il fix per il problema "torna a default"
       if (!templateToSend) {
-          console.log("⚠️ Nessun template nel testo/menu. Cerco nello storico...");
-          
-          // 1. Cerca template file esplicito
-          const historicalTemplate = 
-              entry?.prompt?.pdfRules?.template || 
-              entry?.metadata?.pdfTemplate || 
-              entry?.workspace?.pdfTemplate;
-
-          // 2. Cerca layout astratto
-          const historicalLayout = 
-              entry?.prompt?.pdfRules?.layout || 
-              entry?.metadata?.layout;
-
-          if (historicalTemplate) {
-              templateToSend = historicalTemplate;
-              typeToSend = historicalTemplate.endsWith('.html') ? 'html' : 'tex';
-              if (typeToSend === 'html') cssToSend = historicalTemplate.replace('.html', '.css');
-              console.log("👉 Ripristinato da storico (file):", templateToSend);
-          } else if (historicalLayout) {
-              const mapped = mapLayoutToFile(historicalLayout);
-              if (mapped) {
-                  templateToSend = mapped.tpl;
-                  typeToSend = mapped.type;
-                  cssToSend = mapped.css;
-                  console.log("👉 Ripristinato da storico (layout):", templateToSend);
-              }
-          }
+        console.log("⚠️ Nessun template nel testo/menu. Cerco nello storico...");
+        
+        // 1. Cerca template file esplicito
+        const historicalTemplate = 
+            entry?.prompt?.pdfRules?.template || 
+            entry?.metadata?.pdfTemplate || 
+            entry?.workspace?.pdfTemplate;
+  
+        // 2. Cerca layout astratto
+        const historicalLayout = 
+            entry?.prompt?.pdfRules?.layout || 
+            entry?.metadata?.layout;
+  
+        if (historicalTemplate) {
+            templateToSend = historicalTemplate;
+            typeToSend = historicalTemplate.endsWith('.html') ? 'html' : 'tex';
+            if (typeToSend === 'html') cssToSend = historicalTemplate.replace('.html', '.css');
+            console.log("👉 Ripristinato da storico (file):", templateToSend);
+        } else if (historicalLayout) {
+            const mapped = mapLayoutToFile(historicalLayout);
+            if (mapped) {
+                templateToSend = mapped.tpl;
+                typeToSend = mapped.type;
+                cssToSend = mapped.css;
+                console.log("👉 Ripristinato da storico (layout):", templateToSend);
+            }
+        }
       }
 
       // D. APPLICAZIONE
@@ -5759,20 +5795,28 @@ const processMarkdownUpload = async (file, options = {}) => {
     }
   }, [fetchWithAuth, mdEditor, pushLogs, setHistory]);
 
-  const handleRepublishFromEditor = useCallback(() => {
+  const handleRepublishFromEditor = useCallback((options = {}) => {
     if (!mdEditor.entry) return;
     
-    // Passiamo esplicitamente il contenuto attuale dell'editor (mdEditor.content)
-    // così la funzione di rigenerazione può analizzare il Frontmatter modificato
+    // Estraiamo il template se passato dal modale
+    const templateOverride = options.template;
+
     handleRepublishFromMd(mdEditor.entry, mdEditor.path, {
       contentOverride: mdEditor.content, 
-      speakerMap: mdEditor.speakerMap 
+      speakerMap: mdEditor.speakerMap,
+      templateOverride: templateOverride // <--- NUOVO PARAMETRO
     });
   }, [mdEditor, handleRepublishFromMd]);
 
-  const handleRepublishFromEditorWithSpeakers = useCallback(() => {
+  const handleRepublishFromEditorWithSpeakers = useCallback((options = {}) => {
     if (!mdEditor?.entry) return;
-    handleRepublishFromMd(mdEditor.entry, mdEditor.path, { speakerMap: mdEditor.speakerMap });
+    
+    const templateOverride = options.template;
+
+    handleRepublishFromMd(mdEditor.entry, mdEditor.path, { 
+        speakerMap: mdEditor.speakerMap,
+        templateOverride: templateOverride // <--- NUOVO PARAMETRO
+    });
   }, [mdEditor, handleRepublishFromMd]);
 
   const handleShowHistoryLogs = useCallback((entry) => {
