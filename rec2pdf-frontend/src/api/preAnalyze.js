@@ -245,12 +245,24 @@ export const parsePreAnalyzeData = (payload = {}) => {
       sections: [],
       metadata: {},
       tokens: null,
+      suggestedAnswers: [],
+      detectedPrompt: null,
       raw: payload,
     };
   }
 
   const summary =
     sanitizeString(payload.summary || payload.overview || payload.message || payload.description) || "";
+
+  // Pass-through extras coming from backend (intent detection + suggestions)
+  const detectedPrompt =
+    payload.detectedPrompt && typeof payload.detectedPrompt === "object" ? payload.detectedPrompt : null;
+
+  const suggestedAnswers = Array.isArray(payload.suggestedAnswers)
+    ? payload.suggestedAnswers
+    : Array.isArray(payload.answers)
+    ? payload.answers
+    : [];
 
   const highlights = parseHighlightList(
     payload.highlights || payload.insights || payload.bullets || payload.points || [],
@@ -284,6 +296,8 @@ export const parsePreAnalyzeData = (payload = {}) => {
     sections,
     metadata,
     tokens,
+    suggestedAnswers,
+    detectedPrompt,
     raw: payload,
   };
 };
