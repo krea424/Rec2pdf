@@ -1,17 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { classNames } from "../utils/classNames";
-import { Folder, RefreshCw, LinkIcon, Info, Users } from "./icons";
-import { Button, Input, Select, Toast, EmptyState, Skeleton } from "./ui";
+import { Folder, RefreshCw, LinkIcon, Info, Users, FilterIcon } from "./icons";
+import { Button, Toast, EmptyState, Skeleton } from "./ui";
 
 const DEFAULT_BUCKET = "processed-media";
 
-// --- FUNZIONI HELPER ---
-const sanitizePrefix = (value) => {
-  if (!value) return "";
-  return String(value).trim().replace(/^\/+/, "").replace(/\/+$/, "");
-};
+// --- STILI BOARDROOM (Costanti per coerenza) ---
+const CARD_STYLE = "rounded-2xl border border-white/10 bg-[#121214] p-5 text-white shadow-sm transition-all hover:border-white/20";
+const INPUT_STYLE = "w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all";
+const BUTTON_SECONDARY = "flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-zinc-300 hover:bg-white/10 hover:text-white transition-all";
+const TABLE_HEADER = "bg-[#18181b] border-b border-white/5 text-zinc-500 uppercase text-[10px] font-bold tracking-wider";
+const TABLE_ROW = "border-b border-white/5 hover:bg-white/[0.02] transition-colors";
+const TABLE_CELL = "px-4 py-3 text-sm text-zinc-300";
 
+// --- FUNZIONI HELPER ---
 const formatSize = (bytes) => {
   if (!Number.isFinite(bytes) || bytes < 0) return "—";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -29,7 +32,7 @@ const formatTimestamp = (value) => {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString();
+  return date.toLocaleDateString() + " " + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
 const projectOptionsFromWorkspace = (workspace) => {
@@ -41,7 +44,6 @@ const projectOptionsFromWorkspace = (workspace) => {
   }));
 };
 // --- FINE FUNZIONI HELPER ---
-
 
 export default function CloudLibraryPanel({
   backendUrl,
@@ -84,7 +86,7 @@ export default function CloudLibraryPanel({
         throw new Error(result.data?.message || "Errore nel recupero dei file");
       }
       const payloadFiles = (Array.isArray(result.data?.files) ? result.data.files : [])
-        .filter(file => file.id !== null); // Filtra le cartelle (hanno id null)
+        .filter(file => file.id !== null); 
       setAllUserFiles(payloadFiles);
     } catch (requestError) {
       setError(requestError.message || "Errore di rete.");
@@ -116,7 +118,6 @@ export default function CloudLibraryPanel({
     }
 
     return allUserFiles.filter(file => {
-      // `file.objectPath` contiene il percorso completo, es: "processed/user-id/timestamp_workspace-slug_session-slug.pdf"
       const fileName = file.objectPath.split('/').pop() || '';
 
       if (!fileName.includes(`_${selectedWorkspace.slug}_`)) {
@@ -150,152 +151,160 @@ export default function CloudLibraryPanel({
     });
   }, [onAssignWorkspace, projectOptions, selection?.workspaceId]);
 
-  const themeInput = themeStyles?.input || "bg-zinc-900/60 border-zinc-800";
-  const themeButton = themeStyles?.button || "bg-zinc-800 hover:bg-zinc-700 border-zinc-700";
-
   return (
-    <div className={classNames("rounded-2xl border p-5", themeStyles?.card || "bg-zinc-900/50 border-zinc-800") }>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-indigo-500/10 p-2 text-indigo-300">
-            <Folder className="h-4 w-4" />
+    <div className={classNames(CARD_STYLE, "flex flex-col gap-6 min-h-[600px]")}>
+      
+      {/* HEADER */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/5 pb-4">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-indigo-400 mb-1">
+            <Folder className="h-4 w-4" /> Cloud Library
           </div>
-          <div>
-            <h3 className="text-lg font-semibold text-zinc-100">Cloud library</h3>
-            <p className="text-xs text-zinc-400">
-              Esplora gli artefatti salvati su Supabase per workspace e progetto.
-            </p>
+          <p className="text-sm text-zinc-400">
+            Archivio centralizzato di tutti gli artefatti generati.
+          </p>
+        </div>
+         <button
+          type="button"
+          className={BUTTON_SECONDARY}
+          onClick={loadAllUserFiles}
+          disabled={loading}
+        >
+          <RefreshCw className={classNames("h-3.5 w-3.5", loading && "animate-spin")} />
+          Aggiorna
+        </button>
+      </div>
+
+      {/* FILTRI */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 bg-[#18181b] p-4 rounded-xl border border-white/5">
+        <div className="space-y-1">
+          <label className="text-[10px] font-bold uppercase text-zinc-500 ml-1">Workspace</label>
+          <div className="relative">
+             <select
+                value={selection?.workspaceId || ""}
+                onChange={handleWorkspaceChange}
+                className={INPUT_STYLE + " appearance-none pr-8"}
+             >
+                <option value="">Tutti i file</option>
+                {workspaces.map((ws) => (
+                  <option key={ws.id} value={ws.id}>{ws.name}</option>
+                ))}
+             </select>
+             <FilterIcon className="pointer-events-none absolute right-3 top-3 h-3.5 w-3.5 text-zinc-500" />
           </div>
         </div>
-         <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className={classNames("gap-2", themeButton)}
-          onClick={loadAllUserFiles}
-          leadingIcon={RefreshCw}
-          isLoading={loading}
-        >
-          Aggiorna
-        </Button>
+
+        <div className="space-y-1">
+          <label className="text-[10px] font-bold uppercase text-zinc-500 ml-1">Progetto</label>
+          <div className="relative">
+             <select
+                value={selection?.projectId || ""}
+                onChange={handleProjectChange}
+                disabled={!selection?.workspaceId}
+                className={INPUT_STYLE + " appearance-none pr-8 disabled:opacity-50"}
+             >
+                <option value="">Tutti</option>
+                {projectOptions.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+             </select>
+             <FilterIcon className="pointer-events-none absolute right-3 top-3 h-3.5 w-3.5 text-zinc-500" />
+          </div>
+        </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Select
-          label="Filtra per Workspace"
-          value={selection?.workspaceId || ""}
-          onChange={handleWorkspaceChange}
-          containerClassName="text-xs"
-          className={classNames("bg-transparent", themeInput)}
-        >
-          <option value="">Tutti i miei file</option>
-          {workspaces.map((workspace) => (
-            <option key={workspace.id} value={workspace.id}>
-              {workspace.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          label="Filtra per Progetto"
-          value={selection?.projectId || ""}
-          onChange={handleProjectChange}
-          containerClassName="text-xs"
-          className={classNames("bg-transparent", themeInput)}
-          disabled={!selection?.workspaceId}
-        >
-          <option value="">Tutti</option>
-          {projectOptions.map((project) => (
-            <option key={project.value} value={project.value}>
-              {project.label}
-            </option>
-          ))}
-        </Select>
-      </div>
-
-      <div className="mt-4 text-xs text-zinc-500">
+      {/* INFO BAR */}
+      <div className="flex items-center justify-between text-xs text-zinc-500 px-1">
         <div className="flex items-center gap-2">
           <Info className="h-3.5 w-3.5" />
           <span>
-            Visualizzando {filteredFiles.length} file di {allUserFiles.length} totali.
+            Visualizzando <strong className="text-zinc-300">{filteredFiles.length}</strong> di <strong className="text-zinc-300">{allUserFiles.length}</strong> file.
           </span>
         </div>
-        {selectedWorkspace ? (
-          <div className="mt-2 flex items-center gap-2 text-zinc-500">
+        {selectedWorkspace && (
+          <div className="flex items-center gap-2">
             <Users className="h-3.5 w-3.5" />
-            <span>
-              Workspace selezionato: <span className="text-zinc-300">{selectedWorkspace.name}</span>
-            </span>
+            <span>Filtro attivo: <span className="text-indigo-300">{selectedWorkspace.name}</span></span>
           </div>
-        ) : null}
+        )}
       </div>
 
       {error && (
-        <Toast tone="danger" description={error} className="mt-4 text-xs" />
+        <Toast tone="danger" description={error} className="text-xs" />
       )}
 
-      <div className="mt-5 overflow-hidden rounded-xl border border-zinc-800/60">
-        <table className="min-w-full divide-y divide-zinc-800 text-sm">
-          <thead className="bg-black/20 text-xs uppercase tracking-wide text-zinc-500">
-            <tr>
-              <th className="px-4 py-3 text-left font-medium">File</th>
-              <th className="px-4 py-3 text-right font-medium">Dimensione</th>
-              <th className="px-4 py-3 text-right font-medium">Aggiornato</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-800/60 bg-black/10">
-            {loading ? (
-              Array.from({ length: 5 }).map((_, index) => (
-                <tr key={`skeleton-${index}`}>
-                  <td colSpan={3} className="px-4 py-3">
-                    <Skeleton className="h-6 w-full rounded-lg bg-zinc-800/60" />
+      {/* TABELLA */}
+      <div className="flex-1 overflow-hidden rounded-xl border border-white/5 bg-black/20">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left">
+            <thead className={TABLE_HEADER}>
+              <tr>
+                <th className="px-4 py-3 font-medium">Nome File</th>
+                <th className="px-4 py-3 font-medium text-right">Dimensione</th>
+                <th className="px-4 py-3 font-medium text-right">Data</th>
+                <th className="px-4 py-3 font-medium text-right">Azioni</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {loading ? (
+                Array.from({ length: 5 }).map((_, index) => (
+                  <tr key={`skeleton-${index}`}>
+                    <td colSpan={4} className="px-4 py-3">
+                      <Skeleton className="h-6 w-full rounded bg-white/5" />
+                    </td>
+                  </tr>
+                ))
+              ) : filteredFiles.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-4 py-10">
+                    <EmptyState
+                      title="Nessun file trovato"
+                      description="Modifica i filtri per vedere i risultati."
+                      className="bg-transparent border-none"
+                    />
                   </td>
                 </tr>
-              ))
-            ) : filteredFiles.length === 0 ? (
-              <tr>
-                <td colSpan={3} className="px-4 py-6">
-                  <EmptyState
-                    title="Nessun file trovato"
-                    description="Nessun artefatto corrisponde ai filtri selezionati."
-                  />
-                </td>
-              </tr>
-            ) : (
-              filteredFiles.map((file) => {
-                // ==========================================================
-                // ==                  MODIFICA CHIAVE FINALE              ==
-                // ==========================================================
-                // Il backend ora ci dà `objectPath` per il download e `name` per la visualizzazione.
-                const objectPathForApi = file.objectPath;
-                const displayName = file.name;
-                
-                return (
-                  <tr key={file.id || objectPathForApi} className="transition hover:bg-indigo-500/10">
-                    <td className="px-4 py-3 align-top">
-                      <div className="flex flex-col gap-1">
-                        <span className="font-medium text-zinc-100">{displayName}</span>
-                        {typeof onOpenFile === 'function' ? (
-                          <Button
+              ) : (
+                filteredFiles.map((file) => {
+                  const objectPathForApi = file.objectPath;
+                  const displayName = file.name;
+                  
+                  return (
+                    <tr key={file.id || objectPathForApi} className={TABLE_ROW}>
+                      <td className={TABLE_CELL}>
+                        <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded bg-white/5 flex items-center justify-center text-zinc-500">
+                                <LinkIcon className="h-4 w-4" />
+                            </div>
+                            <span className="font-medium text-zinc-200 truncate max-w-[200px] sm:max-w-[300px]" title={displayName}>
+                                {displayName}
+                            </span>
+                        </div>
+                      </td>
+                      <td className={classNames(TABLE_CELL, "text-right font-mono text-xs text-zinc-500")}>
+                        {formatSize(file.metadata?.size)}
+                      </td>
+                      <td className={classNames(TABLE_CELL, "text-right font-mono text-xs text-zinc-500")}>
+                        {formatTimestamp(file.updated_at)}
+                      </td>
+                      <td className={classNames(TABLE_CELL, "text-right")}>
+                        {typeof onOpenFile === 'function' && (
+                          <button
                             type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="w-fit gap-1 text-indigo-300 hover:text-indigo-200"
+                            className="text-xs font-medium text-indigo-400 hover:text-indigo-300 hover:underline"
                             onClick={() => onOpenFile({ bucket, path: objectPathForApi, label: displayName })}
-                            leadingIcon={LinkIcon}
                           >
-                            Apri file firmato
-                          </Button>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right text-zinc-300">{formatSize(file.metadata?.size)}</td>
-                    <td className="px-4 py-3 text-right text-zinc-400">{formatTimestamp(file.updated_at)}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                            Apri
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

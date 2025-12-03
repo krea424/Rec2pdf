@@ -1791,15 +1791,7 @@ const activePrompt = useMemo(
       return { ...prev, publish: true, pipeline: true, refine: true };
     });
   }, []);
-  const closeRefinementPanel = useCallback(() => {
-    setBaseJourneyVisibility((prev) => {
-      if (!prev.refine) {
-        return prev;
-      }
-      const next = { ...prev, refine: false };
-      return next;
-    });
-  }, []);
+ 
   const resetJourneyVisibility = useCallback(() => {
     setBaseJourneyVisibility({ publish: false, pipeline: false, refine: false });
   }, []);
@@ -4317,119 +4309,7 @@ useEffect(() => {
 
 // ... vicino alle altre funzioni come processViaBackend ...
 
-const handleRefineAndGenerate = useCallback(async () => {
-  const blob = audioBlob;
-  if (!blob) {
-    setErrorBanner({ title: 'Nessun file audio', details: 'Carica o registra un audio prima di avviare il raffinamento.' });
-    return;
-  }
-  if (busy) {
-    setErrorBanner({ title: 'Pipeline in corso', details: 'Attendi il termine del processo attuale.' });
-    return;
-  }
 
-  setBusy(true);
-  setErrorBanner(null);
-  openRefinementPanel(); 
-  pushLogs(['🚀 Avvio del flusso di raffinamento...']);
-
-  try {
-    // 1. Trascrizione
-    const formData = new FormData();
-    formData.append('audio', blob, blob.name || 'audio.webm');
-    if (aiProviderOverrides.text) {
-      formData.append('aiTextProvider', aiProviderOverrides.text);
-    }
-
-    const transcribeResponse = await fetchBodyWithAuth(`${backendUrl}/api/transcribe-only`, {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!transcribeResponse.ok) {
-      throw new Error(transcribeResponse.data?.message || 'Trascrizione fallita');
-    }
-
-    const { transcription, speakers } = transcribeResponse.data;
-    pushLogs(['✅ Trascrizione completata.']);
-
-    const initialRefinedData = {
-      transcription,
-      speakers: speakers || [],
-    };
-    setRefinedData(initialRefinedData);
-    
-    // 2. Pre-analisi + Auto-Detect
-    pushLogs(['🧠 Analisi intento e generazione suggerimenti...']);
-    
-    const preAnalyzePayload = buildRefinementPreAnalyzePayload({
-      transcription,
-      prompt: activePrompt, // Se è null (Auto-Detect), il backend attiverà l'AI
-      workspaceId: workspaceSelection?.workspaceId,
-    });
-    
-    const preAnalyzeResult = await postPreAnalyze({
-      backendUrl,
-      fetcher: fetchBodyWithAuth,
-      payload: preAnalyzePayload,
-    });
-
-    if (preAnalyzeResult.ok) {
-      pushLogs(['✅ Analisi completata.']);
-      
-      // === FIX: APPLICAZIONE IMMEDIATA PROMPT RILEVATO ===
-      const detected = preAnalyzeResult.data?.detectedPrompt || preAnalyzeResult.raw?.detectedPrompt;
-      if (detected) {
-        pushLogs([`💡 Intento rilevato: ${detected.title}`]);
-        
-        // 1. Aggiorna lo stato globale (per il futuro)
-        setPromptState(prev => ({ 
-            ...prev, 
-            promptId: detected.id,
-            expandPromptDetails: true 
-        }));
-
-        // 2. INIEZIONE DIRETTA (Il Fix per la UI)
-        // Iniettiamo le cue cards rilevate direttamente nei dati raffinati.
-        // Questo garantisce che il RefinementPanel le veda SUBITO, 
-        // senza aspettare il ricalcolo di activePrompt.
-        setRefinedData(prev => ({
-            ...(prev || {}),
-            cueCards: detected.cueCards || [] 
-        }));
-    }
-    // =================================================
-
-      const suggestedAnswers = preAnalyzeResult.raw?.suggestedAnswers || preAnalyzeResult.data?.suggestedAnswers;
-    
-      if (Array.isArray(suggestedAnswers)) {
-        const answersMap = suggestedAnswers.reduce((acc, item) => {
-          if (item && typeof item.key === 'string') {
-            acc[item.key] = item.answer || '';
-          }
-          return acc;
-        }, {});
-        setCueCardAnswers(answersMap);
-      } 
-
-      // Persist suggested answers alongside cue cards for the UI (collapse/suggest buttons)
-      setRefinedData(prev => ({
-        ...(prev || {}),
-        suggestedAnswers: Array.isArray(suggestedAnswers) ? suggestedAnswers : (prev?.suggestedAnswers || []),
-      }));
-    } else {
-      pushLogs([`⚠️ Pre-analisi fallita: ${preAnalyzeResult.message}`]);
-    }
-
-  } catch (error) {
-    const message = error.message || 'Errore imprevisto nel flusso di raffinamento.';
-    setErrorBanner({ title: 'Flusso di Raffinamento Fallito', details: message });
-    pushLogs([`❌ ${message}`]);
-    closeRefinementPanel();
-  } finally {
-    setBusy(false);
-  }
-}, [audioBlob, busy, backendUrl, fetchBodyWithAuth, activePrompt, aiProviderOverrides.text, openRefinementPanel, closeRefinementPanel, setRefinedData, setCueCardAnswers, setErrorBanner, pushLogs, setPromptState, workspaceSelection]);
   // --- INIZIO MODIFICA APP.JSX ---
   const processViaBackend = async () => {
     const blob = audioBlob;
@@ -5933,6 +5813,131 @@ const processMarkdownUpload = async (file, options = {}) => {
       icon: Cpu,
     };
   }, [failedStage, pipelineComplete, activeStageDefinition, busy]);
+
+  const closeRefinementPanel = useCallback(() => {
+    // 1. Chiudi il pannello
+    setBaseJourneyVisibility((prev) => ({ ...prev, refine: false }));
+    
+    // 2. Resetta busy SOLO se la pipeline non è finita
+    // (Qui pipelineComplete è accessibile perché definita alla riga 5895)
+    if (!pipelineComplete) {
+        setBusy(false);
+    }
+  }, [pipelineComplete]);
+
+  const handleRefineAndGenerate = useCallback(async () => {
+    const blob = audioBlob;
+    if (!blob) {
+      setErrorBanner({ title: 'Nessun file audio', details: 'Carica o registra un audio prima di avviare il raffinamento.' });
+      return;
+    }
+    if (busy) {
+      setErrorBanner({ title: 'Pipeline in corso', details: 'Attendi il termine del processo attuale.' });
+      return;
+    }
+  
+    setBusy(true);
+    setErrorBanner(null);
+    openRefinementPanel(); 
+    pushLogs(['🚀 Avvio del flusso di raffinamento...']);
+  
+    try {
+      // 1. Trascrizione
+      const formData = new FormData();
+      formData.append('audio', blob, blob.name || 'audio.webm');
+      if (aiProviderOverrides.text) {
+        formData.append('aiTextProvider', aiProviderOverrides.text);
+      }
+  
+      const transcribeResponse = await fetchBodyWithAuth(`${backendUrl}/api/transcribe-only`, {
+        method: 'POST',
+        body: formData,
+      });
+  
+      if (!transcribeResponse.ok) {
+        throw new Error(transcribeResponse.data?.message || 'Trascrizione fallita');
+      }
+  
+      const { transcription, speakers } = transcribeResponse.data;
+      pushLogs(['✅ Trascrizione completata.']);
+  
+      const initialRefinedData = {
+        transcription,
+        speakers: speakers || [],
+      };
+      setRefinedData(initialRefinedData);
+      
+      // 2. Pre-analisi + Auto-Detect
+      pushLogs(['🧠 Analisi intento e generazione suggerimenti...']);
+      
+      const preAnalyzePayload = buildRefinementPreAnalyzePayload({
+        transcription,
+        prompt: activePrompt, // Se è null (Auto-Detect), il backend attiverà l'AI
+        workspaceId: workspaceSelection?.workspaceId,
+      });
+      
+      const preAnalyzeResult = await postPreAnalyze({
+        backendUrl,
+        fetcher: fetchBodyWithAuth,
+        payload: preAnalyzePayload,
+      });
+  
+      if (preAnalyzeResult.ok) {
+        pushLogs(['✅ Analisi completata.']);
+        
+        // === FIX: APPLICAZIONE IMMEDIATA PROMPT RILEVATO ===
+        const detected = preAnalyzeResult.data?.detectedPrompt || preAnalyzeResult.raw?.detectedPrompt;
+        if (detected) {
+          pushLogs([`💡 Intento rilevato: ${detected.title}`]);
+          
+          // 1. Aggiorna lo stato globale (per il futuro)
+          setPromptState(prev => ({ 
+              ...prev, 
+              promptId: detected.id,
+              expandPromptDetails: true 
+          }));
+  
+          // 2. INIEZIONE DIRETTA (Il Fix per la UI)
+          // Iniettiamo le cue cards rilevate direttamente nei dati raffinati.
+          // Questo garantisce che il RefinementPanel le veda SUBITO, 
+          // senza aspettare il ricalcolo di activePrompt.
+          setRefinedData(prev => ({
+              ...(prev || {}),
+              cueCards: detected.cueCards || [] 
+          }));
+      }
+      // =================================================
+  
+        const suggestedAnswers = preAnalyzeResult.raw?.suggestedAnswers || preAnalyzeResult.data?.suggestedAnswers;
+      
+        if (Array.isArray(suggestedAnswers)) {
+          const answersMap = suggestedAnswers.reduce((acc, item) => {
+            if (item && typeof item.key === 'string') {
+              acc[item.key] = item.answer || '';
+            }
+            return acc;
+          }, {});
+          setCueCardAnswers(answersMap);
+        } 
+  
+        // Persist suggested answers alongside cue cards for the UI (collapse/suggest buttons)
+        setRefinedData(prev => ({
+          ...(prev || {}),
+          suggestedAnswers: Array.isArray(suggestedAnswers) ? suggestedAnswers : (prev?.suggestedAnswers || []),
+        }));
+      } else {
+        pushLogs([`⚠️ Pre-analisi fallita: ${preAnalyzeResult.message}`]);
+      }
+  
+    } catch (error) {
+      const message = error.message || 'Errore imprevisto nel flusso di raffinamento.';
+      setErrorBanner({ title: 'Flusso di Raffinamento Fallito', details: message });
+      pushLogs([`❌ ${message}`]);
+      closeRefinementPanel();
+    } finally {
+      setBusy(false);
+    }
+  }, [audioBlob, busy, backendUrl, fetchBodyWithAuth, activePrompt, aiProviderOverrides.text, openRefinementPanel, closeRefinementPanel, setRefinedData, setCueCardAnswers, setErrorBanner, pushLogs, setPromptState, workspaceSelection]);
 
   // Sostituisci la vecchia dichiarazione di baseContextValue con questa
   const baseContextValue = useMemo(() => ({

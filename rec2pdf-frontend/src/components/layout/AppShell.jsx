@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { AlertCircle, LogOut, Maximize, Settings, Sparkles } from "../../components/icons";
-import logoAsset from "../../assets/logo.svg";
+import logoAsset from "../../assets/thinkDOC3.svg";
 import { classNames } from "../../utils/classNames";
 import { useAppContext } from "../../hooks/useAppContext";
 import { Button, IconButton } from "../ui";

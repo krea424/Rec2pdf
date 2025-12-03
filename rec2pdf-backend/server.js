@@ -1,3 +1,4 @@
+const ChatService = require('./services/chatService');
 const { canonicalizeProjectScopeId, sanitizeProjectIdentifier, CONTEXT_SEPARATOR } = require('./services/utils.js');
 const { RAGService } = require('./services/ragService');
 const { PromptService } = require('./services/promptService');
@@ -54,9 +55,27 @@ const supabase =
         },
       })
     : null;
+// Client dedicato allo schema "storage" per leggere i metadati custom degli oggetti
+let storageAdminClient = null;
+const getStorageAdminClient = () => {
+  if (storageAdminClient) return storageAdminClient;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
+  storageAdminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+    db: { schema: 'storage' },
+  });
+  return storageAdminClient;
+};
+
 const ragService = supabase ? new RAGService(supabase) : null;
 // AGGIUNGI QUI LA RIGA CHE DAVA ERRORE:
 const intentService = supabase ? new IntentService(supabase) : null; 
+// === INSERISCI QUI (RIGA 60) ===
+const chatService = supabase ? new ChatService(supabase) : null;
+// ================================
 
 const getSupabaseClient = () => {
   if (!supabase) {
@@ -4075,12 +4094,18 @@ const uploadFileToBucket = async (bucket, objectPath, buffer, contentType, optio
       ? String(options.cacheControl)
       : '0';
 
+  // --- MODIFICA: Estrazione Metadati ---
+  // Passiamo i metadati custom a Supabase se presenti nelle opzioni
+  const fileMetadata = options.metadata || undefined; 
+  // ------------------------------------
+
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const { error } = await supabase.storage.from(bucket).upload(objectPath, buffer, {
       cacheControl,
       contentType: contentType || 'application/octet-stream',
       upsert: options.upsert ?? true,
+      metadata: fileMetadata, // <--- INIEZIONE METADATI QUI
     });
 
     if (!error) {
@@ -4102,24 +4127,6 @@ const uploadFileToBucket = async (bucket, objectPath, buffer, contentType, optio
   const reason = (lastError && lastError.message) || 'errore sconosciuto';
   const details = hint ? `${reason}. ${hint}` : reason;
   throw new Error(`Upload fallito su Supabase (${bucket}/${objectPath}): ${details}`);
-};
-
-const buildSupabasePublicUrl = (bucket, objectPath) => {
-  const normalizedBucket = String(bucket || '').trim();
-  const normalizedPath = String(objectPath || '').trim().replace(/^\/+/, '');
-  if (!normalizedBucket || !normalizedPath) {
-    throw new Error('Percorso storage non valido per URL pubblico');
-  }
-  if (!SUPABASE_URL) {
-    throw new Error('SUPABASE_URL non configurato: impossibile generare URL pubblico');
-  }
-  try {
-    const origin = new URL(SUPABASE_URL);
-    return new URL(`/storage/v1/object/public/${normalizedBucket}/${normalizedPath}`, origin).toString();
-  } catch (error) {
-    const message = error?.message || 'URL Supabase non valido';
-    throw new Error(`Impossibile generare URL pubblico: ${message}`);
-  }
 };
 
 const extractLogoStoragePath = (value) => {
@@ -4316,21 +4323,67 @@ const listSupabaseObjects = async (bucket, prefix = '', options = {}) => {
   console.log(`[listSupabaseObjects] Eseguo ricerca in bucket: "${normalizedBucket}", prefisso: "${normalizedPrefix}"`);
 
   const limit = 500;
-  const offset = 0;
-  const sortBy = { column: 'updated_at', order: 'desc' };
+  const sortDescending = { column: 'updated_at', order: 'desc' };
 
-  const { data, error } = await supabase.storage
-    .from(normalizedBucket)
-    .list(normalizedPrefix || null, { limit, offset, sortBy });
+  // Preferiamo la tabella storage.objects perché include i metadati custom
+  // Tentativo 1: REST diretto verso la tabella storage.objects (schema storage)
+  const listFromStorageRest = async () => {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+      throw new Error('Credenziali Supabase mancanti per la query REST');
+    }
+    const nameFilter = normalizedPrefix ? `${normalizedPrefix}%` : '%';
+    const url =
+      `${SUPABASE_URL}/rest/v1/storage.objects` +
+      `?select=id,name,metadata,created_at,updated_at,last_accessed_at` +
+      `&bucket_id=eq.${encodeURIComponent(normalizedBucket)}` +
+      `&name=like.${encodeURIComponent(nameFilter)}` +
+      `&order=${encodeURIComponent(sortDescending.column)}.desc` +
+      `&limit=${limit}`;
 
-  if (error) {
-    console.error(`[listSupabaseObjects] Errore da Supabase:`, error);
-    const listError = new Error(error.message || 'Impossibile elencare gli oggetti Supabase');
-    listError.statusCode = Number(error.statusCode) || 500;
-    throw listError;
+    const response = await fetch(url, {
+      headers: {
+        apikey: SUPABASE_SERVICE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+        // Specifica schema storage per evitare default su public
+        AcceptProfile: 'storage',
+      },
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => '');
+      const err = new Error(
+        `REST storage.objects fallita: ${response.status} ${response.statusText} ${errorBody}`.trim()
+      );
+      err.statusCode = response.status;
+      throw err;
+    }
+
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  };
+
+  const listFromStorageApi = async () => {
+    const { data, error } = await supabase.storage
+      .from(normalizedBucket)
+      .list(normalizedPrefix || null, { limit, offset: 0, sortBy: sortDescending });
+
+    if (error) {
+      const err = new Error(error.message || 'Impossibile elencare gli oggetti Supabase');
+      err.statusCode = Number(error.statusCode) || 500;
+      throw err;
+    }
+    return Array.isArray(data) ? data : [];
+  };
+
+  let entries = [];
+  try {
+    entries = await listFromStorageRest();
+    console.log(`[listSupabaseObjects] Recuperati ${entries.length} elementi da storage.objects (REST con metadati).`);
+  } catch (tableError) {
+    console.warn('[listSupabaseObjects] Fallback a storage API (metadati limitati):', tableError.message);
+    entries = await listFromStorageApi();
   }
 
-  const entries = Array.isArray(data) ? data : [];
   const filesOnly = entries.filter(item => item.id !== null);
   console.log(`[listSupabaseObjects] Trovati ${filesOnly.length} file.`);
 
@@ -4339,7 +4392,10 @@ const listSupabaseObjects = async (bucket, prefix = '', options = {}) => {
   // ==========================================================
   return filesOnly.map((item) => {
     // Il percorso completo dell'oggetto all'interno del bucket
-    const objectPath = normalizedPrefix ? `${normalizedPrefix}/${item.name}` : item.name;
+    const objectPath = item.name.includes(normalizedPrefix) || !normalizedPrefix
+      ? item.name
+      : normalizedPrefix ? `${normalizedPrefix}/${item.name}` : item.name;
+    const fileName = objectPath.split('/').pop();
     
     return {
       // Campi standard di Supabase
@@ -4352,7 +4408,7 @@ const listSupabaseObjects = async (bucket, prefix = '', options = {}) => {
         size: Number(item.metadata.size) || 0,
       },
       // I nostri campi custom per il frontend
-      name: item.name,         // Solo il nome del file (es. "documento_123.pdf")
+      name: fileName,         // Solo il nome del file (es. "documento_123.pdf")
       objectPath: objectPath,  // Il percorso completo (es. "processed/user-id/documento_123.pdf")
     };
   });
@@ -4689,6 +4745,8 @@ const SUPABASE_PROMPT_COLUMNS = [
   'pdf_rules',
   'checklist',
   'built_in',
+  'intent_category',      // <--- AGGIUNGI QUESTA
+  'is_category_default',  // <--- E QUESTA
   'created_at',
   'updated_at',
 ].join(', ');
@@ -6502,6 +6560,10 @@ const runPipeline = async (job = {}) => {
 } catch (e) { console.log('[DEBUG ERROR]', e.message); }
 // =======================================
   const stageEvents = [];
+  // --- AGGIUNGI QUESTA RIGA QUI ---
+  let finalFrontMatter = null; 
+  let storageMetadata = null;
+  // --------------------------------
   let lastStageKey = null;
   let selectedPrompt = null;
   let promptRulePayload = null;
@@ -7358,6 +7420,38 @@ const yamlFrontMatter = yaml.dump(frontMatter, {
     template: activeTemplateDescriptor ? activeTemplateDescriptor.fileName : 'default.tex',
     // -------------------------------
   };
+   // --- AGGIUNGI QUESTA RIGA SUBITO DOPO LA CREAZIONE DI frontMatter ---
+   finalFrontMatter = frontMatter; 
+   // --------------------------------------------------------------------
+
+  // ========================= METADATA ARCHIVIO =========================
+  // Costruiamo i metadati da allegare ai file su Supabase Storage, così
+  // l'Archivio intelligente li può indicizzare senza fallback.
+  const buildSummarySnippet = (value) => {
+    if (!value) return 'Sintesi non disponibile.';
+    const normalized = String(value).trim();
+    if (normalized.length <= 220) return normalized;
+    return `${normalized.slice(0, 217)}…`;
+  };
+
+  const metaTitle = frontMatter.title || aiTitle || payload.title || baseName;
+  const metaSummary = buildSummarySnippet(frontMatter.summary || aiSummary || payload.summary);
+  const metaIntent = autoDetectedPrompt?.intent_category || selectedPrompt?.intent_category || 'GENERIC';
+  storageMetadata = {
+    customTitle: metaTitle,
+    summary: metaSummary,
+    intent: metaIntent,
+    workspaceName: workspaceMeta?.name || '',
+    projectName: workspaceProject?.name || workspaceProjectName || '',
+    status: workspaceStatus || 'Completed',
+    author: frontMatter.author || userEmail || '',
+    promptId: selectedPrompt?.id || autoDetectedPrompt?.id || '',
+    jobId: job?.id || '',
+    artifactType: frontMatter.artifact_type || 'Report',
+    template: activeTemplateDescriptor?.fileName || frontMatter.template || '',
+    aiModel: aiModel || '',
+  };
+  // =====================================================================
 
   // 2. Logica FAIL-SAFE per la trascrizione
   // Se la variabile in memoria è vuota, proviamo a ricaricare il JSON dal disco per sicurezza
@@ -7427,11 +7521,27 @@ console.log(debugYaml);
 console.log('⚠️  [DEBUG MAC M1] Fine Ispezione');
 // ------------------------
 
+      const mdMetadata =
+        storageMetadata ||
+        {
+          customTitle: path.basename(mdStoragePath),
+          summary: 'Documento senza metadati (fallback).',
+          intent: 'GENERIC',
+          status: 'Completed',
+          workspaceName: workspaceMeta?.name || '',
+          projectName: workspaceProject?.name || workspaceProjectName || '',
+          author: userEmail || '',
+          jobId: job?.id || '',
+        };
+
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,
         mdStoragePath,
         await fsp.readFile(mdLocalPath),
-        'text/markdown'
+        'text/markdown',
+        {
+          metadata: mdMetadata ? { ...mdMetadata, contentType: 'text/markdown' } : undefined,
+        }
       );
       out(`✅ Markdown generato: ${path.basename(mdLocalPath)}`, 'markdown', 'completed');
     } finally {
@@ -7519,11 +7629,25 @@ console.log('⚠️  [DEBUG MAC M1] Fine Ispezione');
       });
       markEnd('pdf_render'); // <--- INSERISCI QUI LA FINE DEL TIMER
 
+      const pdfMetadata =
+        storageMetadata ||
+        {
+          customTitle: path.basename(pdfStoragePath),
+          summary: 'Documento senza metadati (fallback).',
+          intent: 'GENERIC',
+          status: 'Completed',
+          workspaceName: workspaceMeta?.name || '',
+          projectName: workspaceProject?.name || workspaceProjectName || '',
+          author: userEmail || '',
+          jobId: job?.id || '',
+        };
+
       await uploadFileToBucket(
         SUPABASE_PROCESSED_BUCKET,
         pdfStoragePath,
         await fsp.readFile(pdfLocalPath),
-        'application/pdf'
+        'application/pdf',
+        { metadata: pdfMetadata }
       );
 
       const destMdPath = path.join(destDir, path.basename(mdLocalForPublish));
@@ -8738,46 +8862,117 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     });
 
     out(`✅ Fatto! PDF creato: ${pdfPath}`, 'publish', 'completed');
+// ============================================================
+    // STEP 1: PREPARAZIONE METADATI (DEFINIZIONE SICURA)
+    // ============================================================
+    
+    // SAFETY CHECK: Se l'AI non ha girato o ha fallito, finalFrontMatter è null.
+    // Creiamo un fallback per non far crashare l'upload.
+    if (!finalFrontMatter) {
+      console.warn("⚠️ [DEBUG] finalFrontMatter era null. Uso dati di fallback per l'upload.");
+      finalFrontMatter = {
+          title: payload.title || baseName,
+          summary: "Nessuna sintesi disponibile (AI saltata o fallita).",
+          author: userEmail || "System",
+      };
+  }
 
-    out('☁️ Upload degli artefatti su Supabase…', 'publish', 'running');
-    await uploadFileToBucket(
-      SUPABASE_PROCESSED_BUCKET,
-      mdStoragePath,
-      await fsp.readFile(mdPath),
-      'text/markdown; charset=utf-8'
-    );
-    await uploadFileToBucket(
-      SUPABASE_PROCESSED_BUCKET,
-      pdfStoragePath,
-      await fsp.readFile(pdfPath),
-      'application/pdf'
-    );
-    out('☁️ Artefatti caricati su Supabase Storage', 'publish', 'info');
+  const metaSource = finalFrontMatter; 
 
-    out('🎉 Pipeline completata', 'complete', 'completed');
+  // Calcoliamo i valori singoli
+  const metaTitle = metaSource.title || payload.title || baseName;
+  const metaSummary = metaSource.summary ? String(metaSource.summary).substring(0, 150) + '...' : '';
+  const metaIntent = autoDetectedPrompt?.intent_category || selectedPrompt?.intent_category || 'GENERIC';
+  
+  // DEFINIAMO L'OGGETTO storageMetadata (QUI, PRIMA DEGLI UPLOAD!)
+  const storageMetadata = {
+      contentType: 'application/pdf', 
+      customTitle: metaTitle,
+      summary: metaSummary,
+      intent: metaIntent,
+      workspaceName: workspaceMeta?.name || '',
+      projectName: workspaceProject?.name || '',
+      status: workspaceStatus || 'Draft',
+      author: metaSource.author || '',
+      promptId: activePromptId || '',
+      jobId: job?.id || ''
+  };
 
-    const structure = await analyzeMarkdownStructure(mdPath, { prompt: selectedPrompt });
-    const workspaceAssignment = workspaceAssignmentForResponse(workspaceMeta, workspaceProject, workspaceStatus);
-    const promptAssignment = promptAssignmentForResponse(selectedPrompt, {
-      focus: promptFocus,
-      notes: promptNotes,
-      completedCues: promptCuesCompleted,
-    });
-    return res.json({
-      ok: true,
-      pdfPath: `${SUPABASE_PROCESSED_BUCKET}/${pdfStoragePath}`,
-      mdPath: `${SUPABASE_PROCESSED_BUCKET}/${mdStoragePath}`,
-      localPdfPath: pdfPath,
-      localMdPath: mdPath,
-      logs,
-      stageEvents,
-      workspace: workspaceAssignment,
-      prompt: promptAssignment,
-      structure,
-    });
+  console.log("🔍 [DEBUG METADATI] Oggetto pronto:", JSON.stringify(storageMetadata, null, 2));
+
+  out('☁️ Upload su Supabase con metadati arricchiti...', 'publish', 'running');
+
+  // ============================================================
+  // STEP 2: ESECUZIONE UPLOAD
+  // ============================================================
+
+  // A. Upload Markdown
+  // Verifichiamo che il file esista prima di leggerlo
+  if (fs.existsSync(mdLocalPath)) {
+      await uploadFileToBucket(
+          SUPABASE_PROCESSED_BUCKET,
+          mdStoragePath,
+          await fsp.readFile(mdLocalPath),
+          'text/markdown; charset=utf-8',
+          { 
+              upsert: true,
+              metadata: { ...storageMetadata, contentType: 'text/markdown' } 
+          }
+      );
+  } else {
+      console.warn("⚠️ File Markdown locale non trovato, salto upload MD.");
+  }
+
+  // B. Upload PDF
+  if (fs.existsSync(pdfLocalPath)) {
+      await uploadFileToBucket(
+          SUPABASE_PROCESSED_BUCKET,
+          pdfStoragePath,
+          await fsp.readFile(pdfLocalPath),
+          'application/pdf',
+          { 
+              upsert: true,
+              metadata: storageMetadata 
+          }
+      );
+  } else {
+      console.warn("⚠️ File PDF locale non trovato, salto upload PDF.");
+  }
+
+  out('☁️ Artefatti caricati su Supabase Storage', 'publish', 'info');
+  out('🎉 Pipeline completata', 'complete', 'completed');
+
+  // Analisi struttura finale (opzionale)
+  let structure = null;
+  if (fs.existsSync(mdLocalPath)) {
+      structure = await analyzeMarkdownStructure(mdLocalPath, { prompt: selectedPrompt });
+  }
+  
+  const workspaceAssignment = workspaceAssignmentForResponse(workspaceMeta, workspaceProject, workspaceStatus);
+  const promptAssignment = promptAssignmentForResponse(selectedPrompt, {
+    focus: promptFocus,
+    notes: promptNotes,
+    completedCues: promptCuesCompleted,
+  });
+
+  return {
+    ok: true,
+    pdfPath: `${SUPABASE_PROCESSED_BUCKET}/${pdfStoragePath}`,
+    mdPath: `${SUPABASE_PROCESSED_BUCKET}/${mdStoragePath}`,
+    localPdfPath: pdfLocalPath,
+    localMdPath: mdLocalPath,
+    logs,
+    stageEvents,
+    workspace: workspaceAssignment,
+    prompt: promptAssignment,
+    structure,
+  };
+
   } catch (err) {
     const message = String(err && err.message ? err.message : err);
     const failureStage = lastStageKey || 'publish';
+    
+    // Evitiamo duplicati nei log di errore
     const hasFailureEvent = stageEvents.some(evt => evt.stage === failureStage && evt.status === 'failed');
     if (!hasFailureEvent) {
       logStageEvent(failureStage, 'failed', message);
@@ -8785,15 +8980,19 @@ app.post('/api/ppubr-upload', uploadMiddleware.fields([{ name: 'markdown', maxCo
     if (!stageEvents.some(evt => evt.stage === 'complete')) {
       logStageEvent('complete', 'failed', 'Pipeline interrotta');
     }
+    
     out('❌ Errore durante la pipeline');
     out(message);
+    
     return res.status(500).json({ ok: false, message, logs, stageEvents });
   } finally {
+    // Pulizia file temporanei caricati via form (se presenti)
     try { if (req.files && req.files.markdown) await fsp.unlink(req.files.markdown[0].path); } catch { }
     try { if (req.files && req.files.pdfLogo) await fsp.unlink(req.files.pdfLogo[0].path); } catch { }
+    // Nota: i file generati in 'pipelineDir' vengono puliti dal gestore dei file temporanei globale se configurato,
+    // altrimenti rimangono nel temp del sistema operativo fino al riavvio.
   }
-});
-
+}); // Chiusura runPipeline o app.post
 app.post(
   '/api/text-upload',
   uploadMiddleware.fields([{ name: 'transcript', maxCount: 1 }, { name: 'pdfLogo', maxCount: 1 }]),
@@ -9563,57 +9762,78 @@ app.get('/api/file', async (req, res) => {
     return res.status(500).json({ ok: false, message });
   }
 });
+// ==========================================================
+// ==  ENDPOINT TRASCRIZIONE VELOCE (REVISIONE GUIDATA)    ==
+// ==  Refactoring v14: Switch da WhisperX a Groq LPU      ==
+// ==========================================================
 app.post('/api/transcribe-only', uploadMiddleware.single('audio'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ ok: false, message: 'Nessun file audio fornito.' });
   }
 
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf_transcribe_'));
-  let audioLocalPath = req.file.path;
-  let wavLocalPath = path.join(tempDir, 'audio.wav');
-  let transcriptLocalPath = '';
+  // Verifica preliminare API Key
+  if (!process.env.GROQ_API_KEY) {
+    return res.status(503).json({ ok: false, message: 'GROQ_API_KEY non configurata sul server.' });
+  }
+
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rec2pdf_fast_transcribe_'));
+  const audioLocalPath = req.file.path;
+  // Usiamo MP3 compresso per stare sotto i 25MB di limite di Groq
+  const groqAudioPath = path.join(tempDir, 'optimized_for_groq.mp3');
 
   try {
-    // 1. Transcodifica
-    const ff = await run('ffmpeg', ['-y', '-i', audioLocalPath, '-ac', '1', '-ar', '16000', wavLocalPath]);
-    if (ff.code !== 0) throw new Error(ff.stderr || 'ffmpeg failed');
+    console.log(`[TRANSCRIBE-ONLY] Avvio ottimizzazione audio per Groq: ${req.file.originalname}`);
 
-    // 2. Trascrizione
-    // Prefer WhisperX with safe torch flags; fall back to classic whisper if it fails
-    const whisperxCmd = [
-      'TORCH_LOAD_TRUSTED=1',
-      'TORCH_LOAD_WEIGHTS_ONLY=0',
-      'whisperx', JSON.stringify(wavLocalPath),
-      '--language it', '--model small', '--device cpu', '--compute_type float32',
-      '--output_format', 'txt',
-      '--vad', 'silero', // evita pyannote/omegaconf incompatibility su Torch 2.6
-      '--output_dir', JSON.stringify(tempDir)
-    ].join(' ');
-    let w = await run('bash', ['-lc', whisperxCmd]);
+    // 1. Compressione Audio con FFmpeg (Strategia "Anti-Limit 25MB")
+    // Stessi parametri della pipeline principale: 16k sample rate, mono, 32k bitrate
+    const ffmpegArgs = [
+      '-y',
+      '-i', audioLocalPath,
+      '-ar', '16000', // 16kHz è sufficiente per il parlato
+      '-ac', '1',     // Mono
+      '-map', '0:a:0',
+      '-b:a', '32k',  // Bitrate magico per ridurre la size drasticamente
+      groqAudioPath
+    ];
 
-    if (w.code !== 0) {
-      console.warn('⚠️ whisperx fallito, fallback a whisper CLI', w.stderr || w.stdout);
-      const whisperCmd = [
-        'whisper', JSON.stringify(wavLocalPath),
-        '--language it', '--model small',
-        '--device cpu', '--output_format txt',
-        '--output_dir', JSON.stringify(tempDir)
-      ].join(' ');
-      w = await run('bash', ['-lc', whisperCmd]);
-      if (w.code !== 0) throw new Error(w.stderr || 'whisper failed');
+    const compressResult = await run('ffmpeg', ffmpegArgs);
+    
+    if (compressResult.code !== 0) {
+      console.error('[TRANSCRIBE-ONLY] FFmpeg error:', compressResult.stderr);
+      throw new Error('Errore durante la compressione audio per Groq.');
     }
-    
-    const transcriptFileName = (await fsp.readdir(tempDir)).find(f => f.endsWith('.txt'));
-    if (!transcriptFileName) throw new Error('File di trascrizione non trovato.');
-    
-    transcriptLocalPath = path.join(tempDir, transcriptFileName);
-    const transcription = await fsp.readFile(transcriptLocalPath, 'utf8');
 
-    return res.json({ ok: true, transcription, speakers: [] });
+    // 2. Chiamata API Groq
+    console.log('[TRANSCRIBE-ONLY] Invio a Groq API...');
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    
+    const transcription = await groq.audio.transcriptions.create({
+      file: fs.createReadStream(groqAudioPath),
+      model: "whisper-large-v3",
+      response_format: "json",
+      language: "it", 
+      temperature: 0.0 
+    });
+
+    const txtContent = transcription.text;
+    
+    if (!txtContent) {
+      throw new Error('Groq ha restituito una trascrizione vuota.');
+    }
+
+    console.log(`[TRANSCRIBE-ONLY] Successo! Caratteri: ${txtContent.length}`);
+
+    // Restituiamo il testo. Speakers è vuoto perché Groq non fa diarizzazione (ma per la revisione va benissimo)
+    return res.json({ ok: true, transcription: txtContent, speakers: [] });
 
   } catch (error) {
-    return res.status(500).json({ ok: false, message: error.message || 'Errore durante la trascrizione.' });
+    console.error('[TRANSCRIBE-ONLY] Errore:', error);
+    return res.status(500).json({ 
+      ok: false, 
+      message: error.message || 'Errore durante la trascrizione veloce.' 
+    });
   } finally {
+    // Pulizia aggressiva
     await safeRemoveDir(tempDir);
     await safeUnlink(req.file.path).catch(() => {});
   }
@@ -9716,6 +9936,36 @@ app.post('/api/rag/debug', async (req, res) => {
     res.status(500).json({ error: 'Errore interno del server.', details: error.message });
   }
 });
+// Endpoint Chat Session
+app.post('/api/chat/session', async (req, res) => {
+  if (!chatService) return res.status(503).json({ ok: false, message: 'Servizio Chat non disponibile (Supabase mancante)' });
+  
+  const { messages, transcription, persona } = req.body;
+  const aiOverrides = extractAiProviderOverrides(req); // Assicurati che questa funzione sia accessibile o copiala da sopra
+
+  if (!messages) {
+    return res.status(400).json({ ok: false, message: 'Messaggi mancanti' });
+  }
+
+  try {
+    const response = await chatService.chat(
+      messages, 
+      { transcription }, // Passiamo la trascrizione come contesto
+      persona, 
+      { aiTextProvider: aiOverrides.text }
+    );
+    res.json({ ok: true, message: response });
+  } catch (error) {
+    console.error("Chat API Error:", error);
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+// Endpoint Personas
+app.get('/api/chat/personas', (req, res) => {
+    if (!chatService) return res.json({ personas: [] });
+    res.json({ personas: chatService.getPersonas() });
+});
 // ==========================================================
 // == MIDDLEWARE PER GESTIRE ENDPOINT API NON TROVATI (404) ==
 // ==========================================================
@@ -9728,6 +9978,9 @@ app.use((req, res, next) => {
   // Se non è una richiesta API, passa al prossimo middleware (es. servire il frontend)
   return next();
 });
+
+
+
 
 
 // ==========================================================

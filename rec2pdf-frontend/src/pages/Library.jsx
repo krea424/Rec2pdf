@@ -1,136 +1,135 @@
-import { useCallback, useEffect, useMemo } from "react";
-import CloudLibraryPanel from "../components/CloudLibraryPanel";
-import WorkspaceNavigator from "../components/WorkspaceNavigator";
+import React, { useCallback, useEffect, useState } from "react";
+import ArchiveLayout from "../features/archive/ArchiveLayout";
 import { useAppContext } from "../hooks/useAppContext";
-import { Tabs, TabsList, TabsTrigger } from "../components/ui";
-import { supabase } from "../supabaseClient";
+import { RefreshCw } from "../components/icons";
+
+// --- ADAPTER: Trasforma i dati grezzi in "Documenti Parlanti" ---
+const normalizeDocument = (rawFile, source = 'cloud') => {
+  const meta = rawFile.metadata || {};
+  
+  return {
+    id: rawFile.id || rawFile.name,
+    name: rawFile.name,
+    
+    // Dati "Parlanti" (Business Logic) con fallback per i vecchi file
+    title: meta.customTitle || rawFile.name.replace(/^documento_/, '').replace(/_/g, ' '),
+    summary: meta.summary || "Documento generato prima dell'aggiornamento archivio.",
+    intent: meta.intent || "GENERIC",
+    status: meta.status || "Completed",
+    workspace: meta.workspaceName || "Archivio Storico",
+    project: meta.projectName || "",
+    author: meta.author || "AI",
+    
+    // Dati Tecnici
+    created_at: rawFile.created_at || rawFile.updated_at || new Date().toISOString(),
+    size: rawFile.metadata?.size || 0,
+    path: rawFile.name, // Questo è il nome file relativo al prefisso richiesto
+    bucket: 'processed-media',
+    source: source
+  };
+};
 
 const LibraryPage = () => {
-  const context = useAppContext();
-  // Estraiamo in modo specifico solo ciò che serve ai componenti figli
   const {
-    theme, themes, HISTORY_TABS, historyTab, setHistoryTab,
-    normalizedBackendUrl, fetchBody, navigatorSelection,
-    handleLibraryWorkspaceSelection, workspaces,
-    // Props specifiche per WorkspaceNavigator
-    history, setNavigatorSelection, savedWorkspaceFilters,
-    handleSaveWorkspaceFilter, handleDeleteWorkspaceFilter,
-    handleApplyWorkspaceFilter, historyFilter, setHistoryFilter,
-    fetchEntryPreview, fetchEntryPreAnalysis, handleOpenHistoryPdf,
-    handleOpenHistoryMd, handleRepublishFromMd, handleShowHistoryLogs,
-    handleAssignEntryWorkspace, workspaceLoading, handleRefreshWorkspaces,
-    workspaceSelection, handleAdoptNavigatorSelection
-  } = context;
+    normalizedBackendUrl,
+    fetchBody,
+    handleOpenLibraryFile,
+    workspaces,
+    session // <--- IMPORTANTE: Ci serve la sessione per l'ID utente
+  } = useAppContext();
 
-  const availableTabs = HISTORY_TABS;
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState(null);
 
-  const normalizedHistoryTab = useMemo(() => {
-    if (availableTabs.some((tab) => tab.key === historyTab)) {
-      return historyTab;
-    }
-    return availableTabs[0]?.key;
-  }, [availableTabs, historyTab]);
-
-  const handleTabChange = useCallback((nextValue) => {
-    setHistoryTab(nextValue);
-  }, [setHistoryTab]);
-
-  useEffect(() => {
-    if (normalizedHistoryTab && historyTab !== normalizedHistoryTab) {
-      setHistoryTab(normalizedHistoryTab);
-    }
-  }, [historyTab, normalizedHistoryTab, setHistoryTab]);
-
-  // ... in Library.jsx ...
-
-  const handleOpenFile = useCallback(async ({ bucket, path }) => { // `path` qui è l'objectPath
-    if (!normalizedBackendUrl || !bucket || !path) {
-      alert("Errore: Informazioni mancanti per il download del file.");
-      return;
-    }
+  // --- FETCH DATA ---
+  const loadDocuments = useCallback(async () => {
+    if (!normalizedBackendUrl || !session?.user?.id) return;
+    
+    setLoading(true);
     try {
-      // ==========================================================
-      // ==                  MODIFICA CHIAVE QUI                 ==
-      // ==========================================================
-      // Passiamo bucket e path come parametri separati
-      const params = new URLSearchParams({ bucket, path });
-      const targetUrl = `${normalizedBackendUrl}/api/file?${params.toString()}`;
-      // ==========================================================
+      // 1. Costruiamo il percorso specifico dell'utente
+      // La struttura è: processed-media (bucket) / processed / USER_ID / files...
+      const userPrefix = `processed/${session.user.id}`;
       
-      const session = (await supabase.auth.getSession())?.data.session;
-      if (!session) throw new Error("Sessione utente non trovata.");
-      
-      const response = await fetch(targetUrl, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` }
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        // Usiamo il messaggio di errore specifico del backend
-        throw new Error(data.message || "Impossibile generare l'URL.");
+      // 2. Chiamata API con il prefisso corretto
+      const result = await fetchBody(
+        `${normalizedBackendUrl}/api/storage?bucket=processed-media&prefix=${encodeURIComponent(userPrefix)}`, 
+        { method: 'GET' }
+      );
+
+      if (result.ok && Array.isArray(result.data?.files)) {
+        const normalized = result.data.files
+            .filter(f => f.name.endsWith('.pdf')) // Filtra solo i PDF
+            .map(f => {
+                // Il path restituito da Supabase dentro una cartella è solo il nome file.
+                // Ma per aprirlo ci serve il path completo relativo al bucket.
+                const fullObjectPath = `${userPrefix}/${f.name}`;
+                const doc = normalizeDocument(f, 'cloud');
+                doc.path = fullObjectPath; // Sovrascriviamo con il path completo per il download
+                return doc;
+            })
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            
+        setDocuments(normalized);
+        
+        // Seleziona il primo se non c'è selezione
+        if (!selectedDoc && normalized.length > 0) {
+            setSelectedDoc(normalized[0]);
+        }
+      } else {
+          console.warn("Nessun file trovato o errore API:", result);
       }
-      
-      window.open(data.url, '_blank', 'noopener,noreferrer');
     } catch (error) {
-      console.error("Errore durante l'apertura del file:", error);
-      alert(`Errore: ${error.message}`);
+      console.error("Errore caricamento library:", error);
+    } finally {
+      setLoading(false);
     }
-  }, [normalizedBackendUrl]);
+  }, [normalizedBackendUrl, fetchBody, selectedDoc, session]);
+
+  // Carica all'avvio
+  useEffect(() => {
+    loadDocuments();
+  }, [loadDocuments]);
+
+  // --- HANDLERS ---
+  const handleSelect = (doc) => {
+    setSelectedDoc(doc);
+  };
+
+  const handleOpenAction = () => {
+    if (selectedDoc) {
+        handleOpenLibraryFile({
+            bucket: selectedDoc.bucket,
+            path: selectedDoc.path, 
+            label: selectedDoc.title
+        });
+    }
+  };
 
   return (
-    <div className="mt-8">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-2">
-        <Tabs value={normalizedHistoryTab} onValueChange={handleTabChange}>
-          <TabsList className="flex gap-2 border-none bg-transparent p-0">
-            {availableTabs.map((tab) => (
-              <TabsTrigger key={tab.key} value={tab.key} className="px-4">
-                {tab.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+    <div className="flex flex-col h-[calc(100vh-64px)] p-4 gap-4">
+      {/* Header */}
+      <div className="flex justify-between items-center shrink-0">
+        <h1 className="text-lg font-bold text-white tracking-wide flex items-center gap-2">
+            🗂️ Archivio Intelligente
+            {loading && <RefreshCw className="h-4 w-4 animate-spin text-zinc-500" />}
+        </h1>
+        <div className="text-xs text-zinc-500">
+            {documents.length} documenti indicizzati
+        </div>
       </div>
-      <div className="mt-5">
-        {normalizedHistoryTab === "history" ? (
-          <WorkspaceNavigator
-            // ==========================================================
-            // ==                  MODIFICA CHIAVE QUI                 ==
-            // ==========================================================
-            // Passiamo solo le props necessarie, non l'intero context.
-            // Questo stabilizza il componente e previene il loop.
-            entries={history}
+
+      {/* Layout */}
+      <div className="flex-1 min-h-0">
+          <ArchiveLayout 
+            documents={documents}
             workspaces={workspaces}
-            selection={navigatorSelection}
-            onSelectionChange={setNavigatorSelection}
-            savedFilters={savedWorkspaceFilters}
-            onSaveFilter={handleSaveWorkspaceFilter}
-            onDeleteFilter={handleDeleteWorkspaceFilter}
-            onApplyFilter={handleApplyWorkspaceFilter}
-            searchTerm={historyFilter}
-            onSearchChange={setHistoryFilter}
-            fetchPreview={fetchEntryPreview}
-            fetchPreAnalysis={fetchEntryPreAnalysis}
-            onOpenPdf={handleOpenHistoryPdf}
-            onOpenMd={handleOpenHistoryMd}
-            onRepublish={handleRepublishFromMd}
-            onShowLogs={handleShowHistoryLogs}
-            onAssignWorkspace={handleAssignEntryWorkspace}
-            themeStyles={themes[theme]}
-            loading={workspaceLoading}
-            onRefresh={handleRefreshWorkspaces}
-            pipelineSelection={workspaceSelection}
-            onAdoptSelection={handleAdoptNavigatorSelection}
+            selectedDoc={selectedDoc}
+            onSelect={handleSelect}
+            onOpen={handleOpenAction}
+            loading={loading}
           />
-        ) : (
-          <CloudLibraryPanel
-            backendUrl={normalizedBackendUrl}
-            fetchBody={fetchBody}
-            selection={navigatorSelection}
-            onAssignWorkspace={handleLibraryWorkspaceSelection}
-            onOpenFile={handleOpenFile}
-            workspaces={workspaces}
-            themeStyles={themes[theme]}
-          />
-        )}
       </div>
     </div>
   );

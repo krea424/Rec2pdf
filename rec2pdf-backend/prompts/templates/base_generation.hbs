@@ -1,6 +1,6 @@
 {{!-- 
   Template: Base Document Generation
-  Version: 2.1.0 (Model-Proof JSON Output)
+  Version: 2.2.0 (Cue Cards Integration + Key Points)
   Purpose: Forzare l'integrazione di dati da fonti eterogenee e garantire 
            un output JSON valido da qualsiasi modello LLM.
 --}}
@@ -19,27 +19,30 @@ Il tuo unico compito è generare un singolo blocco di codice JSON valido che con
 Il tuo compito è generare un documento dettagliato e accurato integrando le fonti di informazione fornite.
 
 1.  **STRUTTURA**: Usa la "TRASCRIZIONE PRINCIPALE" come base per la struttura, il flusso narrativo e il racconto del documento.
-2.  **DATI**: Usa i "DATI SPECIFICI DALLA KNOWLEDGE BASE" per arricchire, correggere e rendere precisi i dettagli menzionati nella trascrizione.
-3.  **CONTESTO NARRATIVO**: Usa le "NOTE DI CONTESTO" per aggiungere colore, background o un tocco personale al testo, se appropriato.
+2.  **DETTAGLI GUIDATI (PRIORITÀ ALTA)**: Se presente, usa la sezione "DETTAGLI STRUTTURATI (CUE CARDS)". Queste sono risposte dirette dell'utente che integrano, correggono o specificano punti chiave. Hanno la precedenza sulla trascrizione generica.
+3.  **DATI RAG**: Usa i "DOCUMENTI DI CONTESTO" per arricchire le informazioni.
 4.  **FOCUS**: Presta particolare attenzione alle istruzioni nella sezione "FOCUS SPECIFICO".
 5.  **REGOLE**: È **vietato** usare la tua conoscenza pregressa o inventare dettagli non presenti nelle fonti fornite.
-6.  **OUTPUT**: Il tuo output DEVE essere un singolo oggetto JSON valido. Usa nel "body" almeno una tabella relativa al contenuto con un minimo di 3 colonn ed un massimo di 5.
+6.  **OUTPUT**: Il tuo output DEVE essere un singolo oggetto JSON valido.  Usa nel "body" almeno una tabella relativa al contenuto con un minimo di 3 colonne ed un massimo di 5.
 
 ### CONTRATTO DI OUTPUT JSON (MOLTO IMPORTANTE) ###
 - Il tuo output DEVE essere un singolo oggetto JSON valido.
 - Usa **esclusivamente virgolette doppie standard (`"`)** per tutte le chiavi e i valori di tipo stringa. Non usare virgolette singole (`'`) o tipografiche (`“ ”`).
 - Non includere virgole finali (trailing commas).
-- La struttura deve essere ESATTAMENTE: `{"title": "string", "summary": "string", "author": "string", "body": "string"}`.
-- Il valore della chiave `body` deve essere una stringa contenente il documento completo in formato Markdown. Assicurati di fare l'escape corretto dei caratteri speciali come `"` e `\n` all'interno del testo del Markdown.
+- La struttura deve essere ESATTAMENTE: `{"title": "string", "summary": "string", "author": "string", "body": "string", "key_points": ["string", "string", "string"]}`.
+- Il valore della chiave `body` deve essere una stringa contenente il documento completo in formato Markdown.
+- Il valore della chiave `key_points` deve essere un array di 3-5 stringhe brevi che riassumono i concetti chiave (essenziale per i layout grafici).
 
 **ESEMPIO DI FORMATO DI OUTPUT VALIDO:**
 ```json
 {
   "title": "Titolo Esempio",
   "summary": "Sommario di esempio che include un dato numerico come €1.234.567.",
+  "key_points": ["Punto chiave 1", "Punto chiave 2", "Punto chiave 3"],
   "author": "Ruolo Esempio",
   "body": "# Titolo Sezione 1\n\nQuesto è un paragrafo con dati. Secondo il contesto, i ricavi sono stati €1.234.567.\n\n## Sottosezione\n\n- Punto elenco 1\n- Punto elenco 2"
 }
+--- INIZIO DATI DI INPUT ---
 DOCUMENTI DI CONTESTO (Fonte di Verità per i Dati)
 {{#if knowledgeContext}}
 {{{knowledgeContext}}}
@@ -52,6 +55,13 @@ TRASCRIZIONE (Fonte per la Narrazione e il Flusso)
 {{else}}
 Nessuna trascrizione fornita.
 {{/if}}
+{{!-- SEZIONE CRITICA AGGIUNTA --}}
+{{#if cueCardsMarkdown}}
+DETTAGLI STRUTTURATI (CUE CARDS - ALTA PRIORITÀ)
+L'utente ha fornito le seguenti risposte specifiche alle domande guida. Usa queste informazioni per strutturare i punti chiave e correggere eventuali imprecisioni della trascrizione:
+{{{cueCardsMarkdown}}}
+{{/if}}
+{{!-- FINE SEZIONE AGGIUNTA --}}
 NOTE E OBIETTIVI AGGIUNTIVI
 {{#if notes}}
 Note di Contesto Aggiuntive: {{{notes}}}
