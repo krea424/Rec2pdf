@@ -1,0 +1,343 @@
+import React, { useState, useMemo } from "react";
+import { classNames } from "../../utils/classNames";
+import { 
+  Search, 
+  FilterIcon, 
+  FileText, 
+  Folder, 
+  Clock, 
+  Download, 
+  Edit3, 
+  CheckCircle2, 
+  Sparkles,
+  LayoutDashboard,
+  Users // <--- AGGIUNGI QUESTO
+  
+} from "../../components/icons";
+
+// --- SOTTOCOMPONENTI UI ---
+
+const FilterButton = ({ label, count, active, onClick, icon: Icon }) => (
+  <button
+    onClick={onClick}
+    className={classNames(
+      "flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-all",
+      active
+        ? "bg-indigo-500/10 text-indigo-300 ring-1 ring-indigo-500/20"
+        : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+    )}
+  >
+    <div className="flex items-center gap-2">
+      {Icon && <Icon className="h-3.5 w-3.5" />}
+      <span>{label}</span>
+    </div>
+    {count !== undefined && (
+      <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-500">
+        {count}
+      </span>
+    )}
+  </button>
+);
+
+const DocumentCard = ({ doc, isSelected, onClick }) => {
+  // Mappatura colori per intenti
+  const intentColor = useMemo(() => {
+    const i = (doc.intent || "").toUpperCase();
+    if (i.includes("STRATEGIC")) return "text-emerald-400 bg-emerald-400/10 border-emerald-400/20";
+    if (i.includes("OPERATIONAL")) return "text-blue-400 bg-blue-400/10 border-blue-400/20";
+    if (i.includes("CREATIVE")) return "text-purple-400 bg-purple-400/10 border-purple-400/20";
+    return "text-zinc-400 bg-zinc-400/10 border-zinc-400/20";
+  }, [doc.intent]);
+
+  return (
+    <div
+      onClick={onClick}
+      className={classNames(
+        "group relative mb-2 cursor-pointer rounded-xl border p-4 transition-all duration-200",
+        isSelected
+          ? "border-indigo-500/50 bg-[#16161a] shadow-lg shadow-indigo-900/10"
+          : "border-white/5 bg-[#121214] hover:border-white/10 hover:bg-[#18181b]"
+      )}
+    >
+      {/* Header Card */}
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <h4 className={classNames(
+            "font-semibold text-sm leading-snug line-clamp-2",
+            isSelected ? "text-white" : "text-zinc-300 group-hover:text-white"
+        )}>
+          {doc.title || doc.name}
+        </h4>
+        {doc.intent && doc.intent !== 'GENERIC' && (
+          <span className={classNames("shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider", intentColor)}>
+            {doc.intent.split('_')[0]}
+          </span>
+        )}
+      </div>
+
+      {/* Summary */}
+      <p className="mb-3 line-clamp-2 text-xs leading-relaxed text-zinc-500 group-hover:text-zinc-400">
+        {doc.summary || "Nessun sommario disponibile per questo documento."}
+      </p>
+
+      {/* Footer Card */}
+      <div className="flex items-center justify-between border-t border-white/5 pt-3 text-[10px] text-zinc-600">
+        <div className="flex items-center gap-2">
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {new Date(doc.created_at).toLocaleDateString()}
+          </span>
+          <span>•</span>
+          <span className="flex items-center gap-1 truncate max-w-[100px]">
+            <Folder className="h-3 w-3" />
+            {doc.workspace || "No Workspace"}
+          </span>
+        </div>
+        {doc.status && (
+           <span className="flex items-center gap-1 text-zinc-500">
+             <CheckCircle2 className="h-3 w-3" /> {doc.status}
+           </span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const DocumentInspector = ({ doc, onOpen }) => {
+  if (!doc) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center p-10 text-center text-zinc-500">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/5">
+          <LayoutDashboard className="h-8 w-8 opacity-20" />
+        </div>
+        <p className="text-sm font-medium">Seleziona un documento per visualizzare i dettagli</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col overflow-y-auto bg-[#121214]">
+      {/* Header Inspector */}
+      <div className="border-b border-white/10 p-6">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
+            {doc.intent || "DOCUMENTO"}
+          </span>
+          <span className="text-xs text-zinc-500">
+            ID: {doc.id.toString().slice(0, 8)}...
+          </span>
+        </div>
+        <h2 className="mb-2 text-xl font-bold leading-tight text-white">
+          {doc.title || doc.name}
+        </h2>
+        <div className="flex items-center gap-4 text-xs text-zinc-400">
+          <span className="flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5" />
+            {new Date(doc.created_at).toLocaleString()}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5" />
+            {doc.author || "AI Assistant"}
+          </span>
+        </div>
+      </div>
+
+      {/* Actions Toolbar */}
+      <div className="grid grid-cols-2 gap-3 border-b border-white/10 p-4">
+        <button
+          onClick={onOpen}
+          className="flex items-center justify-center gap-2 rounded-lg bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-black transition hover:bg-zinc-200"
+        >
+          <Download className="h-4 w-4" /> Apri PDF
+        </button>
+        <button className="flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-white/10">
+          <Edit3 className="h-4 w-4" /> Modifica
+        </button>
+      </div>
+
+      {/* Content Details */}
+      <div className="flex-1 p-6">
+        <div className="space-y-6">
+          
+          {/* Summary Section */}
+          <div>
+            <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-500">
+              <Sparkles className="h-3.5 w-3.5 text-purple-400" /> Sintesi AI
+            </h3>
+            <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 text-sm leading-relaxed text-zinc-300">
+              {doc.summary || "Nessun sommario generato per questo documento."}
+            </div>
+          </div>
+
+          {/* Metadata Grid */}
+          <div>
+            <h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-zinc-500">
+              Metadati
+            </h3>
+            <div className="grid grid-cols-2 gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
+              <div>
+                <span className="block text-[10px] uppercase text-zinc-600">Workspace</span>
+                <span className="text-sm font-medium text-zinc-200">{doc.workspace}</span>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase text-zinc-600">Progetto</span>
+                <span className="text-sm font-medium text-zinc-200">{doc.project || "—"}</span>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase text-zinc-600">Stato</span>
+                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                  {doc.status}
+                </span>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase text-zinc-600">Dimensione</span>
+                <span className="text-sm font-medium text-zinc-200">
+                  {(doc.size / 1024).toFixed(1)} KB
+                </span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- COMPONENTE PRINCIPALE ---
+
+export default function ArchiveLayout({
+  documents = [],
+  workspaces = [],
+  onSelect,
+  selectedDoc,
+  onOpen,
+  loading
+}) {
+  const [filter, setFilter] = useState("ALL");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // Logica di Filtraggio
+  const filteredDocs = useMemo(() => {
+    let result = documents;
+
+    // 1. Filtro Categoria (Intent)
+    if (filter !== "ALL") {
+      result = result.filter(doc => {
+        const intent = (doc.intent || "").toUpperCase();
+        if (filter === "STRATEGIC") return intent.includes("STRATEGIC") || intent.includes("BUSINESS");
+        if (filter === "OPERATIONAL") return intent.includes("OPERATIONAL") || intent.includes("MEETING");
+        if (filter === "CREATIVE") return intent.includes("CREATIVE");
+        return true;
+      });
+    }
+
+    // 2. Filtro Ricerca
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase();
+      result = result.filter(doc => 
+        (doc.title || "").toLowerCase().includes(q) ||
+        (doc.summary || "").toLowerCase().includes(q) ||
+        (doc.workspace || "").toLowerCase().includes(q)
+      );
+    }
+
+    return result;
+  }, [documents, filter, searchTerm]);
+
+  // Calcolo conteggi per la sidebar
+  const counts = useMemo(() => ({
+    all: documents.length,
+    strategic: documents.filter(d => (d.intent || "").includes("STRATEGIC")).length,
+    operational: documents.filter(d => (d.intent || "").includes("OPERATIONAL")).length,
+  }), [documents]);
+
+  return (
+    <div className="flex h-full w-full overflow-hidden rounded-2xl border border-white/10 bg-[#09090b] shadow-2xl ring-1 ring-white/5">
+      
+      {/* PANE 1: SIDEBAR (Filtri) - Hidden on mobile */}
+      <div className="hidden w-60 flex-col border-r border-white/10 bg-[#0e0e11] p-3 md:flex">
+        <div className="mb-6 px-2 pt-2">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-500">Libreria</h3>
+        </div>
+        <nav className="space-y-1">
+          <FilterButton 
+            label="Tutti i documenti" 
+            count={counts.all} 
+            active={filter === 'ALL'} 
+            onClick={() => setFilter('ALL')} 
+            icon={LayoutDashboard}
+          />
+          <FilterButton 
+            label="Strategia & Business" 
+            count={counts.strategic} 
+            active={filter === 'STRATEGIC'} 
+            onClick={() => setFilter('STRATEGIC')} 
+            icon={Sparkles}
+          />
+          <FilterButton 
+            label="Operativi & Meeting" 
+            count={counts.operational} 
+            active={filter === 'OPERATIONAL'} 
+            onClick={() => setFilter('OPERATIONAL')} 
+            icon={CheckCircle2}
+          />
+        </nav>
+        
+        <div className="mt-8 mb-2 px-2">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-500">Workspace</h3>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+           {/* Placeholder per lista workspace futura */}
+           <div className="px-2 text-xs text-zinc-600 italic">
+              Filtra per workspace...
+           </div>
+        </div>
+      </div>
+
+      {/* PANE 2: MASTER LIST */}
+      <div className="flex w-full flex-col border-r border-white/10 bg-[#09090b] md:w-[420px]">
+        {/* Search Bar */}
+        <div className="border-b border-white/10 p-4 bg-[#09090b]/50 backdrop-blur sticky top-0 z-10">
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+            <input 
+              type="text" 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Cerca..." 
+              className="w-full rounded-xl border border-white/10 bg-white/5 py-2 pl-10 pr-4 text-sm text-white placeholder-zinc-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+            />
+          </div>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+          {loading ? (
+             <div className="p-4 text-center text-xs text-zinc-500 animate-pulse">Caricamento archivio...</div>
+          ) : filteredDocs.length === 0 ? (
+             <div className="flex flex-col items-center justify-center h-64 text-zinc-500">
+                <FilterIcon className="h-8 w-8 mb-2 opacity-20" />
+                <p className="text-xs">Nessun documento trovato.</p>
+             </div>
+          ) : (
+            filteredDocs.map(doc => (
+              <DocumentCard 
+                key={doc.id} 
+                doc={doc} 
+                isSelected={selectedDoc?.id === doc.id}
+                onClick={() => onSelect(doc)}
+              />
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* PANE 3: INSPECTOR (Dettaglio) */}
+      <div className="hidden flex-1 flex-col bg-[#121214] md:flex">
+        <DocumentInspector doc={selectedDoc} onOpen={onOpen} />
+      </div>
+
+    </div>
+  );
+}

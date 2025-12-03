@@ -1,0 +1,251 @@
+/* --- Modern Strategy Template (Tech-inspired) --- */
+
+@page {
+    size: A4;
+    margin: 18mm 18mm 20mm 18mm;
+    @bottom-center {
+        content: counter(page) " of " counter(pages);
+        font-family: "Inter", "Helvetica Neue", sans-serif;
+        font-size: 8pt;
+        color: #94a3b8;
+    }
+    @bottom-right {
+        content: "Confidential";
+        font-family: "Inter", sans-serif;
+        font-size: 7pt;
+        color: #cbd5e1;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+    }
+}
+
+body {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 10pt;
+    line-height: 1.6;
+    color: #1e293b;
+    margin: 0;
+    background: white;
+}
+
+/* --- HEADER --- */
+.header-strip {
+    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+    padding: 20px;
+    margin: -18mm -18mm 30px -18mm;
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.brand {
+    font-size: 11pt;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.meta-date {
+    font-size: 9pt;
+    opacity: 0.9;
+}
+
+/* --- TITLE --- */
+h1 {
+    font-size: 26pt;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 10px;
+    letter-spacing: -0.5px;
+    line-height: 1.2;
+}
+
+.subtitle {
+    font-size: 12pt;
+    color: #0ea5e9;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 30px;
+}
+
+/* --- SUMMARY CALLOUT --- */
+.executive-summary {
+    background: #f0f9ff;
+    border-left: 5px solid #0ea5e9;
+    padding: 20px 25px;
+    margin-bottom: 35px;
+    font-size: 10.5pt;
+    line-height: 1.7;
+    page-break-inside: avoid;
+}
+
+/* --- KEY INSIGHTS (Cards with Icons) --- */
+.highlights-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 40px;
+    page-break-inside: avoid;
+}
+
+.highlight-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 18px 15px;
+    text-align: center;
+    font-size: 9pt;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    transition: all 0.2s;
+}
+
+.highlight-card strong {
+    display: block;
+    color: #0ea5e9;
+    font-size: 18pt;
+    margin-bottom: 5px;
+    font-weight: 700;
+}
+
+.highlight-card span {
+    color: #64748b;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* --- CONTENT --- */
+h2 {
+    font-size: 15pt;
+    color: #0f172a;
+    font-weight: 700;
+    margin-top: 35px;
+    margin-bottom: 15px;
+    padding-left: 12px;
+    border-left: 4px solid #0ea5e9;
+}
+
+h3 {
+    font-size: 12pt;
+    color: #0284c7;
+    font-weight: 600;
+    margin-top: 25px;
+    margin-bottom: 12px;
+}
+
+p {
+    margin-bottom: 13px;
+    text-align: justify;
+}
+
+ul, ol {
+    margin: 15px 0;
+    padding-left: 25px;
+}
+
+li {
+    margin-bottom: 8px;
+}
+
+/* --- TABLES --- */
+table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 25px 0;
+    font-size: 9.5pt;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+th {
+    background: linear-gradient(135deg, #0ea5e9, #0284c7);
+    color: white;
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+td {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 12px 15px;
+    vertical-align: top;
+    background: white;
+}
+
+tr:hover td {
+    background-color: #f0f9ff;
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+/* --- INSIGHT BOX --- */
+.insight-box {
+    background: linear-gradient(135deg, #ecfeff 0%, #ffffff 100%);
+    border: 1px solid #67e8f9;
+    border-left: 4px solid #06b6d4;
+    padding: 20px;
+    margin: 25px 0;
+    font-size: 10pt;
+    page-break-inside: avoid;
+}
+
+.insight-box strong {
+    color: #0e7490;
+    font-size: 11pt;
+}
+
+/* --- ACTION ITEMS --- */
+.action-item {
+    background-color: #fef3c7;
+    border-left: 4px solid #f59e0b;
+    padding: 15px 20px;
+    margin: 20px 0;
+    font-size: 10pt;
+    page-break-inside: avoid;
+}
+
+/* --- TRANSCRIPT --- */
+.transcript-block {
+    margin-top: 10px;
+    padding: 12px 15px;
+    border-left: 3px solid #bae6fd;
+    background-color: #f8fafc;
+    page-break-inside: avoid;
+    font-size: 9.5pt;
+}
+
+.speaker-name {
+    font-size: 8.5pt;
+    font-weight: 700;
+    color: #0284c7;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+}
+
+.content h1:first-child {
+    display: none;
+}
+
+/* --- BADGES --- */
+.badge {
+    display: inline-block;
+    background-color: #0ea5e9;
+    color: white;
+    padding: 4px 10px;
+    font-size: 8pt;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-radius: 3px;
+    margin-right: 8px;
+}

@@ -6,7 +6,7 @@ const wrapperStyles =
   "relative flex w-full items-center rounded-xl border border-surface-700 bg-surface-900/70 px-3 text-sm text-surface-50 shadow-inset transition-colors focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-300/60";
 
 export const Select = forwardRef(function Select(
-  { label, helperText, error, className, containerClassName, children, id, ...props },
+  { label, helperText, error, className, containerClassName, wrapperClassName, children, id, ...props },
   ref
 ) {
   const generatedId = useId();
@@ -23,6 +23,7 @@ export const Select = forwardRef(function Select(
       <div
         className={classNames(
           wrapperStyles,
+          wrapperClassName,
           error && "border-feedback-danger/70 text-feedback-danger focus-within:ring-feedback-danger"
         )}
       >

@@ -414,6 +414,45 @@ export const Globe = (props) => (
   </IconBase>
 );
 
+// --- NUOVE ICONE PER LA CHAT INTERFACE ---
+
+export const ArrowUp = (props) => (
+  <IconBase {...props}>
+    <path d="m5 12 7-7 7 7" />
+    <path d="M12 19V5" />
+  </IconBase>
+);
+
+export const MessageSquare = (props) => (
+  <IconBase {...props}>
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </IconBase>
+);
+
+export const Bot = (props) => (
+  <IconBase {...props}>
+    <path d="M12 8V4H8" />
+    <rect width="16" height="12" x="4" y="8" rx="2" />
+    <path d="M2 14h2" />
+    <path d="M20 14h2" />
+    <path d="M15 13v2" />
+    <path d="M9 13v2" />
+  </IconBase>
+);
+
+export const User = (props) => (
+  <IconBase {...props}>
+    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </IconBase>
+);
+export const Clock = (props) => (
+  <IconBase {...props}>
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </IconBase>
+);
+
 export const TimerIcon = Timer;
 export const LinkIcon = Link;
 
@@ -462,9 +501,14 @@ export default {
   LayoutDashboard,
   Library,
   Settings2,
-  // Nuove
   Mail,
   Github,
   Chrome,
-  Globe
+  Globe,
+  Clock,
+  // Nuove per Chat
+  ArrowUp,
+  MessageSquare,
+  Bot,
+  User
 };

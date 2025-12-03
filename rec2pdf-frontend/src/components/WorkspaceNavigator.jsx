@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Palette,
   XCircle,
+  Info
 } from "./icons";
 import { EmptyState, Skeleton } from "./ui";
 
@@ -23,6 +24,18 @@ const DEFAULT_STATUSES = ["Bozza", "In lavorazione", "Da revisionare", "Completa
 const UNASSIGNED_KEY = "__unassigned__";
 const ADVANCED_FILTERS_FLAG = "ADVANCED_WORKSPACE_FILTERS";
 const ADVANCED_MODE_FLAGS = ["MODE_ADVANCED", "MODE_ADVANCED_V2"];
+
+// --- STILI BOARDROOM (Design System Unificato) ---
+const CARD_STYLE = "rounded-2xl border border-white/10 bg-[#121214] text-white shadow-sm transition-all";
+const PANEL_HEADER = "border-b border-white/5 bg-white/[0.02] p-4 flex items-center justify-between backdrop-blur-xl";
+const PANEL_BODY = "p-4";
+const INPUT_STYLE = "w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all";
+const BUTTON_SECONDARY = "flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-zinc-300 hover:bg-white/10 hover:text-white transition-all";
+const BUTTON_PRIMARY = "flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-500 shadow-lg shadow-indigo-900/20 transition-all";
+const LIST_ITEM_BASE = "w-full text-left p-3 rounded-xl border transition-all group mb-2";
+const LIST_ITEM_ACTIVE = "border-indigo-500/50 bg-indigo-500/10 ring-1 ring-indigo-500/20";
+const LIST_ITEM_INACTIVE = "border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/10";
+const BADGE_STYLE = "inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-zinc-400";
 
 const computeProjectKey = (id, name) => {
   if (id) return String(id);
@@ -34,7 +47,7 @@ const formatTimestamp = (value) => {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString();
+  return date.toLocaleDateString() + " " + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
 const formatCompleteness = (score) => {
@@ -63,6 +76,9 @@ const buildSearchHaystack = (entry) => {
     .toLowerCase();
 };
 
+// ==========================================
+// COMPONENTE BASE (Semplificato)
+// ==========================================
 const BaseWorkspaceNavigator = ({
   entries = [],
   onSelectionChange,
@@ -76,7 +92,6 @@ const BaseWorkspaceNavigator = ({
   onAdoptSelection,
   onRefresh,
   loading = false,
-  themeStyles = {},
 }) => {
   const [selectedEntryKey, setSelectedEntryKey] = useState(null);
 
@@ -156,12 +171,6 @@ const BaseWorkspaceNavigator = ({
     [onSelectionChange]
   );
 
-  const cardClass = classNames(
-    // Sostituisco 'bg-white/5' con 'bg-[#121214]' e aggiungo 'shadow-sm'
-    "rounded-2xl border border-white/10 bg-[#121214] p-5 text-white shadow-sm",
-    themeStyles?.card
-  );
-
   const entryTitle = selectedEntry?.title || selectedEntry?.slug || "Documento";
   const workspace = selectedEntry?.workspace || null;
   const prompt = selectedEntry?.prompt || null;
@@ -198,182 +207,168 @@ const BaseWorkspaceNavigator = ({
   }, [onAssignWorkspace, selectedEntry]);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-      <div className={cardClass}>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.32em] text-white/70">Library</h3>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {typeof onRefresh === "function" ? (
-              <button
-                type="button"
-                onClick={onRefresh}
-                className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-white/70 transition hover:bg-white/10"
-              >
-                <RefreshCw className={classNames("h-3.5 w-3.5", loading ? "animate-spin" : "")} />
-                Aggiorna
-              </button>
-            ) : null}
-            {loading ? <span className="text-white/60">Sincronizzazione…</span> : null}
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <input
-            type="search"
-            value={searchTerm}
-            onChange={(event) => onSearchChange && onSearchChange(event.target.value)}
-            placeholder="Cerca titolo, workspace, tag…"
-            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/80 placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          />
-        </div>
-
-        <div className="mt-4 space-y-2">
-          {loading ? (
-            Array.from({ length: 3 }).map((_, index) => (
-              <Skeleton key={`base-skeleton-${index}`} className="h-20 w-full rounded-2xl" />
-            ))
-          ) : filteredEntries.length === 0 ? (
-            <EmptyState
-              title="Nessun documento disponibile"
-              description="Quando carichi o generi un PDF lo troverai qui."
-              className="border-white/15 bg-black/20 text-white/70"
+    <div className="grid gap-6 lg:grid-cols-[minmax(300px,1fr)_1.5fr] h-[calc(100vh-180px)]">
+      <div className="flex flex-col gap-4 h-full">
+        <div className="relative">
+            <FilterIcon className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-zinc-500" />
+            <input
+                type="search"
+                value={searchTerm}
+                onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
+                placeholder="Cerca documenti..."
+                className={INPUT_STYLE + " pl-10"}
             />
-          ) : (
-            filteredEntries.map((entry, index) => {
-              const entryKey = String(entry?.id || entry?.slug || `entry-${index}`);
-              const isActive =
-                (selectedEntry?.id || selectedEntry?.slug || "") === (entry?.id || entry?.slug || "");
-              const workspaceName = entry?.workspace?.name || entry?.workspace?.client || "Workspace";
-              const summary = entry?.prompt?.title || entry?.slug || "";
-              return (
-                <button
-                  type="button"
-                  key={entryKey}
-                  onClick={() => handleSelect(entry)}
-                  className={classNames(
-                    "w-full rounded-2xl border px-4 py-3 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-                    isActive
-                      ? "border-indigo-400/60 bg-indigo-500/15 text-white shadow-[0_12px_40px_-30px_rgba(129,140,248,0.9)]"
-                      : "border-white/10 bg-white/5 text-white/80 hover:border-indigo-400/40 hover:bg-indigo-500/10"
-                  )}
-                >
-                  <div className="flex items-center justify-between text-xs text-white/60">
-                    <span>{workspaceName}</span>
-                    <span>{formatTimestamp(entry?.timestamp || entry?.updatedAt)}</span>
-                  </div>
-                  <div className="mt-1 text-base font-semibold text-white/90">
-                    {entry?.title || entry?.slug || "Documento"}
-                  </div>
-                  {summary ? <div className="mt-1 text-xs text-white/60">{summary}</div> : null}
-                </button>
-              );
-            })
-          )}
+        </div>
+
+        <div className={classNames(CARD_STYLE, "flex-1 overflow-hidden flex flex-col p-0")}>
+            <div className={PANEL_HEADER}>
+                <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                    {filteredEntries.length} Risultati
+                </span>
+                {typeof onRefresh === "function" && (
+                    <button onClick={onRefresh} className="text-zinc-500 hover:text-white transition">
+                        <RefreshCw className={classNames("h-3.5 w-3.5", loading && "animate-spin")} />
+                    </button>
+                )}
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+                {loading ? (
+                    Array.from({ length: 3 }).map((_, index) => (
+                        <Skeleton key={`base-skeleton-${index}`} className="h-20 w-full rounded-xl bg-white/5 mb-2" />
+                    ))
+                ) : filteredEntries.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-zinc-500 gap-2">
+                        <Folder className="h-8 w-8 opacity-20" />
+                        <p className="text-xs">Nessun documento trovato</p>
+                    </div>
+                ) : (
+                    filteredEntries.map((entry, index) => {
+                        const entryKey = String(entry?.id || entry?.slug || `entry-${index}`);
+                        const isActive = (selectedEntry?.id || selectedEntry?.slug || "") === (entry?.id || entry?.slug || "");
+                        const workspaceName = entry?.workspace?.name || entry?.workspace?.client || "Workspace";
+                        
+                        return (
+                            <button
+                                key={entryKey}
+                                onClick={() => handleSelect(entry)}
+                                className={classNames(LIST_ITEM_BASE, isActive ? LIST_ITEM_ACTIVE : LIST_ITEM_INACTIVE)}
+                            >
+                                <div className="flex justify-between items-start mb-1">
+                                    <span className={classNames("font-semibold text-sm truncate pr-2", isActive ? "text-white" : "text-zinc-300")}>
+                                        {entry.title || entry.slug || "Senza titolo"}
+                                    </span>
+                                    <span className="text-[10px] text-zinc-500 font-mono shrink-0">
+                                        {new Date(entry.timestamp || entry.updatedAt || Date.now()).toLocaleDateString()}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+                                    <span className="flex items-center gap-1">
+                                        <Folder className="h-3 w-3" />
+                                        {workspaceName}
+                                    </span>
+                                </div>
+                            </button>
+                        );
+                    })
+                )}
+            </div>
         </div>
       </div>
 
-      <div className={cardClass}>
-        {selectedEntry ? (
-          <div className="flex h-full flex-col gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.32em] text-white/60">Dettagli</p>
-              <h4 className="mt-2 text-lg font-semibold text-white">{entryTitle}</h4>
-              <p className="text-xs text-white/60">Aggiornato {formatTimestamp(updatedAt)}</p>
-            </div>
-
-            <div className="space-y-3 text-sm text-white/80">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.32em] text-white/50">Workspace</p>
-                <p className="mt-1 text-sm text-white/80">
-                  {workspace ? workspace.name || workspace.client || workspace.id || "Workspace" : "Non assegnato"}
-                </p>
-                {workspace?.status ? <p className="text-xs text-white/60">Stato · {workspace.status}</p> : null}
-              </div>
-              {prompt ? (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.32em] text-white/50">Prompt</p>
-                  <p className="mt-1 text-sm text-white/80">{prompt.title || prompt.slug}</p>
+      <div className={classNames(CARD_STYLE, "flex flex-col h-full overflow-hidden relative")}>
+         {selectedEntry ? (
+             <>
+                <div className="flex items-start justify-between border-b border-white/5 p-5 pb-4">
+                    <div>
+                        <h2 className="text-xl font-bold text-white mb-1">{entryTitle}</h2>
+                        <div className="flex items-center gap-3 text-xs text-zinc-400">
+                            <span className="bg-white/5 px-2 py-0.5 rounded text-zinc-300 border border-white/5">
+                                {selectedEntry.identifier || selectedEntry.id}
+                            </span>
+                            <span>{prompt?.title || "Prompt Base"}</span>
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        {selectedEntry?.pdfPath && (
+                            <button onClick={handlePdfOpen} className={BUTTON_PRIMARY}>
+                                <Download className="h-3.5 w-3.5" /> PDF
+                            </button>
+                        )}
+                        {selectedEntry?.mdPath && (
+                            <button onClick={handleMdOpen} className={BUTTON_SECONDARY}>
+                                <FileText className="h-3.5 w-3.5" /> Editor
+                            </button>
+                        )}
+                    </div>
                 </div>
-              ) : null}
-              {Array.isArray(selectedEntry?.tags) && selectedEntry.tags.length ? (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.32em] text-white/50">Tag</p>
-                  <p className="mt-1 text-xs text-white/70">{selectedEntry.tags.join(", ")}</p>
-                </div>
-              ) : null}
-            </div>
 
-            <div className="mt-auto space-y-2 text-sm">
-              <div className="flex flex-wrap gap-2">
-                {selectedEntry?.pdfPath ? (
-                  <button
-                    type="button"
-                    onClick={handlePdfOpen}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white transition hover:bg-white/20"
-                  >
-                    <Download className="h-4 w-4" /> Apri PDF
-                  </button>
-                ) : null}
-                {selectedEntry?.mdPath ? (
-                  <button
-                    type="button"
-                    onClick={handleMdOpen}
-                    className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white/80 transition hover:bg-white/20"
-                  >
-                    <FileText className="h-4 w-4" /> Markdown
-                  </button>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs">
-                {typeof onRepublish === "function" ? (
-                  <button
-                    type="button"
-                    onClick={handleRepublishEntry}
-                    className="rounded-xl border border-indigo-400/40 bg-indigo-500/20 px-3 py-1.5 text-indigo-100 transition hover:bg-indigo-500/30"
-                  >
-                    Ripubblica
-                  </button>
-                ) : null}
-                {typeof onShowLogs === "function" ? (
-                  <button
-                    type="button"
-                    onClick={handleShowLogs}
-                    className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-white/70 transition hover:bg-white/10"
-                  >
-                    Log
-                  </button>
-                ) : null}
-                {typeof onAssignWorkspace === "function" ? (
-                  <button
-                    type="button"
-                    onClick={handleAssignWorkspaceClick}
-                    className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-white/70 transition hover:bg-white/10"
-                  >
-                    Riassegna workspace
-                  </button>
-                ) : null}
-                {typeof onAdoptSelection === "function" ? (
-                  <button
-                    type="button"
-                    onClick={onAdoptSelection}
-                    className="rounded-xl border border-emerald-300/40 bg-emerald-500/20 px-3 py-1.5 text-emerald-100 transition hover:bg-emerald-500/30"
-                  >
-                    Allinea pipeline
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-white/60">
-            Seleziona un documento a sinistra per vedere i dettagli.
-          </div>
-        )}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6">
+                    <div className="bg-indigo-500/5 border border-indigo-500/10 rounded-xl p-4">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-400 mb-3 flex items-center gap-2">
+                            <Sparkles className="h-3.5 w-3.5" /> Analisi AI
+                        </h4>
+                        <p className="text-sm text-zinc-300 leading-relaxed">
+                            {selectedEntry.summary || "Nessun sommario disponibile per questo documento."}
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="p-3 rounded-lg bg-black/20 border border-white/5">
+                            <span className="block text-[10px] uppercase text-zinc-500 mb-1">Workspace</span>
+                            <span className="text-sm text-zinc-200">{workspace?.name || "-"}</span>
+                        </div>
+                        <div className="p-3 rounded-lg bg-black/20 border border-white/5">
+                            <span className="block text-[10px] uppercase text-zinc-500 mb-1">Progetto</span>
+                            <span className="text-sm text-zinc-200">{workspace?.projectName || "-"}</span>
+                        </div>
+                    </div>
+
+                    {Array.isArray(selectedEntry?.tags) && selectedEntry.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                            {selectedEntry.tags.map((tag, i) => (
+                                <span key={i} className="px-2 py-1 rounded-md bg-white/5 text-[10px] text-zinc-400 border border-white/5">
+                                    #{tag}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div className="mt-auto p-4 border-t border-white/5 flex justify-end gap-2 bg-[#18181b]">
+                    {typeof onRepublish === "function" && (
+                        <button onClick={handleRepublishEntry} className={BUTTON_SECONDARY}>
+                            <RefreshCw className="h-3.5 w-3.5" /> Rigenera
+                        </button>
+                    )}
+                    {typeof onAssignWorkspace === "function" && (
+                        <button onClick={handleAssignWorkspaceClick} className={BUTTON_SECONDARY}>
+                            <Plus className="h-3.5 w-3.5" /> Assegna
+                        </button>
+                    )}
+                    {typeof onAdoptSelection === "function" && (
+                        <button onClick={onAdoptSelection} className={BUTTON_SECONDARY}>
+                            <LinkIcon className="h-3.5 w-3.5" /> Usa nel form
+                        </button>
+                    )}
+                     {typeof onShowLogs === "function" && (
+                        <button onClick={handleShowLogs} className={BUTTON_SECONDARY}>
+                            <FileText className="h-3.5 w-3.5" /> Log
+                        </button>
+                    )}
+                </div>
+             </>
+         ) : (
+             <EmptyState title="Seleziona un documento" description="Scegli un file dalla lista per vedere i dettagli." />
+         )}
       </div>
     </div>
   );
 };
 
+// ==========================================
+// COMPONENTE AVANZATO (Logica Completa)
+// ==========================================
 const AdvancedWorkspaceNavigator = ({
   entries = [],
   workspaces = [],
@@ -392,7 +387,6 @@ const AdvancedWorkspaceNavigator = ({
   onRepublish,
   onShowLogs,
   onAssignWorkspace,
-  themeStyles = {},
   loading = false,
   onRefresh,
   pipelineSelection,
@@ -421,6 +415,8 @@ const AdvancedWorkspaceNavigator = ({
   const [assigning, setAssigning] = useState(false);
   const previewCache = useRef(new Map());
   const preAnalysisCache = useRef(new Map());
+  
+  // Pannelli collassabili
   const [expandedPanels, setExpandedPanels] = useState(() => ({
     navigator: Boolean(normalizedSelection.workspaceId),
     filters: Boolean((searchTerm || "").trim()) || savedFilters.length > 0,
@@ -428,14 +424,11 @@ const AdvancedWorkspaceNavigator = ({
     inspector: false,
   }));
 
-  const normalizedSearchTerm = useMemo(
-    () => (searchTerm || "").toLowerCase().trim(),
-    [searchTerm]
-  );
   const togglePanel = (panelKey) => {
     setExpandedPanels((prev) => ({ ...prev, [panelKey]: !prev[panelKey] }));
   };
 
+  // Auto-expand logic
   useEffect(() => {
     if (!normalizedSelection.workspaceId) return;
     setExpandedPanels((prev) => (prev.navigator ? prev : { ...prev, navigator: true }));
@@ -446,6 +439,7 @@ const AdvancedWorkspaceNavigator = ({
     setExpandedPanels((prev) => (prev.filters ? prev : { ...prev, filters: true }));
   }, [searchTerm]);
 
+  // --- LOGICA DI RAGGRUPPAMENTO (Il cuore della modalità avanzata) ---
   const entryGroups = useMemo(() => {
     const groups = new Map();
     entries.forEach((entry) => {
@@ -679,6 +673,7 @@ const AdvancedWorkspaceNavigator = ({
     return filteredEntries[0];
   }, [filteredEntries, selectedEntryId]);
 
+  // --- EFFETTI DI SELEZIONE ---
   useEffect(() => {
     if (!filteredEntries.length) {
       setSelectedEntryId(null);
@@ -702,6 +697,7 @@ const AdvancedWorkspaceNavigator = ({
     });
   }, [selectedEntry]);
 
+  // --- PREVIEW FETCHING ---
   useEffect(() => {
     if (!selectedEntry || !fetchPreview) {
       setPreviewState((prev) => ({ ...prev, loading: false, error: "", markdown: "", mdUrl: "", pdfUrl: "" }));
@@ -751,30 +747,25 @@ const AdvancedWorkspaceNavigator = ({
     };
   }, [selectedEntry, fetchPreview]);
 
+  // --- PRE-ANALYSIS FETCHING ---
   useEffect(() => {
     if (!selectedEntry || typeof fetchPreAnalysis !== "function") {
       setPreAnalysisState((prev) => ({ ...prev, loading: false, error: "", result: null }));
       return;
     }
-
     const cacheKey = selectedEntry.id;
     if (preAnalysisCache.current.has(cacheKey)) {
       const cached = preAnalysisCache.current.get(cacheKey);
       setPreAnalysisState({ loading: false, error: "", result: cached });
       return;
     }
-
     let active = true;
     setPreAnalysisState({ loading: true, error: "", result: null });
-
     Promise.resolve(fetchPreAnalysis(selectedEntry))
       .then((response) => {
         if (!active) return;
         if (response?.ok) {
-          const payload =
-            response?.data && typeof response.data === "object"
-              ? response.data
-              : null;
+          const payload = response?.data && typeof response.data === "object" ? response.data : null;
           preAnalysisCache.current.set(cacheKey, payload);
           setPreAnalysisState({ loading: false, error: "", result: payload });
         } else {
@@ -790,12 +781,12 @@ const AdvancedWorkspaceNavigator = ({
           result: null,
         });
       });
-
     return () => {
       active = false;
     };
   }, [selectedEntry, fetchPreAnalysis]);
 
+  // --- HANDLERS ---
   const statusLabels = useMemo(() => statusCatalog.map((status) => status.label), [statusCatalog]);
 
   const workspaceAssignment = useMemo(() => {
@@ -972,17 +963,24 @@ const AdvancedWorkspaceNavigator = ({
 
   const searchActive = useMemo(() => Boolean((searchTerm || "").trim()), [searchTerm]);
 
+  // ==========================================
+  // RENDERIZZAZIONE AVANZATA (Layout Boardroom)
+  // ==========================================
   return (
-    <div className={classNames("overflow-hidden rounded-2xl border shadow-lg", themeStyles?.card)}>
-      <div className="flex flex-col gap-4 border-b border-zinc-800/60 p-6">
+    <div className={classNames("overflow-hidden rounded-3xl border border-white/10 shadow-lg", CARD_STYLE)}>
+      
+      {/* HEADER PRINCIPALE */}
+      <div className="flex flex-col gap-4 border-b border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-indigo-200">
             <Users className="h-4 w-4" /> Workspace Navigator
           </div>
           <p className="text-sm text-zinc-400">
-            Mantieni la vista essenziale e apri solo le aree di lavoro che ti servono: seleziona workspace, applica filtri e analizza i deliverable quando vuoi.
+            Gestione avanzata dei documenti con filtri per workspace, progetti e stati.
           </p>
         </div>
+        
+        {/* TOOLBAR AZIONI */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -996,7 +994,7 @@ const AdvancedWorkspaceNavigator = ({
               )}
             >
               <Users className="h-3.5 w-3.5" />
-              {expandedPanels.navigator ? "Compatta navigator" : "Apri navigator"}
+              {expandedPanels.navigator ? "Nascondi Albero" : "Mostra Albero"}
             </button>
             <button
               type="button"
@@ -1009,7 +1007,7 @@ const AdvancedWorkspaceNavigator = ({
               )}
             >
               <FilterIcon className="h-3.5 w-3.5" />
-              {expandedPanels.filters ? "Nascondi filtri" : "Filtri rapidi"}
+              {expandedPanels.filters ? "Nascondi Filtri" : "Filtri"}
             </button>
             <button
               type="button"
@@ -1022,51 +1020,25 @@ const AdvancedWorkspaceNavigator = ({
               )}
             >
               <FileText className="h-3.5 w-3.5" />
-              {expandedPanels.documents ? "Riduci documenti" : "Documenti"}
-            </button>
-            <button
-              type="button"
-              onClick={() => togglePanel("inspector")}
-              className={classNames(
-                "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition",
-                expandedPanels.inspector
-                  ? "border-indigo-500/50 bg-indigo-500/10 text-indigo-100"
-                  : "border-zinc-700 bg-transparent text-zinc-300 hover:border-indigo-400/50 hover:text-indigo-100",
-                !selectedEntry && "pointer-events-none opacity-40"
-              )}
-              disabled={!selectedEntry}
-            >
-              <Folder className="h-3.5 w-3.5" />
-              {expandedPanels.inspector ? "Chiudi dettagli" : "Dettagli documento"}
+              Documenti
             </button>
           </div>
+          
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={onRefresh}
-              className={classNames(
-                "flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
-                themeStyles?.input,
-                themeStyles?.input_hover,
-                loading && "opacity-70"
-              )}
-              disabled={loading}
-            >
-              <RefreshCw className={classNames("h-3.5 w-3.5", loading && "animate-spin")}
-              /> Aggiorna
-            </button>
-            <button
-              onClick={onAdoptSelection}
-              className={classNames(
-                "flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
-                themeStyles?.button,
-                pipelineAligned && "ring-2 ring-emerald-400/70"
-              )}
-              disabled={!onAdoptSelection}
-            >
-              <Sparkles className="h-3.5 w-3.5" /> Usa nel form pipeline
-            </button>
+            {typeof onRefresh === "function" && (
+                <button onClick={onRefresh} className={BUTTON_SECONDARY}>
+                    <RefreshCw className={classNames("h-3.5 w-3.5", loading && "animate-spin")} /> Aggiorna
+                </button>
+            )}
+            {typeof onAdoptSelection === "function" && (
+                <button onClick={onAdoptSelection} className={classNames(BUTTON_SECONDARY, pipelineAligned && "ring-2 ring-emerald-400/70")}>
+                    <Sparkles className="h-3.5 w-3.5" /> Usa nel form
+                </button>
+            )}
           </div>
         </div>
+
+        {/* BREADCRUMBS & BADGES */}
         <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
           <span
             className="inline-flex items-center gap-2 rounded-full border border-zinc-700/60 bg-zinc-900/60 px-3 py-1"
@@ -1090,39 +1062,27 @@ const AdvancedWorkspaceNavigator = ({
           <span className="inline-flex items-center gap-1 rounded-full border border-zinc-700/60 bg-zinc-900/60 px-3 py-1">
             <FileText className="h-3 w-3" /> {documentsCountLabel}
           </span>
-          {searchActive && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-zinc-700/60 bg-zinc-900/60 px-3 py-1">
-              <FilterIcon className="h-3 w-3" /> Ricerca attiva
-            </span>
-          )}
-          {pipelineAligned && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-emerald-200">
-              <Sparkles className="h-3 w-3" /> Form sincronizzato
-            </span>
-          )}
         </div>
       </div>
 
+      {/* PANNELLO FILTRI */}
       {expandedPanels.filters && (
-        <div className="space-y-4 border-b border-zinc-800/60 p-6">
+        <div className="space-y-4 border-b border-white/10 bg-white/[0.03] p-6 backdrop-blur-xl">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative flex-1 min-w-[220px]">
               <FilterIcon className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
               <input
                 value={searchTerm}
                 onChange={(event) => onSearchChange?.(event.target.value)}
-                placeholder="Filtra per titolo, cliente, progetto o stato"
-                className={classNames(
-                  "w-full rounded-xl border bg-transparent px-9 py-2 text-sm outline-none",
-                  themeStyles?.input
-                )}
+                placeholder="Cerca per titolo, cliente, progetto o stato..."
+                className={classNames(INPUT_STYLE, "pl-9")}
               />
               {searchTerm && (
                 <button
                   onClick={() => onSearchChange?.("")}
                   className="absolute right-2 top-2 rounded-lg px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200"
                 >
-                  Pulisci
+                  X
                 </button>
               )}
             </div>
@@ -1130,20 +1090,11 @@ const AdvancedWorkspaceNavigator = ({
               <input
                 value={filterName}
                 onChange={(event) => setFilterName(event.target.value)}
-                placeholder="Nome filtro"
-                className={classNames(
-                  "w-36 rounded-xl border bg-transparent px-3 py-2 text-xs outline-none",
-                  themeStyles?.input
-                )}
+                placeholder="Nome filtro..."
+                className={classNames(INPUT_STYLE, "w-40")}
               />
-              <button
-                onClick={handleFilterSave}
-                className={classNames(
-                  "flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
-                  themeStyles?.button
-                )}
-              >
-                <Bookmark className="h-3.5 w-3.5" /> Salva filtro
+              <button onClick={handleFilterSave} className={BUTTON_SECONDARY}>
+                <Bookmark className="h-3.5 w-3.5" /> Salva
               </button>
             </div>
           </div>
@@ -1163,7 +1114,7 @@ const AdvancedWorkspaceNavigator = ({
                   </button>
                   <button
                     onClick={() => onDeleteFilter?.(filter.id)}
-                    className="text-zinc-500 hover:text-zinc-200"
+                    className="text-zinc-500 hover:text-zinc-200 ml-1"
                   >
                     <XCircle className="h-3.5 w-3.5" />
                   </button>
@@ -1171,517 +1122,245 @@ const AdvancedWorkspaceNavigator = ({
               ))}
             </div>
           )}
-
-          <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-            {breadcrumbs.map((crumb, index) => (
-              <React.Fragment key={`${crumb.label}-${index}`}>
-                {index > 0 && <ChevronRight className="h-3 w-3 text-zinc-600" />}
-                <span className="inline-flex items-center gap-1">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: crumb.color || "#6366f1" }} />
-                  <span>{crumb.label}</span>
-                </span>
-              </React.Fragment>
-            ))}
-          </div>
         </div>
       )}
 
+      {/* CORPO PRINCIPALE: NAVIGATOR + DOCUMENTI */}
       {expandedPanels.navigator && (
-        <div className="border-b border-zinc-800/60 p-6">
+        <div className="border-b border-white/10 bg-white/[0.025] p-6 backdrop-blur-xl">
           <div className="mb-3 flex items-center justify-between text-xs text-zinc-400">
-            <span>Workspace</span>
+            <span>ALBERO WORKSPACE</span>
             <button onClick={handleWorkspaceReset} className="text-zinc-500 hover:text-zinc-200">
               Mostra tutti
             </button>
           </div>
-          <div className="grid gap-4 lg:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]">
-            <div className="max-h-[320px] space-y-2 overflow-auto pr-1">
-              {workspaceCatalog.map((workspace) => {
-                const isActive = workspace.id === normalizedSelection.workspaceId;
-                return (
-                  <button
-                    type="button"
-                    key={workspace.id}
-                    onClick={() => handleWorkspaceSelect(workspace.id)}
-                    className={classNames(
-                      "w-full rounded-xl border px-3 py-2 text-left text-sm transition",
-                      themeStyles?.input,
-                      isActive && "border-indigo-400/70 ring-2 ring-indigo-400/30"
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: workspace.color }} />
-                        <div>
-                          <div className="font-medium text-zinc-200">{workspace.name}</div>
-                          {workspace.client && <div className="text-xs text-zinc-500">{workspace.client}</div>}
-                        </div>
-                      </div>
-                      <div className="text-xs text-zinc-500">{workspace.count} doc</div>
-                    </div>
-                  </button>
-                );
-              })}
-              {workspaceCatalog.length === 0 && (
-                <div className="rounded-xl border border-dashed border-zinc-700/60 p-3 text-xs text-zinc-500">
-                  Nessun workspace ancora definito.
-                </div>
-              )}
-            </div>
-
+          
+          <div className="grid gap-6 lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]">
+            
+            {/* COLONNA SINISTRA: ALBERO */}
             <div className="space-y-4">
-              <div className="rounded-xl border px-3 py-3 text-sm" style={{ borderColor: selectedWorkspace?.color || undefined }}>
-                <div className="flex items-center justify-between text-xs text-zinc-400">
-                  <span className="flex items-center gap-1">
-                    <Folder className="h-3.5 w-3.5" /> Progetti
-                  </span>
-                  {selectedWorkspace && (
-                    <span className="flex items-center gap-1 text-[11px] text-zinc-500">
-                      <Palette className="h-3 w-3" /> {selectedWorkspace.client || "—"}
-                    </span>
-                  )}
-                </div>
-                {!normalizedSelection.workspaceId && (
-                  <div className="mt-2 text-xs text-zinc-500">Seleziona un workspace per vedere i progetti.</div>
-                )}
-                {normalizedSelection.workspaceId === UNASSIGNED_KEY && (
-                  <div className="mt-2 text-xs text-zinc-500">I documenti non assegnati non hanno progetti collegati.</div>
-                )}
-                {normalizedSelection.workspaceId && normalizedSelection.workspaceId !== UNASSIGNED_KEY && (
-                  <div className="mt-3 flex flex-wrap gap-2">
+                {/* Lista Workspace */}
+                <div className="max-h-[300px] space-y-2 overflow-auto pr-1 custom-scrollbar">
+                {workspaceCatalog.map((workspace) => {
+                    const isActive = workspace.id === normalizedSelection.workspaceId;
+                    return (
                     <button
-                      onClick={() => handleProjectSelect({ key: "", name: "", id: "", statuses: [] })}
-                      className={classNames(
-                        "rounded-lg border px-3 py-1 text-xs",
-                        themeStyles?.input,
-                        !normalizedSelection.projectId && "border-indigo-400/70 text-indigo-200"
-                      )}
+                        type="button"
+                        key={workspace.id}
+                        onClick={() => handleWorkspaceSelect(workspace.id)}
+                        className={classNames(
+                        "w-full rounded-xl border px-3 py-2 text-left text-sm transition",
+                        isActive ? "border-indigo-500/50 bg-indigo-500/10 text-white ring-1 ring-indigo-500/20" : "border-white/5 bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05]"
+                        )}
                     >
-                      Tutti
-                    </button>
-                    {projectCatalog.map((project) => {
-                      const isActive = project.key === normalizedSelection.projectId;
-                      return (
-                        <button
-                          type="button"
-                          key={project.key}
-                          onClick={() => handleProjectSelect(project)}
-                          className={classNames(
-                            "rounded-lg border px-3 py-1 text-xs transition",
-                            themeStyles?.input,
-                            isActive && "border-indigo-400/70 text-indigo-200"
-                          )}
-                        >
-                          <span className="font-medium">{project.name}</span>
-                          <span className="ml-2 text-[10px] text-zinc-500">{project.count} doc</span>
-                        </button>
-                      );
-                    })}
-                    {projectCatalog.length === 0 && <div className="text-xs text-zinc-500">Nessun progetto registrato.</div>}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-xl border px-3 py-3 text-sm">
-                <div className="flex items-center justify-between text-xs text-zinc-400">
-                  <span>Stato</span>
-                  {normalizedSelection.status && (
-                    <button onClick={() => handleStatusSelect("")} className="text-zinc-500 hover:text-zinc-200">
-                      Azzera
-                    </button>
-                  )}
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {statusCatalog.map((status) => {
-                    const isActive = status.label === normalizedSelection.status;
-                    return (
-                      <button
-                        type="button"
-                        key={status.label}
-                        onClick={() => handleStatusSelect(status.label)}
-                        className={classNames(
-                          "rounded-full border px-3 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-                          themeStyles?.input,
-                          isActive && "border-indigo-400/70 text-indigo-200"
-                        )}
-                      >
-                        {status.label}
-                        {Number.isFinite(status.count) && status.count > 0 && (
-                          <span className="ml-2 text-[10px] text-zinc-500">{status.count}</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                  {statusCatalog.length === 0 && <div className="text-xs text-zinc-500">Nessuno stato disponibile.</div>}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {expandedPanels.documents && (
-        <div className="p-6">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">
-            <span className="flex items-center gap-2">
-              <FileText className="h-3.5 w-3.5" /> Catalogo documenti
-            </span>
-            <span>{filteredEntries.length} risultati</span>
-          </div>
-          <div
-            className={classNames(
-              "mt-3 grid gap-4",
-              expandedPanels.inspector ? "lg:grid-cols-[minmax(240px,320px)_minmax(0,1fr)]" : "lg:grid-cols-1"
-            )}
-          >
-            <div className="rounded-xl border px-3 py-3">
-              <div className="max-h-[320px] space-y-2 overflow-auto pr-1">
-                {loading ? (
-                  Array.from({ length: 4 }).map((_, index) => (
-                    <Skeleton key={`navigator-entry-skeleton-${index}`} className="h-24 w-full rounded-xl" />
-                  ))
-                ) : filteredEntries.length === 0 ? (
-                  <EmptyState
-                    title="Nessun risultato"
-                    description="Aggiorna i filtri di workspace o ricerca per mostrare i documenti disponibili."
-                    className="border-zinc-700/60 bg-black/20 text-zinc-400"
-                  />
-                ) : (
-                  filteredEntries.map((entry) => {
-                    const isActive = selectedEntry?.id === entry.id;
-                    const completeness = formatCompleteness(entry?.completenessScore);
-                    const entryProjectKey = computeProjectKey(entry?.workspace?.projectId, entry?.workspace?.projectName);
-                    return (
-                      <button
-                        type="button"
-                        key={entry.id}
-                        onClick={() => setSelectedEntryId(entry.id)}
-                        className={classNames(
-                          "w-full rounded-xl border px-4 py-3 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-                          themeStyles?.input,
-                          isActive && "border-indigo-400/70 ring-2 ring-indigo-400/30"
-                        )}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 text-zinc-200">
-                              <FileText className="h-4 w-4" />
-                              <span className="font-medium">{entry?.title || entry?.slug || "Documento"}</span>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-                              <span>{formatTimestamp(entry?.timestamp)}</span>
-                              {entryProjectKey && (
-                                <span className="rounded-lg bg-zinc-800/70 px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                                  {entry?.workspace?.projectName || entry?.workspace?.projectId || "Progetto"}
-                                </span>
-                              )}
-                              {entry?.workspace?.status && (
-                                <span className="rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-200">
-                                  {entry.workspace.status}
-                                </span>
-                              )}
-                              {entry?.prompt?.title && (
-                                <span className="flex items-center gap-1 rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-200">
-                                  <Sparkles className="h-3 w-3" />
-                                  {entry.prompt.title}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="text-right text-xs text-zinc-400">
-                            {Number.isFinite(completeness) ? (
-                              <div>
-                                <div className="text-sm font-semibold text-indigo-200">{completeness}%</div>
-                                <div>completezza</div>
-                              </div>
-                            ) : (
-                              <div className="text-zinc-600">—</div>
-                            )}
-                          </div>
-                        </div>
-                        {Array.isArray(entry?.structure?.missingSections) && entry.structure.missingSections.length > 0 && (
-                          <div className="mt-2 text-xs text-amber-300">
-                            Manca: {entry.structure.missingSections.join(", ")}
-                          </div>
-                        )}
-                        {entry?.structure?.promptChecklist?.missing?.length > 0 && (
-                          <div className="mt-1 text-xs text-amber-300">
-                            Gap template: {entry.structure.promptChecklist.missing.join(", ")}
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {expandedPanels.inspector && (
-              <div className="rounded-xl border px-4 py-4">
-                {selectedEntry ? (
-                  <div className="space-y-3">
-                    <div>
-                      <div className="text-sm font-semibold text-zinc-100">{selectedEntry.title || selectedEntry.slug || "Documento"}</div>
-                      <div className="text-xs text-zinc-500">{selectedEntry.workspace?.client || selectedEntry.workspace?.name || ""}</div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-                      <span>ID: {selectedEntry.id}</span>
-                      {selectedEntry.workspace?.projectName && (
-                        <span className="rounded-lg bg-zinc-800/60 px-2 py-0.5">{selectedEntry.workspace.projectName}</span>
-                      )}
-                      {selectedEntry.workspace?.status && (
-                        <span className="rounded-lg border border-indigo-500/40 px-2 py-0.5 text-indigo-200">
-                          {selectedEntry.workspace.status}
-                        </span>
-                      )}
-                    </div>
-                    {selectedEntry.prompt?.title && (
-                      <div className="space-y-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-indigo-100">
+                        <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
-                          <Sparkles className="h-3.5 w-3.5" />
-                          <span className="text-sm font-semibold text-indigo-100">{selectedEntry.prompt.title}</span>
-                        </div>
-                        {selectedEntry.prompt.persona && (
-                          <div className="text-[11px] text-indigo-200/80">Persona: {selectedEntry.prompt.persona}</div>
-                        )}
-                        {Array.isArray(selectedEntry.prompt.tags) && selectedEntry.prompt.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {selectedEntry.prompt.tags.map((tag) => (
-                              <span
-                                key={tag}
-                                className="rounded-lg bg-black/30 px-2 py-0.5 text-[10px] uppercase tracking-wide text-indigo-200/80"
-                              >
-                                #{tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {Number.isFinite(selectedEntry.structure?.promptChecklist?.score) && (
-                          <div className="text-[11px] text-indigo-200/80">
-                            Copertura template: {Math.round(selectedEntry.structure.promptChecklist.score)}%
-                          </div>
-                        )}
-                        {selectedEntry.structure?.promptChecklist?.missing?.length > 0 && (
-                          <div className="text-[11px] text-amber-200">
-                            Gap: {selectedEntry.structure.promptChecklist.missing.join(', ')}
-                          </div>
-                        )}
-                        {selectedEntry.prompt?.focus && (
-                          <div className="text-[11px] text-indigo-200/80">Focus: {selectedEntry.prompt.focus}</div>
-                        )}
-                    {selectedEntry.prompt?.notes && (
-                      <div className="text-[11px] text-indigo-200/70">Note: {selectedEntry.prompt.notes}</div>
-                    )}
-                    {Array.isArray(selectedEntry.prompt?.completedCues) && selectedEntry.prompt.completedCues.length > 0 && (
-                      <div className="text-[11px] text-indigo-200/70">
-                        Cue completate: {selectedEntry.prompt.completedCues.join(', ')}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {typeof fetchPreAnalysis === "function" && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.3em] text-indigo-200">
-                      <Sparkles className="h-3.5 w-3.5" />
-                      Pre-analisi
-                    </div>
-                    <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-indigo-100">
-                      {preAnalysisState.loading ? (
-                        <div className="flex items-center gap-2 text-[11px] text-indigo-200/80">
-                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                          Analisi in corso…
-                        </div>
-                      ) : preAnalysisState.error ? (
-                        <div className="text-[11px] text-rose-200">{preAnalysisState.error}</div>
-                      ) : preAnalysisState.result ? (
-                        <div className="space-y-3">
-                          {preAnalysisState.result.summary && (
-                            <p className="text-sm leading-relaxed text-indigo-50">
-                              {preAnalysisState.result.summary}
-                            </p>
-                          )}
-                          {Array.isArray(preAnalysisState.result.highlights) &&
-                            preAnalysisState.result.highlights.length > 0 && (
-                              <ul className="space-y-1 text-[11px] text-indigo-100/80">
-                                {preAnalysisState.result.highlights.map((highlight, index) => {
-                                  const key = `${highlight.id || highlight.title || highlight.detail || 'highlight'}_${index}`;
-                                  return (
-                                    <li key={key} className="flex gap-2">
-                                      <span
-                                        className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-indigo-300"
-                                        aria-hidden="true"
-                                      />
-                                      <span>
-                                        {highlight.title && (
-                                          <span className="font-semibold text-indigo-100">
-                                            {highlight.title}
-                                            {highlight.detail ? ': ' : ''}
-                                          </span>
-                                        )}
-                                        {highlight.detail}
-                                        {Number.isFinite(highlight.score) && (
-                                          <span className="ml-1 text-indigo-200/70">
-                                            ({Math.round(highlight.score * 100) / 100})
-                                          </span>
-                                        )}
-                                      </span>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            )}
-                          {Array.isArray(preAnalysisState.result.sections) &&
-                            preAnalysisState.result.sections.length > 0 && (
-                              <div className="space-y-2">
-                                {preAnalysisState.result.sections.map((section, sectionIndex) => {
-                                  const sectionKey = section.id || section.title || section.text || 'section';
-                                  const resolvedSectionKey = `${sectionKey}_${sectionIndex}`;
-                                  return (
-                                    <div
-                                      key={resolvedSectionKey}
-                                      className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 p-2"
-                                    >
-                                      {section.title && (
-                                        <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-indigo-200">
-                                          {section.title}
-                                        </div>
-                                      )}
-                                      {section.text && (
-                                        <p className="mt-1 text-[11px] leading-relaxed text-indigo-100/90">
-                                          {section.text}
-                                        </p>
-                                      )}
-                                      {Array.isArray(section.highlights) && section.highlights.length > 0 && (
-                                        <ul className="mt-1 space-y-1 text-[11px] text-indigo-100/80">
-                                          {section.highlights.map((item, itemIndex) => {
-                                            const itemKey = `${resolvedSectionKey}_${item.id || item.title || item.detail || 'item'}_${itemIndex}`;
-                                            return (
-                                              <li key={itemKey} className="flex gap-2">
-                                                <span
-                                                  className="mt-[6px] h-1 w-1 flex-shrink-0 rounded-full bg-indigo-200"
-                                                  aria-hidden="true"
-                                                />
-                                                <span>
-                                                  {item.title && (
-                                                    <span className="font-medium text-indigo-100">
-                                                      {item.title}
-                                                      {item.detail ? ': ' : ''}
-                                                    </span>
-                                                  )}
-                                                  {item.detail}
-                                                </span>
-                                              </li>
-                                            );
-                                          })}
-                                        </ul>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          {preAnalysisState.result.tokens !== null && Number.isFinite(preAnalysisState.result.tokens) && (
-                            <div className="text-[10px] uppercase tracking-[0.28em] text-indigo-200/60">
-                              Token stimati: {Math.round(preAnalysisState.result.tokens)}
+                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: workspace.color }} />
+                            <div>
+                            <div className="font-medium">{workspace.name}</div>
+                            {workspace.client && <div className="text-[10px] text-zinc-500">{workspace.client}</div>}
                             </div>
-                          )}
-                          {!preAnalysisState.result.summary &&
-                            (!Array.isArray(preAnalysisState.result.highlights) ||
-                              preAnalysisState.result.highlights.length === 0) &&
-                            (!Array.isArray(preAnalysisState.result.sections) ||
-                              preAnalysisState.result.sections.length === 0) && (
-                              <div className="text-[11px] text-indigo-200/70">
-                                Nessuna insight generata dalla pre-analisi.
-                              </div>
+                        </div>
+                        <div className="text-[10px] text-zinc-600">{workspace.count}</div>
+                        </div>
+                    </button>
+                    );
+                })}
+                </div>
+
+                {/* Lista Progetti (Visibile se Workspace selezionato) */}
+                {normalizedSelection.workspaceId && normalizedSelection.workspaceId !== UNASSIGNED_KEY && (
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                        <div className="flex items-center justify-between text-xs text-zinc-400 mb-2">
+                            <span className="font-bold uppercase tracking-wider">Progetti</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                             <button
+                                onClick={() => handleProjectSelect({ key: "", name: "", id: "", statuses: [] })}
+                                className={classNames(
+                                    "rounded-lg border px-2 py-1 text-[10px]",
+                                    !normalizedSelection.projectId ? "border-indigo-500/50 bg-indigo-500/10 text-indigo-200" : "border-white/5 bg-white/[0.02] text-zinc-500"
+                                )}
+                                >
+                                Tutti
+                            </button>
+                            {projectCatalog.map((project) => {
+                                const isActive = project.key === normalizedSelection.projectId;
+                                return (
+                                    <button
+                                    type="button"
+                                    key={project.key}
+                                    onClick={() => handleProjectSelect(project)}
+                                    className={classNames(
+                                        "rounded-lg border px-2 py-1 text-[10px] transition",
+                                        isActive ? "border-indigo-500/50 bg-indigo-500/10 text-indigo-200" : "border-white/5 bg-white/[0.02] text-zinc-400 hover:text-zinc-200"
+                                    )}
+                                    >
+                                    {project.name} <span className="opacity-50">({project.count})</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Lista Stati */}
+                {normalizedSelection.workspaceId && (
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                        <div className="flex items-center justify-between text-xs text-zinc-400 mb-2">
+                             <span className="font-bold uppercase tracking-wider">Stato</span>
+                             {normalizedSelection.status && (
+                                <button onClick={() => handleStatusSelect("")} className="text-[10px] text-zinc-500 hover:text-zinc-300">
+                                Reset
+                                </button>
                             )}
                         </div>
-                      ) : (
-                        <div className="text-[11px] text-indigo-200/70">
-                          Nessuna insight generata dalla pre-analisi.
+                        <div className="flex flex-wrap gap-2">
+                            {statusCatalog.map((status) => {
+                                const isActive = status.label === normalizedSelection.status;
+                                return (
+                                <button
+                                    type="button"
+                                    key={status.label}
+                                    onClick={() => handleStatusSelect(status.label)}
+                                    className={classNames(
+                                    "rounded-full border px-2 py-0.5 text-[10px] transition",
+                                    isActive ? "border-fuchsia-500/50 bg-fuchsia-500/10 text-fuchsia-200" : "border-white/5 bg-white/[0.02] text-zinc-500 hover:text-zinc-300"
+                                    )}
+                                >
+                                    {status.label} {status.count > 0 && <span className="opacity-50">({status.count})</span>}
+                                </button>
+                                );
+                            })}
                         </div>
-                      )}
                     </div>
-                  </div>
                 )}
-                <div className="max-h-48 overflow-auto rounded-lg border border-zinc-800/60 bg-black/20 p-3 text-sm text-zinc-200">
-                  {previewState.loading ? (
-                    <div className="text-xs text-zinc-500">Caricamento anteprima…</div>
-                  ) : previewState.error ? (
-                        <div className="text-xs text-rose-300">{previewState.error}</div>
-                      ) : previewState.markdown ? (
-                        <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-200">
-                          {previewState.markdown}
-                        </pre>
-                      ) : (
-                        <div className="text-xs text-zinc-500">Anteprima non disponibile.</div>
-                      )}
+            </div>
+
+            {/* COLONNA DESTRA: DOCUMENTI & INSPECTOR */}
+            <div className={classNames(
+              "grid gap-4",
+              expandedPanels.inspector ? "lg:grid-cols-[minmax(240px,1fr)_minmax(300px,1.2fr)]" : "lg:grid-cols-1"
+            )}>
+                
+                {/* LISTA DOCUMENTI */}
+                {expandedPanels.documents && (
+                    <div className="rounded-xl border border-white/10 bg-black/20 flex flex-col overflow-hidden h-[500px]">
+                        <div className="p-3 border-b border-white/5 bg-white/[0.02]">
+                            <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Elenco File</span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-2">
+                            {loading ? (
+                                Array.from({ length: 4 }).map((_, index) => (
+                                    <Skeleton key={`skel-${index}`} className="h-16 w-full rounded-lg bg-white/5" />
+                                ))
+                            ) : filteredEntries.length === 0 ? (
+                                <EmptyState title="Nessun documento" description="Modifica i filtri per vedere i risultati." className="h-full border-none bg-transparent" />
+                            ) : (
+                                filteredEntries.map((entry) => {
+                                    const isActive = selectedEntry?.id === entry.id;
+                                    return (
+                                        <button
+                                            key={entry.id}
+                                            onClick={() => setSelectedEntryId(entry.id)}
+                                            className={classNames(
+                                                "w-full text-left p-3 rounded-lg border transition-all",
+                                                isActive ? "border-indigo-500/50 bg-indigo-500/10 text-white" : "border-white/5 bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05]"
+                                            )}
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <span className="font-medium text-sm truncate pr-2">{entry.title || entry.slug}</span>
+                                                <span className="text-[10px] opacity-50 shrink-0">{formatTimestamp(entry.timestamp)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 mt-1 text-[10px] opacity-60">
+                                                <Folder className="h-3 w-3" />
+                                                {entry.workspace?.name || "No Workspace"}
+                                            </div>
+                                        </button>
+                                    );
+                                })
+                            )}
+                        </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => onOpenPdf?.(selectedEntry)}
-                        className={classNames("flex items-center gap-2 rounded-lg px-3 py-2 text-xs", themeStyles?.button)}
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" /> Apri PDF
-                      </button>
-                      <button
-                        onClick={() => onOpenMd?.(selectedEntry)}
-                        className={classNames("flex items-center gap-2 rounded-lg px-3 py-2 text-xs", themeStyles?.button)}
-                      >
-                        <FileText className="h-3.5 w-3.5" /> Modifica PDF
-                      </button>
-                      <button
-                        onClick={() => onRepublish?.(selectedEntry)}
-                        className={classNames("flex items-center gap-2 rounded-lg px-3 py-2 text-xs", themeStyles?.button)}
-                      >
-                        <Sparkles className="h-3.5 w-3.5" /> Rigenera PDF
-                      </button>
-                      <button
-                        onClick={() => onShowLogs?.(selectedEntry)}
-                        className={classNames(
-                          "flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
-                          themeStyles?.input,
-                          themeStyles?.input_hover
+                )}
+
+                {/* INSPECTOR (DETTAGLI) */}
+                {expandedPanels.inspector && (
+                    <div className="rounded-xl border border-white/10 bg-[#18181b] flex flex-col h-[500px]">
+                        {selectedEntry ? (
+                            <>
+                                <div className="p-5 border-b border-white/10">
+                                    <h3 className="text-lg font-bold text-white leading-tight mb-1">{selectedEntry.title || "Senza Titolo"}</h3>
+                                    <div className="flex items-center gap-2 text-xs text-zinc-500 font-mono">
+                                        <span>ID: {selectedEntry.id}</span>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar">
+                                    {/* AI Summary */}
+                                    <div className="bg-indigo-500/5 border border-indigo-500/10 rounded-xl p-4">
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-400 mb-2 flex items-center gap-2">
+                                            <Sparkles className="h-3.5 w-3.5" /> Analisi AI
+                                        </h4>
+                                        <p className="text-sm text-zinc-300 leading-relaxed">
+                                            {selectedEntry.summary || "Nessun sommario disponibile."}
+                                        </p>
+                                    </div>
+
+                                    {/* Metadati */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="p-3 rounded-lg bg-black/20 border border-white/5">
+                                            <span className="block text-[10px] uppercase text-zinc-500 mb-1">Workspace</span>
+                                            <span className="text-sm text-zinc-200">{workspace?.name || "-"}</span>
+                                        </div>
+                                        <div className="p-3 rounded-lg bg-black/20 border border-white/5">
+                                            <span className="block text-[10px] uppercase text-zinc-500 mb-1">Progetto</span>
+                                            <span className="text-sm text-zinc-200">{workspace?.projectName || "-"}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Tags */}
+                                    {Array.isArray(selectedEntry?.tags) && selectedEntry.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-2">
+                                            {selectedEntry.tags.map((tag, i) => (
+                                                <span key={i} className="px-2 py-1 rounded-md bg-white/5 text-[10px] text-zinc-400 border border-white/5">
+                                                    #{tag}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Footer Actions */}
+                                <div className="p-4 border-t border-white/10 bg-white/[0.02] flex flex-wrap justify-end gap-2">
+                                    {selectedEntry?.pdfPath && (
+                                        <button onClick={handlePdfOpen} className={BUTTON_PRIMARY}>
+                                            <Download className="h-3.5 w-3.5" /> PDF
+                                        </button>
+                                    )}
+                                    {selectedEntry?.mdPath && (
+                                        <button onClick={handleMdOpen} className={BUTTON_SECONDARY}>
+                                            <FileText className="h-3.5 w-3.5" /> Editor
+                                        </button>
+                                    )}
+                                    {typeof onRepublish === "function" && (
+                                        <button onClick={handleRepublishEntry} className={BUTTON_SECONDARY}>
+                                            <RefreshCw className="h-3.5 w-3.5" /> Rigenera
+                                        </button>
+                                    )}
+                                    {typeof onAssignWorkspace === "function" && (
+                                        <button onClick={handleAssignWorkspaceClick} className={BUTTON_SECONDARY}>
+                                            <Plus className="h-3.5 w-3.5" /> Assegna
+                                        </button>
+                                    )}
+                                </div>
+                            </>
+                        ) : (
+                            <EmptyState title="Seleziona un documento" description="Clicca su un file nella lista." className="h-full border-none" />
                         )}
-                      >
-                        <Folder className="h-3.5 w-3.5" /> Log pipeline
-                      </button>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      {workspaceAssignment && (
-                        <button
-                          onClick={handleAssign}
-                          className={classNames(
-                            "flex items-center gap-2 rounded-lg px-3 py-2",
-                            themeStyles?.button,
-                            assigning && "opacity-70"
-                          )}
-                          disabled={assigning || !canAssign}
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                          {canAssign ? "Allinea al workspace" : "Workspace allineato"}
-                        </button>
-                      )}
-                      {canUnassign && (
-                        <button
-                          onClick={handleUnassign}
-                          className={classNames(
-                            "flex items-center gap-2 rounded-lg px-3 py-2",
-                            themeStyles?.input,
-                            themeStyles?.input_hover,
-                            assigning && "opacity-70"
-                          )}
-                          disabled={assigning}
-                        >
-                          <XCircle className="h-3.5 w-3.5" /> Rimuovi workspace
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-sm text-zinc-500">Seleziona un documento per visualizzare l'anteprima.</div>
                 )}
-              </div>
-            )}
+            </div>
           </div>
         </div>
       )}

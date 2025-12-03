@@ -1,7 +1,19 @@
+import { Toast } from "../../components/ui/Toast"; // <--- AGGIUNGI QUESTO
 import React, { useCallback, useId, useMemo, useRef, useEffect, useState } from "react";
-import { Sparkles, FileText, ClipboardList, XCircle, RefreshCw, CheckCircle2, ChevronDown } from "../../components/icons";
+import { 
+  Sparkles, 
+  FileText, 
+  ClipboardList, 
+  XCircle, 
+  RefreshCw, 
+  CheckCircle2, 
+  ChevronDown,
+  LayoutDashboard,
+  MessageSquare // Assicurati che questa icona esista in icons.jsx, altrimenti usa un fallback
+} from "../../components/icons";
 import { useAppContext } from "../../hooks/useAppContext";
 import { classNames } from "../../utils/classNames";
+import ChatInterface from "../../components/ChatInterface"; // Assicurati che il percorso sia corretto
 
 const sanitizeId = (prefix, key) => {
   const normalizedPrefix = String(prefix || "refine").replace(/[^a-zA-Z0-9_-]/g, "");
@@ -183,6 +195,31 @@ const RefinementPanel = () => {
   } = useAppContext();
 
   const panelRef = useRef(null);
+  const [activeTab, setActiveTab] = useState('analysis'); // 'analysis' | 'chat'
+  // ... dopo const [activeTab, setActiveTab] ...
+
+  // Stato per la notifica visiva
+  const [notification, setNotification] = useState(null);
+
+ // Funzione per gestire l'aggiunta dalle note
+ const handleAddNoteFromChat = useCallback((text) => {
+  if (typeof setPromptNotes === "function") {
+      // 1. Leggiamo il valore corrente direttamente dallo stato (non usare prev)
+      const currentNotes = promptState?.notes || "";
+      
+      // 2. Costruiamo la nuova stringa completa
+      const newNotes = (currentNotes ? currentNotes + "\n\n" : "") + "💡 Dalla Chat: " + text;
+      
+      // 3. Inviamo la stringa finale al setter
+      setPromptNotes(newNotes);
+      
+      // Mostra il feedback visivo
+      setNotification("Aggiunto alle Note Personali");
+      
+      // Nascondi dopo 3 secondi
+      setTimeout(() => setNotification(null), 3000);
+  }
+}, [setPromptNotes, promptState]); // Aggiunto promptState alle dipendenze
 
   // Full-screen experience: lock background scroll while the panel is open
   useEffect(() => {
@@ -293,6 +330,8 @@ const RefinementPanel = () => {
     [handlePromptNotesChange, setPromptNotes],
   );
 
+  
+
   const handleCueChange = useCallback(
     (cueKey, value) => {
       if (typeof setCueCardAnswers !== "function") {
@@ -379,15 +418,12 @@ const RefinementPanel = () => {
       return;
     }
     
-    // 1. Chiudi il pannello PRIMA di avviare il processo
     if (typeof closeRefinementPanel === "function") {
       closeRefinementPanel();
     }
 
-    // 2. Avvia la pipeline
     processViaBackend();
 
-    // 3. Scroll verso l'alto
     setTimeout(() => {
       const statusArea = document.getElementById("pipeline-status-area");
       if (statusArea) {
@@ -459,16 +495,30 @@ const RefinementPanel = () => {
               </p>
             </div>
           </div>
+          
+          {/* TAB SWITCHER */}
+          <div className="flex bg-black/20 p-1 rounded-xl border border-white/5">
+                <button
+                    onClick={() => setActiveTab('analysis')}
+                    className={classNames(
+                        "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
+                        activeTab === 'analysis' ? "bg-white/10 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
+                    )}
+                >
+                    <LayoutDashboard className="h-4 w-4" /> Analisi
+                </button>
+                <button
+                    onClick={() => setActiveTab('chat')}
+                    className={classNames(
+                        "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
+                        activeTab === 'chat' ? "bg-indigo-500/20 text-indigo-300 shadow-sm border border-indigo-500/20" : "text-zinc-500 hover:text-zinc-300"
+                    )}
+                >
+                    <MessageSquare className="h-4 w-4" /> Sparring Partner
+                </button>
+          </div>
+
           <div className="flex items-center gap-3 text-xs text-zinc-400">
-            {helperMessage ? (
-              <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-amber-100">
-                {helperMessage}
-              </span>
-            ) : (
-              <span className="hidden sm:inline-flex items-center rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-emerald-100">
-                Pronto per generare
-              </span>
-            )}
             <button
               type="button"
               onClick={handleClose}
@@ -481,215 +531,227 @@ const RefinementPanel = () => {
 
         {/* Scrollable content */}
         <div className="relative flex-1 overflow-hidden">
-          <div className="absolute inset-0 overflow-y-auto pb-28 custom-scrollbar">
-            <div className="grid min-h-[70vh] gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-              {/* Left: transcript */}
-              <div className="flex h-full flex-col rounded-2xl border border-white/10 bg-[#0b0b10] shadow-xl shadow-black/30 overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-white/[0.03]">
-                  <FileText className="h-4 w-4 text-zinc-400" />
-                  <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-400">
-                    Trascrizione Rilevata
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 px-4 py-2 border-b border-white/5 bg-white/[0.02]">
-                  {["all", "decisions", "risks", "actions"].map((key) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setSegmentFilter(key)}
-                      className={classNames(
-                        "rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] transition",
-                        segmentFilter === key
-                          ? "border-indigo-400/40 bg-indigo-500/20 text-indigo-50"
-                          : "border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10"
-                      )}
-                    >
-                      {key === "all"
-                        ? `Tutti (${segmentCounts.all})`
-                        : key === "decisions"
-                        ? `Decisioni (${segmentCounts.decisions})`
-                        : key === "risks"
-                        ? `Rischi (${segmentCounts.risks})`
-                        : `Azioni (${segmentCounts.actions})`}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex-1 p-4 lg:p-5 space-y-3 overflow-y-auto custom-scrollbar">
-                  {filteredSegments.length > 0 ? (
-                    filteredSegments.map((segment) => (
-                      <div
-                        key={segment.id}
-                        className="rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 text-xs leading-relaxed text-zinc-200 shadow-inner shadow-black/30"
-                      >
-                        <div className="flex items-center gap-2 text-[10px] text-zinc-500 mb-1 flex-wrap">
-                          {segment.speaker ? (
-                            <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 font-semibold text-indigo-100 uppercase tracking-[0.08em] border border-indigo-500/30">
-                              {segment.speaker}
-                            </span>
-                          ) : null}
-                          {segment.start !== null && (
-                            <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-white border border-white/10">
-                              {formatTimestamp(segment.start)}
-                            </span>
-                          )}
-                          {segmentFilter !== "all" && (
-                            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 font-semibold text-emerald-100 border border-emerald-500/20">
-                              Filtro: {segmentFilter}
-                            </span>
-                          )}
-                        </div>
-                        <p>{segment.text}</p>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-12 text-xs text-zinc-600 italic">
-                      Nessuna trascrizione disponibile.
+          {activeTab === 'analysis' ? (
+            <div className="absolute inset-0 overflow-y-auto pb-28 custom-scrollbar">
+                <div className="grid min-h-[70vh] gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+                {/* Left: transcript */}
+                <div className="flex h-full flex-col rounded-2xl border border-white/10 bg-[#0b0b10] shadow-xl shadow-black/30 overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-white/[0.03]">
+                    <FileText className="h-4 w-4 text-zinc-400" />
+                    <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-400">
+                        Trascrizione Rilevata
+                    </span>
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right: inputs */}
-              <div className="flex flex-col gap-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label
-                      htmlFor={focusFieldId}
-                      className="text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-500 ml-1"
-                    >
-                      Focus del Documento
-                    </label>
-                    <textarea
-                      id={focusFieldId}
-                      value={focusValue}
-                      onChange={handleFocusChange}
-                      placeholder="Es. Enfatizza i rischi finanziari..."
-                      className="w-full min-h-[110px] rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/50 outline-none transition resize-none"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label
-                      htmlFor={notesFieldId}
-                      className="text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-500 ml-1"
-                    >
-                      Note Personali
-                    </label>
-                    <textarea
-                      id={notesFieldId}
-                      value={notesValue}
-                      onChange={handleNotesChange}
-                      placeholder="Es. Usa un tono formale, cita il cliente X..."
-                      className="w-full min-h-[110px] rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/50 outline-none transition resize-none"
-                    />
-                  </div>
-                </div>
-
-                {cueCards.length > 0 && (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-inner shadow-black/20">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-400 mb-3">
-                      <span className="inline-flex items-center gap-2">
-                        <ClipboardList className="h-4 w-4" /> Domande Guida (Cue Cards)
-                      </span>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-200 border border-emerald-500/20">
-                          {answeredCount}/{cueCards.length} completate
-                        </span>
-                        {hasSuggestions && (
-                          <button
-                            type="button"
-                            onClick={applyAllSuggestions}
-                            className="rounded-full border border-indigo-400/30 bg-indigo-500/15 px-3 py-1 text-[10px] font-semibold text-indigo-50 hover:bg-indigo-500/25 transition"
-                          >
-                            Applica suggerimenti
-                          </button>
+                    <div className="flex items-center gap-2 px-4 py-2 border-b border-white/5 bg-white/[0.02]">
+                    {["all", "decisions", "risks", "actions"].map((key) => (
+                        <button
+                        key={key}
+                        type="button"
+                        onClick={() => setSegmentFilter(key)}
+                        className={classNames(
+                            "rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] transition",
+                            segmentFilter === key
+                            ? "border-indigo-400/40 bg-indigo-500/20 text-indigo-50"
+                            : "border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10"
                         )}
-                      </div>
+                        >
+                        {key === "all"
+                            ? `Tutti (${segmentCounts.all})`
+                            : key === "decisions"
+                            ? `Decisioni (${segmentCounts.decisions})`
+                            : key === "risks"
+                            ? `Rischi (${segmentCounts.risks})`
+                            : `Azioni (${segmentCounts.actions})`}
+                        </button>
+                    ))}
                     </div>
-                    <div className="space-y-3">
-                      {cueCards.map((cue) => {
-                        const fieldId = sanitizeId(sanitizedPrefix || "refine", cue.key || cue.title);
-                        const value = cueCardAnswers[cue.key] ?? refinedCueCardAnswers[cue.key] ?? (cue.value || "");
-                        const suggested = suggestedAnswers[cue.key];
-                        const isAnswered = typeof value === "string" && value.trim().length > 0;
-                        const collapsed =
-                          typeof collapsedCues[cue.key] === "boolean"
-                            ? collapsedCues[cue.key]
-                            : isAnswered;
-                        const preview = (isAnswered ? value : suggested || "").slice(0, 120);
-
-                        return (
-                          <div
-                            key={cue.key || cue.title}
-                            className="rounded-xl border border-white/10 bg-[#0f1115] p-3 shadow-inner shadow-black/30"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  {isAnswered ? (
-                                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                                  ) : (
-                                    <ClipboardList className="h-4 w-4 text-zinc-500" />
-                                  )}
-                                  <span
-                                    className="text-sm font-semibold text-white truncate"
-                                    title={cue.title}
-                                  >
-                                    {cue.title}
-                                  </span>
-                                </div>
-                                <p className="text-[11px] text-zinc-500 line-clamp-1 mt-0.5">
-                                  {cue.hint || "Suggerisci la risposta migliore"}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {suggested && !isAnswered ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCueSuggestion(cue.key, suggested)}
-                                    className="rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-3 py-1 text-[11px] font-semibold text-indigo-100 hover:bg-indigo-500/20 transition"
-                                  >
-                                    Usa suggerimento
-                                  </button>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  onClick={() => toggleCueCollapse(cue.key)}
-                                  className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 hover:bg-white/10 transition inline-flex items-center gap-1"
-                                >
-                                  <ChevronDown
-                                    className={classNames(
-                                      "h-3 w-3 transition-transform",
-                                      collapsed ? "-rotate-90" : "rotate-0"
-                                    )}
-                                  />
-                                  {collapsed ? "Espandi" : "Riduci"}
-                                </button>
-                              </div>
-                            </div>
-
-                            {collapsed ? (
-                              <p className="mt-2 text-sm text-zinc-300 line-clamp-2">
-                                {preview || "Nessuna risposta ancora."}
-                              </p>
-                            ) : (
-                              <textarea
-                                id={fieldId}
-                                value={value}
-                                onChange={(event) => handleCueChange(cue.key, event.target.value)}
-                                placeholder={cue.hint || "Inserisci risposta..."}
-                                className="mt-3 w-full min-h-[70px] rounded-lg border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/50 outline-none transition resize-none"
-                              />
+                    <div className="flex-1 p-4 lg:p-5 space-y-3 overflow-y-auto custom-scrollbar">
+                    {filteredSegments.length > 0 ? (
+                        filteredSegments.map((segment) => (
+                        <div
+                            key={segment.id}
+                            className="rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 text-xs leading-relaxed text-zinc-200 shadow-inner shadow-black/30"
+                        >
+                            <div className="flex items-center gap-2 text-[10px] text-zinc-500 mb-1 flex-wrap">
+                            {segment.speaker ? (
+                                <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 font-semibold text-indigo-100 uppercase tracking-[0.08em] border border-indigo-500/30">
+                                {segment.speaker}
+                                </span>
+                            ) : null}
+                            {segment.start !== null && (
+                                <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-white border border-white/10">
+                                {formatTimestamp(segment.start)}
+                                </span>
                             )}
-                          </div>
-                        );
-                      })}
+                            {segmentFilter !== "all" && (
+                                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 font-semibold text-emerald-100 border border-emerald-500/20">
+                                Filtro: {segmentFilter}
+                                </span>
+                            )}
+                            </div>
+                            <p>{segment.text}</p>
+                        </div>
+                        ))
+                    ) : (
+                        <div className="text-center py-12 text-xs text-zinc-600 italic">
+                        Nessuna trascrizione disponibile.
+                        </div>
+                    )}
                     </div>
-                  </div>
-                )}
-              </div>
+                </div>
+
+                {/* Right: inputs */}
+                <div className="flex flex-col gap-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                        <label
+                        htmlFor={focusFieldId}
+                        className="text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-500 ml-1"
+                        >
+                        Focus del Documento
+                        </label>
+                        <textarea
+                        id={focusFieldId}
+                        value={focusValue}
+                        onChange={handleFocusChange}
+                        placeholder="Es. Enfatizza i rischi finanziari..."
+                        className="w-full min-h-[110px] rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/50 outline-none transition resize-none"
+                        />
+                    </div>
+
+                    <div className="space-y-1.5">
+                        <label
+                        htmlFor={notesFieldId}
+                        className="text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-500 ml-1"
+                        >
+                        Note Personali
+                        </label>
+                        <textarea
+                        id={notesFieldId}
+                        value={notesValue}
+                        onChange={handleNotesChange}
+                        placeholder="Es. Usa un tono formale, cita il cliente X..."
+                        className="w-full min-h-[110px] rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/50 outline-none transition resize-none"
+                        />
+                    </div>
+                    </div>
+
+                    {cueCards.length > 0 && (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-inner shadow-black/20">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-400 mb-3">
+                        <span className="inline-flex items-center gap-2">
+                            <ClipboardList className="h-4 w-4" /> Domande Guida (Cue Cards)
+                        </span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-200 border border-emerald-500/20">
+                            {answeredCount}/{cueCards.length} completate
+                            </span>
+                            {hasSuggestions && (
+                            <button
+                                type="button"
+                                onClick={applyAllSuggestions}
+                                className="rounded-full border border-indigo-400/30 bg-indigo-500/15 px-3 py-1 text-[10px] font-semibold text-indigo-50 hover:bg-indigo-500/25 transition"
+                            >
+                                Applica suggerimenti
+                            </button>
+                            )}
+                        </div>
+                        </div>
+                        <div className="space-y-3">
+                        {cueCards.map((cue) => {
+                            const fieldId = sanitizeId(sanitizedPrefix || "refine", cue.key || cue.title);
+                            const value = cueCardAnswers[cue.key] ?? refinedCueCardAnswers[cue.key] ?? (cue.value || "");
+                            const suggested = suggestedAnswers[cue.key];
+                            const isAnswered = typeof value === "string" && value.trim().length > 0;
+                            const collapsed =
+                            typeof collapsedCues[cue.key] === "boolean"
+                                ? collapsedCues[cue.key]
+                                : isAnswered;
+                            const preview = (isAnswered ? value : suggested || "").slice(0, 120);
+
+                            return (
+                            <div
+                                key={cue.key || cue.title}
+                                className="rounded-xl border border-white/10 bg-[#0f1115] p-3 shadow-inner shadow-black/30"
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                    {isAnswered ? (
+                                        <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                                    ) : (
+                                        <ClipboardList className="h-4 w-4 text-zinc-500" />
+                                    )}
+                                    <span
+                                        className="text-sm font-semibold text-white truncate"
+                                        title={cue.title}
+                                    >
+                                        {cue.title}
+                                    </span>
+                                    </div>
+                                    <p className="text-[11px] text-zinc-500 line-clamp-1 mt-0.5">
+                                    {cue.hint || "Suggerisci la risposta migliore"}
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {suggested && !isAnswered ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCueSuggestion(cue.key, suggested)}
+                                        className="rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-3 py-1 text-[11px] font-semibold text-indigo-100 hover:bg-indigo-500/20 transition"
+                                    >
+                                        Usa suggerimento
+                                    </button>
+                                    ) : null}
+                                    <button
+                                    type="button"
+                                    onClick={() => toggleCueCollapse(cue.key)}
+                                    className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 hover:bg-white/10 transition inline-flex items-center gap-1"
+                                    >
+                                    <ChevronDown
+                                        className={classNames(
+                                        "h-3 w-3 transition-transform",
+                                        collapsed ? "-rotate-90" : "rotate-0"
+                                        )}
+                                    />
+                                    {collapsed ? "Espandi" : "Riduci"}
+                                    </button>
+                                </div>
+                                </div>
+
+                                {collapsed ? (
+                                <p className="mt-2 text-sm text-zinc-300 line-clamp-2">
+                                    {preview || "Nessuna risposta ancora."}
+                                </p>
+                                ) : (
+                                <textarea
+                                    id={fieldId}
+                                    value={value}
+                                    onChange={(event) => handleCueChange(cue.key, event.target.value)}
+                                    placeholder={cue.hint || "Inserisci risposta..."}
+                                    className="mt-3 w-full min-h-[70px] rounded-lg border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/50 outline-none transition resize-none"
+                                />
+                                )}
+                            </div>
+                            );
+                        })}
+                        </div>
+                    </div>
+                    )}
+                </div>
+                </div>
             </div>
-          </div>
+          ) : (
+            // CHAT INTERFACE
+            <div className="absolute inset-0 pb-28">
+                <div className="h-full max-w-5xl mx-auto">
+                    <ChatInterface 
+                        transcription={refinedData?.transcription || ""} 
+                        onAddToNotes={handleAddNoteFromChat}
+                    />
+                </div>
+            </div>
+          )}
         </div>
 
         {/* Persistent action bar */}
@@ -723,6 +785,15 @@ const RefinementPanel = () => {
                 )}
               </button>
             </div>
+            {/* --- NOTIFICA TOAST --- */}
+        {notification && (
+            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 pointer-events-none">
+                <div className="flex items-center gap-2 rounded-full border border-emerald-500/20 bg-[#0b0d14] px-4 py-2 text-xs font-bold text-emerald-400 shadow-2xl shadow-emerald-900/20 backdrop-blur-md">
+                    <CheckCircle2 className="h-4 w-4" />
+                    {notification}
+                </div>
+            </div>
+        )}
           </div>
         </div>
       </div>
