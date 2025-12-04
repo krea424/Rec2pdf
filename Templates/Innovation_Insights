@@ -1,0 +1,11 @@
+{
+  "name": "9_Innovation_Insights",
+  "description": "Stile Deloitte-inspired con verde lime e blu. Header gradient full-width, card con shadow effect, design dinamico e innovativo. Perfetto per innovation labs e transformation programs.",
+  "type": "html",
+  "engine": "weasyprint",
+  "resources": [
+    {
+      "path": "Templates/innovation_insights.css"
+    }
+  ]
+}
