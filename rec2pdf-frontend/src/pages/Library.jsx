@@ -3,37 +3,61 @@ import ArchiveLayout from "../features/archive/ArchiveLayout";
 import { useAppContext } from "../hooks/useAppContext";
 import { RefreshCw } from "../components/icons";
 
-// --- ADAPTER: Trasforma i dati grezzi in "Documenti Parlanti" ---
+// ... (importazioni invariate)
+
 const normalizeDocument = (rawFile, source = 'cloud') => {
   const meta = rawFile.metadata || {};
   
+  // Tentativo di estrarre la data dal nome file (es. 20251204T09264_meeting.pdf)
+  let dateFromTitle = null;
+  const dateMatch = rawFile.name.match(/(\d{8}T\d{5})/);
+  if (dateMatch) {
+      // Parsing rudimentale YYYYMMDDTHHMMM -> Date
+      // (Implementazione robusta omessa per brevità, ma utile)
+  }
+
+  // Costruzione Path Audio (Euristica: stesso nome ma estensione diversa)
+  // Nota: Questo è un tentativo "best effort". In futuro useremo il DB.
+  const audioPath = rawFile.name.replace(/\.pdf$/i, '.m4a'); // O .webm, .mp3...
+
   return {
     id: rawFile.id || rawFile.name,
     name: rawFile.name,
     
-    // Dati "Parlanti" (Business Logic) con fallback per i vecchi file
-    title: meta.customTitle || rawFile.name.replace(/^documento_/, '').replace(/_/g, ' '),
-    summary: meta.summary || "Documento generato prima dell'aggiornamento archivio.",
-    intent: meta.intent || "GENERIC",
+    // Dati "Parlanti"
+    title: meta.customTitle || rawFile.name
+        .replace(/^documento_/, '')
+        .replace(/^\d{8}T\d{5}_/, '') // Rimuove timestamp
+        .replace(/_/g, ' ')
+        .replace(/\.pdf$/i, ''),
+    
+    summary: meta.summary || "Documento archiviato.",
+    intent: meta.intent || (rawFile.name.includes('meeting') ? 'OPERATIONAL_UPDATE' : 'GENERIC_NOTE'),
     status: meta.status || "Completed",
-    workspace: meta.workspaceName || "Archivio Storico",
+    workspace: meta.workspaceName || "Archivio",
     project: meta.projectName || "",
     author: meta.author || "AI",
     
     // Dati Tecnici
     created_at: rawFile.created_at || rawFile.updated_at || new Date().toISOString(),
     size: rawFile.metadata?.size || 0,
-    path: rawFile.name, // Questo è il nome file relativo al prefisso richiesto
+    path: rawFile.name, 
     bucket: 'processed-media',
+    
+    // Asset Correlati (Nuovo!)
+    audioPath: audioPath, // Passiamo questo al layout
     source: source
   };
 };
+
+// ... (resto del componente LibraryPage invariato per ora)
 
 const LibraryPage = () => {
   const {
     normalizedBackendUrl,
     fetchBody,
     handleOpenLibraryFile,
+    handleOpenHistoryMd, // <--- AGGIUNGI QUESTO
     workspaces,
     session // <--- IMPORTANTE: Ci serve la sessione per l'ID utente
   } = useAppContext();
@@ -42,50 +66,33 @@ const LibraryPage = () => {
   const [loading, setLoading] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState(null);
 
-  // --- FETCH DATA ---
-  const loadDocuments = useCallback(async () => {
-    if (!normalizedBackendUrl || !session?.user?.id) return;
-    
-    setLoading(true);
-    try {
-      // 1. Costruiamo il percorso specifico dell'utente
-      // La struttura è: processed-media (bucket) / processed / USER_ID / files...
-      const userPrefix = `processed/${session.user.id}`;
-      
-      // 2. Chiamata API con il prefisso corretto
-      const result = await fetchBody(
-        `${normalizedBackendUrl}/api/storage?bucket=processed-media&prefix=${encodeURIComponent(userPrefix)}`, 
-        { method: 'GET' }
-      );
+ // --- FETCH DATA (Versione DB) ---
+ const loadDocuments = useCallback(async () => {
+  if (!normalizedBackendUrl || !session?.user?.id) return;
+  
+  setLoading(true);
+  try {
+    // CHIAMATA AL NUOVO ENDPOINT
+    const result = await fetchBody(`${normalizedBackendUrl}/api/library`, { method: 'GET' });
 
-      if (result.ok && Array.isArray(result.data?.files)) {
-        const normalized = result.data.files
-            .filter(f => f.name.endsWith('.pdf')) // Filtra solo i PDF
-            .map(f => {
-                // Il path restituito da Supabase dentro una cartella è solo il nome file.
-                // Ma per aprirlo ci serve il path completo relativo al bucket.
-                const fullObjectPath = `${userPrefix}/${f.name}`;
-                const doc = normalizeDocument(f, 'cloud');
-                doc.path = fullObjectPath; // Sovrascriviamo con il path completo per il download
-                return doc;
-            })
-            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-            
-        setDocuments(normalized);
-        
-        // Seleziona il primo se non c'è selezione
-        if (!selectedDoc && normalized.length > 0) {
-            setSelectedDoc(normalized[0]);
-        }
-      } else {
-          console.warn("Nessun file trovato o errore API:", result);
-      }
-    } catch (error) {
-      console.error("Errore caricamento library:", error);
-    } finally {
-      setLoading(false);
+   // --- FIX QUI SOTTO: Aggiunto .data ---
+   if (result.ok && result.data && Array.isArray(result.data.documents)) {
+    const docs = result.data.documents; // Estraiamo l'array corretto
+    setDocuments(docs);
+    
+    // Seleziona il primo se non c'è selezione
+    if (!selectedDoc && docs.length > 0) {
+        setSelectedDoc(docs[0]);
     }
-  }, [normalizedBackendUrl, fetchBody, selectedDoc, session]);
+  } else {
+      console.warn("Errore caricamento library (formato imprevisto):", result);
+  }
+  } catch (error) {
+    console.error("Errore API Library:", error);
+  } finally {
+    setLoading(false);
+  }
+}, [normalizedBackendUrl, fetchBody, selectedDoc, session]);
 
   // Carica all'avvio
   useEffect(() => {
@@ -98,13 +105,70 @@ const LibraryPage = () => {
   };
 
   const handleOpenAction = () => {
-    if (selectedDoc) {
-        handleOpenLibraryFile({
-            bucket: selectedDoc.bucket,
-            path: selectedDoc.path, 
-            label: selectedDoc.title
-        });
+    // Controllo robusto: verifichiamo se abbiamo i percorsi nuovi (dal DB)
+    const pdfPathRaw = selectedDoc?.paths?.pdf || selectedDoc?.path;
+
+    if (!pdfPathRaw) {
+        console.warn("Nessun percorso PDF trovato per questo documento.");
+        return;
     }
+
+    // TRUCCO BUCKET: Come per l'audio, forziamo il bucket nel path
+    // Il bucket dei PDF è 'processed-media'
+    let pathWithBucket = pdfPathRaw;
+    if (!pathWithBucket.startsWith('processed-media')) {
+        pathWithBucket = `processed-media/${pathWithBucket}`;
+    }
+
+    handleOpenLibraryFile({
+        // Non passiamo 'bucket' esplicitamente, lo lasciamo nel path
+        path: pathWithBucket, 
+        label: selectedDoc.title || 'Documento PDF'
+    });
+  };
+ // Gestore per l'apertura dell'audio
+ const handleOpenAudio = (audioPath) => {
+  if (!audioPath) return;
+  
+  // TRUCCO: Prependiamo il bucket al path con uno slash.
+  // Il backend (parseStoragePath) vedrà "audio-uploads/uploads/..."
+  // e capirà che il primo segmento è il bucket.
+  // Nota: Se audioPath inizia già con "audio-uploads/", non lo aggiungiamo.
+  
+  let pathWithBucket = audioPath;
+  if (!audioPath.startsWith('audio-uploads')) {
+      pathWithBucket = `audio-uploads/${audioPath}`;
+  }
+  
+  handleOpenLibraryFile({
+    // Non passiamo 'bucket' esplicitamente qui perché App.jsx sembra ignorarlo
+    // Lo passiamo "nascosto" nel path
+    path: pathWithBucket,         
+    label: 'Registrazione Originale'
+  });
+};
+  // Gestore per la modifica del documento
+  const handleEdit = (doc) => {
+    if (!doc) return;
+    
+    // Ricostruiamo l'oggetto "entry" compatibile con l'Editor e la vecchia cronologia
+    const editorEntry = {
+        id: doc.id,
+        title: doc.title,
+        // Mappiamo i percorsi corretti
+        pdfPath: doc.paths?.pdf || doc.path, // Fallback per compatibilità
+        mdPath: doc.paths?.md,
+        // Backend URL è necessario per le chiamate API dell'editor
+        backendUrl: normalizedBackendUrl,
+        // Metadati extra utili
+        workspace: { name: doc.workspace },
+        prompt: { title: doc.intent }, // Usiamo l'intento come titolo prompt se manca
+        // Se abbiamo l'audio, lo passiamo (utile per future feature di riascolto in editor)
+        audioPath: doc.paths?.audio
+    };
+
+    // Chiamiamo la funzione globale dell'App che apre l'editor
+    handleOpenHistoryMd(editorEntry);
   };
 
   return (
@@ -128,6 +192,8 @@ const LibraryPage = () => {
             selectedDoc={selectedDoc}
             onSelect={handleSelect}
             onOpen={handleOpenAction}
+            onOpenAudio={handleOpenAudio} // <--- AGGIUNGI QUESTA RIGA
+            onEdit={handleEdit} // <--- AGGIUNGI QUESTO
             loading={loading}
           />
       </div>

@@ -125,15 +125,6 @@ const LOGO_CONTENT_TYPE_MAP = new Map([
 
 const CONTEXT_QUERY_MAX_CHARS = 4000;
 
-
-
-
-
-
-
-
-
-
 const resolveProjectScopeIdentifiers = (value) => {
   const sanitized = sanitizeProjectIdentifier(value);
   if (!sanitized) {
@@ -4421,18 +4412,34 @@ const parseStoragePath = (rawPath) => {
     error.statusCode = 400;
     throw error;
   }
+
   const segments = normalized.split('/').filter(Boolean);
+  
+  // CASO 1: Il path inizia con un bucket noto (es. "processed-media/user/file.md")
+  const knownBuckets = new Set(['processed-media', 'audio-uploads', 'text-uploads', 'logos']);
+  if (knownBuckets.has(segments[0])) {
+      const bucket = segments[0];
+      const objectPath = segments.slice(1).join('/');
+      return { bucket, objectPath };
+  }
+
+  // CASO 2: Il path NON ha il bucket (es. "processed/user/file.md") -> Assumiamo processed-media
+  // Questo è il fix per il tuo errore attuale!
+  if (segments[0] === 'processed' || segments[0] === 'uploads') {
+      // Se inizia con 'processed', è quasi sicuramente nel bucket 'processed-media'
+      // Se inizia con 'uploads', è nel bucket 'audio-uploads' (o text-uploads, ma proviamo audio)
+      const bucket = segments[0] === 'processed' ? 'processed-media' : 'audio-uploads';
+      const objectPath = normalized;
+      return { bucket, objectPath };
+  }
+
+  // Fallback: Se non capiamo, assumiamo che il primo segmento sia il bucket
   if (segments.length < 2) {
-    const error = new Error('Percorso storage non valido');
+    const error = new Error('Percorso storage non valido (manca bucket o file)');
     error.statusCode = 400;
     throw error;
   }
   const [bucket, ...objectParts] = segments;
-  if (!bucket || objectParts.length === 0) {
-    const error = new Error('Percorso storage non valido');
-    error.statusCode = 400;
-    throw error;
-  }
   return { bucket, objectPath: objectParts.join('/') };
 };
 
@@ -6572,6 +6579,10 @@ const runPipeline = async (job = {}) => {
   let promptNotes = '';
   let promptCuesCompleted = [];
   let refinedDataPayload = null;
+  // --- AGGIUNGI QUESTA RIGA QUI ---
+  let frontMatter = null; 
+  // --------------------------------
+  let autoDetectedPrompt = null; // <--- AGGIUNGI QUESTA RIGA
   const tempFiles = new Set();
   const tempDirs = new Set();
   let speakerLabels = [];
@@ -7262,7 +7273,7 @@ const yamlFrontMatter = yaml.dump(frontMatter, {
       // === INTENT RECOGNITION (LOGICA RIGOROSA) ===
       // ==================================================================
       
-      let autoDetectedPrompt = null;
+      
       let activePromptId = String(payload.promptId || '').trim();
       
       // NUOVA LOGICA: L'AI parte SOLO se l'utente ha scelto esplicitamente "Auto-Detect"
@@ -7379,7 +7390,8 @@ const yamlFrontMatter = yaml.dump(frontMatter, {
     // ==================================================================================
     
     // 1. Creazione oggetto base
-    const frontMatter = {
+    // 1. Creazione oggetto base
+    frontMatter = {        // <--- ORA È UN'ASSEGNAZIONE ALLA VARIABILE GLOBALE
       title: aiTitle || String(payload.title || baseName).trim(),
       author: aiAuthor || userEmail || 'rec2pdf',
       owner: workspaceProject?.name || workspaceMeta?.client || '',
@@ -7733,6 +7745,16 @@ console.log('⚠️  [DEBUG MAC M1] Fine Ispezione');
       output_pdf_path: pdfStoragePath,
       output_md_path: mdStoragePath,
       worker_log: logs.join('\n'),
+      // NUOVO: Salviamo l'intelligenza nel DB!
+      metadata: {
+        title: frontMatter.title,
+        summary: frontMatter.summary,
+        tags: frontMatter.tags,
+        intent: autoDetectedPrompt ? autoDetectedPrompt.intent_category : (selectedPrompt?.intent_category || 'GENERIC'),
+        author: frontMatter.author,
+        project: frontMatter.project_name,
+        workspace: workspaceMeta?.name
+    }
     });
 
     return result;
@@ -9940,19 +9962,24 @@ app.post('/api/rag/debug', async (req, res) => {
 app.post('/api/chat/session', async (req, res) => {
   if (!chatService) return res.status(503).json({ ok: false, message: 'Servizio Chat non disponibile (Supabase mancante)' });
   
-  const { messages, transcription, persona } = req.body;
-  const aiOverrides = extractAiProviderOverrides(req); // Assicurati che questa funzione sia accessibile o copiala da sopra
+  // 1. Estraiamo anche 'isTrigger' dal body
+  const { messages, transcription, persona, isTrigger } = req.body; 
+  const aiOverrides = extractAiProviderOverrides(req);
 
-  if (!messages) {
+  // Validazione allentata: se è un trigger, i messaggi possono essere vuoti
+  if (!isTrigger && (!messages || messages.length === 0)) {
     return res.status(400).json({ ok: false, message: 'Messaggi mancanti' });
   }
 
   try {
     const response = await chatService.chat(
-      messages, 
-      { transcription }, // Passiamo la trascrizione come contesto
+      messages || [], 
+      { transcription }, 
       persona, 
-      { aiTextProvider: aiOverrides.text }
+      { 
+        aiTextProvider: aiOverrides.text,
+        isTrigger: isTrigger // <--- IL FIX È QUI: Passiamo il flag al servizio
+      }
     );
     res.json({ ok: true, message: response });
   } catch (error) {
@@ -9965,6 +9992,73 @@ app.post('/api/chat/session', async (req, res) => {
 app.get('/api/chat/personas', (req, res) => {
     if (!chatService) return res.json({ personas: [] });
     res.json({ personas: chatService.getPersonas() });
+});
+
+app.get('/api/library', authenticateRequest, async (req, res) => {
+  if (!supabase) return res.status(503).json({ ok: false, message: 'Supabase KO' });
+
+  try {
+    const userId = req.user.id;
+
+    // 1. Query: Includiamo la colonna 'metadata'
+    const { data: jobs, error } = await supabase
+      .from('jobs')
+      .select('id, created_at, status, input_file_path, output_pdf_path, output_md_path, request_payload, metadata') // <--- AGGIUNTO metadata
+      .eq('user_id', userId)
+      .eq('status', 'completed')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // 2. Mapping Intelligente
+    const documents = jobs.map(job => {
+      const payload = job.request_payload || {};
+      const meta = job.metadata || {}; // I dati ricchi generati dall'AI (se presenti)
+
+      // Fallback a cascata: Metadata DB > Payload Richiesta > Default
+      const title = meta.title || payload.title || `Documento del ${new Date(job.created_at).toLocaleDateString()}`;
+      const summary = meta.summary || payload.summary || "Nessun sommario disponibile.";
+      
+      // Recupero Intento (Priorità al metadato salvato)
+      let intent = meta.intent;
+      if (!intent) {
+          // Fallback per vecchi job: deduzione dallo slug
+          const pid = (payload.promptId || '').toLowerCase();
+          if (pid.includes('executive') || pid.includes('business')) intent = 'STRATEGIC_DECISION';
+          else if (pid.includes('meeting') || payload.diarize) intent = 'OPERATIONAL_UPDATE';
+          else if (pid.includes('creative')) intent = 'CREATIVE_CONCEPT';
+          else intent = 'GENERIC_NOTE';
+      }
+
+      return {
+        id: job.id,
+        title: title,
+        summary: summary,
+        intent: intent,
+        status: 'Completed',
+        // Workspace/Progetto: Priorità ai metadati AI, poi al payload
+        workspace: meta.workspace || payload.workspaceProfileLabel || "Archivio Personale",
+        project: meta.project || payload.workspaceProjectName || "",
+        author: meta.author || payload.userEmail || "AI Assistant",
+        tags: meta.tags || [], // Nuovi tag!
+        created_at: job.created_at,
+        
+        paths: {
+            audio: job.input_file_path,
+            pdf: job.output_pdf_path,
+            md: job.output_md_path
+        },
+        
+        hasAudio: !!job.input_file_path
+      };
+    });
+
+    res.json({ ok: true, documents });
+
+  } catch (error) {
+    console.error('Errore API Library:', error);
+    res.status(500).json({ ok: false, message: error.message });
+  }
 });
 // ==========================================================
 // == MIDDLEWARE PER GESTIRE ENDPOINT API NON TROVATI (404) ==

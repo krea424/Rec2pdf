@@ -1,0 +1,351 @@
+/* --- Academic Paper Template (Journal-style) --- */
+
+@page {
+    size: A4;
+    margin: 25mm 20mm 25mm 20mm;
+    @bottom-center {
+        content: counter(page);
+        font-family: "Times New Roman", serif;
+        font-size: 10pt;
+    }
+    @bottom-left {
+        content: "Proceedings of Strategic Intelligence Conference 2025";
+        font-family: "Times New Roman", serif;
+        font-size: 8pt;
+        color: #666;
+        font-style: italic;
+    }
+    @bottom-right {
+        content: "Vol. 1, No. 1, 2025";
+        font-family: "Times New Roman", serif;
+        font-size: 8pt;
+        color: #666;
+        font-style: italic;
+    }
+}
+
+body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: #000000;
+    margin: 0;
+    background: white;
+    text-align: justify;
+}
+
+/* --- HEADER (Journal Style) --- */
+.header-strip {
+    text-align: center;
+    border-bottom: 1px solid #000;
+    padding-bottom: 15px;
+    margin-bottom: 25px;
+}
+
+.brand {
+    font-size: 10pt;
+    font-weight: normal;
+    font-style: italic;
+    color: #333;
+    letter-spacing: 0.5px;
+}
+
+.meta-date {
+    font-size: 9pt;
+    color: #666;
+    font-style: italic;
+    margin-top: 5px;
+}
+
+/* --- TITLE (Centered, Large) --- */
+h1 {
+    font-size: 20pt;
+    font-weight: bold;
+    color: #000000;
+    margin: 30px 0 20px 0;
+    letter-spacing: 0;
+    line-height: 1.3;
+    text-align: center;
+}
+
+/* --- AUTHORS --- */
+.authors {
+    text-align: center;
+    font-size: 11pt;
+    margin-bottom: 5px;
+    font-weight: normal;
+}
+
+.affiliations {
+    text-align: center;
+    font-size: 10pt;
+    color: #333;
+    font-style: italic;
+    margin-bottom: 20px;
+}
+
+/* --- ABSTRACT BOX --- */
+.abstract {
+    background-color: #f9f9f9;
+    border: 1px solid #ccc;
+    padding: 15px 20px;
+    margin: 25px 0;
+    font-size: 10pt;
+    line-height: 1.6;
+    page-break-inside: avoid;
+}
+
+.abstract strong {
+    display: block;
+    font-size: 11pt;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-align: left;
+}
+
+/* --- KEYWORDS --- */
+.keywords {
+    font-size: 10pt;
+    margin: 15px 0 25px 0;
+    font-style: italic;
+}
+
+.keywords strong {
+    font-weight: bold;
+    font-style: normal;
+}
+
+/* --- SECTIONS (Numbered) --- */
+h2 {
+    font-size: 13pt;
+    font-weight: bold;
+    color: #000000;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    text-align: left;
+    counter-increment: section;
+}
+
+h2::before {
+    content: counter(section) ". ";
+}
+
+/* Reset counter at start */
+.content {
+    counter-reset: section;
+}
+
+h3 {
+    font-size: 11.5pt;
+    font-weight: bold;
+    color: #000000;
+    margin-top: 15px;
+    margin-bottom: 8px;
+    font-style: italic;
+    counter-increment: subsection;
+}
+
+h3::before {
+    content: counter(section) "." counter(subsection) " ";
+}
+
+h2 {
+    counter-reset: subsection;
+}
+
+/* --- PARAGRAPHS --- */
+p {
+    margin-bottom: 10px;
+    text-indent: 0;
+    text-align: justify;
+}
+
+/* First paragraph of section not indented */
+h2 + p,
+h3 + p {
+    text-indent: 0;
+}
+
+/* --- LISTS --- */
+ul, ol {
+    margin: 10px 0;
+    padding-left: 30px;
+}
+
+li {
+    margin-bottom: 5px;
+}
+
+/* --- FIGURES AND TABLES --- */
+.figure {
+    text-align: center;
+    margin: 20px 0;
+    page-break-inside: avoid;
+}
+
+.figure img {
+    max-width: 100%;
+    border: 1px solid #ccc;
+}
+
+.figure-caption {
+    font-size: 10pt;
+    margin-top: 8px;
+    font-weight: bold;
+}
+
+.figure-caption::before {
+    content: "Figure " counter(figure) ": ";
+    counter-increment: figure;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 10pt;
+    border-top: 2px solid #000;
+    border-bottom: 2px solid #000;
+}
+
+caption {
+    caption-side: top;
+    text-align: left;
+    font-size: 10pt;
+    font-weight: bold;
+    margin-bottom: 8px;
+    padding: 5px 0;
+}
+
+caption::before {
+    content: "Table " counter(table) ": ";
+    counter-increment: table;
+}
+
+th {
+    border-bottom: 1px solid #000;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: bold;
+    font-size: 10pt;
+}
+
+td {
+    padding: 8px 10px;
+    vertical-align: top;
+    border-bottom: none;
+}
+
+tbody tr:last-child {
+    border-bottom: none;
+}
+
+/* --- EQUATIONS --- */
+.equation {
+    text-align: center;
+    margin: 15px 0;
+    font-style: italic;
+    position: relative;
+}
+
+.equation-number {
+    position: absolute;
+    right: 0;
+    font-style: normal;
+}
+
+/* --- CITATIONS --- */
+.citation {
+    color: #0066cc;
+    font-weight: normal;
+}
+
+/* --- REFERENCES SECTION --- */
+.references {
+    margin-top: 30px;
+    font-size: 10pt;
+}
+
+.references h2 {
+    font-size: 13pt;
+    margin-bottom: 15px;
+}
+
+.reference-item {
+    margin-bottom: 8px;
+    padding-left: 20px;
+    text-indent: -20px;
+    line-height: 1.4;
+}
+
+/* --- HIGHLIGHTS/KEY POINTS --- */
+.highlights-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 15px;
+    margin: 20px 0;
+    page-break-inside: avoid;
+}
+
+.highlight-card {
+    background: #f9f9f9;
+    border-left: 4px solid #333;
+    padding: 12px 15px;
+    font-size: 10pt;
+}
+
+.highlight-card strong {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+/* --- FOOTNOTES --- */
+.footnote {
+    font-size: 9pt;
+    border-top: 1px solid #ccc;
+    padding-top: 10px;
+    margin-top: 30px;
+}
+
+/* --- TRANSCRIPT (Appendix style) --- */
+.transcript-section {
+    margin-top: 40px;
+    page-break-before: always;
+}
+
+.transcript-block {
+    margin-top: 10px;
+    padding: 8px 0;
+    border-bottom: 1px dotted #ccc;
+    page-break-inside: avoid;
+    font-size: 10pt;
+}
+
+.speaker-name {
+    font-size: 10pt;
+    font-weight: bold;
+    color: #000;
+    font-style: italic;
+}
+
+/* --- APPENDIX --- */
+.appendix {
+    margin-top: 40px;
+    page-break-before: always;
+}
+
+.appendix h2::before {
+    content: "Appendix " counter(appendix, upper-alpha) ": ";
+    counter-increment: appendix;
+}
+
+/* Hide first h1 from markdown */
+.content h1:first-child {
+    display: none;
+}
+
+/* Initialize counters */
+body {
+    counter-reset: section figure table appendix;
+}
