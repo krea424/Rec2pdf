@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { classNames } from "../../utils/classNames";
 import { 
   Search, 
@@ -13,29 +13,31 @@ import {
   LayoutDashboard,
   Users,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  ChevronLeft, // Icona per il tasto "Indietro"
+  XCircle // Icona per chiudere i filtri
 } from "../../components/icons";
 
-// --- SOTTOCOMPONENTI UI (Card e Inspector rimangono invariati nella struttura) ---
+// --- SOTTOCOMPONENTI UI ---
 
 const FilterButton = ({ label, count, active, onClick, icon: Icon, indent = false }) => (
   <button
     onClick={onClick}
     className={classNames(
-      "flex w-full items-center justify-between rounded-lg py-2 text-xs font-medium transition-all",
+      "flex w-full items-center justify-between rounded-lg py-3 md:py-2 text-sm md:text-xs font-medium transition-all", // Più grande su mobile
       indent ? "pl-8 pr-3" : "px-3",
       active
         ? "bg-indigo-500/10 text-indigo-300 ring-1 ring-indigo-500/20"
         : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
     )}
   >
-    <div className="flex items-center gap-2 truncate">
-      {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}
+    <div className="flex items-center gap-3 md:gap-2 truncate">
+      {Icon && <Icon className="h-4 w-4 md:h-3.5 md:w-3.5 shrink-0" />}
       <span className="truncate">{label}</span>
     </div>
     {count !== undefined && (
       <span className={classNames(
-        "ml-2 rounded-full px-1.5 py-0.5 text-[9px]",
+        "ml-2 rounded-full px-2 py-0.5 text-[10px]",
         active ? "bg-indigo-500/20 text-indigo-200" : "bg-white/5 text-zinc-600"
       )}>
         {count}
@@ -57,7 +59,7 @@ const DocumentCard = ({ doc, isSelected, onClick }) => {
     <div
       onClick={onClick}
       className={classNames(
-        "group relative mb-2 cursor-pointer rounded-xl border p-4 transition-all duration-200",
+        "group relative mb-3 cursor-pointer rounded-xl border p-4 transition-all duration-200 active:scale-[0.98]",
         isSelected
           ? "border-indigo-500/50 bg-[#16161a] shadow-lg shadow-indigo-900/10"
           : "border-white/5 bg-[#121214] hover:border-white/10 hover:bg-[#18181b]"
@@ -81,7 +83,6 @@ const DocumentCard = ({ doc, isSelected, onClick }) => {
         {doc.summary || "Nessun sommario disponibile per questo documento."}
       </p>
 
-      {/* Footer Card - RISTRUTTURATO */}
       <div className="flex flex-col gap-2 border-t border-white/5 pt-3">
         <div className="flex items-center justify-between text-[10px] text-zinc-600">
           <div className="flex items-center gap-2">
@@ -90,150 +91,143 @@ const DocumentCard = ({ doc, isSelected, onClick }) => {
               {new Date(doc.created_at).toLocaleDateString()}
             </span>
             <span>•</span>
-            <span className="flex items-center gap-1 truncate max-w-[100px]">
+            <span className="flex items-center gap-1 truncate max-w-[80px] sm:max-w-[100px]">
               <Folder className="h-3 w-3" />
               {doc.workspace || "No Workspace"}
             </span>
           </div>
           {doc.status && (
-             <span className="flex items-center gap-1 text-zinc-500">
+             <span className="hidden sm:flex items-center gap-1 text-zinc-500">
                <CheckCircle2 className="h-3 w-3" /> {doc.status}
              </span>
           )}
         </div>
-
-        {doc.tags && doc.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-                {doc.tags.slice(0, 3).map((tag, i) => (
-                    <span key={i} className="px-1.5 py-0.5 rounded bg-white/5 text-[9px] text-zinc-500 border border-white/5">
-                        #{tag}
-                    </span>
-                ))}
-                {doc.tags.length > 3 && (
-                    <span className="text-[9px] text-zinc-600">+{doc.tags.length - 3}</span>
-                )}
-            </div>
-        )}
       </div>
     </div>
   );
 };
 
-const DocumentInspector = ({ doc, onOpen, onOpenAudio, onEdit }) => {
+const DocumentInspector = ({ doc, onOpen, onOpenAudio, onEdit, onBack }) => {
   if (!doc) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-10 text-center text-zinc-500">
         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/5">
           <LayoutDashboard className="h-8 w-8 opacity-20" />
         </div>
-        <p className="text-sm font-medium">Seleziona un documento per visualizzare i dettagli</p>
+        <p className="text-sm font-medium">Seleziona un documento</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-[#121214]">
-      <div className="border-b border-white/10 p-6">
-        <div className="mb-4 flex items-center gap-2">
-          <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
-            {doc.intent || "DOCUMENTO"}
-          </span>
-          <span className="text-xs text-zinc-500">
-            ID: {doc.id.toString().slice(0, 8)}...
-          </span>
-        </div>
-        <h2 className="mb-2 text-xl font-bold leading-tight text-white">
-          {doc.title || doc.name}
-        </h2>
-        <div className="flex items-center gap-4 text-xs text-zinc-400">
-          <span className="flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5" />
-            {new Date(doc.created_at).toLocaleString()}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Users className="h-3.5 w-3.5" />
-            {doc.author || "AI Assistant"}
-          </span>
-        </div>
+    <div className="flex h-full flex-col bg-[#121214] animate-in slide-in-from-right-10 duration-300">
+      
+      {/* Mobile Back Header */}
+      <div className="md:hidden flex items-center gap-2 border-b border-white/10 p-4 bg-[#121214] sticky top-0 z-20">
+        <button onClick={onBack} className="p-2 -ml-2 text-zinc-400 hover:text-white">
+            <ChevronLeft className="h-5 w-5" />
+        </button>
+        <span className="text-sm font-bold text-white">Dettagli Documento</span>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 border-b border-white/10 p-4">
-        <button
-          onClick={onOpen}
-          className="flex items-center justify-center gap-2 rounded-lg bg-white px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-black transition hover:bg-zinc-200"
-          title="Scarica/Apri PDF"
-        >
-          <Download className="h-4 w-4" /> PDF
-        </button>
-        
-        <button 
-            className={classNames(
-                "flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-white/10",
-                !doc.paths?.audio && "opacity-50 cursor-not-allowed"
-            )}
-            onClick={() => doc.paths?.audio && onOpenAudio(doc.paths.audio)}
-            disabled={!doc.paths?.audio}
-            title="Ascolta Audio Originale"
-        >
-          <div className={classNames("h-2 w-2 rounded-full", doc.paths?.audio ? "bg-rose-500 animate-pulse" : "bg-zinc-600")} /> 
-          Audio
-        </button>
-
-        <button 
-            className="flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-white/10"
-            onClick={() => onEdit(doc)}
-            title="Modifica Markdown"
-        >
-          <Edit3 className="h-4 w-4" /> Edit
-        </button>
-      </div>
-
-      <div className="flex-1 p-6">
-        <div className="space-y-6">
-          <div>
-            <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-500">
-              <Sparkles className="h-3.5 w-3.5 text-purple-400" /> Sintesi AI
-            </h3>
-            <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 text-sm leading-relaxed text-zinc-300">
-              {doc.summary || "Nessun sommario generato per questo documento."}
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="border-b border-white/10 p-6">
+            <div className="mb-4 flex items-center gap-2">
+            <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
+                {doc.intent || "DOCUMENTO"}
+            </span>
+            <span className="text-xs text-zinc-500">
+                ID: {doc.id.toString().slice(0, 8)}...
+            </span>
             </div>
-          </div>
-
-          <div>
-            <h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-zinc-500">
-              Metadati
-            </h3>
-            <div className="grid grid-cols-2 gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
-              <div>
-                <span className="block text-[10px] uppercase text-zinc-600">Workspace</span>
-                <span className="text-sm font-medium text-zinc-200">{doc.workspace}</span>
-              </div>
-              <div>
-                <span className="block text-[10px] uppercase text-zinc-600">Progetto</span>
-                <span className="text-sm font-medium text-zinc-200">{doc.project || "—"}</span>
-              </div>
-              <div>
-                <span className="block text-[10px] uppercase text-zinc-600">Stato</span>
-                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-200">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                  {doc.status}
-                </span>
-              </div>
-              <div>
-                <span className="block text-[10px] uppercase text-zinc-600">Dimensione</span>
-                <span className="text-sm font-medium text-zinc-200">
-                  {doc.size ? (doc.size / 1024).toFixed(1) + " KB" : "—"}
-                </span>
-              </div>
+            <h2 className="mb-2 text-xl font-bold leading-tight text-white">
+            {doc.title || doc.name}
+            </h2>
+            <div className="flex items-center gap-4 text-xs text-zinc-400">
+            <span className="flex items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5" />
+                {new Date(doc.created_at).toLocaleString()}
+            </span>
+            <span className="flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                {doc.author || "AI Assistant"}
+            </span>
             </div>
-          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 border-b border-white/10 p-4">
+            <button
+            onClick={onOpen}
+            className="flex flex-col md:flex-row items-center justify-center gap-2 rounded-lg bg-white px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-black transition hover:bg-zinc-200 active:scale-95"
+            >
+            <Download className="h-4 w-4" /> PDF
+            </button>
+            
+            <button 
+                className={classNames(
+                    "flex flex-col md:flex-row items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-white/10 active:scale-95",
+                    !doc.paths?.audio && "opacity-50 cursor-not-allowed"
+                )}
+                onClick={() => doc.paths?.audio && onOpenAudio(doc.paths.audio)}
+                disabled={!doc.paths?.audio}
+            >
+            <div className={classNames("h-2 w-2 rounded-full", doc.paths?.audio ? "bg-rose-500 animate-pulse" : "bg-zinc-600")} /> 
+            Audio
+            </button>
+
+            <button 
+                className="flex flex-col md:flex-row items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-white/10 active:scale-95"
+                onClick={() => onEdit(doc)}
+            >
+            <Edit3 className="h-4 w-4" /> Edit
+            </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+            <div>
+                <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-500">
+                <Sparkles className="h-3.5 w-3.5 text-purple-400" /> Sintesi AI
+                </h3>
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 text-sm leading-relaxed text-zinc-300">
+                {doc.summary || "Nessun sommario generato per questo documento."}
+                </div>
+            </div>
+
+            <div>
+                <h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-zinc-500">
+                Metadati
+                </h3>
+                <div className="grid grid-cols-2 gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
+                <div>
+                    <span className="block text-[10px] uppercase text-zinc-600">Workspace</span>
+                    <span className="text-sm font-medium text-zinc-200">{doc.workspace}</span>
+                </div>
+                <div>
+                    <span className="block text-[10px] uppercase text-zinc-600">Progetto</span>
+                    <span className="text-sm font-medium text-zinc-200">{doc.project || "—"}</span>
+                </div>
+                <div>
+                    <span className="block text-[10px] uppercase text-zinc-600">Stato</span>
+                    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                    {doc.status}
+                    </span>
+                </div>
+                <div>
+                    <span className="block text-[10px] uppercase text-zinc-600">Dimensione</span>
+                    <span className="text-sm font-medium text-zinc-200">
+                    {doc.size ? (doc.size / 1024).toFixed(1) + " KB" : "—"}
+                    </span>
+                </div>
+                </div>
+            </div>
         </div>
       </div>
     </div>
   );
 };
 
-// --- COMPONENTE PRINCIPALE (LOGICA AVANZATA) ---
+// --- COMPONENTE PRINCIPALE ---
 
 export default function ArchiveLayout({
   documents = [],
@@ -244,16 +238,25 @@ export default function ArchiveLayout({
   onOpenAudio,
   onEdit
 }) {
-  // Stato Filtri
+  // Stati filtri
   const [activeIntent, setActiveIntent] = useState("ALL");
   const [activeWorkspace, setActiveWorkspace] = useState("ALL");
   const [activeProject, setActiveProject] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   
-  // Stato UI
+  // Stati UI
   const [expandedWorkspaces, setExpandedWorkspaces] = useState({});
+  // Stato Mobile View: 'list' (default) | 'filters' | 'details'
+  const [mobileView, setMobileView] = useState('list');
 
-  // 1. AGGREGAZIONE DATI (Costruiamo l'albero dai documenti reali)
+  // Aggiorna la vista mobile quando si seleziona un documento
+  useEffect(() => {
+    if (selectedDoc) {
+      setMobileView('details');
+    }
+  }, [selectedDoc]);
+
+  // 1. AGGREGAZIONE DATI
   const hierarchy = useMemo(() => {
     const tree = {};
     documents.forEach(doc => {
@@ -273,7 +276,6 @@ export default function ArchiveLayout({
   const filteredDocs = useMemo(() => {
     let result = documents;
 
-    // Filtro Intento
     if (activeIntent !== "ALL") {
       result = result.filter(doc => {
         const intent = (doc.intent || "").toUpperCase();
@@ -283,17 +285,14 @@ export default function ArchiveLayout({
       });
     }
 
-    // Filtro Workspace
     if (activeWorkspace !== "ALL") {
       result = result.filter(doc => (doc.workspace || "Non Assegnato") === activeWorkspace);
     }
 
-    // Filtro Progetto
     if (activeProject) {
       result = result.filter(doc => (doc.project || "Generale") === activeProject);
     }
 
-    // Filtro Ricerca
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       result = result.filter(doc => 
@@ -305,7 +304,6 @@ export default function ArchiveLayout({
     return result;
   }, [documents, activeIntent, activeWorkspace, activeProject, searchTerm]);
 
-  // Conteggi per la sidebar
   const counts = useMemo(() => ({
     all: documents.length,
     strategic: documents.filter(d => (d.intent || "").includes("STRATEGIC")).length,
@@ -316,88 +314,111 @@ export default function ArchiveLayout({
     setExpandedWorkspaces(prev => ({ ...prev, [wsName]: !prev[wsName] }));
   };
 
+  // Funzione per tornare alla lista
+  const goBackToList = () => {
+    setMobileView('list');
+    // Opzionale: deselezionare il documento se necessario, ma spesso è meglio mantenerlo selezionato
+    // onSelect(null); 
+  };
+
   return (
-    <div className="flex h-full w-full overflow-hidden rounded-2xl border border-white/10 bg-[#09090b] shadow-2xl ring-1 ring-white/5">
+    <div className="flex h-full w-full overflow-hidden rounded-2xl border border-white/10 bg-[#09090b] shadow-2xl ring-1 ring-white/5 relative">
       
-      {/* PANE 1: SIDEBAR (Filtri Dinamici) */}
-      <div className="hidden w-64 flex-col border-r border-white/10 bg-[#0e0e11] p-3 md:flex">
+      {/* PANE 1: SIDEBAR (FILTRI) */}
+      {/* Desktop: sempre visibile. Mobile: visibile solo se mobileView === 'filters' */}
+      <div className={classNames(
+        "flex-col border-r border-white/10 bg-[#0e0e11] transition-transform duration-300 absolute inset-0 z-30 md:relative md:w-64 md:translate-x-0 md:flex",
+        mobileView === 'filters' ? "translate-x-0 flex" : "-translate-x-full hidden"
+      )}>
         
-        {/* Filtri Categoria */}
-        <div className="mb-6 px-2 pt-2">
-          <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Libreria</h3>
-          <nav className="space-y-0.5">
-            <FilterButton 
-              label="Tutti i documenti" 
-              count={counts.all} 
-              active={activeIntent === 'ALL' && activeWorkspace === 'ALL'} 
-              onClick={() => { setActiveIntent('ALL'); setActiveWorkspace('ALL'); setActiveProject(null); }} 
-              icon={LayoutDashboard}
-            />
-            <FilterButton 
-              label="Strategia & Business" 
-              count={counts.strategic} 
-              active={activeIntent === 'STRATEGIC'} 
-              onClick={() => setActiveIntent('STRATEGIC')} 
-              icon={Sparkles}
-            />
-            <FilterButton 
-              label="Operativi & Meeting" 
-              count={counts.operational} 
-              active={activeIntent === 'OPERATIONAL'} 
-              onClick={() => setActiveIntent('OPERATIONAL')} 
-              icon={CheckCircle2}
-            />
-          </nav>
+        {/* Mobile Header per Filtri */}
+        <div className="md:hidden flex items-center justify-between p-4 border-b border-white/10 bg-[#0e0e11]">
+            <h3 className="text-sm font-bold text-white">Filtri</h3>
+            <button onClick={() => setMobileView('list')} className="text-zinc-400 hover:text-white">
+                <XCircle className="h-6 w-6" />
+            </button>
         </div>
-        
-        {/* Filtri Workspace (Dinamici) */}
-        <div className="px-2 mb-2">
-          <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Workspace</h3>
-        </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1">
-           {Object.entries(hierarchy).map(([wsName, data]) => (
-             <div key={wsName}>
-               <div className="flex items-center gap-1">
-                 <button 
-                    onClick={() => toggleWorkspace(wsName)}
-                    className="p-1 text-zinc-500 hover:text-zinc-300"
-                 >
-                    {expandedWorkspaces[wsName] ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                 </button>
-                 <FilterButton 
-                    label={wsName}
-                    count={data.count}
-                    active={activeWorkspace === wsName && !activeProject}
-                    onClick={() => { setActiveWorkspace(wsName); setActiveProject(null); setActiveIntent('ALL'); }}
-                    icon={Folder}
-                 />
-               </div>
-               
-               {/* Sottolista Progetti */}
-               {expandedWorkspaces[wsName] && (
-                 <div className="ml-4 border-l border-white/5 pl-2 mt-1 space-y-0.5">
-                    {Object.entries(data.projects).map(([projName, count]) => (
-                        <FilterButton 
-                            key={projName}
-                            label={projName}
-                            count={count}
-                            active={activeWorkspace === wsName && activeProject === projName}
-                            onClick={() => { setActiveWorkspace(wsName); setActiveProject(projName); setActiveIntent('ALL'); }}
-                            indent
-                        />
-                    ))}
-                 </div>
-               )}
-             </div>
-           ))}
+
+        {/* Contenuto Sidebar */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+            <div className="mb-6 px-2 pt-2">
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Libreria</h3>
+            <nav className="space-y-0.5">
+                <FilterButton 
+                label="Tutti i documenti" 
+                count={counts.all} 
+                active={activeIntent === 'ALL' && activeWorkspace === 'ALL'} 
+                onClick={() => { setActiveIntent('ALL'); setActiveWorkspace('ALL'); setActiveProject(null); setMobileView('list'); }} 
+                icon={LayoutDashboard}
+                />
+                <FilterButton 
+                label="Strategia & Business" 
+                count={counts.strategic} 
+                active={activeIntent === 'STRATEGIC'} 
+                onClick={() => { setActiveIntent('STRATEGIC'); setMobileView('list'); }} 
+                icon={Sparkles}
+                />
+                <FilterButton 
+                label="Operativi & Meeting" 
+                count={counts.operational} 
+                active={activeIntent === 'OPERATIONAL'} 
+                onClick={() => { setActiveIntent('OPERATIONAL'); setMobileView('list'); }} 
+                icon={CheckCircle2}
+                />
+            </nav>
+            </div>
+            
+            <div className="px-2 mb-2">
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Workspace</h3>
+            </div>
+            <div className="space-y-1">
+            {Object.entries(hierarchy).map(([wsName, data]) => (
+                <div key={wsName}>
+                <div className="flex items-center gap-1">
+                    <button 
+                        onClick={() => toggleWorkspace(wsName)}
+                        className="p-1 text-zinc-500 hover:text-zinc-300"
+                    >
+                        {expandedWorkspaces[wsName] ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    </button>
+                    <FilterButton 
+                        label={wsName}
+                        count={data.count}
+                        active={activeWorkspace === wsName && !activeProject}
+                        onClick={() => { setActiveWorkspace(wsName); setActiveProject(null); setActiveIntent('ALL'); setMobileView('list'); }}
+                        icon={Folder}
+                    />
+                </div>
+                
+                {expandedWorkspaces[wsName] && (
+                    <div className="ml-4 border-l border-white/5 pl-2 mt-1 space-y-0.5">
+                        {Object.entries(data.projects).map(([projName, count]) => (
+                            <FilterButton 
+                                key={projName}
+                                label={projName}
+                                count={count}
+                                active={activeWorkspace === wsName && activeProject === projName}
+                                onClick={() => { setActiveWorkspace(wsName); setActiveProject(projName); setActiveIntent('ALL'); setMobileView('list'); }}
+                                indent
+                            />
+                        ))}
+                    </div>
+                )}
+                </div>
+            ))}
+            </div>
         </div>
       </div>
 
       {/* PANE 2: MASTER LIST */}
-      <div className="flex w-full flex-col border-r border-white/10 bg-[#09090b] md:w-[420px]">
+      {/* Desktop: sempre visibile. Mobile: visibile se mobileView === 'list' */}
+      <div className={classNames(
+        "flex w-full flex-col border-r border-white/10 bg-[#09090b] md:w-[420px]",
+        mobileView === 'list' ? "flex" : "hidden md:flex"
+      )}>
         {/* Search Bar */}
-        <div className="border-b border-white/10 p-4 bg-[#09090b]/50 backdrop-blur sticky top-0 z-10">
-          <div className="relative">
+        <div className="border-b border-white/10 p-4 bg-[#09090b]/50 backdrop-blur sticky top-0 z-10 flex gap-2">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
             <input 
               type="text" 
@@ -407,6 +428,14 @@ export default function ArchiveLayout({
               className="w-full rounded-xl border border-white/10 bg-white/5 py-2 pl-10 pr-4 text-sm text-white placeholder-zinc-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
             />
           </div>
+          
+          {/* Mobile Filter Button */}
+          <button 
+            onClick={() => setMobileView('filters')}
+            className="md:hidden flex items-center justify-center h-10 w-10 rounded-xl border border-white/10 bg-white/5 text-zinc-400 active:bg-white/10 active:text-white"
+          >
+            <FilterIcon className="h-5 w-5" />
+          </button>
         </div>
 
         {/* List */}
@@ -431,13 +460,18 @@ export default function ArchiveLayout({
         </div>
       </div>
 
-      {/* PANE 3: INSPECTOR (Dettaglio) */}
-      <div className="hidden flex-1 flex-col bg-[#121214] md:flex">
+      {/* PANE 3: INSPECTOR (DETTAGLIO) */}
+      {/* Desktop: sempre visibile. Mobile: visibile se mobileView === 'details' (e copre tutto) */}
+      <div className={classNames(
+        "flex-1 flex-col bg-[#121214] absolute inset-0 z-40 md:relative md:flex md:inset-auto md:z-auto",
+        mobileView === 'details' ? "flex" : "hidden"
+      )}>
         <DocumentInspector 
             doc={selectedDoc} 
             onOpen={onOpen} 
             onOpenAudio={onOpenAudio} 
-            onEdit={onEdit}           
+            onEdit={onEdit} 
+            onBack={goBackToList} // Prop per il pulsante indietro
         />
       </div>
 
