@@ -1,0 +1,11 @@
+{
+  "name": "2_Strategic_Board_Memo",
+  "description": "Stile editoriale autoritario (tipo Harvard Business Review). Ottimo per report decisionali e Board meeting.",
+  "type": "html",
+  "engine": "weasyprint",
+  "resources": [
+    {
+      "path": "Templates/strategic_memo.css"
+    }
+  ]
+}

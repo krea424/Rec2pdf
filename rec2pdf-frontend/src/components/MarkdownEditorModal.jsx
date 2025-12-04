@@ -277,11 +277,12 @@ export default function MarkdownEditorModal({
                 </IconButton>
             </div>
 
-            {/* Contenuto Scrollabile */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar smooth-scroll-pane">
+           {/* Contenuto Scrollabile */}
+            {/* MODIFICA QUI: Aggiunto pb-32 su mobile e ridotto spaziature (p-4, space-y-5) */}
+            <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-5 lg:space-y-8 pb-32 lg:pb-6 custom-scrollbar smooth-scroll-pane">
                 
-                {/* SEZIONE 1: Speaker Mapper */}
-                <div className="space-y-4">
+               {/* SEZIONE 1: Speaker Mapper */}
+               <div className="space-y-4">
                     <div className="flex items-center justify-between">
                         <h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
                             <Users className="h-3 w-3" /> Identificazione Speaker

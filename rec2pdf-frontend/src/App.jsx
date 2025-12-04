@@ -1223,24 +1223,27 @@ function AppContent(){
     try {
       const raw = localStorage.getItem(PDF_TEMPLATE_SELECTION_KEY);
       
-      // NUOVA LOGICA: Se non c'è nulla salvato (o c'è il vecchio default), parti in AUTO
-      if (!raw || raw.includes('default.tex')) {
-        return { 
-            fileName: 'auto_detect', // <--- FIX: Default Magico
-            type: '', 
-            css: '' 
-        };
-      }
-      
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') {
-         return { fileName: 'auto_detect', type: '', css: '' };
-      }
-      return buildPdfTemplateSelection(parsed);
-    } catch {
-      return { fileName: 'auto_detect', type: '', css: '' };
+      // NUOVA LOGICA: Se non c'è nulla salvato (o c'è il vecchio default),
+    // FORZIAMO "Executive Brief" invece di "auto_detect".
+    if (!raw || raw.includes('default.tex')) {
+      return { 
+          fileName: 'executive_brief.html', 
+          type: 'html', 
+          css: 'executive_brief.css' 
+      };
     }
-  });
+    
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+       // Fallback di sicurezza: Executive Brief
+       return { fileName: 'executive_brief.html', type: 'html', css: 'executive_brief.css' };
+    }
+    return buildPdfTemplateSelection(parsed);
+  } catch {
+    // Fallback in caso di errore: Executive Brief
+    return { fileName: 'executive_brief.html', type: 'html', css: 'executive_brief.css' };
+  }
+});
   
   const [promptState, setPromptState] = useState(() => {
     if (typeof window === 'undefined') {
@@ -1614,16 +1617,15 @@ const activePrompt = useMemo(
     }
   }, [prompts, promptState.promptId]);
 
- // --- DEFAULT PROMPT: AUTO-DETECT (Nuova Logica) ---
- useEffect(() => {
-  // 1. Imposta il Prompt su "Auto-Detect" se non c'è selezione
-  setPromptState((prev) => {
-    // Se l'utente ha già una selezione (caricata dal localStorage), la manteniamo
-    if (prev.promptId) return prev;
+ // --- PUNTO 2: Modifica l'useEffect dei default (intorno alla riga 750) ---
 
-    // Se non c'è nulla, impostiamo la modalità Magica
+ // --- DEFAULT CONFIGURATION ---
+ useEffect(() => {
+  // 1. Imposta il Prompt su "Auto-Detect" se non c'è selezione (INVARIATO)
+  setPromptState((prev) => {
+    if (prev.promptId) return prev;
     return buildPromptState({
-      promptId: 'auto_detect', // ID Speciale per attivare l'AI
+      promptId: 'auto_detect',
       focus: '',
       notes: '',
       cueProgress: {},
@@ -1632,14 +1634,18 @@ const activePrompt = useMemo(
     });
   });
 
-  // 2. Imposta il Template su "Auto-Detect" se non c'è selezione
+  // 2. Imposta il Template su "Executive Brief" se non c'è selezione (MODIFICATO)
   setPdfTemplateSelection((prev) => {
     if (prev.fileName) return prev;
-    // Template magico
-    return { fileName: 'auto_detect', type: '', css: '' };
+    
+    // Qui forziamo Executive Brief come default visuale
+    return { 
+        fileName: 'executive_brief.html', 
+        type: 'html', 
+        css: 'executive_brief.css' 
+    };
   });
 }, [setPromptState, setPdfTemplateSelection]);
-
   useEffect(() => {
     setNavigatorSelection((prev) => {
       if (prev.workspaceId || !workspaceSelection.workspaceId) {

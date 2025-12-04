@@ -1,0 +1,180 @@
+/* --- INVESTIGATIVE DOSSIER STYLE --- */
+/* Ispirazione: Fascicoli FBI, Cold Case, Legal Noir */
+
+@page {
+    size: A4;
+    margin: 20mm;
+    /* Colore di sfondo "Carta Manila/Crema" per l'intera pagina */
+    background-color: #fdfbf7; 
+    
+    @bottom-center {
+        content: "- EVIDENCE PAGE " counter(page) " -";
+        font-family: "Courier New", Courier, monospace;
+        font-size: 9pt;
+        color: #555;
+    }
+}
+
+body {
+    font-family: "Courier New", Courier, "Lucida Sans Typewriter", monospace;
+    font-size: 11pt;
+    line-height: 1.4;
+    color: #1a1a1a; /* Nero non assoluto, effetto inchiostro */
+    background-color: #fdfbf7; /* Coerenza con @page */
+}
+
+/* --- TIMBRO WATERMARK SFONDO --- */
+.stamp-watermark {
+    position: fixed;
+    top: 30%;
+    left: 20%;
+    font-size: 80pt;
+    font-weight: bold;
+    color: rgba(200, 0, 0, 0.08); /* Rosso molto trasparente */
+    transform: rotate(-45deg);
+    z-index: -1;
+    border: 8px solid rgba(200, 0, 0, 0.08);
+    padding: 20px;
+    text-transform: uppercase;
+}
+
+/* --- HEADER TABELLARE (Modulo) --- */
+.dossier-header {
+    border: 2px solid #333;
+    padding: 0;
+    margin-bottom: 40px;
+    background-color: #fff; /* Carta bianca applicata su quella crema */
+}
+
+.header-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.header-table td {
+    padding: 8px 12px;
+    border: 1px solid #333;
+    vertical-align: middle;
+}
+
+.label {
+    background-color: #e5e5e5; /* Grigio modulo */
+    font-weight: bold;
+    font-size: 9pt;
+    width: 15%;
+    text-transform: uppercase;
+}
+
+.value {
+    font-size: 11pt;
+    font-family: "Courier New", Courier, monospace;
+}
+
+/* --- POST-IT EFFECT (Summary) --- */
+.sticky-note {
+    background-color: #fef08a; /* Giallo post-it */
+    color: #000;
+    width: 80%;
+    margin: 0 auto 40px auto;
+    padding: 20px;
+    box-shadow: 3px 3px 10px rgba(0,0,0,0.2); /* Ombra per profondità */
+    transform: rotate(-1deg); /* Leggera inclinazione realistica */
+    font-size: 10pt;
+    position: relative;
+    border-bottom-right-radius: 40px 5px; /* Angolo leggermente arricciato */
+}
+
+/* Spillo simulato */
+.sticky-note .pin {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    width: 12px;
+    height: 12px;
+    background-color: #b91c1c; /* Rosso spillo */
+    border-radius: 50%;
+    box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+
+.sticky-note strong {
+    display: block;
+    text-decoration: underline;
+    margin-bottom: 5px;
+}
+
+/* --- TITOLI "TIMBRATI" --- */
+.stamped-title {
+    font-size: 16pt;
+    color: #b91c1c; /* Rosso inchiostro */
+    text-transform: uppercase;
+    border: 3px solid #b91c1c;
+    display: inline-block;
+    padding: 5px 15px;
+    transform: rotate(1deg); /* Leggera rotazione imperfetta */
+    margin-top: 30px;
+    margin-bottom: 20px;
+    letter-spacing: 2px;
+}
+
+/* --- EVIDENCE LIST --- */
+.typewriter-list {
+    list-style: none;
+    padding: 0;
+}
+
+.typewriter-list li {
+    margin-bottom: 10px;
+    padding-left: 10px;
+}
+
+.bullet-x {
+    font-weight: bold;
+    color: #b91c1c;
+    margin-right: 10px;
+}
+
+/* --- SEPARATORI --- */
+.cut-line {
+    border: 0;
+    border-bottom: 2px dashed #999; /* Linea "taglia qui" */
+    margin: 40px 0;
+}
+
+/* --- BODY TEXT --- */
+.main-body h1, .main-body h2 {
+    font-size: 14pt;
+    text-decoration: underline;
+    margin-top: 25px;
+    text-transform: uppercase;
+}
+
+.main-body p {
+    text-align: justify;
+    margin-bottom: 15px;
+}
+
+/* --- TRASCRIPT (Interrogatorio) --- */
+.transcript-folder {
+    margin-top: 50px;
+    padding: 20px;
+    border-left: 4px double #333; /* Linea doppia laterale */
+    background-color: rgba(255, 255, 255, 0.5);
+    page-break-before: always;
+}
+
+.transcript-entry {
+    margin-bottom: 15px;
+    page-break-inside: avoid;
+}
+
+.speaker-id {
+    font-size: 9pt;
+    font-weight: bold;
+    color: #555;
+    margin-bottom: 2px;
+}
+
+.utterance {
+    padding-left: 20px;
+    border-left: 1px solid #999;
+}
