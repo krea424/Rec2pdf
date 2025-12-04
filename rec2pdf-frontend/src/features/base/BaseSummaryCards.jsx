@@ -69,13 +69,14 @@ const BaseSummaryCards = () => {
   const { 
     workspaceSelection, 
     activeWorkspace,
+    workspaceProjects, // <--- 1. IMPORTANTE: Recuperiamo la lista progetti dal contesto
     activePrompt, 
     activeWorkspaceProfile,
     pdfTemplateSelection,
     customPdfLogo,
     customLogo,
-    pdfTemplates, // <--- 1. AGGIUNTO: Importiamo la lista dei template per avere i nomi ufficiali
-    promptState // <--- AGGIUNGI QUESTA RIGA (con la virgola prima)
+    pdfTemplates, 
+    promptState 
   } = useAppContext();
 
   const goToAdvanced = (section) => {
@@ -86,8 +87,16 @@ const BaseSummaryCards = () => {
   const workspaceLabel = activeWorkspace?.name || workspaceSelection?.name || "Nessun workspace";
   const isWorkspaceActive = !!workspaceSelection?.workspaceId;
 
-  const projectLabel = workspaceSelection?.projectName || "Nessun progetto";
+  // --- 2. FIX LOGICA PROGETTO ---
+  // Cerchiamo il progetto reale usando l'ID salvato nella selezione
+  const resolvedProject = workspaceProjects?.find(p => p.id === workspaceSelection?.projectId);
+  
+  // Usiamo il nome del progetto risolto (se esiste), altrimenti il nome manuale (draft), altrimenti fallback
+  const projectLabel = resolvedProject?.name || workspaceSelection?.projectName || "Nessun progetto";
+  
+  // La card è attiva se c'è un ID valido o un nome draft
   const isProjectActive = !!workspaceSelection?.projectId || !!workspaceSelection?.projectName;
+  // -----------------------------
 
   // --- LOGICA PROMPT LABEL (FIX AUTO-DETECT) ---
   const promptLabel = (promptState?.promptId === 'auto_detect' || !promptState?.promptId)
@@ -100,7 +109,7 @@ const BaseSummaryCards = () => {
   const profileLabel = activeWorkspaceProfile?.label || "Nessun profilo";
   const isProfileActive = !!activeWorkspaceProfile?.id;
 
- // --- 2. NUOVA LOGICA INTELLIGENTE PER IL TEMPLATE ---
+ // --- LOGICA INTELLIGENTE PER IL TEMPLATE ---
  const getTemplateLabel = () => {
   // A. Risoluzione del file attivo
   let fileName = pdfTemplateSelection?.fileName;
@@ -109,7 +118,7 @@ const BaseSummaryCards = () => {
       else if (activePrompt?.pdfRules?.template) fileName = activePrompt.pdfRules.template;
   }
 
-  // B. Gestione casi speciali (MODIFICATO: Aggiunto ✨)
+  // B. Gestione casi speciali
   if (fileName === 'auto_detect' || !fileName) return "✨ Auto-Detect";
   
   // C. Cerca il nome ufficiale nei metadati
@@ -129,9 +138,6 @@ const BaseSummaryCards = () => {
 };
 
 const templateLabel = getTemplateLabel();
-
-// MODIFICATO: La card è attiva se non è il fallback "Default". 
-// "✨ Auto-Detect" ora è considerato uno stato ATTIVO.
 const isTemplateActive = templateLabel !== "Default";
 
   const getLogoLabel = () => {

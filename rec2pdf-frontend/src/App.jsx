@@ -222,13 +222,21 @@ const buildFileUrl = (backendUrl, filePath, options = {}) => {
   if (!normalized || !filePath) return '';
 
   const parsed = parseStoragePath(filePath, options);
+  
   if (parsed.directUrl) return parsed.directUrl;
 
   const params = new URLSearchParams();
-  if (parsed.bucket) {
-    params.set('bucket', parsed.bucket);
+  
+  // --- FIX: Priorità al bucket passato nelle opzioni ---
+  if (options.bucket) {
+      params.set('bucket', options.bucket);
+  } else if (parsed.bucket) {
+      params.set('bucket', parsed.bucket);
   }
+  // ----------------------------------------------------
+
   params.set('path', parsed.objectPath);
+  
   if (parsed.token) {
     params.set('token', parsed.token);
   }
@@ -2299,12 +2307,12 @@ useEffect(() => {
     [aiProviderSelectionState],
   );
   const requestSignedFileUrl = useCallback(
-    async (backendUrl, filePath) => {
+    async (backendUrl, filePath, options = {}) => { // options riceve { bucket }
       const normalizedBackend = normalizeBackendUrlValue(backendUrl);
       if (!normalizedBackend) {
         throw new Error('Backend non configurato.');
       }
-      const parsed = parseStoragePath(filePath, { token: (await getSessionToken()) || '' });
+      const parsed = parseStoragePath(filePath, { token: await getSessionToken(), ...options });
       console.debug('[requestSignedFileUrl]', {
         backend: normalizedBackend,
         filePath,
@@ -2320,7 +2328,7 @@ useEffect(() => {
 
       // Usa il path originale per evitare di duplicare il bucket in querystring;
       // buildFileUrl rileva il bucket dal path se presente.
-      const target = buildFileUrl(normalizedBackend, filePath, { token: parsed.token });
+      const target = buildFileUrl(normalizedBackend, filePath, { token: parsed.token, ...options });
       const response = await fetchWithAuth(target, {
         method: 'GET',
         headers: { Accept: 'application/json' },
@@ -5265,7 +5273,7 @@ const processMarkdownUpload = async (file, options = {}) => {
   }, [handleOpenHistoryMd, mdEditor]);
 
   const handleOpenLibraryFile = useCallback(
-    async ({ backendUrl: backendOverride, path, label }) => {
+    async ({ backendUrl: backendOverride, path, label, bucket }) => { // <--- Aggiungi bucket qui
       const resolvedPath = typeof path === 'string' ? path.trim() : '';
       if (!resolvedPath) {
         pushLogs(['❌ Percorso file non disponibile.']);
@@ -5283,6 +5291,7 @@ const processMarkdownUpload = async (file, options = {}) => {
           backendUrl: backendTarget,
           path: resolvedPath,
           label: label || 'file',
+          bucket: bucket // <--- Passalo qui
         });
       } catch (error) {
         const message = error?.message || 'Impossibile aprire il file selezionato.';

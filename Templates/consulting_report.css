@@ -5,7 +5,7 @@
 body {
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     /* RIDUZIONE FONT: 10pt è lo standard professionale (12pt è da scuola elementare) */
-    font-size: 10pt; 
+    font-size: 8pt; 
     /* INTERLINEA: 1.5 o 1.6 per massima leggibilità */
     line-height: 1.6; 
     color: #1f2937;
@@ -26,7 +26,7 @@ h1, h2, h3, h4 {
 
 h1 {
     /* Era 26pt/28pt -> Portiamo a 22pt */
-    font-size: 18pt; 
+    font-size: 14pt; 
     color: #1e3a8a;
     border-bottom: 1px solid #1e3a8a;
     padding-bottom: 10px;
@@ -35,7 +35,7 @@ h1 {
 
 h2 {
     /* Era 16pt/18pt -> Portiamo a 14pt */
-    font-size: 14pt;
+    font-size: 10pt;
     color: #1e3a8a;
     margin-top: 1.5em;
     margin-bottom: 10px;
@@ -43,7 +43,7 @@ h2 {
 
 h3 {
     /* Era 13pt -> Portiamo a 11pt o 12pt */
-    font-size: 10pt;
+    font-size: 11pt;
     font-weight: bold;
     color: #334155;
     text-transform: uppercase; /* Tocco pro: titoletti in maiuscolo */
@@ -55,7 +55,7 @@ table {
     width: 100%;
     border-collapse: collapse; /* Fondamentale per unire i bordi */
     margin: 25px 0;
-    font-size: 9pt;
+    font-size: 7pt;
     page-break-inside: avoid; /* Cerca di non spezzare le tabelle tra le pagine */
 }
 
@@ -66,7 +66,7 @@ th, td {
     text-align: left;
     vertical-align: top;
     /* Assicuriamoci che il font dentro la tabella non sia gigante */
-    font-size: 9pt; 
+    font-size: 8pt; 
 }
 th {
     background-color: #f1f5f9;

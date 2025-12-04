@@ -1,85 +1,88 @@
 'use strict';
 
 const aiOrchestrator = require('./aiOrchestrator');
-const { RAGService } = require('./ragService');
 
-// LE "LENTI" (PERSONAS)
+// LE "LENTI" (PERSONAS) - AGGIORNATE CON "TRIGGER PROMPT"
 const PERSONAS = {
   CRITIC: {
     name: "L'Avvocato del Diavolo",
     role: "Senior Risk Manager & Critical Thinker",
-    instruction: "Il tuo obiettivo è trovare buchi logici, rischi non calcolati e debolezze nell'argomentazione. Sii spietato ma costruttivo. Non fare complimenti, vai dritto al punto critico."
+    instruction: "Il tuo obiettivo è trovare buchi logici, rischi non calcolati e debolezze nell'argomentazione.",
+    // Questo è il prompt che parte in automatico al click
+    triggerPrompt: "Analizza la trascrizione. Identifica i 3 rischi principali o le debolezze logiche più evidenti. Per ogni punto, spiega brevemente il 'perché' è un problema. Sii spietato ma costruttivo."
   },
   VISIONARY: {
     name: "Il Visionario",
     role: "Chief Innovation Officer",
-    instruction: "Il tuo obiettivo è espandere l'idea. Chiedi 'E se...?', proponi collegamenti laterali, scenari futuri e opportunità di mercato adiacenti. Ispira l'utente a pensare più in grande."
+    instruction: "Il tuo obiettivo è espandere l'idea. Chiedi 'E se...?', proponi scenari futuri e opportunità adiacenti.",
+    triggerPrompt: "Analizza la trascrizione. Proponi 3 scenari evolutivi o opportunità di mercato che l'autore non ha considerato. Pensa 'out of the box'. Ispirami."
   },
   PRAGMATIST: {
     name: "Il Pragmatico",
     role: "COO / Operations Director",
-    instruction: "Ignora la teoria. Concentrati sull'esecuzione. Chiedi: 'Chi lo fa?', 'Quanto costa?', 'Qual è la timeline?', 'Quali sono le risorse necessarie?'. Porta tutto a terra."
+    instruction: "Concentrati sull'esecuzione. Risorse, costi, timeline e colli di bottiglia.",
+    triggerPrompt: "Analizza la trascrizione. Elenca 3 ostacoli operativi concreti che impediranno la realizzazione di questo piano. Chiedi 'Chi fa cosa?' e 'Quanto costa?'."
   },
   COPYWRITER: {
     name: "Il Comunicatore",
     role: "Senior Editor",
-    instruction: "Focalizzati sulla chiarezza e l'impatto del messaggio. Suggerisci modi migliori per formulare i concetti chiave. Identifica slogan o 'hook' potenti nel discorso."
+    instruction: "Focalizzati sulla chiarezza, l'impatto del messaggio e la sintesi.",
+    triggerPrompt: "Analizza la trascrizione. Estrai 3 slogan ('Hook') potenti che riassumono il concetto. Poi riscrivi l'idea centrale in un tweet (max 280 caratteri) di alto impatto."
   }
 };
 
 class ChatService {
   constructor(supabaseClient) {
     this.supabase = supabaseClient;
-    this.ragService = new RAGService(supabaseClient);
   }
 
+  // Aggiungiamo un flag 'isTrigger' per capire se è il click iniziale
   async chat(messages, contextData, personaKey = 'CRITIC', options = {}) {
-    // 1. Recupera la definizione della Persona
     const persona = PERSONAS[personaKey] || PERSONAS.CRITIC;
+    const { transcription } = contextData;
+    const { isTrigger } = options; // Nuovo parametro
 
-    // 2. Prepara il contesto (Trascrizione + RAG opzionale)
-    const { transcription, workspaceId, projectId } = contextData;
+    // Logica di innesco automatico
+    let userMessageContent = "";
     
-    // (Opzionale) Recupero RAG leggero se la domanda lo richiede
-    // Per ora ci basiamo sulla trascrizione che è il "cuore" del brainstorming
-    
-    // 3. Costruzione System Prompt
+    if (isTrigger) {
+      // SCENARIO SEMPLICE: Usiamo il prompt predefinito della persona
+      userMessageContent = persona.triggerPrompt;
+    } else {
+      // SCENARIO AVANZATO: Usiamo l'ultimo messaggio dell'utente
+      userMessageContent = messages[messages.length - 1].content;
+    }
+
     const systemPrompt = `
       Sei ${persona.name} (${persona.role}).
       ${persona.instruction}
       
-      CONTESTO (Trascrizione dell'utente):
+      CONTESTO (Trascrizione):
       """
-      ${transcription.substring(0, 15000)} 
+      ${transcription.substring(0, 20000)}
       """
       
-      REGOLE:
-      - Rispondi brevemente (max 3-4 frasi) per mantenere il dialogo fluido.
-      - Fai una domanda alla volta per stimolare il pensiero.
-      - Riferisciti esplicitamente a parti del testo trascritto.
-      - Mantieni sempre il tuo "Character".
+      IMPORTANTE:
+      - Rispondi direttamente alla richiesta dell'utente.
+      - Usa elenchi puntati se ti chiedono liste.
+      - Non premettere frasi di cortesia ("Certamente", "Ecco l'analisi"). Vai dritto al punto.
     `;
 
-    // 4. Chiamata AI (Usiamo l'orchestrator esistente)
-    // Costruiamo un prompt unico con la storia (approccio stateless per semplicità backend)
-    // In un'app reale chat, passeremmo l'array messages, ma qui usiamo l'orchestrator testuale
-    // quindi simuliamo la chat appendendo l'ultimo messaggio utente.
-    
-    const lastUserMessage = messages[messages.length - 1].content;
-    const chatHistory = messages.slice(0, -1).map(m => `${m.role === 'user' ? 'Utente' : 'AI'}: ${m.content}`).join('\n');
+    // Costruiamo la history. Se è un trigger, la history è vuota/simulata.
+    const historyPrompt = isTrigger 
+        ? "" 
+        : messages.slice(0, -1).map(m => `${m.role === 'user' ? 'Utente' : 'AI'}: ${m.content}`).join('\n');
 
     const fullPrompt = `
       ${systemPrompt}
 
-      STORIA CHAT:
-      ${chatHistory}
+      ${historyPrompt ? `STORIA CHAT:\n${historyPrompt}` : ""}
 
-      UTENTE: ${lastUserMessage}
+      UTENTE (Richiesta Attuale): ${userMessageContent}
       AI:
     `;
 
     try {
-      // Usiamo 'high' complexity per avere risposte intelligenti
       const response = await aiOrchestrator.generateContentWithFallback(fullPrompt, { 
         textProvider: options.aiTextProvider,
         taskComplexity: 'high' 
@@ -98,7 +101,11 @@ class ChatService {
   }
   
   getPersonas() {
-      return Object.keys(PERSONAS).map(k => ({ key: k, name: PERSONAS[k].name, role: PERSONAS[k].role }));
+      return Object.keys(PERSONAS).map(k => ({ 
+          key: k, 
+          name: PERSONAS[k].name, 
+          role: PERSONAS[k].role 
+      }));
   }
 }
 
