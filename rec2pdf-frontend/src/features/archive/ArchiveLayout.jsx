@@ -16,7 +16,8 @@ import {
   ChevronDown,
   ChevronLeft, // Icona per il tasto "Indietro"
   XCircle, // Icona per chiudere i filtri
-  Trash2
+  Trash2,
+  Lightbulb, // <--- AGGIUNGI QUESTA
 } from "../../components/icons";
 
 // --- SOTTOCOMPONENTI UI ---
@@ -109,8 +110,7 @@ const DocumentCard = ({ doc, isSelected, onClick }) => {
 };
 
 // ... (Assicurati di avere gli import in alto, inclusi Trash2, ChevronLeft, XCircle)
-
-const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, onDelete, onBack }) => {
+const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, onDelete, onPromote, onBack }) => {
   if (!doc) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-10 text-center text-zinc-500">
@@ -135,9 +135,10 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
 
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         
-        {/* HEADER con Titolo, ID e Tasto Elimina */}
+        {/* HEADER con Titolo, ID e Azioni (Memorizza + Elimina) */}
         <div className="border-b border-white/10 p-6">
           <div className="mb-4 flex items-center justify-between">
+              {/* Badge e ID */}
               <div className="flex items-center gap-2">
                   <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
                       {doc.intent || "DOCUMENTO"}
@@ -147,15 +148,28 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
                   </span>
               </div>
               
-              {/* PULSANTE ELIMINA */}
-              <button 
-                  onClick={() => onDelete(doc.id)}
-                  className="group flex items-center gap-2 rounded-lg border border-transparent px-3 py-1.5 text-xs font-medium text-zinc-500 transition-all hover:border-rose-500/20 hover:bg-rose-500/10 hover:text-rose-400"
-                  title="Elimina definitivamente"
-              >
-                  <Trash2 className="h-4 w-4" />
-                  <span className="hidden sm:inline">Elimina</span>
-              </button>
+              {/* GRUPPO AZIONI: MEMORIZZA + ELIMINA */}
+              <div className="flex gap-2">
+                  {/* PULSANTE MEMORIZZA */}
+                  <button 
+                      onClick={() => onPromote(doc.id)}
+                      className="group flex items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-300 transition-all hover:bg-indigo-500/20 hover:text-indigo-200 hover:shadow-lg hover:shadow-indigo-500/10"
+                      title="Aggiungi alla Knowledge Base"
+                  >
+                      <Lightbulb className="h-4 w-4" />
+                      <span className="hidden sm:inline">Memorizza</span>
+                  </button>
+
+                  {/* PULSANTE ELIMINA */}
+                  <button 
+                      onClick={() => onDelete(doc.id)}
+                      className="group flex items-center gap-2 rounded-lg border border-transparent px-3 py-1.5 text-xs font-medium text-zinc-500 transition-all hover:border-rose-500/20 hover:bg-rose-500/10 hover:text-rose-400"
+                      title="Elimina definitivamente"
+                  >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="hidden sm:inline">Elimina</span>
+                  </button>
+              </div>
           </div>
 
           <h2 className="mb-2 text-xl font-bold leading-tight text-white">
@@ -174,7 +188,7 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
           </div>
         </div>
 
-        {/* AZIONI (PDF, Audio Split, Edit) */}
+        {/* AZIONI PRINCIPALI (PDF, Audio Split, Edit) */}
         <div className="grid grid-cols-3 gap-3 border-b border-white/10 p-4">
             <button
                 onClick={onOpen}
@@ -268,7 +282,7 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
   );
 };
 
-// --- COMPONENTE PRINCIPALE ---
+// ... (tutto il codice sopra rimane uguale)
 
 export default function ArchiveLayout({
   documents = [],
@@ -277,9 +291,10 @@ export default function ArchiveLayout({
   onOpen,
   loading,
   onOpenAudio,
-  onDownloadAudio, // <--- RICEVI LA PROP QUI
+  onDownloadAudio,
   onEdit,
-  onDelete // <--- AGGIUNGI QUESTO! (Mancava qui)
+  onDelete,
+  onPromote // <--- 1. AGGIUNTO QUI (Riceve la funzione da Library.jsx)
 }) {
   // Stati filtri
   const [activeIntent, setActiveIntent] = useState("ALL");
@@ -289,10 +304,8 @@ export default function ArchiveLayout({
   
   // Stati UI
   const [expandedWorkspaces, setExpandedWorkspaces] = useState({});
-  // Stato Mobile View: 'list' (default) | 'filters' | 'details'
   const [mobileView, setMobileView] = useState('list');
 
-  // Aggiorna la vista mobile quando si seleziona un documento
   useEffect(() => {
     if (selectedDoc) {
       setMobileView('details');
@@ -357,24 +370,19 @@ export default function ArchiveLayout({
     setExpandedWorkspaces(prev => ({ ...prev, [wsName]: !prev[wsName] }));
   };
 
-  // Funzione per tornare alla lista
   const goBackToList = () => {
     setMobileView('list');
-    // Opzionale: deselezionare il documento se necessario, ma spesso è meglio mantenerlo selezionato
-    // onSelect(null); 
   };
 
   return (
     <div className="flex h-full w-full overflow-hidden rounded-2xl border border-white/10 bg-[#09090b] shadow-2xl ring-1 ring-white/5 relative">
       
       {/* PANE 1: SIDEBAR (FILTRI) */}
-      {/* Desktop: sempre visibile. Mobile: visibile solo se mobileView === 'filters' */}
       <div className={classNames(
         "flex-col border-r border-white/10 bg-[#0e0e11] transition-transform duration-300 absolute inset-0 z-30 md:relative md:w-64 md:translate-x-0 md:flex",
         mobileView === 'filters' ? "translate-x-0 flex" : "-translate-x-full hidden"
       )}>
-        
-        {/* Mobile Header per Filtri */}
+        {/* ... (Contenuto Sidebar invariato) ... */}
         <div className="md:hidden flex items-center justify-between p-4 border-b border-white/10 bg-[#0e0e11]">
             <h3 className="text-sm font-bold text-white">Filtri</h3>
             <button onClick={() => setMobileView('list')} className="text-zinc-400 hover:text-white">
@@ -382,7 +390,6 @@ export default function ArchiveLayout({
             </button>
         </div>
 
-        {/* Contenuto Sidebar */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
             <div className="mb-6 px-2 pt-2">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Libreria</h3>
@@ -454,12 +461,10 @@ export default function ArchiveLayout({
       </div>
 
       {/* PANE 2: MASTER LIST */}
-      {/* Desktop: sempre visibile. Mobile: visibile se mobileView === 'list' */}
       <div className={classNames(
         "flex w-full flex-col border-r border-white/10 bg-[#09090b] md:w-[420px]",
         mobileView === 'list' ? "flex" : "hidden md:flex"
       )}>
-        {/* Search Bar */}
         <div className="border-b border-white/10 p-4 bg-[#09090b]/50 backdrop-blur sticky top-0 z-10 flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
@@ -471,8 +476,6 @@ export default function ArchiveLayout({
               className="w-full rounded-xl border border-white/10 bg-white/5 py-2 pl-10 pr-4 text-sm text-white placeholder-zinc-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
             />
           </div>
-          
-          {/* Mobile Filter Button */}
           <button 
             onClick={() => setMobileView('filters')}
             className="md:hidden flex items-center justify-center h-10 w-10 rounded-xl border border-white/10 bg-white/5 text-zinc-400 active:bg-white/10 active:text-white"
@@ -481,7 +484,6 @@ export default function ArchiveLayout({
           </button>
         </div>
 
-        {/* List */}
         <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
           {loading ? (
              <div className="p-4 text-center text-xs text-zinc-500 animate-pulse">Caricamento archivio...</div>
@@ -504,7 +506,6 @@ export default function ArchiveLayout({
       </div>
 
       {/* PANE 3: INSPECTOR (DETTAGLIO) */}
-      {/* Desktop: sempre visibile. Mobile: visibile se mobileView === 'details' (e copre tutto) */}
       <div className={classNames(
         "flex-1 flex-col bg-[#121214] absolute inset-0 z-40 md:relative md:flex md:inset-auto md:z-auto",
         mobileView === 'details' ? "flex" : "hidden"
@@ -513,10 +514,11 @@ export default function ArchiveLayout({
             doc={selectedDoc} 
             onOpen={onOpen} 
             onOpenAudio={onOpenAudio} 
-            onDownloadAudio={onDownloadAudio} // <--- PASSA LA PROP QUI
+            onDownloadAudio={onDownloadAudio}
             onEdit={onEdit} 
-            onBack={goBackToList} // Prop per il pulsante indietro
-            onDelete={onDelete} // <--- PASSA LA PROP QUI
+            onDelete={onDelete}
+            onPromote={onPromote} // <--- 2. PASSATO QUI AL FIGLIO
+            onBack={goBackToList} 
         />
       </div>
 

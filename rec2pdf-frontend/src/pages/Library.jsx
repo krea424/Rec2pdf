@@ -133,6 +133,35 @@ const LibraryPage = () => {
     }
   };
 
+   // NUOVA FUNZIONE: Promote to Knowledge Base
+   const handlePromoteDocument = async (docId) => {
+    // Feedback immediato
+    const confirmMsg = "Vuoi aggiungere questo documento alla Knowledge Base?\nL'AI potrà usare queste informazioni per i futuri lavori.";
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+        // Mostra un loading (potresti usare uno stato locale o un toast loading)
+        alert("Indicizzazione in corso... Potrebbe richiedere qualche secondo.");
+
+        const res = await fetchBody(`${normalizedBackendUrl}/api/library/${docId}/promote`, {
+            method: 'POST'
+        });
+
+        if (!res.ok) {
+            throw new Error(res.data?.message || "Errore durante l'indicizzazione");
+        }
+
+        alert("Successo! 🧠\n" + res.data.message);
+        
+        // Opzionale: Ricarica i documenti per aggiornare eventuali badge
+        loadDocuments();
+
+    } catch (error) {
+        console.error("Promote error:", error);
+        alert("Errore: " + error.message);
+    }
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] p-4 gap-4">
       <div className="flex justify-between items-center shrink-0">
@@ -157,6 +186,7 @@ const LibraryPage = () => {
             onEdit={handleEdit}
             onDelete={handleDeleteDocument}
             loading={loading}
+            onPromote={handlePromoteDocument} // <--- NUOVA PROP
           />
       </div>
     </div>
