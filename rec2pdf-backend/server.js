@@ -3330,16 +3330,47 @@ const buildWorkspaceBaseName = async (workspace, destDir, slug) => {
 const UP_BASE = path.join(os.tmpdir(), 'rec2pdf_uploads');
 if (!fs.existsSync(UP_BASE)) fs.mkdirSync(UP_BASE, { recursive: true });
 
-const uploadMiddleware = multer({ dest: UP_BASE });
+
+// --- INIZIO FIX SICUREZZA (Sostituisce righe 3334-3343) ---
+
+// 1. Definiamo i limiti
+const MAX_UPLOAD_SIZE_BYTES = 300 * 1024 * 1024; // 300 MB
+const MAX_KNOWLEDGE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+
+// 2. Definiamo i tipi MIME consentiti
+const ALLOWED_MIME_TYPES = new Set([
+  'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/webm', 
+  'audio/ogg', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/aac', 'audio/flac',
+  'text/plain', 'text/markdown', 'text/csv', 'application/json',
+  'image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'application/pdf'
+]);
+
+// 3. Funzione di filtro
+const secureFileFilter = (req, file, cb) => {
+  const mime = file.mimetype.toLowerCase();
+  if (ALLOWED_MIME_TYPES.has(mime)) {
+    cb(null, true);
+  } else {
+    cb(new Error(`Tipo di file non supportato: ${mime}`), false);
+  }
+};
+
+// 4. Configurazione Multer Blindata
+const uploadMiddleware = multer({ 
+  dest: UP_BASE,
+  limits: { fileSize: MAX_UPLOAD_SIZE_BYTES, files: 5 },
+  fileFilter: secureFileFilter
+});
+
 const KNOWLEDGE_UPLOAD_BASE = path.join(os.tmpdir(), 'rec2pdf_knowledge_uploads');
 if (!fs.existsSync(KNOWLEDGE_UPLOAD_BASE)) fs.mkdirSync(KNOWLEDGE_UPLOAD_BASE, { recursive: true });
+
 const knowledgeUpload = multer({
   dest: KNOWLEDGE_UPLOAD_BASE,
-  limits: {
-    files: 20,
-  },
+  limits: { fileSize: MAX_KNOWLEDGE_SIZE_BYTES, files: 20 },
+  fileFilter: secureFileFilter
 });
-const KNOWLEDGE_UPLOAD_FIELDS = new Set(['files', 'file', 'documents', 'document']);
+// --- FINE FIX SICUREZZA ---
 const knowledgeUploadMiddleware = knowledgeUpload.any();
 const profileUpload = uploadMiddleware.single('pdfLogo');
 const optionalProfileUpload = (req, res, next) => {
@@ -3349,6 +3380,7 @@ const optionalProfileUpload = (req, res, next) => {
   }
   return next();
 };
+
 
 const ensureTempFileHasExtension = async (file, allowedExtensions = VALID_LOGO_EXTENSIONS) => {
   if (!file) return null;
@@ -10081,7 +10113,41 @@ app.use((req, res, next) => {
   return next();
 });
 
+// ... verso la fine del file, prima di startServer() ...
 
+// GLOBAL ERROR HANDLER (Gestione errori Multer e Sicurezza)
+app.use((err, req, res, next) => {
+  // Gestione specifica errori Multer
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      console.warn(`⚠️ Upload bloccato: File troppo grande (${req.ip})`);
+      return res.status(413).json({ 
+        ok: false, 
+        message: 'Il file è troppo grande. Limite massimo: 300MB.' 
+      });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({ 
+        ok: false, 
+        message: 'Troppi file caricati in una singola richiesta.' 
+      });
+    }
+    return res.status(400).json({ ok: false, message: `Errore upload: ${err.message}` });
+  }
+
+  // Gestione errori filtro file custom
+  if (err.message && err.message.includes('Tipo di file non supportato')) {
+    return res.status(415).json({ ok: false, message: err.message });
+  }
+
+  // Passa agli altri error handler o default di Express
+  next(err);
+});
+
+// ==========================================================
+// == AVVIO DEL SERVER ==
+// ==========================================================
+// ...
 
 
 

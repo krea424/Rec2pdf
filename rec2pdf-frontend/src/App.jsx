@@ -1017,6 +1017,8 @@ const themes = {
     log: "border-white/16 bg-[#071a33]/80 backdrop-blur-2xl",
   },
 };
+const MAX_AUDIO_SIZE_MB = 50; // Limite Supabase Free Tier
+const MAX_DOC_SIZE_MB = 10;   // Limite ragionevole per MD/TXT
 
 function AppContent(){
   const [session, setSession] = useState(null);
@@ -4798,20 +4800,31 @@ const processMarkdownUpload = async (file, options = {}) => {
 
   // TODO(Task 3): Surface this handler through the Base upload bar for .md
   // files alongside audio and .txt inputs.
-  const handleMarkdownFilePicked=(event)=>{
-    const file=event.target?.files?.[0];
-    if(!file) return;
-    if(!/\.md$/i.test(file.name)){
-      setErrorBanner({title:'Formato non supportato',details:'Seleziona un file con estensione .md'});
-      if(markdownInputRef.current){
-        markdownInputRef.current.value='';
+  const handleMarkdownFilePicked = (event) => {
+    const file = event.target?.files?.[0];
+    if (!file) return;
+
+    // --- FIX SICUREZZA: Controllo Dimensione Markdown ---
+    if (file.size > MAX_DOC_SIZE_MB * 1024 * 1024) {
+      setErrorBanner({
+        title: 'File troppo grande',
+        details: `Il limite per i documenti è ${MAX_DOC_SIZE_MB}MB.`
+      });
+      if (markdownInputRef.current) markdownInputRef.current.value = '';
+      return;
+    }
+    // ----------------------------------------------------
+
+    if (!/\.md$/i.test(file.name)) {
+      setErrorBanner({ title: 'Formato non supportato', details: 'Seleziona un file con estensione .md' });
+      if (markdownInputRef.current) {
+        markdownInputRef.current.value = '';
       }
       return;
     }
-    setLastMarkdownUpload({name:file.name,size:file.size,ts:Date.now()});
+    setLastMarkdownUpload({ name: file.name, size: file.size, ts: Date.now() });
     processMarkdownUpload(file);
   };
-
   const processTextUpload = async (file) => {
     if (!file) return;
     try {
@@ -4844,10 +4857,22 @@ const processMarkdownUpload = async (file, options = {}) => {
   const handleTextFilePicked = async (event) => {
     const file = event.target?.files?.[0];
     if (!file) return;
-    if (!/\.txt$/i.test(file.name)){
-      setErrorBanner({title:'Formato non supportato',details:'Seleziona un file con estensione .txt'});
-      if(textInputRef.current){
-        textInputRef.current.value='';
+
+    // --- FIX SICUREZZA: Controllo Dimensione Testo ---
+    if (file.size > MAX_DOC_SIZE_MB * 1024 * 1024) {
+      setErrorBanner({
+        title: 'File troppo grande',
+        details: `Il limite per i documenti è ${MAX_DOC_SIZE_MB}MB.`
+      });
+      if (textInputRef.current) textInputRef.current.value = '';
+      return;
+    }
+    // -------------------------------------------------
+
+    if (!/\.txt$/i.test(file.name)) {
+      setErrorBanner({ title: 'Formato non supportato', details: 'Seleziona un file con estensione .txt' });
+      if (textInputRef.current) {
+        textInputRef.current.value = '';
       }
       return;
     }
@@ -5063,7 +5088,32 @@ const processMarkdownUpload = async (file, options = {}) => {
     setShowSetupAssistant(false);
   }, [setOnboardingComplete, setShowSetupAssistant]);
 
-  const onPickFile=(e)=>{ const f=e.target.files?.[0]; if(!f) return; resetCreationFlowState(); setAudioBlob(f); setAudioUrl(URL.createObjectURL(f)); setMime(f.type||""); setErrorBanner(null); revealPublishPanel(); };
+  const onPickFile = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+
+    // --- FIX SICUREZZA: Controllo Dimensione Audio ---
+    // Calcoliamo la dimensione in MB
+    const sizeMB = f.size / 1024 / 1024;
+    
+    if (sizeMB > MAX_AUDIO_SIZE_MB) {
+      setErrorBanner({
+        title: 'File troppo grande',
+        details: `Il file supera il limite di ${MAX_AUDIO_SIZE_MB}MB del piano attuale.`
+      });
+      // Resettiamo l'input file così l'utente può riprovare
+      if (fileInputRef.current) fileInputRef.current.value = ''; 
+      return;
+    }
+    // -------------------------------------------------
+
+    resetCreationFlowState();
+    setAudioBlob(f);
+    setAudioUrl(URL.createObjectURL(f));
+    setMime(f.type || "");
+    setErrorBanner(null);
+    revealPublishPanel();
+  };
 
   const cycleTheme = () => {
     const themeKeys = Object.keys(themes);
