@@ -10101,6 +10101,118 @@ app.get('/api/library', authenticateRequest, async (req, res) => {
   }
 });
 
+// ============================================================
+// == NUOVO ENDPOINT: PROMOTE TO KNOWLEDGE BASE (RAG) ==
+// ============================================================
+app.post('/api/library/:id/promote', authenticateRequest, async (req, res) => {
+  if (!supabase) return res.status(503).json({ ok: false, message: 'Supabase KO' });
+
+  const jobId = req.params.id;
+  const userId = req.user.id;
+
+  try {
+    console.log(`[PROMOTE] Avvio indicizzazione job ${jobId}`);
+
+    // 1. Recupera il Job per ottenere i percorsi e i metadati
+    const { data: job, error: fetchError } = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('id', jobId)
+      .eq('user_id', userId)
+      .single();
+
+    if (fetchError || !job) {
+      return res.status(404).json({ ok: false, message: 'Documento non trovato.' });
+    }
+
+    // 2. Verifica che il documento abbia un Workspace (Obbligatorio per il RAG)
+    // Cerchiamo l'ID nel payload della richiesta originale
+    const workspaceId = job.request_payload?.workspaceId;
+    
+    if (!workspaceId) {
+      return res.status(400).json({ 
+        ok: false, 
+        message: 'Questo documento non è assegnato a un Workspace. Assegnalo prima di indicizzarlo.' 
+      });
+    }
+
+    // 3. Scarica il Markdown dallo Storage
+    // Usiamo la logica di parsing path che abbiamo già
+    const mdPathRaw = job.output_md_path;
+    if (!mdPathRaw) return res.status(400).json({ ok: false, message: 'Nessun file Markdown trovato.' });
+
+    const bucket = mdPathRaw.startsWith('processed-media') ? 'processed-media' : 'processed-media'; // Default safe
+    const path = mdPathRaw.replace(/^processed-media\//, ''); // Clean path
+
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from(bucket)
+      .download(path);
+
+    if (downloadError) throw new Error(`Download MD fallito: ${downloadError.message}`);
+
+    const textContent = await fileData.text();
+
+    // 4. Chunking (Divisione in pezzi)
+    // Usiamo la funzione createKnowledgeChunks già presente in server.js
+    const chunks = createKnowledgeChunks(textContent, { chunkSize: 1000, chunkOverlap: 100 });
+    
+    if (chunks.length === 0) {
+        return res.status(400).json({ ok: false, message: 'Il documento è vuoto o troppo breve.' });
+    }
+
+    console.log(`[PROMOTE] Generati ${chunks.length} chunk. Calcolo embeddings...`);
+
+    // 5. Generazione Embeddings e Salvataggio
+    // Usiamo l'orchestratore per generare gli embedding
+    const embeddingProvider = job.request_payload?.aiEmbeddingProvider || 'openai'; // Fallback o preferenza job
+    
+    let savedCount = 0;
+
+    // Processiamo in serie per non sovraccaricare il rate limit
+    for (const chunkContent of chunks) {
+        // Genera vettore
+        const embedding = await aiOrchestrator.generateEmbeddingWithFallback(chunkContent, {
+            embeddingProvider: embeddingProvider
+        });
+
+        // Salva su Supabase
+        const { error: insertError } = await supabase
+            .from('knowledge_chunks')
+            .insert({
+                workspace_id: workspaceId,
+                project_id: job.request_payload?.workspaceProjectId || null, // Opzionale: collega al progetto
+                content: chunkContent,
+                embedding: embedding,
+                metadata: {
+                    source: 'generated_doc',
+                    job_id: jobId,
+                    title: job.request_payload?.title || 'Documento Rec2PDF',
+                    original_file: job.input_file_path
+                }
+            });
+
+        if (insertError) {
+            console.error('[PROMOTE] Errore inserimento chunk:', insertError);
+        } else {
+            savedCount++;
+        }
+    }
+
+    // 6. Aggiorna il Job per segnarlo come "Indicizzato" (Opzionale, usiamo i metadata)
+    // Aggiorniamo i metadati del job per mostrare un badge nella UI in futuro
+    const currentMeta = job.metadata || {};
+    await supabase.from('jobs').update({
+        metadata: { ...currentMeta, is_indexed: true, indexed_at: new Date().toISOString() }
+    }).eq('id', jobId);
+
+    console.log(`[PROMOTE] Completato. ${savedCount}/${chunks.length} chunk salvati.`);
+    res.json({ ok: true, message: `Documento appreso! (${savedCount} frammenti di conoscenza aggiunti).` });
+
+  } catch (error) {
+    console.error('[PROMOTE ERROR]', error);
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
 // Endpoint per eliminare un documento (Job + File Storage)
 // Endpoint per eliminare un documento (Job + File Storage + File Intermedi)
 app.delete('/api/library/:id', authenticateRequest, async (req, res) => {
