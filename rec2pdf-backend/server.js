@@ -9746,34 +9746,42 @@ app.get('/api/file', async (req, res) => {
       return res.status(503).json({ ok: false, message: 'Supabase non configurato' });
     }
 
-    // ==========================================================
-    // ==                  MODIFICA CHIAVE QUI                 ==
-    // ==========================================================
     const bucket = String(req.query?.bucket || '').trim();
-    const objectPath = String(req.query?.path || '').trim(); // Rinominiamo per chiarezza
+    const objectPath = String(req.query?.path || '').trim();
+    // 1. Leggiamo il flag di download
+    const forceDownload = req.query?.download === 'true'; 
+    const downloadName = req.query?.filename; // Opzionale: nome file personalizzato
 
     if (!bucket || !objectPath) {
       return res.status(400).json({ ok: false, message: 'Parametri "bucket" e "path" mancanti' });
     }
-    // ==========================================================
 
-    console.log(`[API /file] Richiesta URL firmato per: ${bucket}/${objectPath}`);
+    console.log(`[API /file] Richiesta URL firmato per: ${bucket}/${objectPath} (Download: ${forceDownload})`);
 
-    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(objectPath, 60); // 60 secondi di validità
+    // 2. Configurazione opzioni Supabase
+    const options = {
+        transform: undefined // Assicuriamoci di non applicare trasformazioni
+    };
+    
+    // Se è richiesto il download, impostiamo l'header attachment
+    if (forceDownload) {
+        options.download = downloadName || true; 
+    }
+
+    const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(objectPath, 60, options); // 60 secondi di validità
 
     if (error) {
-      // Se l'errore è "Object not found", restituiamo un 404
       if (error.message.toLowerCase().includes('object not found')) {
         return res.status(404).json({ ok: false, message: 'Oggetto non trovato in Supabase.' });
       }
-      throw error; // Per altri errori, lancia e gestisci sotto
+      throw error;
     }
     
     if (!data?.signedUrl) {
       throw new Error('Impossibile generare URL firmato.');
     }
-
-    // ... (logica per normalizzare l'URL, se necessaria) ...
 
     res.setHeader('Cache-Control', 'no-store');
     return res.json({ ok: true, url: data.signedUrl });
