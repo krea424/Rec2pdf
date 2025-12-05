@@ -107,7 +107,8 @@ const DocumentCard = ({ doc, isSelected, onClick }) => {
   );
 };
 
-const DocumentInspector = ({ doc, onOpen, onOpenAudio, onEdit, onBack }) => {
+// 1. Aggiungi onDownloadAudio alle props
+const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, onBack }) => {
   if (!doc) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-10 text-center text-zinc-500">
@@ -162,19 +163,51 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onEdit, onBack }) => {
             >
             <Download className="h-4 w-4" /> PDF
             </button>
+
             
+            
+           {/* --- PULSANTE AUDIO "SPLIT" (UNICO) --- */}
+        <div className={classNames(
+            "flex items-stretch rounded-lg border border-white/10 bg-white/5 overflow-hidden transition hover:border-white/20",
+            !doc.paths?.audio && "opacity-50 cursor-not-allowed"
+        )}>
+            {/* Parte Sinistra: PLAY */}
             <button 
-                className={classNames(
-                    "flex flex-col md:flex-row items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-white/10 active:scale-95",
-                    !doc.paths?.audio && "opacity-50 cursor-not-allowed"
-                )}
+                className="flex-1 flex flex-col md:flex-row items-center justify-center gap-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-white/10 active:bg-white/20"
                 onClick={() => doc.paths?.audio && onOpenAudio(doc.paths.audio)}
                 disabled={!doc.paths?.audio}
+                title="Riproduci Audio"
             >
-            <div className={classNames("h-2 w-2 rounded-full", doc.paths?.audio ? "bg-rose-500 animate-pulse" : "bg-zinc-600")} /> 
-            Audio
+               <div className={classNames("h-2 w-2 rounded-full shrink-0", doc.paths?.audio ? "bg-rose-500 animate-pulse" : "bg-zinc-600")} /> 
+               <span>Audio</span>
             </button>
+            
+            {/* Divisore Verticale */}
+            <div className="w-px bg-white/10 my-1"></div>
 
+            {/* Parte Destra: DOWNLOAD */}
+            <button 
+                className="px-3 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 active:bg-white/20 transition-colors"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (doc.paths?.audio) {
+                        const ext = doc.paths.audio.split('.').pop();
+                        const fileName = `${doc.title.replace(/[^a-z0-9]/gi, '_')}.${ext}`;
+                        // FIX: Chiamata sicura
+                        if (onDownloadAudio) onDownloadAudio(doc.paths.audio, fileName);
+                        else console.error("onDownloadAudio non è definita!");
+                    }
+                }}
+                disabled={!doc.paths?.audio}
+                title="Scarica file audio"
+            >
+                <Download className="h-3.5 w-3.5" />
+            </button>
+        </div>
+        {/* -------------------------------------- */}
+
+            
+            
             <button 
                 className="flex flex-col md:flex-row items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-white/10 active:scale-95"
                 onClick={() => onEdit(doc)}
@@ -236,6 +269,7 @@ export default function ArchiveLayout({
   onOpen,
   loading,
   onOpenAudio,
+  onDownloadAudio, // <--- RICEVI LA PROP QUI
   onEdit
 }) {
   // Stati filtri
@@ -470,6 +504,7 @@ export default function ArchiveLayout({
             doc={selectedDoc} 
             onOpen={onOpen} 
             onOpenAudio={onOpenAudio} 
+            onDownloadAudio={onDownloadAudio} // <--- PASSA LA PROP QUI
             onEdit={onEdit} 
             onBack={goBackToList} // Prop per il pulsante indietro
         />

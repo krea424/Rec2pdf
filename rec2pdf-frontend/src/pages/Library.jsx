@@ -126,6 +126,62 @@ const LibraryPage = () => {
         label: selectedDoc.title || 'Documento PDF'
     });
   };
+  // ... dentro LibraryPage ...
+
+  // ... handleOpenAudio esistente ...
+
+  // NUOVA FUNZIONE: Gestisce il download forzato
+  const handleDownloadAudio = async (audioPath, fileName) => {
+    if (!audioPath) return;
+    
+    // Normalizzazione path come in handleOpenAudio
+    let pathWithBucket = audioPath;
+    if (!audioPath.startsWith('audio-uploads')) {
+        pathWithBucket = `audio-uploads/${audioPath}`;
+    }
+
+    // Costruiamo l'URL chiamando il backend con ?download=true
+    try {
+        const bucket = 'audio-uploads'; 
+        // Il backend si aspetta bucket e path separati nella query string
+        // Estrarre il path puro (senza bucket iniziale se presente per l'API)
+        // Nota: handleOpenLibraryFile fa parsing interno, qui facciamo manuale per il fetch
+        const cleanPath = pathWithBucket.replace(/^audio-uploads\//, '');
+        
+        const params = new URLSearchParams({ 
+            bucket: bucket, 
+            path: cleanPath,
+            download: 'true' // <--- IL TRUCCO
+        });
+        
+        if (fileName) params.append('filename', fileName);
+
+        const response = await fetch(`${normalizedBackendUrl}/api/file?${params.toString()}`, {
+            headers: {
+                'Authorization': `Bearer ${session.access_token}`
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok && data.url) {
+            // Trigger download creando un link invisibile
+            const link = document.createElement('a');
+            link.href = data.url;
+            // Non serve impostare download attribute qui perché lo fa l'header del server, 
+            // ma male non fa
+            link.setAttribute('download', fileName || 'audio-download');
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } else {
+            console.error("Errore download:", data.message);
+            alert("Errore nel recupero del file audio.");
+        }
+    } catch (e) {
+        console.error("Eccezione download audio:", e);
+    }
+  };
  // Gestore per l'apertura dell'audio
  const handleOpenAudio = (audioPath) => {
   if (!audioPath) return;
@@ -193,6 +249,7 @@ const LibraryPage = () => {
             onSelect={handleSelect}
             onOpen={handleOpenAction}
             onOpenAudio={handleOpenAudio} // <--- AGGIUNGI QUESTA RIGA
+            onDownloadAudio={handleDownloadAudio} // <--- NUOVA PROP
             onEdit={handleEdit} // <--- AGGIUNGI QUESTO
             loading={loading}
           />
