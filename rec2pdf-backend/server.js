@@ -10100,6 +10100,94 @@ app.get('/api/library', authenticateRequest, async (req, res) => {
     res.status(500).json({ ok: false, message: error.message });
   }
 });
+
+// Endpoint per eliminare un documento (Job + File Storage)
+// Endpoint per eliminare un documento (Job + File Storage + File Intermedi)
+app.delete('/api/library/:id', authenticateRequest, async (req, res) => {
+  if (!supabase) return res.status(503).json({ ok: false, message: 'Supabase KO' });
+
+  const jobId = req.params.id;
+  const userId = req.user.id;
+
+  try {
+    console.log(`[DELETE] Richiesta eliminazione job ${jobId} da utente ${userId}`);
+
+    // 1. Recupera i dettagli del job per trovare i percorsi dei file
+    const { data: job, error: fetchError } = await supabase
+      .from('jobs')
+      .select('input_file_path, output_pdf_path, output_md_path')
+      .eq('id', jobId)
+      .eq('user_id', userId) // Sicurezza: cancella solo i tuoi
+      .single();
+
+    if (fetchError || !job) {
+      return res.status(404).json({ ok: false, message: 'Documento non trovato o accesso negato.' });
+    }
+
+    // 2. Funzione Helper Intelligente per i Path
+    const resolveFileLocation = (dbPath, defaultBucket) => {
+        if (!dbPath) return null;
+        
+        // Caso A: Il path include già il bucket (es. "processed-media/processed/...")
+        const parts = dbPath.split('/');
+        if (['processed-media', 'audio-uploads', 'text-uploads'].includes(parts[0])) {
+            return { bucket: parts[0], path: parts.slice(1).join('/') };
+        }
+        
+        // Caso B: Path relativo (es. "uploads/user/file.m4a") -> Usa defaultBucket
+        return { bucket: defaultBucket, path: dbPath };
+    };
+
+    // 3. Lista di file da cancellare con i bucket corretti
+    const filesToDelete = [
+        // PDF e MD sono sempre in processed-media
+        resolveFileLocation(job.output_pdf_path, 'processed-media'),
+        resolveFileLocation(job.output_md_path, 'processed-media'),
+        
+        // L'input file (audio) è solitamente in audio-uploads
+        resolveFileLocation(job.input_file_path, 'audio-uploads'),
+    ].filter(Boolean);
+
+    // Aggiungiamo i file intermedi derivati (WAV, TXT, JSON) basandoci sul nome del PDF
+    if (job.output_pdf_path) {
+        // Esempio: processed/user/documento_TIMESTAMP_slug.pdf
+        const basePath = job.output_pdf_path.replace('documento_', '').replace('.pdf', '');
+        
+        // Rimuoviamo eventuale prefisso bucket se presente nel path DB per costruire il path relativo
+        const cleanBasePath = basePath.split('/').includes('processed-media') ? basePath.split('/').slice(1).join('/') : basePath;
+        
+        // Aggiungiamo i file "nascosti" generati dalla pipeline
+        filesToDelete.push({ bucket: 'processed-media', path: `${cleanBasePath}.wav` });
+        filesToDelete.push({ bucket: 'processed-media', path: `${cleanBasePath}.txt` });
+        filesToDelete.push({ bucket: 'processed-media', path: `${cleanBasePath}.json` }); // Per diarizzazione
+    }
+
+    console.log('[DELETE] File target:', filesToDelete);
+
+    // 4. Esecuzione Cancellazione (Parallela e Silenziosa)
+    // Usiamo allSettled per non bloccare tutto se un file intermedio manca già
+    const deletePromises = filesToDelete.map(f => 
+        supabase.storage.from(f.bucket).remove([f.path])
+    );
+    await Promise.allSettled(deletePromises);
+
+    // 5. Cancellazione Record DB
+    const { error: deleteError } = await supabase
+      .from('jobs')
+      .delete()
+      .eq('id', jobId);
+
+    if (deleteError) throw deleteError;
+
+    console.log(`[DELETE] Documento ${jobId} eliminato correttamente.`);
+    res.json({ ok: true, message: 'Documento e file correlati eliminati.' });
+
+  } catch (error) {
+    console.error('[DELETE ERROR]', error);
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
 // ==========================================================
 // == MIDDLEWARE PER GESTIRE ENDPOINT API NON TROVATI (404) ==
 // ==========================================================
@@ -10144,10 +10232,6 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-// ==========================================================
-// == AVVIO DEL SERVER ==
-// ==========================================================
-// ...
 
 
 
