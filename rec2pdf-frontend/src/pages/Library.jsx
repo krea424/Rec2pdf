@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import ArchiveLayout from "../features/archive/ArchiveLayout";
+import ShareModal from "../components/ShareModal"; // <--- 1. IMPORTA IL MODALE
 import { useAppContext } from "../hooks/useAppContext";
 import { RefreshCw } from "../components/icons";
 
@@ -17,33 +18,31 @@ const LibraryPage = () => {
   const [loading, setLoading] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState(null);
 
-  // --- FETCH DATA (Corretto: Non dipende più da selectedDoc) ---
+  // --- STATO PER IL MODALE SHARE ---
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareDocId, setShareDocId] = useState(null);
+  const [shareLoading, setShareLoading] = useState(false);
+
+  // --- FETCH DATA ---
   const loadDocuments = useCallback(async () => {
     if (!normalizedBackendUrl || !session?.user?.id) return;
-    
     setLoading(true);
     try {
       const result = await fetchBody(`${normalizedBackendUrl}/api/library`, { method: 'GET' });
-
       if (result.ok && result.data && Array.isArray(result.data.documents)) {
-        const docs = result.data.documents;
-        setDocuments(docs);
-        
-        // Logica di auto-selezione spostata qui, ma eseguita solo se non c'è nulla di selezionato
-        // Usiamo il callback di stato per evitare dipendenze cicliche
-        setSelectedDoc(prev => prev || (docs.length > 0 ? docs[0] : null));
+        setDocuments(result.data.documents);
+        if (!selectedDoc && result.data.documents.length > 0) {
+            setSelectedDoc(result.data.documents[0]);
+        }
       }
     } catch (error) {
       console.error("Errore API Library:", error);
     } finally {
       setLoading(false);
     }
-  }, [normalizedBackendUrl, fetchBody, session]); // RIMOSSO selectedDoc dalle dipendenze!
+  }, [normalizedBackendUrl, fetchBody, selectedDoc, session]);
 
-  // Carica solo al mount o se cambia l'utente/backend
-  useEffect(() => {
-    loadDocuments();
-  }, [loadDocuments]);
+  useEffect(() => { loadDocuments(); }, [loadDocuments]);
 
   // --- HANDLERS ---
   const handleSelect = (doc) => setSelectedDoc(doc);
@@ -68,7 +67,6 @@ const LibraryPage = () => {
         const cleanPath = pathWithBucket.replace(/^audio-uploads\//, '');
         const params = new URLSearchParams({ bucket: 'audio-uploads', path: cleanPath, download: 'true' });
         if (fileName) params.append('filename', fileName);
-
         const response = await fetch(`${normalizedBackendUrl}/api/file?${params.toString()}`, {
             headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
@@ -98,68 +96,57 @@ const LibraryPage = () => {
     });
   };
 
-  // --- GESTIONE ELIMINAZIONE (Optimistic UI) ---
   const handleDeleteDocument = async (docId) => {
-    if (!window.confirm("Sei sicuro di voler eliminare questo documento?")) {
-        return;
-    }
-
-    // 1. Aggiornamento Ottimistico: Rimuovi subito dalla lista locale
+    if (!window.confirm("Sei sicuro di voler eliminare questo documento?")) return;
     const previousDocs = [...documents];
-    const newDocs = documents.filter(d => d.id !== docId);
-    setDocuments(newDocs);
-    
-    // 2. Gestione Selezione: Se ho cancellato quello attivo, seleziono il primo disponibile o null
-    if (selectedDoc?.id === docId) {
-        setSelectedDoc(newDocs.length > 0 ? newDocs[0] : null);
-    }
-
+    setDocuments(prev => prev.filter(d => d.id !== docId));
+    if (selectedDoc?.id === docId) setSelectedDoc(null);
     try {
-        // 3. Chiamata API in background
-        const res = await fetchBody(`${normalizedBackendUrl}/api/library/${docId}`, {
-            method: 'DELETE'
-        });
-
-        if (!res.ok) {
-            throw new Error(res.data?.message || "Errore durante l'eliminazione");
-        }
-        // NON ricarichiamo la lista qui (loadDocuments), ci fidiamo dell'aggiornamento locale.
+        const res = await fetchBody(`${normalizedBackendUrl}/api/library/${docId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(res.data?.message || "Errore");
     } catch (error) {
-        console.error("Delete error:", error);
-        alert("Impossibile eliminare il documento: " + error.message);
-        // 4. Rollback in caso di errore
+        alert("Errore eliminazione: " + error.message);
         setDocuments(previousDocs);
-        if (selectedDoc?.id === docId) setSelectedDoc(previousDocs.find(d => d.id === docId));
     }
   };
 
-   // NUOVA FUNZIONE: Promote to Knowledge Base
-   const handlePromoteDocument = async (docId) => {
-    // Feedback immediato
-    const confirmMsg = "Vuoi aggiungere questo documento alla Knowledge Base?\nL'AI potrà usare queste informazioni per i futuri lavori.";
-    if (!window.confirm(confirmMsg)) return;
+  // --- LOGICA SHARE AGGIORNATA ---
+  
+  // 1. Apre il modale
+  const handleShareClick = (docId) => {
+      setShareDocId(docId);
+      setShareModalOpen(true);
+  };
 
-    try {
-        // Mostra un loading (potresti usare uno stato locale o un toast loading)
-        alert("Indicizzazione in corso... Potrebbe richiedere qualche secondo.");
+  // 2. Esegue l'invio (chiamato dal modale)
+  const handleConfirmShare = async (email, message) => {
+      setShareLoading(true);
+      try {
+          const res = await fetchBody(`${normalizedBackendUrl}/api/share`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                  documentId: shareDocId, 
+                  recipientEmail: email,
+                  message: message 
+              })
+          });
 
-        const res = await fetchBody(`${normalizedBackendUrl}/api/library/${docId}/promote`, {
-            method: 'POST'
-        });
+          if (res.ok) {
+              alert("✅ Email inviata con successo!");
+              setShareModalOpen(false); // Chiude solo se successo
+          } else {
+              alert("Errore invio: " + (res.data?.message || "Sconosciuto"));
+          }
+      } catch (e) {
+          alert("Errore di rete: " + e.message);
+      } finally {
+          setShareLoading(false);
+      }
+  };
 
-        if (!res.ok) {
-            throw new Error(res.data?.message || "Errore durante l'indicizzazione");
-        }
-
-        alert("Successo! 🧠\n" + res.data.message);
-        
-        // Opzionale: Ricarica i documenti per aggiornare eventuali badge
-        loadDocuments();
-
-    } catch (error) {
-        console.error("Promote error:", error);
-        alert("Errore: " + error.message);
-    }
+  const handlePromoteDocument = (docId) => {
+      alert("Funzionalità Knowledge Base in arrivo!");
   };
 
   return (
@@ -185,10 +172,19 @@ const LibraryPage = () => {
             onDownloadAudio={handleDownloadAudio}
             onEdit={handleEdit}
             onDelete={handleDeleteDocument}
+            onPromote={handlePromoteDocument}
+            onShare={handleShareClick} // <--- Passiamo la funzione che apre il modale
             loading={loading}
-            onPromote={handlePromoteDocument} // <--- NUOVA PROP
           />
       </div>
+
+      {/* --- MODALE SHARE --- */}
+      <ShareModal 
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        onConfirm={handleConfirmShare}
+        loading={shareLoading}
+      />
     </div>
   );
 };
