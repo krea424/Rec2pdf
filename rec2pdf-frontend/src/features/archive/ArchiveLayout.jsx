@@ -14,10 +14,11 @@ import {
   Users,
   ChevronRight,
   ChevronDown,
-  ChevronLeft, // Icona per il tasto "Indietro"
-  XCircle, // Icona per chiudere i filtri
+  ChevronLeft,
+  XCircle,
   Trash2,
-  Lightbulb, // <--- AGGIUNGI QUESTA
+  Lightbulb,
+  Mail
 } from "../../components/icons";
 
 // --- SOTTOCOMPONENTI UI ---
@@ -26,20 +27,20 @@ const FilterButton = ({ label, count, active, onClick, icon: Icon, indent = fals
   <button
     onClick={onClick}
     className={classNames(
-      "flex w-full items-center justify-between rounded-lg py-3 md:py-2 text-sm md:text-xs font-medium transition-all", // Più grande su mobile
+      "flex w-full items-center justify-between rounded-lg py-2 text-xs font-medium transition-all",
       indent ? "pl-8 pr-3" : "px-3",
       active
         ? "bg-indigo-500/10 text-indigo-300 ring-1 ring-indigo-500/20"
         : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
     )}
   >
-    <div className="flex items-center gap-3 md:gap-2 truncate">
-      {Icon && <Icon className="h-4 w-4 md:h-3.5 md:w-3.5 shrink-0" />}
+    <div className="flex items-center gap-2 truncate">
+      {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}
       <span className="truncate">{label}</span>
     </div>
     {count !== undefined && (
       <span className={classNames(
-        "ml-2 rounded-full px-2 py-0.5 text-[10px]",
+        "ml-2 rounded-full px-1.5 py-0.5 text-[9px]",
         active ? "bg-indigo-500/20 text-indigo-200" : "bg-white/5 text-zinc-600"
       )}>
         {count}
@@ -61,7 +62,7 @@ const DocumentCard = ({ doc, isSelected, onClick }) => {
     <div
       onClick={onClick}
       className={classNames(
-        "group relative mb-3 cursor-pointer rounded-xl border p-4 transition-all duration-200 active:scale-[0.98]",
+        "group relative mb-2 cursor-pointer rounded-xl border p-4 transition-all duration-200",
         isSelected
           ? "border-indigo-500/50 bg-[#16161a] shadow-lg shadow-indigo-900/10"
           : "border-white/5 bg-[#121214] hover:border-white/10 hover:bg-[#18181b]"
@@ -82,7 +83,7 @@ const DocumentCard = ({ doc, isSelected, onClick }) => {
       </div>
 
       <p className="mb-3 line-clamp-2 text-xs leading-relaxed text-zinc-500 group-hover:text-zinc-400">
-        {doc.summary || "Nessun sommario disponibile per questo documento."}
+        {doc.summary || "Nessun sommario disponibile."}
       </p>
 
       <div className="flex flex-col gap-2 border-t border-white/5 pt-3">
@@ -93,24 +94,18 @@ const DocumentCard = ({ doc, isSelected, onClick }) => {
               {new Date(doc.created_at).toLocaleDateString()}
             </span>
             <span>•</span>
-            <span className="flex items-center gap-1 truncate max-w-[80px] sm:max-w-[100px]">
+            <span className="flex items-center gap-1 truncate max-w-[100px]">
               <Folder className="h-3 w-3" />
               {doc.workspace || "No Workspace"}
             </span>
           </div>
-          {doc.status && (
-             <span className="hidden sm:flex items-center gap-1 text-zinc-500">
-               <CheckCircle2 className="h-3 w-3" /> {doc.status}
-             </span>
-          )}
         </div>
       </div>
     </div>
   );
 };
 
-// ... (Assicurati di avere gli import in alto, inclusi Trash2, ChevronLeft, XCircle)
-const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, onDelete, onPromote, onBack }) => {
+const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, onDelete, onPromote, onShare, onBack }) => {
   if (!doc) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-10 text-center text-zinc-500">
@@ -135,10 +130,9 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
 
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         
-        {/* HEADER con Titolo, ID e Azioni (Memorizza + Elimina) */}
+        {/* HEADER */}
         <div className="border-b border-white/10 p-6">
           <div className="mb-4 flex items-center justify-between">
-              {/* Badge e ID */}
               <div className="flex items-center gap-2">
                   <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
                       {doc.intent || "DOCUMENTO"}
@@ -148,23 +142,20 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
                   </span>
               </div>
               
-              {/* GRUPPO AZIONI: MEMORIZZA + ELIMINA */}
               <div className="flex gap-2">
-                  {/* PULSANTE MEMORIZZA */}
                   <button 
-                      onClick={() => onPromote(doc.id)}
-                      className="group flex items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-300 transition-all hover:bg-indigo-500/20 hover:text-indigo-200 hover:shadow-lg hover:shadow-indigo-500/10"
-                      title="Aggiungi alla Knowledge Base"
+                      onClick={() => onPromote && onPromote(doc.id)}
+                      className="group flex items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-300 transition-all hover:bg-indigo-500/20 hover:text-indigo-200"
+                      title="Memorizza"
                   >
                       <Lightbulb className="h-4 w-4" />
                       <span className="hidden sm:inline">Memorizza</span>
                   </button>
 
-                  {/* PULSANTE ELIMINA */}
                   <button 
-                      onClick={() => onDelete(doc.id)}
+                      onClick={() => onDelete && onDelete(doc.id)}
                       className="group flex items-center gap-2 rounded-lg border border-transparent px-3 py-1.5 text-xs font-medium text-zinc-500 transition-all hover:border-rose-500/20 hover:bg-rose-500/10 hover:text-rose-400"
-                      title="Elimina definitivamente"
+                      title="Elimina"
                   >
                       <Trash2 className="h-4 w-4" />
                       <span className="hidden sm:inline">Elimina</span>
@@ -179,7 +170,7 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
           <div className="flex items-center gap-4 text-xs text-zinc-400">
             <span className="flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5" />
-                {new Date(doc.created_at).toLocaleString()}
+                {new Date(doc.created_at).toLocaleDateString()}
             </span>
             <span className="flex items-center gap-1.5">
                 <Users className="h-3.5 w-3.5" />
@@ -188,8 +179,8 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
           </div>
         </div>
 
-        {/* AZIONI PRINCIPALI (PDF, Audio Split, Edit) */}
-        <div className="grid grid-cols-3 gap-3 border-b border-white/10 p-4">
+        {/* AZIONI */}
+        <div className="grid grid-cols-3 gap-3 px-6 pt-6 pb-3">
             <button
                 onClick={onOpen}
                 className="flex flex-col md:flex-row items-center justify-center gap-2 rounded-lg bg-white px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-black transition hover:bg-zinc-200 active:scale-95"
@@ -197,7 +188,6 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
                 <Download className="h-4 w-4" /> PDF
             </button>
             
-            {/* PULSANTE AUDIO SPLIT */}
             <div className={classNames(
                 "flex items-stretch rounded-lg border border-white/10 bg-white/5 overflow-hidden transition hover:border-white/20",
                 !doc.paths?.audio && "opacity-50 cursor-not-allowed"
@@ -206,7 +196,7 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
                     className="flex-1 flex flex-col md:flex-row items-center justify-center gap-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-white/10 active:bg-white/20"
                     onClick={() => doc.paths?.audio && onOpenAudio(doc.paths.audio)}
                     disabled={!doc.paths?.audio}
-                    title="Riproduci Audio"
+                    title="Riproduci"
                 >
                    <div className={classNames("h-2 w-2 rounded-full shrink-0", doc.paths?.audio ? "bg-rose-500 animate-pulse" : "bg-zinc-600")} /> 
                    <span>Audio</span>
@@ -216,14 +206,14 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
                     className="px-3 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 active:bg-white/20 transition-colors"
                     onClick={(e) => {
                         e.stopPropagation();
-                        if (doc.paths?.audio) {
+                        if (doc.paths?.audio && onDownloadAudio) {
                             const ext = doc.paths.audio.split('.').pop();
                             const fileName = `${doc.title.replace(/[^a-z0-9]/gi, '_')}.${ext}`;
-                            if (onDownloadAudio) onDownloadAudio(doc.paths.audio, fileName);
+                            onDownloadAudio(doc.paths.audio, fileName);
                         }
                     }}
                     disabled={!doc.paths?.audio}
-                    title="Scarica file audio"
+                    title="Scarica Audio"
                 >
                     <Download className="h-3.5 w-3.5" />
                 </button>
@@ -237,14 +227,25 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
             </button>
         </div>
 
-        {/* CONTENUTO (Sintesi e Metadati) */}
+        {/* SHARE */}
+        <div className="px-6 pb-6 border-b border-white/10">
+            <button 
+                onClick={() => onShare && onShare(doc.id)}
+                className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 py-3 text-xs font-bold uppercase tracking-wide text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-200 hover:border-indigo-500/30 transition-all active:scale-[0.98]"
+            >
+                <Mail className="h-4 w-4" />
+                Condividi via Email
+            </button>
+        </div>
+
+        {/* CONTENUTO */}
         <div className="p-6 space-y-6">
             <div>
                 <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-500">
                 <Sparkles className="h-3.5 w-3.5 text-purple-400" /> Sintesi AI
                 </h3>
                 <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 text-sm leading-relaxed text-zinc-300">
-                {doc.summary || "Nessun sommario generato per questo documento."}
+                {doc.summary || "Nessun sommario generato."}
                 </div>
             </div>
 
@@ -282,7 +283,7 @@ const DocumentInspector = ({ doc, onOpen, onOpenAudio, onDownloadAudio, onEdit, 
   );
 };
 
-// ... (tutto il codice sopra rimane uguale)
+// --- COMPONENTE PRINCIPALE ---
 
 export default function ArchiveLayout({
   documents = [],
@@ -294,15 +295,15 @@ export default function ArchiveLayout({
   onDownloadAudio,
   onEdit,
   onDelete,
-  onPromote // <--- 1. AGGIUNTO QUI (Riceve la funzione da Library.jsx)
+  onPromote,
+  onShare
 }) {
-  // Stati filtri
+  console.log("[ArchiveLayout] Ricevuti documenti:", documents.length); // DEBUG LOG
+
   const [activeIntent, setActiveIntent] = useState("ALL");
   const [activeWorkspace, setActiveWorkspace] = useState("ALL");
   const [activeProject, setActiveProject] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  
-  // Stati UI
   const [expandedWorkspaces, setExpandedWorkspaces] = useState({});
   const [mobileView, setMobileView] = useState('list');
 
@@ -312,7 +313,6 @@ export default function ArchiveLayout({
     }
   }, [selectedDoc]);
 
-  // 1. AGGREGAZIONE DATI
   const hierarchy = useMemo(() => {
     const tree = {};
     documents.forEach(doc => {
@@ -328,7 +328,6 @@ export default function ArchiveLayout({
     return tree;
   }, [documents]);
 
-  // 2. LOGICA DI FILTRAGGIO
   const filteredDocs = useMemo(() => {
     let result = documents;
 
@@ -377,12 +376,11 @@ export default function ArchiveLayout({
   return (
     <div className="flex h-full w-full overflow-hidden rounded-2xl border border-white/10 bg-[#09090b] shadow-2xl ring-1 ring-white/5 relative">
       
-      {/* PANE 1: SIDEBAR (FILTRI) */}
+      {/* SIDEBAR (FILTRI) */}
       <div className={classNames(
         "flex-col border-r border-white/10 bg-[#0e0e11] transition-transform duration-300 absolute inset-0 z-30 md:relative md:w-64 md:translate-x-0 md:flex",
         mobileView === 'filters' ? "translate-x-0 flex" : "-translate-x-full hidden"
       )}>
-        {/* ... (Contenuto Sidebar invariato) ... */}
         <div className="md:hidden flex items-center justify-between p-4 border-b border-white/10 bg-[#0e0e11]">
             <h3 className="text-sm font-bold text-white">Filtri</h3>
             <button onClick={() => setMobileView('list')} className="text-zinc-400 hover:text-white">
@@ -460,7 +458,7 @@ export default function ArchiveLayout({
         </div>
       </div>
 
-      {/* PANE 2: MASTER LIST */}
+      {/* MASTER LIST */}
       <div className={classNames(
         "flex w-full flex-col border-r border-white/10 bg-[#09090b] md:w-[420px]",
         mobileView === 'list' ? "flex" : "hidden md:flex"
@@ -489,8 +487,11 @@ export default function ArchiveLayout({
              <div className="p-4 text-center text-xs text-zinc-500 animate-pulse">Caricamento archivio...</div>
           ) : filteredDocs.length === 0 ? (
              <div className="flex flex-col items-center justify-center h-64 text-zinc-500">
-                <FilterIcon className="h-8 w-8 mb-2 opacity-20" />
-                <p className="text-xs">Nessun documento trovato.</p>
+                <div className="h-12 w-12 rounded-full bg-white/5 flex items-center justify-center mb-3">
+                    <FilterIcon className="h-6 w-6 opacity-30" />
+                </div>
+                <p className="text-xs font-medium">Nessun documento trovato.</p>
+                <p className="text-[10px] opacity-60 mt-1">Prova a cambiare i filtri.</p>
              </div>
           ) : (
             filteredDocs.map(doc => (
@@ -505,7 +506,7 @@ export default function ArchiveLayout({
         </div>
       </div>
 
-      {/* PANE 3: INSPECTOR (DETTAGLIO) */}
+      {/* INSPECTOR */}
       <div className={classNames(
         "flex-1 flex-col bg-[#121214] absolute inset-0 z-40 md:relative md:flex md:inset-auto md:z-auto",
         mobileView === 'details' ? "flex" : "hidden"
@@ -517,7 +518,8 @@ export default function ArchiveLayout({
             onDownloadAudio={onDownloadAudio}
             onEdit={onEdit} 
             onDelete={onDelete}
-            onPromote={onPromote} // <--- 2. PASSATO QUI AL FIGLIO
+            onPromote={onPromote}
+            onShare={onShare}
             onBack={goBackToList} 
         />
       </div>

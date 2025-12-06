@@ -1,3 +1,5 @@
+const { Resend } = require('resend'); // Aggiungi in alto
+const resend = new Resend(process.env.RESEND_API_KEY);
 const ChatService = require('./services/chatService');
 const { canonicalizeProjectScopeId, sanitizeProjectIdentifier, CONTEXT_SEPARATOR } = require('./services/utils.js');
 const { RAGService } = require('./services/ragService');
@@ -10210,6 +10212,83 @@ app.post('/api/library/:id/promote', authenticateRequest, async (req, res) => {
 
   } catch (error) {
     console.error('[PROMOTE ERROR]', error);
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+// ============================================================
+// == SMART SHARE: INVIO EMAIL CON ALLEGATO ==
+// ============================================================
+app.post('/api/share', authenticateRequest, async (req, res) => {
+  if (!supabase) return res.status(503).json({ ok: false, message: 'Supabase KO' });
+
+  const { documentId, recipientEmail, message } = req.body;
+  const userId = req.user.id;
+
+  if (!documentId || !recipientEmail) {
+    return res.status(400).json({ ok: false, message: 'Dati mancanti.' });
+  }
+
+  try {
+    // 1. Recupera metadati del documento
+    const { data: job, error: fetchError } = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('id', documentId)
+      .eq('user_id', userId)
+      .single();
+
+    if (fetchError || !job) {
+      return res.status(404).json({ ok: false, message: 'Documento non trovato.' });
+    }
+
+    // 2. Recupera il PDF dallo Storage (come Buffer)
+    // Parsiamo il path per togliere il bucket se presente
+    let pdfPath = job.output_pdf_path;
+    let bucket = 'processed-media';
+    if (pdfPath.startsWith('processed-media/')) {
+        pdfPath = pdfPath.replace('processed-media/', '');
+    }
+
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from(bucket)
+      .download(pdfPath);
+
+    if (downloadError) throw new Error("Impossibile scaricare il PDF per l'invio.");
+
+    // Convertiamo il Blob in Buffer per Resend
+    const arrayBuffer = await fileData.arrayBuffer();
+    const pdfBuffer = Buffer.from(arrayBuffer);
+
+    // 3. (Opzionale) AI Smart Subject & Body
+    // Se l'utente non ha scritto un messaggio, usiamo il summary o chiediamo all'AI
+    const emailSubject = `Documento condiviso: ${job.metadata?.customTitle || 'Nuovo Documento'}`;
+    const emailBody = message || `Ecco il documento "${job.metadata?.customTitle}" generato con Rec2PDF.\n\nSintesi:\n${job.metadata?.summary || 'Nessuna sintesi disponibile.'}`;
+
+    // 4. Invia con Resend
+    const { data: emailData, error: emailError } = await resend.emails.send({
+      from: 'Rec2PDF <onboarding@resend.dev>', // Usa questo per testare senza dominio
+      to: [recipientEmail],
+      subject: emailSubject,
+      text: emailBody,
+      attachments: [
+        {
+          filename: `${job.metadata?.customTitle || 'documento'}.pdf`,
+          content: pdfBuffer,
+        },
+      ],
+    });
+
+    if (emailError) {
+        console.error("Resend Error:", emailError);
+        throw new Error("Errore provider email: " + emailError.message);
+    }
+
+    console.log(`[SHARE] Email inviata a ${recipientEmail} per il doc ${documentId}`);
+    res.json({ ok: true, message: 'Email inviata con successo!' });
+
+  } catch (error) {
+    console.error('[SHARE ERROR]', error);
     res.status(500).json({ ok: false, message: error.message });
   }
 });
