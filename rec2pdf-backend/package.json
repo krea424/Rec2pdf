@@ -26,6 +26,7 @@
         "p-limit": "^7.2.0",
         "pdf-parse": "^1.1.1",
         "qs": "^6.12.1",
+        "resend": "^6.5.2",
         "zod": "^3.23.8"
     },
     "devDependencies": {
