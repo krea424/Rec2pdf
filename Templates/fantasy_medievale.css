@@ -1,0 +1,223 @@
+/* --- FANTASY GRIMOIRE STYLE --- */
+/* Ispirazione: D&D 5th Edition Player's Handbook, Antichi manoscritti */
+
+@page {
+    size: A4;
+    margin: 25mm;
+    /* Colore Pergamena Base */
+    background-color: #f4e4bc; 
+    
+    /* Cornice decorativa interna simulata con bordi */
+    margin-top: 20mm;
+    margin-bottom: 20mm;
+
+    @bottom-center {
+        content: "- " counter(page) " -";
+        font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
+        font-size: 11pt;
+        color: #5c4033; /* Marrone scuro */
+        font-weight: bold;
+    }
+}
+
+body {
+    font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: #2b1d0e; /* Marrone inchiostro scuro, non nero */
+    background-color: #f4e4bc;
+    margin: 0;
+}
+
+/* --- HEADER & WAX SEAL --- */
+.scroll-header {
+    text-align: center;
+    border-bottom: 3px double #8b4513; /* SaddleBrown */
+    padding-bottom: 20px;
+    margin-bottom: 30px;
+    position: relative;
+}
+
+/* Il Sigillo di Ceralacca (Pura CSS Magic) */
+.wax-seal {
+    position: absolute;
+    top: -10px;
+    right: 0;
+    width: 60px;
+    height: 60px;
+    background-color: #a52a2a; /* Brown/Red */
+    border-radius: 50%;
+    box-shadow: 
+        inset 0 0 10px rgba(0,0,0,0.5), /* Ombra interna */
+        2px 2px 5px rgba(0,0,0,0.3);    /* Ombra esterna */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 4px dashed #800000;
+}
+
+.seal-inner {
+    color: #eebb99;
+    font-weight: bold;
+    font-size: 10pt;
+    transform: rotate(-15deg);
+    border: 1px solid #eebb99;
+    padding: 2px 5px;
+    border-radius: 50%;
+}
+
+.guild-mark {
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    color: #8b4513;
+    margin-bottom: 10px;
+}
+
+h1 {
+    font-family: "Garamond", "Georgia", serif;
+    font-size: 26pt;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #461111; /* Dark Red antico */
+    margin: 5px 0;
+    font-variant: small-caps; /* Maiuscoletto elegante */
+    text-shadow: 1px 1px 0px rgba(255,255,255,0.4);
+}
+
+.campaign-date {
+    font-style: italic;
+    color: #5c4033;
+}
+
+/* --- THE LORE (Summary Box) --- */
+.parchment-box {
+    background-color: rgba(255, 255, 255, 0.3); /* Leggermente più chiaro dello sfondo */
+    border: 1px solid #8b4513;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: inset 0 0 20px rgba(139, 69, 19, 0.1);
+    border-radius: 4px;
+}
+
+.parchment-box h3 {
+    margin-top: 0;
+    text-align: center;
+    text-transform: uppercase;
+    border-bottom: 1px solid #8b4513;
+    display: inline-block;
+    padding: 0 20px 5px 20px;
+    width: 100%;
+    box-sizing: border-box;
+    color: #8b4513;
+    font-size: 12pt;
+}
+
+/* Capolettera (Drop Cap) */
+.drop-cap-text::first-letter {
+    float: left;
+    font-size: 3.5em;
+    line-height: 0.8;
+    padding-top: 4px;
+    padding-right: 8px;
+    padding-left: 3px;
+    color: #800000;
+    font-family: "Times New Roman", serif;
+    font-weight: bold;
+}
+
+/* --- QUEST LIST --- */
+.quest-section {
+    margin-bottom: 40px;
+}
+
+.quest-section h3 {
+    font-size: 14pt;
+    color: #2f4f4f; /* Dark Slate Gray (Forest Green vibe) */
+    border-bottom: 2px solid #2f4f4f;
+    margin-bottom: 15px;
+    font-variant: small-caps;
+}
+
+.quest-list {
+    list-style: none;
+    padding: 0;
+}
+
+.quest-list li {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: baseline;
+    font-size: 11.5pt;
+}
+
+.rune {
+    margin-right: 12px;
+    color: #800000;
+    font-size: 14pt;
+    font-weight: bold;
+}
+
+/* --- ORNAMENT DIVIDER --- */
+.ornament-divider {
+    text-align: center;
+    color: #8b4513;
+    margin: 30px 0;
+    font-size: 14pt;
+    letter-spacing: 10px;
+}
+
+/* --- BODY TEXT --- */
+h2 {
+    color: #461111;
+    font-size: 18pt;
+    margin-top: 30px;
+    font-variant: small-caps;
+    border-bottom: 1px solid #bbb;
+}
+
+p {
+    margin-bottom: 15px;
+    text-align: justify;
+}
+
+/* --- SCRIBE'S LOG (Transcript) --- */
+.scribe-log {
+    page-break-before: always;
+}
+
+.dialogue-line {
+    margin-bottom: 15px;
+    padding-left: 15px;
+    border-left: 3px solid #cd853f; /* Peru color border */
+    page-break-inside: avoid;
+}
+
+.character-name {
+    font-weight: bold;
+    font-size: 9pt;
+    color: #8b4513;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}
+
+.spoken-word {
+    font-style: italic;
+    color: #4a3b2a;
+}
+
+/* --- FOOTER --- */
+.page-footer {
+    text-align: center;
+    font-size: 8pt;
+    color: #8b4513;
+    margin-top: 50px;
+    opacity: 0.6;
+    border-top: 1px solid #8b4513;
+    padding-top: 10px;
+}
+
+/* Nascondi titolo doppio */
+.chronicle-body h1:first-child {
+    display: none;
+}
